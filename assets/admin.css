@@ -1,0 +1,41 @@
+/* Tool Kits Admin UI */
+.tk-wrap .tk-grid{display:grid;gap:16px}
+.tk-grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (max-width: 960px){.tk-grid-2{grid-template-columns:1fr}}
+.tk-card{background:#fff;border:1px solid #dcdcde;border-radius:12px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.tk-card h2{margin-top:0}
+.tk-card label{display:block;margin-top:10px}
+.tk-card input.regular-text{width:100%;max-width:520px}
+.tk-inline{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}
+.tk-badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#f0f0f1;font-size:12px}
+.tk-badge.tk-on{background:#e6f4ea;color:#0b6b2f}
+.tk-badge.tk-warn{background:#fff4e5;color:#9a4b00}
+.tk-table td,.tk-table th{vertical-align:top}
+.tk-list{margin:0;padding-left:18px}
+.tk-form-inline{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.tk-card--custom{background:#f6f7ff;border-color:#c5d4f4}
+.tk-card--custom h2{color:#1e3a8a}
+.tk-find-replace-wrapper{margin-top:12px}
+.tk-pairs-table{width:100%;border-collapse:collapse;margin-top:12px}
+.tk-pairs-table th,.tk-pairs-table td{padding:6px 6px 4px;vertical-align:top;border-bottom:1px solid #ededf1}
+.tk-pairs-table th{font-size:11px;text-transform:uppercase;color:#6b7280;letter-spacing:.08em;text-align:left}
+.tk-pairs-table td{padding-bottom:12px}
+.tk-pairs-table td .regular-text{width:100%;box-sizing:border-box}
+.tk-col-actions{text-align:right;width:40px}
+.tk-remove-row{min-width:34px}
+.tk-pairs-actions{margin-top:8px}
+.tk-tabs{margin-top:24px}
+.tk-tabs-nav{display:flex;border-bottom:1px solid #dfe3e8;margin-bottom:0}
+.tk-tabs-nav-button{background:#f7f8fb;border:1px solid #dfe3e8;border-bottom:0;color:#6b7280;font-weight:600;padding:8px 22px 10px;margin-right:2px;border-radius:3px 3px 0 0;cursor:pointer;position:relative;top:1px;transition:border-color .2s,color .2s}
+.tk-tabs-nav-button.is-active{background:#fff;border-color:#dfe3e8;border-bottom:1px solid #fff;color:#1d4ed8}
+.tk-tabs-content{border:1px solid #dfe3e8;padding:24px;background:#fff}
+.tk-tab-panel{display:none}
+.tk-tab-panel.is-active{display:block}
+.tk-pairs-summary{margin-top:16px;padding:12px;border:1px dashed #dfe3e8;border-radius:10px;background:#f8fbff}
+.tk-pairs-summary strong{display:block;margin-bottom:10px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#1d4ed8}
+.tk-pairs-summary ul{margin:0;padding-left:20px}
+.tk-pairs-summary li{margin-bottom:4px;font-size:13px;color:#1f2937}
+.tk-pair-label{font-weight:600;margin-right:4px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#6b7280}
+.tk-empty{font-style:italic;color:#9ca3af}
+
+
