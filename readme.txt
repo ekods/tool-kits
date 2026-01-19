@@ -21,6 +21,39 @@ Tool Kits adalah plugin admin toolkit untuk:
 - Change DB Prefix: plugin akan rename tabel dan update meta keys, tetapi Anda tetap harus update `$table_prefix` di wp-config.php manual.
 - Export SQL: best-effort via WPDB. Untuk database besar, gunakan phpMyAdmin/CLI.
 
+== Developer Notes ==
+Filters to adjust CORS by environment (optional example):
+
+    add_filter('tk_hardening_allowed_origins', function($origins) {
+        if (!function_exists('wp_get_environment_type')) {
+            return $origins;
+        }
+        $env = wp_get_environment_type(); // production, staging, development, local
+        if ($env === 'staging') {
+            $origins[] = 'https://staging.example.com';
+        } elseif ($env === 'production') {
+            $origins[] = 'https://app.example.com';
+        }
+        return array_unique($origins);
+    });
+
+    add_filter('tk_hardening_allowed_cors_methods', function($methods, $origin) {
+        if (!function_exists('wp_get_environment_type')) {
+            return $methods;
+        }
+        $env = wp_get_environment_type();
+        if ($env === 'production') {
+            return array('GET', 'POST', 'OPTIONS');
+        }
+        return array('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS');
+    }, 10, 2);
+
+    add_filter('tk_hardening_allowed_cors_headers', function($headers, $origin) {
+        $headers[] = 'X-Custom-Header';
+        return array_unique($headers);
+    }, 10, 2);
+
+
 == Changelog ==
 = 1.0.0 =
 - Initial release.

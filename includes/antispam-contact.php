@@ -61,6 +61,20 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
 }
 
 function tk_render_antispam_contact_page() {
+    if (function_exists('tk_render_spam_protection_page')) {
+        tk_render_spam_protection_page('antispam');
+        return;
+    }
+    if (!tk_is_admin_user()) return;
+    ?>
+    <div class="wrap tk-wrap">
+        <h1>Spam Protection</h1>
+        <?php tk_render_antispam_contact_panel(); ?>
+    </div>
+    <?php
+}
+
+function tk_render_antispam_contact_panel() {
     if (!tk_is_admin_user()) return;
 
     $enabled = (int) tk_get_option('antispam_cf7_enabled', 0);
@@ -68,27 +82,25 @@ function tk_render_antispam_contact_page() {
     $cf7_installed = function_exists('wpcf7');
 
     ?>
-    <div class="wrap tk-wrap">
-        <h1>Anti-spam Contact</h1>
+    <div class="tk-card">
+        <h2>Anti-spam Contact</h2>
+        <p>This module adds a <strong>honeypot</strong> and <strong>minimum submit time</strong> to Contact Form 7 submissions.</p>
+        <p>CF7 status: <?php echo $cf7_installed ? '<span class="tk-badge tk-on">Detected</span>' : '<span class="tk-badge">Not Installed</span>'; ?></p>
 
-        <div class="tk-card">
-            <p>This module adds a <strong>honeypot</strong> and <strong>minimum submit time</strong> to Contact Form 7 submissions.</p>
-            <p>CF7 status: <?php echo $cf7_installed ? '<span class="tk-badge tk-on">Detected</span>' : '<span class="tk-badge">Not Installed</span>'; ?></p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+            <?php tk_nonce_field('tk_antispam_save'); ?>
+            <input type="hidden" name="action" value="tk_antispam_save">
+            <input type="hidden" name="tk_tab" value="antispam">
 
-            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-                <?php tk_nonce_field('tk_antispam_save'); ?>
-                <input type="hidden" name="action" value="tk_antispam_save">
+            <label><input type="checkbox" name="enabled" value="1" <?php checked(1, $enabled); ?>> Enable for Contact Form 7</label>
 
-                <label><input type="checkbox" name="enabled" value="1" <?php checked(1, $enabled); ?>> Enable for Contact Form 7</label>
+            <label><strong>Minimum seconds before submit</strong></label>
+            <input class="small-text" type="number" min="0" name="min_seconds" value="<?php echo esc_attr($min_seconds); ?>"> seconds
 
-                <label><strong>Minimum seconds before submit</strong></label>
-                <input class="small-text" type="number" min="0" name="min_seconds" value="<?php echo esc_attr($min_seconds); ?>"> seconds
+            <p><button class="button button-primary">Save</button></p>
+        </form>
 
-                <p><button class="button button-primary">Save</button></p>
-            </form>
-
-            <p class="description">If CF7 is not installed, the module stays passive and safe.</p>
-        </div>
+        <p class="description">If CF7 is not installed, the module stays passive and safe.</p>
     </div>
     <?php
 }
@@ -100,6 +112,6 @@ function tk_antispam_save_settings() {
     tk_update_option('antispam_cf7_enabled', !empty($_POST['enabled']) ? 1 : 0);
     tk_update_option('antispam_min_seconds', max(0, (int) tk_post('min_seconds', 3)));
 
-    wp_redirect(add_query_arg(array('page'=>'tool-kits-security-antispam','tk_saved'=>1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page'=>'tool-kits-security-spam','tk_tab'=>'antispam','tk_saved'=>1), admin_url('admin.php')));
     exit;
 }

@@ -15,6 +15,16 @@ define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
 
+/**
+ * Load translations after init so the textdomain is available to helpers and admin UI.
+ */
+function tk_load_textdomain() {
+    load_plugin_textdomain('tool-kits', false, dirname(plugin_basename(__FILE__)) . '/languages');
+}
+add_action('init', 'tk_load_textdomain');
+add_action('plugins_loaded', 'tk_killswitch_init', 1);
+add_action('admin_init', 'tk_debug_deprecated_init');
+
 require_once TK_PATH . 'includes/helpers.php';
 require_once TK_PATH . 'includes/admin-menu.php';
 require_once TK_PATH . 'includes/db-migrate.php';
@@ -22,9 +32,17 @@ require_once TK_PATH . 'includes/db-cleanup.php';
 require_once TK_PATH . 'includes/security-hide-login.php';
 require_once TK_PATH . 'includes/security-captcha.php';
 require_once TK_PATH . 'includes/antispam-contact.php';
+require_once TK_PATH . 'includes/security-spam.php';
 require_once TK_PATH . 'includes/security-rate-limit.php';
 require_once TK_PATH . 'includes/security-login-log.php';
 require_once TK_PATH . 'includes/security-hardening.php';
+require_once TK_PATH . 'includes/monitoring-heartbeat.php';
+require_once TK_PATH . 'includes/minify.php';
+require_once TK_PATH . 'includes/cache.php';
+require_once TK_PATH . 'includes/webp.php';
+require_once TK_PATH . 'includes/monitoring-404-health.php';
+require_once TK_PATH . 'includes/optimization.php';
+require_once TK_PATH . 'includes/lazy-load.php';
 
 /**
  * Activation / Deactivation
@@ -38,14 +56,27 @@ function tk_activate() {
 
     // Hide login rewrite rules
     tk_hide_login_flush_rewrite(true);
+
+    // Schedule heartbeat on activation (if enabled).
+    if (function_exists('tk_heartbeat_schedule')) {
+        tk_heartbeat_schedule();
+    }
 }
 register_activation_hook(__FILE__, 'tk_activate');
 
 function tk_deactivate() {
     // Flush rewrite rules so custom login slug is removed cleanly
     tk_hide_login_flush_rewrite(false);
+
 }
 register_deactivation_hook(__FILE__, 'tk_deactivate');
+
+/**
+ * Uninstall cleanup
+ */
+function tk_uninstall() {
+}
+register_uninstall_hook(__FILE__, 'tk_uninstall');
 
 /**
  * Initialize modules
@@ -61,6 +92,12 @@ add_action('plugins_loaded', function() {
     tk_rate_limit_init();
     tk_login_log_init();
     tk_hardening_init();
+    tk_heartbeat_init();
+    tk_minify_init();
+    tk_cache_init();
+    tk_webp_init();
+    tk_monitoring_404_health_init();
+    tk_lazy_load_init();
 });
 
 /**

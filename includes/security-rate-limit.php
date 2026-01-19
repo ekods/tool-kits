@@ -8,6 +8,10 @@ if (!defined('ABSPATH')) exit;
 function tk_rate_limit_init() {
     add_filter('authenticate', 'tk_rate_limit_authenticate', 30, 3);
     add_action('admin_post_tk_rate_limit_save', 'tk_rate_limit_save');
+    add_action('login_form', 'tk_rate_limit_unlock_prompt');
+    add_action('login_footer', 'tk_rate_limit_unlock_script');
+    add_action('wp_ajax_tk_rate_limit_unlock', 'tk_rate_limit_unlock');
+    add_action('wp_ajax_nopriv_tk_rate_limit_unlock', 'tk_rate_limit_unlock');
 }
 
 function tk_rate_limit_enabled() {
@@ -122,4 +126,75 @@ function tk_rate_limit_save() {
 
     wp_redirect(admin_url('admin.php?page=tool-kits-security-rate-limit'));
     exit;
+}
+
+function tk_rate_limit_unlock_prompt() {
+    if (!tk_rate_limit_enabled()) {
+        return;
+    }
+    if (!get_transient(tk_rate_limit_lock_key())) {
+        return;
+    }
+    $nonce = wp_create_nonce('tk_rate_limit_unlock');
+    ?>
+    <p class="tk-rate-limit-unlock">
+        <button type="button" class="button button-secondary tk-rate-limit-unlock-button" data-nonce="<?php echo esc_attr($nonce); ?>">
+            <?php esc_html_e('Unlock login attempts', 'tool-kits'); ?>
+        </button>
+        <span class="description"><?php esc_html_e('You are currently locked out; click to reset this IP and try again.', 'tool-kits'); ?></span>
+    </p>
+    <?php
+}
+
+function tk_rate_limit_unlock_script() {
+    if (!tk_rate_limit_enabled()) {
+        return;
+    }
+    if (!get_transient(tk_rate_limit_lock_key())) {
+        return;
+    }
+    $ajax_url = admin_url('admin-ajax.php');
+    ?>
+    <script>
+    (function(){
+        document.addEventListener('click', function(e){
+            var button = e.target.closest('.tk-rate-limit-unlock-button');
+            if (!button) {
+                return;
+            }
+            e.preventDefault();
+            var nonce = button.getAttribute('data-nonce');
+            button.disabled = true;
+            fetch('<?php echo esc_js($ajax_url); ?>', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: new URLSearchParams({
+                    action: 'tk_rate_limit_unlock',
+                    nonce: nonce
+                })
+            }).then(function(resp){ return resp.json(); }).then(function(data){
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert(data.data || 'Unable to unlock attempts.');
+                    button.disabled = false;
+                }
+            }).catch(function(){
+                button.disabled = false;
+            });
+        });
+    })();
+    </script>
+    <?php
+}
+
+function tk_rate_limit_unlock() {
+    check_ajax_referer('tk_rate_limit_unlock', 'nonce');
+    if (!tk_rate_limit_enabled()) {
+        wp_send_json_error('disabled');
+    }
+    delete_transient(tk_rate_limit_lock_key());
+    delete_transient(tk_rate_limit_key());
+    wp_send_json_success();
 }
