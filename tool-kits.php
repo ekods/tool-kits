@@ -5,7 +5,7 @@
  * Version: 1.0.1
  * Author: Eko Dwi Saputro
  * License: GPLv2 or later
- * Text Domain: tool-kits
+ * Text Domain: https://theteamtheteam.com
  */
 
 if (!defined('ABSPATH')) { exit; }
