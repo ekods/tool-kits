@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: Eko Dwi Saputro
  * License: GPLv2 or later
  * Text Domain: tool-kits
@@ -10,10 +10,12 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-define('TK_VERSION', '1.0.0');
+define('TK_VERSION', '1.0.1');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
+define('TK_GITHUB_REPO', 'ekods/tool-kits');
+define('TK_GITHUB_REPO_URL', 'https://github.com/' . TK_GITHUB_REPO);
 
 /**
  * Load translations after init so the textdomain is available to helpers and admin UI.
@@ -49,6 +51,7 @@ require_once TK_PATH . 'includes/upload-limits.php';
 require_once TK_PATH . 'includes/theme-checker.php';
 require_once TK_PATH . 'includes/security-alerts.php';
 require_once TK_PATH . 'includes/user-id-change.php';
+require_once TK_PATH . 'includes/github-update-check.php';
 
 /**
  * Activation / Deactivation

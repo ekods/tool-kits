@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -20,6 +20,7 @@ Tool Kits adalah plugin admin toolkit untuk:
 == Notes ==
 - Change DB Prefix: plugin akan rename tabel dan update meta keys, tetapi Anda tetap harus update `$table_prefix` di wp-config.php manual.
 - Export SQL: best-effort via WPDB. Untuk database besar, gunakan phpMyAdmin/CLI.
+- Update checker mengambil rilis dari GitHub (release asset `tool-kits.zip` direkomendasikan untuk instalasi otomatis).
 
 == Developer Notes ==
 Filters to adjust CORS by environment (optional example):
@@ -55,5 +56,7 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 1.0.1 =
+- Tambahkan pemeriksaan update otomatis dari GitHub.
 = 1.0.0 =
 - Initial release.
