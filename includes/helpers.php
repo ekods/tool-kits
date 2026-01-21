@@ -13,9 +13,11 @@ function tk_get_option($key, $default = null) {
 function tk_update_option($key, $value) {
     $opts = get_option('tk_options', array());
     if (!is_array($opts)) { $opts = array(); }
+    $old = array_key_exists($key, $opts) ? $opts[$key] : null;
     $opts[$key] = $value;
     update_option('tk_options', $opts, false);
     update_option('tk_killswitch_last_key', $key, false);
+    tk_toolkits_audit_log_option_change($key, $old, $value);
 }
 
 function tk_log($message) {
@@ -119,6 +121,101 @@ function tk_clear_all_caches(): array {
         $message .= ' ' . implode(' ', $errors);
     }
     return array('ok' => $ok, 'message' => $message);
+}
+
+function tk_remove_directory(string $dir, int &$removed_files, int &$removed_dirs, int &$failed): void {
+    if ($dir === '' || !is_dir($dir)) {
+        return;
+    }
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+    foreach ($iterator as $item) {
+        $path = $item->getPathname();
+        if (!is_string($path) || $path === '') {
+            continue;
+        }
+        if ($item->isDir()) {
+            if (@rmdir($path)) {
+                $removed_dirs++;
+            } else {
+                $failed++;
+            }
+            continue;
+        }
+        if (@unlink($path)) {
+            $removed_files++;
+        } else {
+            $failed++;
+        }
+    }
+    if (@rmdir($dir)) {
+        $removed_dirs++;
+    } else {
+        $failed++;
+    }
+}
+
+function tk_remove_ds_store_in_root(): array {
+    $root = defined('ABSPATH') ? rtrim(ABSPATH, "/\\") : '';
+    if ($root === '' || !is_dir($root)) {
+        return array('ok' => false, 'removed' => 0, 'failed' => 0, 'message' => 'WordPress root not found.');
+    }
+    $removed = 0;
+    $removed_dirs = 0;
+    $failed = 0;
+    $dirs = array();
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS)
+    );
+    foreach ($iterator as $file) {
+        if ($file->isDir() && $file->getFilename() === '__MACOSX') {
+            $dirs[] = $file->getPathname();
+            continue;
+        }
+        if (!$file->isFile()) {
+            continue;
+        }
+        if ($file->getFilename() !== '.DS_Store') {
+            continue;
+        }
+        $path = $file->getPathname();
+        if (!is_string($path) || $path === '') {
+            continue;
+        }
+        if (strpos($path, DIRECTORY_SEPARATOR . '.git' . DIRECTORY_SEPARATOR) !== false) {
+            continue;
+        }
+        if (@unlink($path)) {
+            $removed++;
+        } else {
+            $failed++;
+        }
+    }
+
+    if (!empty($dirs)) {
+        $dirs = array_values(array_unique($dirs));
+        foreach ($dirs as $dir) {
+            if (!is_string($dir) || $dir === '') {
+                continue;
+            }
+            if (strpos($dir, DIRECTORY_SEPARATOR . '.git' . DIRECTORY_SEPARATOR) !== false) {
+                continue;
+            }
+            tk_remove_directory($dir, $removed, $removed_dirs, $failed);
+        }
+    }
+
+    if ($removed === 0 && $removed_dirs === 0 && $failed === 0) {
+        $message = 'No .DS_Store or __MACOSX items found in WordPress root.';
+    } else {
+        $message = 'Removed ' . $removed . ' .DS_Store file(s) and ' . $removed_dirs . ' __MACOSX folder(s).';
+        if ($failed > 0) {
+            $message .= ' ' . $failed . ' failed to delete.';
+        }
+    }
+    return array('ok' => $failed === 0, 'removed' => $removed, 'failed' => $failed, 'message' => $message);
 }
 
 function tk_killswitch_init() {
@@ -390,6 +487,9 @@ function tk_option_init_defaults() {
         'rate_limit_window_minutes' => 10,
         'rate_limit_max_attempts' => 5,
         'rate_limit_lockout_minutes' => 30,
+        'rate_limit_block_on_fail' => 0,
+        'rate_limit_whitelist' => '',
+        'rate_limit_blocked_ips' => array(),
         // Login log
         'login_log_enabled' => 1,
         'login_log_keep_days' => 30,
@@ -468,6 +568,29 @@ function tk_option_init_defaults() {
         'monitoring_404_log' => array(),
         'monitoring_healthcheck_enabled' => 0,
         'monitoring_healthcheck_key' => '',
+        // Asset optimization
+        'assets_critical_css_enabled' => 0,
+        'assets_critical_css' => '',
+        'assets_defer_css_handles' => '',
+        'assets_preload_css_handles' => '',
+        'assets_preload_fonts' => '',
+        'assets_font_display_swap' => 1,
+        'assets_dimensions_enabled' => 1,
+        'upload_images_limit_enabled' => 1,
+        'upload_images_max_mb' => 2,
+        // Access control
+        'toolkits_allowed_roles' => array('administrator'),
+        'toolkits_ip_allowlist' => '',
+        'toolkits_lock_enabled' => 0,
+        'toolkits_mask_sensitive_fields' => 0,
+        'toolkits_audit_log' => array(),
+        'toolkits_alert_enabled' => 1,
+        'toolkits_alert_email' => '',
+        'toolkits_alert_admin_created' => 1,
+        'toolkits_alert_role_change' => 1,
+        'toolkits_alert_admin_login_new_ip' => 1,
+        'toolkits_owner_only_enabled' => 0,
+        'toolkits_owner_user_id' => 1,
     );
 
     $opts = get_option('tk_options', array());
@@ -484,7 +607,7 @@ function tk_admin_url($page) {
 }
 
 function tk_is_admin_user() {
-    return current_user_can('manage_options');
+    return tk_toolkits_can_manage();
 }
 
 function tk_nonce_field($action) {
@@ -563,6 +686,186 @@ function tk_get_ip() {
         }
     }
     return '0.0.0.0';
+}
+
+function tk_toolkits_allowed_roles(): array {
+    $roles = tk_get_option('toolkits_allowed_roles', array('administrator'));
+    if (!is_array($roles)) {
+        $roles = array('administrator');
+    }
+    $roles = array_filter(array_map('sanitize_key', $roles));
+    if (empty($roles)) {
+        $roles = array('administrator');
+    }
+    return array_values(array_unique($roles));
+}
+
+function tk_toolkits_ip_allowlist(): array {
+    $raw = (string) tk_get_option('toolkits_ip_allowlist', '');
+    if (trim($raw) === '') {
+        return array();
+    }
+    $parts = preg_split('/[\s,]+/', $raw);
+    if (!is_array($parts)) {
+        return array();
+    }
+    $list = array();
+    foreach ($parts as $part) {
+        $ip = trim($part);
+        if ($ip === '') {
+            continue;
+        }
+        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+            continue;
+        }
+        $list[] = $ip;
+    }
+    return array_values(array_unique($list));
+}
+
+function tk_toolkits_ip_allowed(): bool {
+    $allowlist = tk_toolkits_ip_allowlist();
+    if (empty($allowlist)) {
+        return true;
+    }
+    $ip = tk_get_ip();
+    return in_array($ip, $allowlist, true);
+}
+
+function tk_toolkits_can_manage(): bool {
+    if (!is_user_logged_in()) {
+        return false;
+    }
+    if (!tk_toolkits_ip_allowed()) {
+        return false;
+    }
+    if ((int) tk_get_option('toolkits_owner_only_enabled', 0) === 1) {
+        $owner_id = (int) tk_get_option('toolkits_owner_user_id', 1);
+        $user = wp_get_current_user();
+        if (!$user || (int) $user->ID !== $owner_id) {
+            return false;
+        }
+        return true;
+    }
+    $user = wp_get_current_user();
+    if (!$user || empty($user->roles)) {
+        return false;
+    }
+    $allowed = tk_toolkits_allowed_roles();
+    foreach ($user->roles as $role) {
+        if (in_array($role, $allowed, true)) {
+            return true;
+        }
+    }
+    return current_user_can('manage_options');
+}
+
+function tk_toolkits_is_locked(): bool {
+    return (int) tk_get_option('toolkits_lock_enabled', 0) === 1;
+}
+
+function tk_toolkits_mask_sensitive(): bool {
+    return (int) tk_get_option('toolkits_mask_sensitive_fields', 0) === 1;
+}
+
+function tk_toolkits_audit_log_option_change($key, $old, $new): void {
+    if (!is_admin() || !is_user_logged_in()) {
+        return;
+    }
+    if (defined('WP_CLI') && WP_CLI) {
+        return;
+    }
+    if ($key === 'toolkits_audit_log') {
+        return;
+    }
+    if ($old === $new) {
+        return;
+    }
+    $sensitive = array(
+        'hardening_httpauth_pass',
+        'heartbeat_auth_key',
+        'heartbeat_http_pass',
+        'monitoring_healthcheck_key',
+        'toolkits_ip_allowlist',
+    );
+    $detail = array(
+        'key' => $key,
+        'from' => in_array($key, $sensitive, true) ? '***' : (is_scalar($old) ? (string) $old : gettype($old)),
+        'to' => in_array($key, $sensitive, true) ? '***' : (is_scalar($new) ? (string) $new : gettype($new)),
+    );
+    tk_toolkits_audit_log('option_update', $detail);
+}
+
+function tk_toolkits_audit_log(string $action, array $detail = array()): void {
+    $opts = get_option('tk_options', array());
+    if (!is_array($opts)) {
+        $opts = array();
+    }
+    $log = array_key_exists('toolkits_audit_log', $opts) && is_array($opts['toolkits_audit_log']) ? $opts['toolkits_audit_log'] : array();
+    $user = wp_get_current_user();
+    $entry = array(
+        'time' => time(),
+        'user' => $user ? $user->user_login : 'system',
+        'action' => $action,
+        'detail' => $detail,
+        'ip' => tk_get_ip(),
+    );
+    $log[] = $entry;
+    if (count($log) > 200) {
+        $log = array_slice($log, -200);
+    }
+    $opts['toolkits_audit_log'] = $log;
+    update_option('tk_options', $opts, false);
+}
+
+function tk_toolkits_guard(): void {
+    if (!is_admin()) {
+        return;
+    }
+    $page = isset($_GET['page']) ? sanitize_key($_GET['page']) : '';
+    $action = isset($_REQUEST['action']) ? sanitize_key($_REQUEST['action']) : '';
+    $is_toolkits_page = $page !== '' && strpos($page, 'tool-kits') === 0;
+    $is_toolkits_action = $action !== '' && strpos($action, 'tk_') === 0;
+    if (!$is_toolkits_page && !$is_toolkits_action) {
+        return;
+    }
+    if (!tk_toolkits_can_manage()) {
+        wp_die('Access denied.', 'Tool Kits', array('response' => 403));
+    }
+    if (tk_toolkits_is_locked() && $is_toolkits_action && $action !== 'tk_toolkits_access_save' && $action !== 'tk_toolkits_audit_clear') {
+        wp_die('Tool Kits settings are locked.', 'Tool Kits', array('response' => 403));
+    }
+}
+
+function tk_toolkits_mask_fields_script(): void {
+    if (!tk_toolkits_mask_sensitive() || !is_admin()) {
+        return;
+    }
+    $page = isset($_GET['page']) ? sanitize_key($_GET['page']) : '';
+    if ($page === '' || strpos($page, 'tool-kits') !== 0) {
+        return;
+    }
+    ?>
+    <script>
+    (function(){
+        var selectors = [
+            'input[name*="key"]',
+            'input[name*="pass"]',
+            'textarea[name*="key"]',
+            'textarea[name*="pass"]'
+        ];
+        document.querySelectorAll(selectors.join(',')).forEach(function(el){
+            if (el.type === 'password') {
+                return;
+            }
+            if (el.tagName === 'INPUT') {
+                el.type = 'password';
+            }
+            el.setAttribute('autocomplete', 'off');
+        });
+    })();
+    </script>
+    <?php
 }
 
 function tk_user_agent() {

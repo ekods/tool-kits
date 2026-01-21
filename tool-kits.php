@@ -24,6 +24,7 @@ function tk_load_textdomain() {
 add_action('init', 'tk_load_textdomain');
 add_action('plugins_loaded', 'tk_killswitch_init', 1);
 add_action('admin_init', 'tk_debug_deprecated_init');
+add_action('admin_init', 'tk_toolkits_guard', 0);
 
 require_once TK_PATH . 'includes/helpers.php';
 require_once TK_PATH . 'includes/admin-menu.php';
@@ -43,6 +44,11 @@ require_once TK_PATH . 'includes/webp.php';
 require_once TK_PATH . 'includes/monitoring-404-health.php';
 require_once TK_PATH . 'includes/optimization.php';
 require_once TK_PATH . 'includes/lazy-load.php';
+require_once TK_PATH . 'includes/asset-optimization.php';
+require_once TK_PATH . 'includes/upload-limits.php';
+require_once TK_PATH . 'includes/theme-checker.php';
+require_once TK_PATH . 'includes/security-alerts.php';
+require_once TK_PATH . 'includes/user-id-change.php';
 
 /**
  * Activation / Deactivation
@@ -98,6 +104,10 @@ add_action('plugins_loaded', function() {
     tk_webp_init();
     tk_monitoring_404_health_init();
     tk_lazy_load_init();
+    tk_assets_opt_init();
+    tk_upload_limits_init();
+    tk_security_alerts_init();
+    tk_user_id_change_init();
 });
 
 /**
@@ -108,3 +118,4 @@ add_action('admin_enqueue_scripts', function($hook) {
         wp_enqueue_style('tool-kits-admin', TK_URL . 'assets/admin.css', array(), TK_VERSION);
     }
 });
+add_action('admin_footer', 'tk_toolkits_mask_fields_script');

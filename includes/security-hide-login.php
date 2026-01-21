@@ -11,12 +11,98 @@ function tk_hide_login_init() {
     add_action('admin_init', 'tk_hide_login_block_admin', 1);
     add_action('template_redirect', 'tk_hide_login_block');
     add_action('admin_post_tk_hide_login_save', 'tk_hide_login_save');
+    add_filter('login_url', 'tk_hide_login_filter_login_url', 10, 3);
+    add_filter('logout_url', 'tk_hide_login_filter_logout_url', 10, 2);
+    add_filter('lostpassword_url', 'tk_hide_login_filter_lostpassword_url', 10, 2);
+    add_filter('register_url', 'tk_hide_login_filter_register_url', 10, 1);
+}
+
+function tk_hide_login_slug() {
+    return tk_sanitize_slug(tk_get_option('hide_login_slug', 'secure-login'));
+}
+
+function tk_hide_login_slug_path() {
+    $slug = tk_hide_login_slug();
+    if ($slug === '') {
+        return array();
+    }
+    $paths = array('/' . trim($slug, '/') . '/');
+    $base = wp_parse_url(home_url('/'), PHP_URL_PATH);
+    if (!empty($base) && $base !== '/') {
+        $paths[] = rtrim($base, '/') . '/' . trim($slug, '/') . '/';
+    }
+    return array_values(array_unique($paths));
+}
+
+function tk_hide_login_normalize_path($path) {
+    if ($path === '') {
+        return '';
+    }
+    return rtrim($path, '/') . '/';
+}
+
+function tk_hide_login_is_slug_path($path) {
+    $paths = tk_hide_login_slug_path();
+    if (empty($paths)) {
+        return false;
+    }
+    $normalized = tk_hide_login_normalize_path($path);
+    return in_array($normalized, $paths, true);
+}
+
+function tk_hide_login_custom_url() {
+    $slug = tk_hide_login_slug();
+    if ($slug === '') {
+        return home_url('/wp-login.php');
+    }
+    return home_url('/' . trim($slug, '/') . '/');
+}
+
+function tk_hide_login_swap_url_base($url) {
+    if (!tk_get_option('hide_login_enabled')) {
+        return $url;
+    }
+    $custom = tk_hide_login_custom_url();
+    $target_parts = wp_parse_url($custom);
+    $parts = wp_parse_url($url);
+    if (empty($target_parts) || empty($parts)) {
+        return $url;
+    }
+
+    $new = $target_parts['scheme'] . '://' . $target_parts['host'];
+    if (!empty($target_parts['port'])) {
+        $new .= ':' . $target_parts['port'];
+    }
+    $new .= $target_parts['path'] ?? '/';
+    if (!empty($parts['query'])) {
+        $new .= '?' . $parts['query'];
+    }
+    if (!empty($parts['fragment'])) {
+        $new .= '#' . $parts['fragment'];
+    }
+    return $new;
+}
+
+function tk_hide_login_filter_login_url($login_url, $redirect, $force_reauth) {
+    return tk_hide_login_swap_url_base($login_url);
+}
+
+function tk_hide_login_filter_logout_url($logout_url, $redirect) {
+    return tk_hide_login_swap_url_base($logout_url);
+}
+
+function tk_hide_login_filter_lostpassword_url($lostpassword_url, $redirect) {
+    return tk_hide_login_swap_url_base($lostpassword_url);
+}
+
+function tk_hide_login_filter_register_url($register_url) {
+    return tk_hide_login_swap_url_base($register_url);
 }
 
 function tk_hide_login_rewrite() {
     if (!tk_get_option('hide_login_enabled')) return;
 
-    $slug = tk_sanitize_slug(tk_get_option('hide_login_slug', 'secure-login'));
+    $slug = tk_hide_login_slug();
     add_rewrite_rule("^{$slug}/?$", 'wp-login.php', 'top');
 }
 
@@ -28,9 +114,21 @@ function tk_hide_login_block() {
         return;
     }
     $path = strtok($path, '?');
+    if (tk_hide_login_is_slug_path($path)) {
+        require_once ABSPATH . 'wp-login.php';
+        exit;
+    }
 
     if (strpos($path, 'wp-login.php') !== false) {
-        wp_redirect(home_url());
+        if (empty(tk_hide_login_slug_path())) {
+            return;
+        }
+        $query = isset($_SERVER['QUERY_STRING']) ? (string) $_SERVER['QUERY_STRING'] : '';
+        $target = tk_hide_login_custom_url();
+        if ($query !== '') {
+            $target .= '?' . $query;
+        }
+        wp_redirect($target);
         exit;
     }
 
@@ -58,9 +156,7 @@ function tk_hide_login_block_login() {
     if (tk_hide_login_is_allowed_post()) {
         return;
     }
-    $slug = tk_sanitize_slug(tk_get_option('hide_login_slug', 'secure-login'));
-    $slug_path = '/' . trim($slug, '/') . '/';
-    if ($slug !== '' && rtrim($path, '/') . '/' === $slug_path) {
+    if (tk_hide_login_is_slug_path($path)) {
         return;
     }
     wp_redirect(home_url());
@@ -98,7 +194,7 @@ function tk_hide_login_block_admin() {
 }
 
 function tk_hide_login_flush_rewrite($enable = true) {
-    $slug = tk_sanitize_slug(tk_get_option('hide_login_slug', 'secure-login'));
+    $slug = tk_hide_login_slug();
     if ($enable && $slug !== '') {
         add_rewrite_rule("^{$slug}/?$", 'wp-login.php', 'top');
     }

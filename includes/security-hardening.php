@@ -403,13 +403,31 @@ function tk_hardening_disable_comments(): void {
     add_filter('comments_open', '__return_false', 20, 2);
     add_filter('pings_open', '__return_false', 20, 2);
     add_filter('comments_array', '__return_empty_array', 10, 2);
+    add_action('admin_init', function() {
+        $post_types = get_post_types(array(), 'names');
+        if (!is_array($post_types)) {
+            return;
+        }
+        foreach ($post_types as $type) {
+            if (post_type_supports($type, 'comments')) {
+                remove_post_type_support($type, 'comments');
+            }
+            if (post_type_supports($type, 'trackbacks')) {
+                remove_post_type_support($type, 'trackbacks');
+            }
+        }
+    });
     add_action('admin_menu', function() {
         remove_menu_page('edit-comments.php');
+        remove_submenu_page('options-general.php', 'options-discussion.php');
     });
     add_action('admin_init', function() {
         global $pagenow;
         if ($pagenow === 'edit-comments.php' || $pagenow === 'comment.php') {
             wp_die('Comments are disabled.', 'Comments disabled', array('response' => 403));
+        }
+        if ($pagenow === 'options-discussion.php') {
+            wp_die('Discussion settings are disabled.', 'Comments disabled', array('response' => 403));
         }
     });
     add_action('admin_bar_menu', function($wp_admin_bar) {
@@ -501,29 +519,35 @@ function tk_hardening_config_checks(): array {
         $env_path = file_exists($parent_env) ? $parent_env : '';
     }
     if ($env_path === '') {
-        $checks[] = array(
-            'label' => '.env accessible',
-            'status' => 'ok',
-            'detail' => 'File not present.',
-        );
-    } else {
-        $env_url = home_url('/.env');
-        $result = tk_hardening_fetch_url($env_url);
-        if (!$result['ok']) {
             $checks[] = array(
                 'label' => '.env accessible',
-                'status' => 'unknown',
-                'detail' => 'Request failed.',
+                'status' => 'ok',
+                'detail' => 'File not present.',
+                'action_label' => 'Server rules',
+                'action_url' => tk_admin_url('tool-kits-monitoring') . '#server',
             );
         } else {
-            $public = $result['code'] === 200 && trim($result['body']) !== '';
-            $checks[] = array(
-                'label' => '.env accessible',
-                'status' => $public ? 'warn' : 'ok',
-                'detail' => $public ? 'Publicly accessible.' : 'Not publicly accessible.',
-            );
+            $env_url = home_url('/.env');
+            $result = tk_hardening_fetch_url($env_url);
+            if (!$result['ok']) {
+                $checks[] = array(
+                    'label' => '.env accessible',
+                    'status' => 'unknown',
+                    'detail' => 'Request failed.',
+                    'action_label' => 'Server rules',
+                    'action_url' => tk_admin_url('tool-kits-monitoring') . '#server',
+                );
+            } else {
+                $public = $result['code'] === 200 && trim($result['body']) !== '';
+                $checks[] = array(
+                    'label' => '.env accessible',
+                    'status' => $public ? 'warn' : 'ok',
+                    'detail' => $public ? 'Publicly accessible.' : 'Not publicly accessible.',
+                    'action_label' => 'Server rules',
+                    'action_url' => tk_admin_url('tool-kits-monitoring') . '#server',
+                );
+            }
         }
-    }
 
     $debug_log_path = WP_CONTENT_DIR . '/debug.log';
     if (!file_exists($debug_log_path)) {
@@ -531,6 +555,8 @@ function tk_hardening_config_checks(): array {
             'label' => 'debug.log public',
             'status' => 'ok',
             'detail' => 'File not present.',
+            'action_label' => 'Server rules',
+            'action_url' => tk_admin_url('tool-kits-monitoring') . '#server',
         );
     } else {
         $debug_url = content_url('debug.log');
@@ -540,6 +566,8 @@ function tk_hardening_config_checks(): array {
                 'label' => 'debug.log public',
                 'status' => 'unknown',
                 'detail' => 'Request failed.',
+                'action_label' => 'Server rules',
+                'action_url' => tk_admin_url('tool-kits-monitoring') . '#server',
             );
         } else {
             $public = $result['code'] === 200 && trim($result['body']) !== '';
@@ -547,6 +575,8 @@ function tk_hardening_config_checks(): array {
                 'label' => 'debug.log public',
                 'status' => $public ? 'warn' : 'ok',
                 'detail' => $public ? 'Publicly accessible.' : 'Not publicly accessible.',
+                'action_label' => 'Server rules',
+                'action_url' => tk_admin_url('tool-kits-monitoring') . '#server',
             );
         }
     }
@@ -557,6 +587,8 @@ function tk_hardening_config_checks(): array {
             'label' => 'directory listing ON',
             'status' => 'unknown',
             'detail' => 'Uploads URL not available.',
+            'action_label' => 'Server rules',
+            'action_url' => tk_admin_url('tool-kits-monitoring') . '#server',
         );
     } else {
         $dir_url = trailingslashit($upload['baseurl']);
@@ -566,6 +598,8 @@ function tk_hardening_config_checks(): array {
                 'label' => 'directory listing ON',
                 'status' => 'unknown',
                 'detail' => 'Request failed.',
+                'action_label' => 'Server rules',
+                'action_url' => tk_admin_url('tool-kits-monitoring') . '#server',
             );
         } else {
             $body = strtolower($result['body']);
@@ -574,6 +608,8 @@ function tk_hardening_config_checks(): array {
                 'label' => 'directory listing ON',
                 'status' => $listing ? 'warn' : 'ok',
                 'detail' => $listing ? 'Directory listing detected.' : 'No directory listing detected.',
+                'action_label' => 'Server rules',
+                'action_url' => tk_admin_url('tool-kits-monitoring') . '#server',
             );
         }
     }
@@ -583,6 +619,8 @@ function tk_hardening_config_checks(): array {
         'label' => 'REST user listing ON',
         'status' => $rest_disabled ? 'ok' : 'warn',
         'detail' => $rest_disabled ? 'Disabled by hardening setting.' : 'REST user listing is enabled.',
+        'action_label' => 'Hardening settings',
+        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
     );
 
     $wp_config_path = tk_hardening_wp_config_path();
@@ -592,6 +630,8 @@ function tk_hardening_config_checks(): array {
             'label' => 'wp-config.php read-only',
             'status' => $writable ? 'warn' : 'ok',
             'detail' => $writable ? 'Writable. Consider setting read-only permissions (e.g., 0440/0444).' : 'Read-only.',
+            'action_label' => 'Quick action',
+            'action_url' => tk_admin_url('tool-kits-monitoring') . '#actions',
         );
     }
 
@@ -602,6 +642,8 @@ function tk_hardening_config_checks(): array {
         'label' => 'Core auto-updates',
         'status' => $auto_core ? 'ok' : 'warn',
         'detail' => $auto_core ? 'Enabled.' : 'Not enabled. Consider enabling for security patches.',
+        'action_label' => 'Quick action',
+        'action_url' => tk_admin_url('tool-kits-monitoring') . '#actions',
     );
 
     $disallow_file_mods = defined('DISALLOW_FILE_MODS') ? (bool) DISALLOW_FILE_MODS : false;
@@ -616,12 +658,16 @@ function tk_hardening_config_checks(): array {
             'label' => 'HSTS enabled',
             'status' => 'warn',
             'detail' => 'HSTS is not enabled. Consider enabling HSTS at the server level.',
+            'action_label' => 'Hardening settings',
+            'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
         );
     } else {
         $checks[] = array(
             'label' => 'HSTS enabled',
             'status' => is_ssl() ? 'ok' : 'ok',
             'detail' => is_ssl() ? 'HTTPS detected.' : 'Not applicable (HTTP).',
+            'action_label' => 'Hardening settings',
+            'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
         );
     }
 
@@ -632,6 +678,8 @@ function tk_hardening_config_checks(): array {
             'label' => 'Uploads PHP execution',
             'status' => 'unknown',
             'detail' => 'Uploads directory not found.',
+            'action_label' => 'Hardening settings',
+            'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
         );
     } elseif (in_array($server, array('apache', 'litespeed', 'openlitespeed'), true)) {
         $htaccess = trailingslashit($uploads_path) . '.htaccess';
@@ -647,6 +695,8 @@ function tk_hardening_config_checks(): array {
             'label' => 'Uploads PHP execution',
             'status' => $ok ? 'ok' : 'warn',
             'detail' => $ok ? 'Upload PHP blocking rule detected.' : 'No uploads PHP blocking rule detected.',
+            'action_label' => 'Hardening settings',
+            'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
         );
     } elseif ($server === 'iis') {
         $web_config = trailingslashit($uploads_path) . 'web.config';
@@ -662,12 +712,16 @@ function tk_hardening_config_checks(): array {
             'label' => 'Uploads PHP execution',
             'status' => $ok ? 'ok' : 'warn',
             'detail' => $ok ? 'Upload PHP blocking rule detected.' : 'No uploads PHP blocking rule detected.',
+            'action_label' => 'Hardening settings',
+            'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
         );
     } else {
         $checks[] = array(
             'label' => 'Uploads PHP execution',
             'status' => 'unknown',
             'detail' => 'Check server config to block PHP in uploads.',
+            'action_label' => 'Hardening settings',
+            'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
         );
     }
 

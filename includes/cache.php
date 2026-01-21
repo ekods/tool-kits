@@ -228,6 +228,7 @@ function tk_fragment_cache_flush() {
 
 function tk_cache_render_status_rows() {
     $object = function_exists('wp_using_ext_object_cache') && wp_using_ext_object_cache();
+    $redis = function_exists('wp_cache_get') && defined('WP_REDIS_VERSION');
     $opcache = function_exists('opcache_get_status') && ini_get('opcache.enable');
     ?>
     <table class="widefat striped tk-table">
@@ -242,6 +243,11 @@ function tk_cache_render_status_rows() {
                 <td>Object cache</td>
                 <td><?php echo $object ? '<span class="tk-badge tk-on">PERSISTENT</span>' : '<span class="tk-badge">DEFAULT</span>'; ?></td>
                 <td><?php echo $object ? 'External object cache enabled.' : 'Using default non-persistent cache.'; ?></td>
+            </tr>
+            <tr>
+                <td>Redis</td>
+                <td><?php echo $redis ? '<span class="tk-badge tk-on">ENABLED</span>' : '<span class="tk-badge">OFF</span>'; ?></td>
+                <td><?php echo $redis ? 'Redis object cache detected.' : 'Redis not detected.'; ?></td>
             </tr>
             <tr>
                 <td>Opcode cache</td>

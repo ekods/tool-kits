@@ -135,6 +135,16 @@ function tk_minify_buffer_callback($html) {
         );
     }
 
+    $html = preg_replace_callback(
+        '#<(script|style)\b[^>]*>.*?</\1>#is',
+        function($m) use (&$placeholders) {
+            $key = '%%TKMINIFY' . count($placeholders) . '%%';
+            $placeholders[$key] = $m[0];
+            return $key;
+        },
+        $html
+    );
+
     $html = preg_replace_callback('/<!--(.*?)-->/s', function($m) {
         $content = $m[1];
         if (stripos($content, '[if') !== false || stripos($content, '<![endif') !== false) {
@@ -143,6 +153,9 @@ function tk_minify_buffer_callback($html) {
         return '';
     }, $html);
 
+    // Strip indentation/newlines to keep HTML output left aligned.
+    $html = preg_replace('/[\r\n\t]+/', '', $html);
+    $html = preg_replace('/\s{2,}/', ' ', $html);
     $html = preg_replace('/>\s+</', '><', $html);
     $html = trim($html);
 
@@ -172,7 +185,109 @@ function tk_minify_inline_js($js) {
         return $js;
     }
     $js = preg_replace('!/\*.*?\*/!s', '', $js);
-    $js = preg_replace('/\s+/', ' ', $js);
+    $lines = preg_split('/\r\n|\r|\n/', $js);
+    if (!is_array($lines)) {
+        $lines = array($js);
+    }
+    foreach ($lines as &$line) {
+        $out = '';
+        $len = strlen($line);
+        $in_single = false;
+        $in_double = false;
+        $in_backtick = false;
+        $in_regex = false;
+        $in_char_class = false;
+        $escape = false;
+        $last_non_space = '';
+        for ($i = 0; $i < $len; $i++) {
+            $ch = $line[$i];
+            $next = ($i + 1 < $len) ? $line[$i + 1] : '';
+            if ($escape) {
+                $out .= $ch;
+                $escape = false;
+                continue;
+            }
+            if ($in_regex) {
+                if ($ch === '\\') {
+                    $out .= $ch;
+                    $escape = true;
+                    continue;
+                }
+                if ($ch === '[') {
+                    $in_char_class = true;
+                    $out .= $ch;
+                    continue;
+                }
+                if ($ch === ']' && $in_char_class) {
+                    $in_char_class = false;
+                    $out .= $ch;
+                    continue;
+                }
+                if ($ch === '/' && !$in_char_class) {
+                    $in_regex = false;
+                    $out .= $ch;
+                    $last_non_space = '/';
+                    continue;
+                }
+                $out .= $ch;
+                continue;
+            }
+            if ($in_single || $in_double || $in_backtick) {
+                if ($ch === '\\') {
+                    $out .= $ch;
+                    $escape = true;
+                    continue;
+                }
+                if ($in_single && $ch === "'") {
+                    $in_single = false;
+                } elseif ($in_double && $ch === '"') {
+                    $in_double = false;
+                } elseif ($in_backtick && $ch === '`') {
+                    $in_backtick = false;
+                }
+                $out .= $ch;
+                continue;
+            }
+            if ($ch === "'" && !$in_double && !$in_backtick) {
+                $in_single = true;
+                $out .= $ch;
+                $last_non_space = "'";
+                continue;
+            }
+            if ($ch === '"' && !$in_single && !$in_backtick) {
+                $in_double = true;
+                $out .= $ch;
+                $last_non_space = '"';
+                continue;
+            }
+            if ($ch === '`' && !$in_single && !$in_double) {
+                $in_backtick = true;
+                $out .= $ch;
+                $last_non_space = '`';
+                continue;
+            }
+            if ($ch === '/' && $next === '/') {
+                break;
+            }
+            if ($ch === '/' && $next !== '/' && $next !== '*') {
+                $regex_start_tokens = array('(', '[', '{', '=', ':', ',', '!', '?', ';', '+', '-', '*', '%', '&', '|', '^', '~');
+                if ($last_non_space === '' || in_array($last_non_space, $regex_start_tokens, true)) {
+                    $in_regex = true;
+                }
+                $out .= $ch;
+                $last_non_space = '/';
+                continue;
+            }
+            $out .= $ch;
+            if ($ch !== ' ' && $ch !== "\t") {
+                $last_non_space = $ch;
+            }
+        }
+        $line = trim($out);
+    }
+    unset($line);
+    $js = implode("\n", $lines);
+    $js = preg_replace('/[ \t]+/', ' ', $js);
     return trim($js);
 }
 

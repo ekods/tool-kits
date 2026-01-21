@@ -10,6 +10,7 @@
 .tk-badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#f0f0f1;font-size:12px}
 .tk-badge.tk-on{background:#e6f4ea;color:#0b6b2f}
 .tk-badge.tk-warn{background:#fff4e5;color:#9a4b00}
+.tk-badge.tk-adv{background:#fde2e2;color:#9b1c1c}
 .tk-table td,.tk-table th{vertical-align:top}
 .tk-list{margin:0;padding-left:18px}
 .tk-form-inline{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -26,7 +27,7 @@
 .tk-pairs-actions{margin-top:8px}
 .tk-tabs{margin-top:24px}
 .tk-tabs-nav{display:flex;border-bottom:1px solid #dfe3e8;margin-bottom:0}
-.tk-tabs-nav-button{background:#f7f8fb;border:1px solid #dfe3e8;border-bottom:0;color:#6b7280;font-weight:600;padding:8px 22px 10px;margin-right:2px;border-radius:3px 3px 0 0;cursor:pointer;position:relative;top:1px;transition:border-color .2s,color .2s}
+.tk-tabs-nav-button{background:transparent;border:0;color:#6b7280;font-weight:600;padding:8px 22px 10px;margin-right:2px;border-radius:3px 3px 0 0;cursor:pointer;position:relative;top:1px;transition:border-color .2s,color .2s}
 .tk-tabs-nav-button.is-active{background:#fff;border-color:#dfe3e8;border-bottom:1px solid #fff;color:#1d4ed8}
 .tk-tabs-content{border:1px solid #dfe3e8;padding:24px;background:#fff}
 .tk-tab-panel{display:none}
@@ -39,4 +40,3 @@
 .tk-empty{font-style:italic;color:#9ca3af}
 .tk-progress{height:10px;background:#eef0f2;border-radius:999px;overflow:hidden;margin:12px 0 4px}
 .tk-progress-bar{height:100%;background:linear-gradient(90deg,#1d4ed8,#60a5fa);transition:width .2s ease}
-

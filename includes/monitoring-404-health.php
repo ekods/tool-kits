@@ -68,14 +68,14 @@ function tk_404_monitoring_save() {
     tk_check_nonce('tk_404_monitoring_save');
     tk_update_option('monitoring_404_enabled', !empty($_POST['monitoring_404_enabled']) ? 1 : 0);
     tk_update_option('monitoring_404_exclude_paths', (string) tk_post('monitoring_404_exclude_paths', "/wp-admin\n/wp-login.php\n/wp-cron.php\n"));
-    wp_redirect(admin_url('admin.php?page=tool-kits-monitoring#missing&tk_404_updated=1'));
+    wp_redirect(admin_url('admin.php?page=tool-kits-monitoring&tk_404_updated=1#missing'));
     exit;
 }
 
 function tk_404_monitoring_clear() {
     tk_check_nonce('tk_404_monitoring_clear');
     tk_update_option('monitoring_404_log', array());
-    wp_redirect(admin_url('admin.php?page=tool-kits-monitoring#missing&tk_404_cleared=1'));
+    wp_redirect(admin_url('admin.php?page=tool-kits-monitoring&tk_404_cleared=1#missing'));
     exit;
 }
 
@@ -84,7 +84,7 @@ function tk_healthcheck_save() {
     tk_update_option('monitoring_healthcheck_enabled', !empty($_POST['monitoring_healthcheck_enabled']) ? 1 : 0);
     $health_key = isset($_POST['monitoring_healthcheck_key']) ? sanitize_text_field(wp_unslash($_POST['monitoring_healthcheck_key'])) : '';
     tk_update_option('monitoring_healthcheck_key', $health_key);
-    wp_redirect(admin_url('admin.php?page=tool-kits-monitoring#health&tk_health_updated=1'));
+    wp_redirect(admin_url('admin.php?page=tool-kits-monitoring&tk_health_updated=1#health'));
     exit;
 }
 
@@ -168,7 +168,10 @@ function tk_realtime_health_data(): array {
     $memory_limit = tk_parse_size(ini_get('memory_limit'));
     $memory_pct = $memory_limit > 0 ? round(($memory_used / $memory_limit) * 100, 1) : null;
     $errors = tk_error_rate_recent(300);
-    $heavy = tk_heaviest_active_plugin();
+    $heavy_list = tk_heaviest_active_plugins(4);
+    $heavy = !empty($heavy_list) ? $heavy_list[0] : array('name' => '-', 'size' => 0);
+    $object_cache = function_exists('wp_using_ext_object_cache') && wp_using_ext_object_cache();
+    $redis = function_exists('wp_cache_get') && defined('WP_REDIS_VERSION');
 
     return array(
         'time' => time(),
@@ -180,6 +183,11 @@ function tk_realtime_health_data(): array {
         ),
         'errors' => $errors,
         'heavy_plugin' => $heavy,
+        'heavy_plugins' => $heavy_list,
+        'cache' => array(
+            'object' => $object_cache,
+            'redis' => $redis,
+        ),
     );
 }
 
@@ -216,8 +224,9 @@ function tk_error_rate_recent(int $seconds): array {
     return array('available' => true, 'count' => $count, 'per_min' => $per_min, 'window_sec' => $seconds);
 }
 
-function tk_heaviest_active_plugin(): array {
-    $cache = get_transient('tk_heaviest_plugin');
+function tk_heaviest_active_plugins(int $limit = 4): array {
+    $limit = max(1, $limit);
+    $cache = get_transient('tk_heaviest_plugins_' . $limit);
     if (is_array($cache)) {
         return $cache;
     }
@@ -226,7 +235,7 @@ function tk_heaviest_active_plugin(): array {
     }
     $active = (array) get_option('active_plugins', array());
     if (empty($active)) {
-        return array('name' => '-', 'size' => 0);
+        return array();
     }
     $sizes = array();
     foreach ($active as $plugin_file) {
@@ -236,13 +245,22 @@ function tk_heaviest_active_plugin(): array {
         $sizes[$plugin_file] = $size;
     }
     arsort($sizes);
-    $top_file = key($sizes);
-    $top_size = reset($sizes);
     $info = get_plugins();
-    $name = isset($info[$top_file]['Name']) ? $info[$top_file]['Name'] : $top_file;
-    $data = array('name' => $name, 'size' => (int) $top_size);
-    set_transient('tk_heaviest_plugin', $data, 10 * MINUTE_IN_SECONDS);
-    return $data;
+    $list = array();
+    foreach (array_slice($sizes, 0, $limit, true) as $plugin_file => $size) {
+        $name = isset($info[$plugin_file]['Name']) ? $info[$plugin_file]['Name'] : $plugin_file;
+        $list[] = array('name' => $name, 'size' => (int) $size);
+    }
+    set_transient('tk_heaviest_plugins_' . $limit, $list, 10 * MINUTE_IN_SECONDS);
+    return $list;
+}
+
+function tk_heaviest_active_plugin(): array {
+    $list = tk_heaviest_active_plugins(1);
+    if (!empty($list)) {
+        return $list[0];
+    }
+    return array('name' => '-', 'size' => 0);
 }
 
 function tk_dir_size($path): int {

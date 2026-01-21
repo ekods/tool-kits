@@ -3,7 +3,7 @@ if (!defined('ABSPATH')) { exit; }
 
 function tk_render_optimization_page($forced_tab = '') {
     if (!tk_is_admin_user()) return;
-    $allowed_tabs = array('hide-login', 'minify', 'webp', 'lazy-load');
+    $allowed_tabs = array('hide-login', 'minify', 'webp', 'lazy-load', 'assets', 'uploads', 'user-id');
     $requested = isset($_GET['tk_tab']) ? sanitize_key($_GET['tk_tab']) : '';
     $active_tab = in_array($requested, $allowed_tabs, true) ? $requested : 'hide-login';
     if ($forced_tab !== '' && in_array($forced_tab, $allowed_tabs, true)) {
@@ -30,6 +30,9 @@ function tk_render_optimization_page($forced_tab = '') {
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'minify' ? ' is-active' : ''; ?>" data-panel="minify">Minify</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'webp' ? ' is-active' : ''; ?>" data-panel="webp">Auto WebP</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'lazy-load' ? ' is-active' : ''; ?>" data-panel="lazy-load">Lazy Load</button>
+                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'assets' ? ' is-active' : ''; ?>" data-panel="assets">Assets</button>
+                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'uploads' ? ' is-active' : ''; ?>" data-panel="uploads">Uploads</button>
+                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'user-id' ? ' is-active' : ''; ?>" data-panel="user-id">User ID</button>
             </div>
             <div class="tk-tabs-content">
                 <div class="tk-tab-panel<?php echo $active_tab === 'hide-login' ? ' is-active' : ''; ?>" data-panel-id="hide-login">
@@ -43,6 +46,15 @@ function tk_render_optimization_page($forced_tab = '') {
                 </div>
                 <div class="tk-tab-panel<?php echo $active_tab === 'lazy-load' ? ' is-active' : ''; ?>" data-panel-id="lazy-load">
                     <?php tk_render_lazy_load_panel(); ?>
+                </div>
+                <div class="tk-tab-panel<?php echo $active_tab === 'assets' ? ' is-active' : ''; ?>" data-panel-id="assets">
+                    <?php tk_render_assets_panel(); ?>
+                </div>
+                <div class="tk-tab-panel<?php echo $active_tab === 'uploads' ? ' is-active' : ''; ?>" data-panel-id="uploads">
+                    <?php tk_render_upload_limits_panel(); ?>
+                </div>
+                <div class="tk-tab-panel<?php echo $active_tab === 'user-id' ? ' is-active' : ''; ?>" data-panel-id="user-id">
+                    <?php tk_render_user_id_change_panel(); ?>
                 </div>
             </div>
         </div>
