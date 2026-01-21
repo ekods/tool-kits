@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 1.0.1
+Stable tag: 1.0.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -56,6 +56,9 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 1.0.2 =
+- Force the Tool Kits Access screen to open on the License tab so collectors and license credentials get configured before other controls.
+- Refresh the plugin version metadata so WordPress recognizes the GitHub release.
 = 1.0.1 =
 - Tambahkan pemeriksaan update otomatis dari GitHub.
 = 1.0.0 =
