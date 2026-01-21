@@ -867,10 +867,7 @@ function tk_render_toolkits_access_page() {
         <?php endif; ?>
         <div class="tk-tabs">
             <div class="tk-tabs-nav">
-                <?php if (!$license_invalid) : ?>
-                    <button type="button" class="tk-tabs-nav-button is-active" data-panel="access">Access</button>
-                <?php endif; ?>
-                <button type="button" class="tk-tabs-nav-button <?php echo $license_missing ? 'is-active' : ''; ?>" data-panel="license">License</button>
+                <button type="button" class="tk-tabs-nav-button is-active" data-panel="license">License</button>
                 <?php if ($show_full_tabs) : ?>
                     <button type="button" class="tk-tabs-nav-button" data-panel="owner">Owner</button>
                     <button type="button" class="tk-tabs-nav-button" data-panel="alerts">Alerts</button>
@@ -878,37 +875,7 @@ function tk_render_toolkits_access_page() {
                 <?php endif; ?>
             </div>
             <div class="tk-tabs-content">
-                <?php if (!$license_invalid) : ?>
-                <div class="tk-card tk-tab-panel is-active" data-panel-id="access">
-                    <p>Control who can access Tool Kits and lock settings on production.</p>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-                        <?php tk_nonce_field('tk_toolkits_access_save'); ?>
-                        <input type="hidden" name="action" value="tk_toolkits_access_save">
-                        <input type="hidden" name="tk_tab" value="access">
-                        <p><label><input type="checkbox" name="hide_menu" value="1" <?php checked(1, $hidden); ?>> Hide Tool Kits menu</label></p>
-                        <?php if ($cff_installed) : ?>
-                            <p><label><input type="checkbox" name="hide_cff_menu" value="1" <?php checked(1, $hide_cff); ?>> Hide CFF menu</label></p>
-                        <?php endif; ?>
-                        <p><label><input type="checkbox" name="toolkits_lock_enabled" value="1" <?php checked(1, $lock); ?>> Lock Tool Kits settings</label></p>
-                        <p><label><input type="checkbox" name="toolkits_mask_sensitive_fields" value="1" <?php checked(1, $mask); ?>> Mask sensitive fields in UI</label></p>
-                        <p>
-                            <strong>Allowed roles</strong><br>
-                            <?php foreach (get_editable_roles() as $role_key => $role) : ?>
-                                <label style="display:inline-block;margin-right:12px;">
-                                    <input type="checkbox" name="toolkits_allowed_roles[]" value="<?php echo esc_attr($role_key); ?>" <?php checked(in_array($role_key, $roles, true)); ?>>
-                                    <?php echo esc_html($role['name']); ?>
-                                </label>
-                            <?php endforeach; ?>
-                        </p>
-                        <p>
-                            <label>IP allowlist (one per line)</label><br>
-                            <textarea name="toolkits_ip_allowlist" rows="3" class="large-text" placeholder="203.0.113.10"><?php echo esc_textarea($allowlist); ?></textarea>
-                        </p>
-                        <p><button class="button button-primary">Save</button></p>
-                    </form>
-                </div>
-                <?php endif; ?>
-                <div class="tk-card tk-tab-panel <?php echo $license_invalid ? 'is-active' : ''; ?>" data-panel-id="license">
+                <div class="tk-card tk-tab-panel is-active" data-panel-id="license">
                     <p>Set license server URL and key to unlock all Tool Kits features.</p>
                     <?php
                     $expires_label = 'Unlimited';
@@ -1125,9 +1092,9 @@ function tk_render_toolkits_access_page() {
 function tk_toolkits_access_save() {
     if (!tk_toolkits_can_manage()) wp_die('Forbidden');
     tk_check_nonce('tk_toolkits_access_save');
-    $tab = isset($_POST['tk_tab']) ? sanitize_key($_POST['tk_tab']) : 'access';
+    $tab = isset($_POST['tk_tab']) ? sanitize_key($_POST['tk_tab']) : 'license';
     if (!in_array($tab, array('access', 'owner', 'alerts', 'audit', 'license'), true)) {
-        $tab = 'access';
+        $tab = 'license';
     }
     $posted_license_key = isset($_POST['license_key']) ? trim(wp_unslash($_POST['license_key'])) : null;
     if ($posted_license_key !== null) {
