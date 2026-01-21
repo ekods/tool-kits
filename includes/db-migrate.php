@@ -6,6 +6,7 @@ function tk_db_migrate_init() {
     add_action('admin_post_tk_db_run_replace', 'tk_db_run_find_replace_handler');
     add_action('admin_post_tk_db_download_temp_export', 'tk_db_download_temp_export_handler');
     add_action('admin_post_tk_db_change_prefix', 'tk_db_change_prefix_handler');
+    add_action('admin_post_tk_db_import', 'tk_db_import_handler');
 }
 
 function tk_db_export_file_prefix(): string {
@@ -305,6 +306,8 @@ function tk_render_db_tools_page() {
     $export_name = isset($_GET['tk_export_name']) ? sanitize_file_name($_GET['tk_export_name']) : '';
     $tk_msg = isset($_GET['tk_msg']) ? sanitize_text_field((string) $_GET['tk_msg']) : '';
     $prefix_msg = isset($_GET['tk_prefix_msg']) ? sanitize_text_field((string) $_GET['tk_prefix_msg']) : '';
+    $import_msg = isset($_GET['tk_import_msg']) ? sanitize_text_field((string) $_GET['tk_import_msg']) : '';
+    $import_status = isset($_GET['tk_import_status']) ? sanitize_key((string) $_GET['tk_import_status']) : '';
     $backup_token = isset($_GET['tk_backup_token']) ? sanitize_text_field((string) $_GET['tk_backup_token']) : '';
     $backup_name = isset($_GET['tk_backup_name']) ? sanitize_file_name((string) $_GET['tk_backup_name']) : '';
     $suggested_prefix = tk_db_random_prefix();
@@ -313,7 +316,7 @@ function tk_render_db_tools_page() {
         $pairs_for_render = tk_db_default_pairs();
     }
 
-    $allowed_tabs = array('export-db', 'preload-export', 'change-prefix', 'db-cleanup');
+    $allowed_tabs = array('export-db', 'preload-export', 'import-db', 'change-prefix', 'db-cleanup');
     $requested_tab = isset($_GET['tk_tab']) ? sanitize_key($_GET['tk_tab']) : '';
     $active_tab = in_array($requested_tab, $allowed_tabs, true) ? $requested_tab : 'export-db';
     ?>
@@ -323,6 +326,7 @@ function tk_render_db_tools_page() {
             <div class="tk-tabs-nav">
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'export-db' ? ' is-active' : ''; ?>" data-panel="export-db">Export Database</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'preload-export' ? ' is-active' : ''; ?>" data-panel="preload-export">Export Download</button>
+                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'import-db' ? ' is-active' : ''; ?>" data-panel="import-db">Import Database</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'change-prefix' ? ' is-active' : ''; ?>" data-panel="change-prefix">Change Prefix</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'db-cleanup' ? ' is-active' : ''; ?>" data-panel="db-cleanup">DB Cleanup</button>
             </div>
@@ -359,8 +363,25 @@ function tk_render_db_tools_page() {
                         <p><button class="button button-primary" onclick="return confirm('Run the find/replace pairs and prepare a temporary export now? Ensure the database is backed up or already exported.')">Export</button></p>
                     </form>
                 </div>
+                <div class="tk-card tk-tab-panel<?php echo $active_tab === 'import-db' ? ' is-active' : ''; ?>" data-panel-id="import-db">
+                    <h2>3) Import Database (SQL)</h2>
+                    <p>Upload a <code>.sql</code> or <code>.sql.gz</code> file to import into the current database. Use only on trusted files.</p>
+                    <?php if ($import_msg !== '') : ?>
+                        <?php tk_notice($import_msg, $import_status === 'ok' ? 'success' : 'error'); ?>
+                    <?php endif; ?>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data">
+                        <?php tk_nonce_field('tk_db_import'); ?>
+                        <input type="hidden" name="action" value="tk_db_import">
+                        <input type="hidden" name="tk_tab" value="import-db">
+                        <p>
+                            <input type="file" name="sql_file" accept=".sql,.gz" required>
+                        </p>
+                        <p><button class="button button-primary" onclick="return confirm('Importing will overwrite data in the database. Continue?')">Import SQL</button></p>
+                    </form>
+                    <p class="description">Tip: For large files, use WP-CLI or phpMyAdmin if this times out.</p>
+                </div>
                 <div class="tk-card tk-tab-panel<?php echo $active_tab === 'change-prefix' ? ' is-active' : ''; ?>" data-panel-id="change-prefix">
-                    <h2>3) Change DB Prefix (Rename Tables)</h2>
+                    <h2>4) Change DB Prefix (Rename Tables)</h2>
                     <p>Rename tables from <code><?php global $wpdb; echo esc_html($wpdb->prefix); ?></code> to a new prefix.
                     This updates <code>options</code> and <code>usermeta</code> keys, but please edit <code>$table_prefix</code> in <code>wp-config.php</code> manually afterward.</p>
                     <?php if ($prefix_msg) : ?>
@@ -560,6 +581,151 @@ function tk_db_export_handler() {
     header('Content-Length: ' . strlen($sql));
     echo $sql;
     exit;
+}
+
+function tk_db_import_handler() {
+    if (!tk_is_admin_user()) wp_die('Forbidden');
+    tk_check_nonce('tk_db_import');
+
+    if (empty($_FILES['sql_file']) || !is_array($_FILES['sql_file'])) {
+        wp_redirect(add_query_arg(array(
+            'page' => 'tool-kits-db',
+            'tk_tab' => 'import-db',
+            'tk_import_status' => 'fail',
+            'tk_import_msg' => 'No file uploaded.',
+        ), admin_url('admin.php')));
+        exit;
+    }
+
+    $file = $_FILES['sql_file'];
+    if (!empty($file['error'])) {
+        wp_redirect(add_query_arg(array(
+            'page' => 'tool-kits-db',
+            'tk_tab' => 'import-db',
+            'tk_import_status' => 'fail',
+            'tk_import_msg' => 'Upload failed.',
+        ), admin_url('admin.php')));
+        exit;
+    }
+
+    $mimes = array(
+        'sql' => 'application/sql',
+        'gz' => 'application/gzip',
+    );
+    $uploaded = wp_handle_upload($file, array(
+        'test_form' => false,
+        'mimes' => $mimes,
+    ));
+    if (isset($uploaded['error'])) {
+        wp_redirect(add_query_arg(array(
+            'page' => 'tool-kits-db',
+            'tk_tab' => 'import-db',
+            'tk_import_status' => 'fail',
+            'tk_import_msg' => $uploaded['error'],
+        ), admin_url('admin.php')));
+        exit;
+    }
+
+    $path = isset($uploaded['file']) ? (string) $uploaded['file'] : '';
+    $result = tk_db_import_sql_file($path);
+    if ($path !== '' && file_exists($path)) {
+        @unlink($path);
+    }
+    $msg = $result['message'] ?? 'Import complete.';
+    $status = !empty($result['ok']) ? 'ok' : 'fail';
+    wp_redirect(add_query_arg(array(
+        'page' => 'tool-kits-db',
+        'tk_tab' => 'import-db',
+        'tk_import_status' => $status,
+        'tk_import_msg' => $msg,
+    ), admin_url('admin.php')));
+    exit;
+}
+
+function tk_db_import_sql_file(string $path): array {
+    global $wpdb;
+    if ($path === '' || !is_readable($path)) {
+        return array('ok' => false, 'message' => 'Import file not readable.');
+    }
+    @set_time_limit(0);
+    $is_gz = substr($path, -3) === '.gz';
+    $handle = $is_gz ? @gzopen($path, 'rb') : @fopen($path, 'rb');
+    if (!$handle) {
+        return array('ok' => false, 'message' => 'Failed to open import file.');
+    }
+
+    $in_block_comment = false;
+    $buffer = '';
+    $queries = 0;
+    $errors = 0;
+    $last_error = '';
+
+    while (!($is_gz ? gzeof($handle) : feof($handle))) {
+        $line = $is_gz ? gzgets($handle) : fgets($handle);
+        if ($line === false) {
+            break;
+        }
+        $line = trim($line);
+        if ($line === '') {
+            continue;
+        }
+        if ($in_block_comment) {
+            $end = strpos($line, '*/');
+            if ($end === false) {
+                continue;
+            }
+            $line = substr($line, $end + 2);
+            $in_block_comment = false;
+            if (trim($line) === '') {
+                continue;
+            }
+        }
+        if (strpos($line, '/*') === 0) {
+            if (strpos($line, '*/') === false) {
+                $in_block_comment = true;
+                continue;
+            }
+            $line = preg_replace('/\/\*.*?\*\//', '', $line);
+            if (trim($line) === '') {
+                continue;
+            }
+        }
+        if (strpos($line, '--') === 0 || strpos($line, '#') === 0) {
+            continue;
+        }
+        $buffer .= $line . "\n";
+        if (substr(rtrim($line), -1) === ';') {
+            $res = $wpdb->query($buffer);
+            if ($res === false) {
+                $errors++;
+                $last_error = $wpdb->last_error;
+            } else {
+                $queries++;
+            }
+            $buffer = '';
+        }
+    }
+    if ($buffer !== '') {
+        $res = $wpdb->query($buffer);
+        if ($res === false) {
+            $errors++;
+            $last_error = $wpdb->last_error;
+        } else {
+            $queries++;
+        }
+    }
+
+    if ($is_gz) {
+        gzclose($handle);
+    } else {
+        fclose($handle);
+    }
+
+    if ($errors > 0) {
+        $message = 'Import completed with errors. Queries: ' . $queries . '. Last error: ' . $last_error;
+        return array('ok' => false, 'message' => $message);
+    }
+    return array('ok' => true, 'message' => 'Import completed. Queries: ' . $queries);
 }
 
 function tk_db_download_temp_export_handler() {

@@ -591,6 +591,16 @@ function tk_option_init_defaults() {
         'toolkits_alert_admin_login_new_ip' => 1,
         'toolkits_owner_only_enabled' => 0,
         'toolkits_owner_user_id' => 1,
+        'toolkits_install_id' => '',
+        'license_server_url' => '',
+        'license_key' => '',
+        'license_status' => 'inactive',
+        'license_message' => '',
+        'license_last_checked' => 0,
+        'license_env' => '',
+        'license_type' => '',
+        'license_site_url' => '',
+        'license_expires_at' => '',
     );
 
     $opts = get_option('tk_options', array());
@@ -732,6 +742,47 @@ function tk_toolkits_ip_allowed(): bool {
     return in_array($ip, $allowlist, true);
 }
 
+function tk_toolkits_capability(): string {
+    return 'toolkits_manage';
+}
+
+function tk_toolkits_user_allowed($user): bool {
+    if (!$user || empty($user->roles)) {
+        return false;
+    }
+    $allowed = tk_toolkits_allowed_roles();
+    foreach ($user->roles as $role) {
+        if (in_array($role, $allowed, true)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function tk_toolkits_grant_manage_cap(array $allcaps, array $caps, array $args, $user): array {
+    if (!in_array(tk_toolkits_capability(), $caps, true)) {
+        return $allcaps;
+    }
+    if (!$user || empty($user->ID)) {
+        return $allcaps;
+    }
+    if (!tk_toolkits_ip_allowed()) {
+        return $allcaps;
+    }
+    if ((int) tk_get_option('toolkits_owner_only_enabled', 0) === 1) {
+        $owner_id = (int) tk_get_option('toolkits_owner_user_id', 1);
+        if ((int) $user->ID === $owner_id) {
+            $allcaps[tk_toolkits_capability()] = true;
+        }
+        return $allcaps;
+    }
+    if (tk_toolkits_user_allowed($user) || (!empty($allcaps['manage_options']) && $allcaps['manage_options'])) {
+        $allcaps[tk_toolkits_capability()] = true;
+    }
+    return $allcaps;
+}
+add_filter('user_has_cap', 'tk_toolkits_grant_manage_cap', 10, 4);
+
 function tk_toolkits_can_manage(): bool {
     if (!is_user_logged_in()) {
         return false;
@@ -748,16 +799,170 @@ function tk_toolkits_can_manage(): bool {
         return true;
     }
     $user = wp_get_current_user();
-    if (!$user || empty($user->roles)) {
+    if (!$user) {
         return false;
     }
-    $allowed = tk_toolkits_allowed_roles();
-    foreach ($user->roles as $role) {
-        if (in_array($role, $allowed, true)) {
-            return true;
-        }
+    if (tk_toolkits_user_allowed($user)) {
+        return true;
     }
     return current_user_can('manage_options');
+}
+
+function tk_toolkits_install_id(): string {
+    $id = (string) tk_get_option('toolkits_install_id', '');
+    if ($id === '') {
+        $id = function_exists('wp_generate_uuid4') ? wp_generate_uuid4() : md5(uniqid((string) mt_rand(), true));
+        tk_update_option('toolkits_install_id', $id);
+    }
+    return $id;
+}
+
+function tk_license_env(): string {
+    $host = parse_url(home_url('/'), PHP_URL_HOST);
+    $host = is_string($host) ? strtolower($host) : '';
+    if ($host === '' || $host === 'localhost' || $host === '127.0.0.1' || $host === '::1') {
+        return 'local';
+    }
+    $locals = array('.local', '.test', '.dev', '.internal');
+    foreach ($locals as $suffix) {
+        if (substr($host, -strlen($suffix)) === $suffix) {
+            return 'local';
+        }
+    }
+    if (preg_match('/(^staging\.|\.staging\.|^stage\.|\.stage\.)/', $host)) {
+        return 'staging';
+    }
+    return 'prod';
+}
+
+function tk_license_server_url(): string {
+    return (string) tk_get_option('license_server_url', '');
+}
+
+function tk_license_validate(bool $force = false): array {
+    $status = (string) tk_get_option('license_status', 'inactive');
+    $message = (string) tk_get_option('license_message', '');
+    $last_checked = (int) tk_get_option('license_last_checked', 0);
+    $ttl = 6 * HOUR_IN_SECONDS;
+    if (!$force && $last_checked > 0 && (time() - $last_checked) < $ttl) {
+        return array('status' => $status, 'message' => $message);
+    }
+    $key = trim((string) tk_get_option('license_key', ''));
+    if ($key === '') {
+        tk_update_option('license_status', 'missing');
+        tk_update_option('license_message', 'License key is required.');
+        tk_update_option('license_last_checked', time());
+        return array('status' => 'missing', 'message' => 'License key is required.');
+    }
+    $url = trim(tk_license_server_url());
+    if ($url === '') {
+        $collector_url = (string) tk_get_option('heartbeat_collector_url', '');
+        if ($collector_url !== '') {
+            if (substr($collector_url, -13) === 'heartbeat.php') {
+                $url = substr($collector_url, 0, -13) . 'license.php';
+            } else {
+                $url = rtrim($collector_url, '/') . '/license.php';
+            }
+            tk_update_option('license_server_url', $url);
+        }
+    }
+    if ($url === '') {
+        tk_update_option('license_status', 'missing_server');
+        tk_update_option('license_message', 'License server URL is required.');
+        tk_update_option('license_last_checked', time());
+        return array('status' => 'missing_server', 'message' => 'License server URL is required.');
+    }
+    $secret = (string) tk_get_option('heartbeat_auth_key', '');
+    if ($secret === '') {
+        tk_update_option('license_status', 'missing_secret');
+        tk_update_option('license_message', 'Collector token is required.');
+        tk_update_option('license_last_checked', time());
+        return array('status' => 'missing_secret', 'message' => 'Collector token is required.');
+    }
+
+    $payload = array(
+        'license_key' => $key,
+        'site_url' => home_url('/'),
+        'site_id' => tk_toolkits_install_id(),
+        'env' => tk_license_env(),
+        'action' => 'activate',
+        'timestamp' => time(),
+    );
+    $body = wp_json_encode($payload);
+    if ($body === false) {
+        tk_update_option('license_status', 'error');
+        tk_update_option('license_message', 'Failed to encode license request.');
+        tk_update_option('license_last_checked', time());
+        return array('status' => 'error', 'message' => 'Failed to encode license request.');
+    }
+    $signature = hash_hmac('sha256', $body, $secret);
+    $headers = array(
+        'Content-Type' => 'application/json',
+        'X-Auth-Signature' => $signature,
+        'X-Auth-Timestamp' => (string) $payload['timestamp'],
+    );
+    $http_user = (string) tk_get_option('heartbeat_http_user', '');
+    $http_pass = (string) tk_get_option('heartbeat_http_pass', '');
+    if ($http_user === '' && $http_pass === '' && defined('TK_HEARTBEAT_HTTP_USER') && defined('TK_HEARTBEAT_HTTP_PASS')) {
+        $http_user = (string) TK_HEARTBEAT_HTTP_USER;
+        $http_pass = (string) TK_HEARTBEAT_HTTP_PASS;
+    }
+    if ($http_user !== '' || $http_pass !== '') {
+        $headers['Authorization'] = 'Basic ' . base64_encode($http_user . ':' . $http_pass);
+    }
+    $response = wp_remote_post($url, array(
+        'timeout' => 10,
+        'headers' => $headers,
+        'body' => $body,
+    ));
+    if (is_wp_error($response)) {
+        tk_update_option('license_status', 'error');
+        tk_update_option('license_message', $response->get_error_message());
+        tk_update_option('license_last_checked', time());
+        return array('status' => 'error', 'message' => $response->get_error_message());
+    }
+    $code = (int) wp_remote_retrieve_response_code($response);
+    $raw = (string) wp_remote_retrieve_body($response);
+    $data = json_decode($raw, true);
+    $ok = is_array($data) && !empty($data['ok']) && $code >= 200 && $code < 300;
+    $server_status = is_array($data) && isset($data['status']) ? (string) $data['status'] : '';
+    $new_status = $ok ? 'valid' : 'invalid';
+    $new_message = '';
+    if (is_array($data) && isset($data['message'])) {
+        $new_message = (string) $data['message'];
+    } elseif (!$ok) {
+        $detail = trim(strip_tags($raw));
+        if ($detail !== '') {
+            $new_message = 'HTTP ' . $code . ': ' . substr($detail, 0, 200);
+        } else {
+            $new_message = 'License validation failed.';
+        }
+    }
+    if (!$ok && $server_status !== '') {
+        $new_status = $server_status;
+    }
+    tk_update_option('license_status', $new_status);
+    tk_update_option('license_message', $new_message);
+    tk_update_option('license_last_checked', time());
+    tk_update_option('license_env', (string) $payload['env']);
+    if (is_array($data) && isset($data['license_type'])) {
+        tk_update_option('license_type', (string) $data['license_type']);
+    }
+    if (is_array($data) && isset($data['site_url'])) {
+        tk_update_option('license_site_url', (string) $data['site_url']);
+    }
+    if (is_array($data) && isset($data['expires_at'])) {
+        tk_update_option('license_expires_at', (string) $data['expires_at']);
+    } elseif (!$ok && in_array($server_status, array('revoked', 'not_found', 'expired'), true)) {
+        tk_update_option('license_expires_at', '');
+    }
+    return array('status' => $new_status, 'message' => $new_message);
+}
+
+function tk_license_is_valid(): bool {
+    $status = (string) tk_get_option('license_status', 'inactive');
+    $last_checked = (int) tk_get_option('license_last_checked', 0);
+    return $status === 'valid' && $last_checked > 0 && (time() - $last_checked) < DAY_IN_SECONDS;
 }
 
 function tk_toolkits_is_locked(): bool {
@@ -830,7 +1035,31 @@ function tk_toolkits_guard(): void {
         return;
     }
     if (!tk_toolkits_can_manage()) {
-        wp_die('Access denied.', 'Tool Kits', array('response' => 403));
+        $message = '<h1>Access Restricted</h1><p>Tool Kits access is restricted for your account.</p><p><a href="' . esc_url(admin_url('tools.php?page=tool-kits-access')) . '">Go to Tool Kits Access</a></p>';
+        wp_die($message, 'Tool Kits', array('response' => 403));
+    }
+    $collector_key = (string) tk_get_option('heartbeat_auth_key', '');
+    if ($collector_key === '' && defined('TK_HEARTBEAT_AUTH_KEY')) {
+        $collector_key = (string) TK_HEARTBEAT_AUTH_KEY;
+    }
+    if ($collector_key === '' && $page !== 'tool-kits-access' && $action !== 'tk_toolkits_access_save') {
+        $message = '<h1>Collector Token Required</h1><p>Please set the collector token in Tool Kits Access.</p><p><a href="' . esc_url(admin_url('tools.php?page=tool-kits-access')) . '">Open Tool Kits Access</a></p>';
+        wp_die($message, 'Tool Kits', array('response' => 403));
+    }
+    if ($page === 'tool-kits-access' || $action === 'tk_toolkits_access_save') {
+        tk_license_validate(true);
+        return;
+    }
+    $license = tk_license_validate(true);
+    if (!tk_license_is_valid()) {
+        $detail = isset($license['message']) && $license['message'] !== '' ? $license['message'] : 'License invalid.';
+        $message = '<h1>License Required</h1><p>' . esc_html($detail) . '</p><p><a href="' . esc_url(admin_url('tools.php?page=tool-kits-access&tk_license=1')) . '">Open License Settings</a></p>';
+        if (!$is_toolkits_action) {
+            $target = admin_url('tools.php?page=tool-kits-access&tk_license=1');
+            wp_safe_redirect($target);
+            exit;
+        }
+        wp_die($message, 'Tool Kits', array('response' => 403));
     }
     if (tk_toolkits_is_locked() && $is_toolkits_action && $action !== 'tk_toolkits_access_save' && $action !== 'tk_toolkits_audit_clear') {
         wp_die('Tool Kits settings are locked.', 'Tool Kits', array('response' => 403));
@@ -871,6 +1100,19 @@ function tk_toolkits_mask_fields_script(): void {
 function tk_user_agent() {
     return !empty($_SERVER['HTTP_USER_AGENT']) ? substr(sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])), 0, 255) : '';
 }
+
+function tk_toolkits_access_denied_page(): void {
+    if (!is_admin()) {
+        return;
+    }
+    $page = isset($_GET['page']) ? sanitize_key($_GET['page']) : '';
+    if ($page === '' || strpos($page, 'tool-kits') !== 0) {
+        return;
+    }
+    $message = '<h1>Access Restricted</h1><p>You do not have permission to access Tool Kits.</p><p><a href="' . esc_url(admin_url('tools.php?page=tool-kits-access')) . '">Go to Tool Kits Access</a></p>';
+    wp_die($message, 'Tool Kits', array('response' => 403));
+}
+add_action('admin_page_access_denied', 'tk_toolkits_access_denied_page');
 
 /**
  * Serialized-safe find/replace

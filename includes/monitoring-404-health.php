@@ -65,6 +65,9 @@ function tk_monitoring_log_404() {
 }
 
 function tk_404_monitoring_save() {
+    if (!tk_is_admin_user()) {
+        wp_die('Forbidden');
+    }
     tk_check_nonce('tk_404_monitoring_save');
     tk_update_option('monitoring_404_enabled', !empty($_POST['monitoring_404_enabled']) ? 1 : 0);
     tk_update_option('monitoring_404_exclude_paths', (string) tk_post('monitoring_404_exclude_paths', "/wp-admin\n/wp-login.php\n/wp-cron.php\n"));
@@ -73,6 +76,9 @@ function tk_404_monitoring_save() {
 }
 
 function tk_404_monitoring_clear() {
+    if (!tk_is_admin_user()) {
+        wp_die('Forbidden');
+    }
     tk_check_nonce('tk_404_monitoring_clear');
     tk_update_option('monitoring_404_log', array());
     wp_redirect(admin_url('admin.php?page=tool-kits-monitoring&tk_404_cleared=1#missing'));
@@ -80,6 +86,9 @@ function tk_404_monitoring_clear() {
 }
 
 function tk_healthcheck_save() {
+    if (!tk_is_admin_user()) {
+        wp_die('Forbidden');
+    }
     tk_check_nonce('tk_healthcheck_save');
     tk_update_option('monitoring_healthcheck_enabled', !empty($_POST['monitoring_healthcheck_enabled']) ? 1 : 0);
     $health_key = isset($_POST['monitoring_healthcheck_key']) ? sanitize_text_field(wp_unslash($_POST['monitoring_healthcheck_key'])) : '';

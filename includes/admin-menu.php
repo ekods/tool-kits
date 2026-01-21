@@ -18,39 +18,63 @@ function tk_admin_menu_init() {
 
 function tk_register_admin_menus() {
     if (!tk_toolkits_can_manage()) return;
+    $license_key = (string) tk_get_option('license_key', '');
+    if ($license_key !== '') {
+        tk_license_validate(true);
+    }
+    $license_status = (string) tk_get_option('license_status', 'inactive');
+    $license_missing = $license_key === '';
+    $license_valid = $license_status === 'valid';
+    $license_type = (string) tk_get_option('license_type', '');
+    $license_limited = $license_type === 'local';
+    $allow_full = $license_valid && !$license_limited;
 
-    // Parent
-    add_menu_page(
-        __('Tool Kits', 'tool-kits'),
-        __('Tool Kits', 'tool-kits'),
-        'read',
-        'tool-kits',
-        'tk_render_overview_page',
-        'dashicons-admin-tools',
-        99
-    );
+    if ($license_valid) {
+        // Parent
+        add_menu_page(
+            __('Tool Kits', 'tool-kits'),
+            __('Tool Kits', 'tool-kits'),
+            tk_toolkits_capability(),
+            'tool-kits',
+            'tk_render_overview_page',
+            'dashicons-admin-tools',
+            99
+        );
 
-    // DB
-    add_submenu_page('tool-kits', __('Database', 'tool-kits'), __('Database', 'tool-kits'), 'read', 'tool-kits-db', 'tk_render_db_tools_page');
+        if ($allow_full) {
+            // DB
+            add_submenu_page('tool-kits', __('Database', 'tool-kits'), __('Database', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
 
-    // Security modules now live under the main Tool Kits menu.
-    add_submenu_page('tool-kits', __('Optimization', 'tool-kits'), __('Optimization', 'tool-kits'), 'read', 'tool-kits-optimization', 'tk_render_optimization_page');
-    add_submenu_page('tool-kits', __('Spam Protection', 'tool-kits'), __('Spam Protection', 'tool-kits'), 'read', 'tool-kits-security-spam', 'tk_render_spam_protection_page');
-    add_submenu_page('tool-kits', __('Rate Limit', 'tool-kits'), __('Rate Limit', 'tool-kits'), 'read', 'tool-kits-security-rate-limit', 'tk_render_rate_limit_page');
-    add_submenu_page('tool-kits', __('Login Log', 'tool-kits'), __('Login Log', 'tool-kits'), 'read', 'tool-kits-security-login-log', 'tk_render_login_log_page');
-    add_submenu_page('tool-kits', __('Hardening', 'tool-kits'), __('Hardening', 'tool-kits'), 'read', 'tool-kits-security-hardening', 'tk_render_hardening_page');
-    add_submenu_page('tool-kits', __('Monitoring', 'tool-kits'), __('Monitoring', 'tool-kits'), 'read', 'tool-kits-monitoring', 'tk_render_monitoring_page');
-    add_submenu_page('tool-kits', __('Cache', 'tool-kits'), __('Cache', 'tool-kits'), 'read', 'tool-kits-cache', 'tk_render_cache_page');
-    add_submenu_page('tool-kits', __('Themes Checker', 'tool-kits'), __('Themes Checker', 'tool-kits'), 'read', 'tool-kits-theme-checker', 'tk_render_theme_checker_page');
+            // Security modules now live under the main Tool Kits menu.
+            add_submenu_page('tool-kits', __('Optimization', 'tool-kits'), __('Optimization', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-optimization', 'tk_render_optimization_page');
+            add_submenu_page('tool-kits', __('Spam Protection', 'tool-kits'), __('Spam Protection', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-spam', 'tk_render_spam_protection_page');
+            add_submenu_page('tool-kits', __('Rate Limit', 'tool-kits'), __('Rate Limit', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-rate-limit', 'tk_render_rate_limit_page');
+            add_submenu_page('tool-kits', __('Login Log', 'tool-kits'), __('Login Log', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-login-log', 'tk_render_login_log_page');
+            add_submenu_page('tool-kits', __('Hardening', 'tool-kits'), __('Hardening', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-hardening', 'tk_render_hardening_page');
+            add_submenu_page('tool-kits', __('Monitoring', 'tool-kits'), __('Monitoring', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-monitoring', 'tk_render_monitoring_page');
+            add_submenu_page('tool-kits', __('Cache', 'tool-kits'), __('Cache', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-cache', 'tk_render_cache_page');
+            add_submenu_page('tool-kits', __('Themes Checker', 'tool-kits'), __('Themes Checker', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-theme-checker', 'tk_render_theme_checker_page');
+        } else {
+            add_submenu_page('tool-kits', __('Database', 'tool-kits'), __('Database', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
+            add_submenu_page('tool-kits', __('Optimization', 'tool-kits'), __('Optimization', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-optimization', 'tk_render_optimization_page');
+            add_submenu_page('tool-kits', __('Monitoring', 'tool-kits'), __('Monitoring', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-monitoring', 'tk_render_monitoring_page');
+            add_submenu_page('tool-kits', __('Cache', 'tool-kits'), __('Cache', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-cache', 'tk_render_cache_page');
+        }
+    }
 
-    add_submenu_page('tools.php', __('Tool Kits Access', 'tool-kits'), __('Tool Kits Access', 'tool-kits'), 'read', 'tool-kits-access', 'tk_render_toolkits_access_page');
+    add_submenu_page('tools.php', __('Tool Kits Access', 'tool-kits'), __('Tool Kits Access', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-access', 'tk_render_toolkits_access_page');
 
     // Hidden legacy pages for direct links.
-    add_submenu_page(null, __('Hide Login', 'tool-kits'), __('Hide Login', 'tool-kits'), 'read', 'tool-kits-security-hide-login', 'tk_render_hide_login_page');
-    add_submenu_page(null, __('Minify', 'tool-kits'), __('Minify', 'tool-kits'), 'read', 'tool-kits-minify', 'tk_render_minify_page');
-    add_submenu_page(null, __('Auto WebP', 'tool-kits'), __('Auto WebP', 'tool-kits'), 'read', 'tool-kits-webp', 'tk_render_webp_page');
+    if ($allow_full) {
+        add_submenu_page(null, __('Hide Login', 'tool-kits'), __('Hide Login', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-hide-login', 'tk_render_hide_login_page');
+        add_submenu_page(null, __('Minify', 'tool-kits'), __('Minify', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-minify', 'tk_render_minify_page');
+        add_submenu_page(null, __('Auto WebP', 'tool-kits'), __('Auto WebP', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-webp', 'tk_render_webp_page');
+    } elseif ($license_valid && $license_limited) {
+        add_submenu_page(null, __('Minify', 'tool-kits'), __('Minify', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-minify', 'tk_render_minify_page');
+        add_submenu_page(null, __('Auto WebP', 'tool-kits'), __('Auto WebP', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-webp', 'tk_render_webp_page');
+    }
 
-    if (tk_get_option('hide_toolkits_menu', 0)) {
+    if (tk_get_option('hide_toolkits_menu', 0) || !$license_valid) {
         remove_menu_page('tool-kits');
     }
     if (tk_get_option('hide_cff_menu', 0)) {
@@ -791,6 +815,20 @@ function tk_render_toolkits_access_page() {
     $alert_admin_created = (int) tk_get_option('toolkits_alert_admin_created', 1);
     $alert_role_change = (int) tk_get_option('toolkits_alert_role_change', 1);
     $alert_admin_ip = (int) tk_get_option('toolkits_alert_admin_login_new_ip', 1);
+    $collector_url = (string) tk_get_option('heartbeat_collector_url', '');
+    $collector_key = (string) tk_get_option('heartbeat_auth_key', '');
+    $license_server_url = (string) tk_get_option('license_server_url', '');
+    $license_key = (string) tk_get_option('license_key', '');
+    $license_status = (string) tk_get_option('license_status', 'inactive');
+    $license_message = (string) tk_get_option('license_message', '');
+    $license_type = (string) tk_get_option('license_type', '');
+    $license_env = (string) tk_get_option('license_env', '');
+    $license_site = (string) tk_get_option('license_site_url', '');
+    $license_expires = (string) tk_get_option('license_expires_at', '');
+    $license_missing = $license_key === '';
+    $license_invalid = $license_status !== 'valid';
+    $license_limited = $license_type === 'local';
+    $show_full_tabs = !$license_invalid && !$license_limited;
     $owner_only = (int) tk_get_option('toolkits_owner_only_enabled', 0);
     $owner_id = (int) tk_get_option('toolkits_owner_user_id', 1);
     $admins = get_users(array(
@@ -806,6 +844,7 @@ function tk_render_toolkits_access_page() {
     $cff_installed = tk_is_cff_installed();
     $saved = isset($_GET['tk_saved']) ? sanitize_key($_GET['tk_saved']) : '';
     $cleared = isset($_GET['tk_cleared']) ? sanitize_key($_GET['tk_cleared']) : '';
+    $license_required = isset($_GET['tk_license']) ? sanitize_key($_GET['tk_license']) : '';
     ?>
     <div class="wrap tk-wrap">
         <h1>Tool Kits Access</h1>
@@ -815,14 +854,31 @@ function tk_render_toolkits_access_page() {
         <?php if ($cleared === '1') : ?>
             <?php tk_notice('Audit log cleared.', 'success'); ?>
         <?php endif; ?>
+        <?php if ($license_required === '1') : ?>
+            <?php
+            $license_notice = $license_missing
+                ? 'License key is required. Please set your license key and license server URL.'
+                : ($license_message !== '' ? $license_message : 'License invalid.');
+            tk_notice($license_notice, 'warning');
+            ?>
+        <?php endif; ?>
+        <?php if ($collector_key === '' && (!defined('TK_HEARTBEAT_AUTH_KEY') || TK_HEARTBEAT_AUTH_KEY === '')) : ?>
+            <?php tk_notice('Collector token is required to access Tool Kits. Please set it below.', 'warning'); ?>
+        <?php endif; ?>
         <div class="tk-tabs">
             <div class="tk-tabs-nav">
-                <button type="button" class="tk-tabs-nav-button is-active" data-panel="access">Access</button>
-                <button type="button" class="tk-tabs-nav-button" data-panel="owner">Owner</button>
-                <button type="button" class="tk-tabs-nav-button" data-panel="alerts">Alerts</button>
-                <button type="button" class="tk-tabs-nav-button" data-panel="audit">Audit Log</button>
+                <?php if (!$license_invalid) : ?>
+                    <button type="button" class="tk-tabs-nav-button is-active" data-panel="access">Access</button>
+                <?php endif; ?>
+                <button type="button" class="tk-tabs-nav-button <?php echo $license_missing ? 'is-active' : ''; ?>" data-panel="license">License</button>
+                <?php if ($show_full_tabs) : ?>
+                    <button type="button" class="tk-tabs-nav-button" data-panel="owner">Owner</button>
+                    <button type="button" class="tk-tabs-nav-button" data-panel="alerts">Alerts</button>
+                    <button type="button" class="tk-tabs-nav-button" data-panel="audit">Audit Log</button>
+                <?php endif; ?>
             </div>
             <div class="tk-tabs-content">
+                <?php if (!$license_invalid) : ?>
                 <div class="tk-card tk-tab-panel is-active" data-panel-id="access">
                     <p>Control who can access Tool Kits and lock settings on production.</p>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
@@ -851,6 +907,91 @@ function tk_render_toolkits_access_page() {
                         <p><button class="button button-primary">Save</button></p>
                     </form>
                 </div>
+                <?php endif; ?>
+                <div class="tk-card tk-tab-panel <?php echo $license_invalid ? 'is-active' : ''; ?>" data-panel-id="license">
+                    <p>Set license server URL and key to unlock all Tool Kits features.</p>
+                    <?php
+                    $expires_label = 'Unlimited';
+                    $expires_remaining = '';
+                    if ($license_expires !== '' && strtotime($license_expires) !== false) {
+                        $expires_ts = strtotime($license_expires);
+                        $now = time();
+                        if ($expires_ts <= $now) {
+                            $expires_label = 'Expired';
+                            $expires_remaining = '0 days';
+                        } else {
+                            $days = (int) ceil(($expires_ts - $now) / DAY_IN_SECONDS);
+                            $expires_label = gmdate('Y-m-d', $expires_ts);
+                            $expires_remaining = $days . ' days left';
+                        }
+                    }
+                    ?>
+                    <div class="tk-card" style="margin:12px 0;">
+                        <h3 style="margin-top:0;">License Status</h3>
+                        <?php
+                        $status_class = 'tk-badge';
+                        if ($license_status === 'valid') {
+                            $status_class = 'tk-badge tk-on';
+                        } elseif (in_array($license_status, array('expired','revoked','not_found'), true)) {
+                            $status_class = 'tk-badge tk-warn';
+                        }
+                        ?>
+                        <p><strong>Status:</strong> <span class="<?php echo esc_attr($status_class); ?>"><?php echo esc_html($license_status); ?></span></p>
+                        <?php if ($license_message !== '') : ?>
+                            <p><strong>Message:</strong> <?php echo esc_html($license_message); ?></p>
+                        <?php endif; ?>
+                        <?php if ($license_type !== '') : ?>
+                            <p><strong>License type:</strong> <?php echo esc_html($license_type); ?></p>
+                        <?php endif; ?>
+                        <?php if ($license_env !== '') : ?>
+                            <p><strong>Environment:</strong> <?php echo esc_html($license_env); ?></p>
+                        <?php endif; ?>
+                        <?php if ($license_site !== '') : ?>
+                            <p><strong>Bound site:</strong> <?php echo esc_html($license_site); ?></p>
+                        <?php endif; ?>
+                        <p><strong>Expires:</strong> <?php echo esc_html($expires_label); ?>
+                            <?php if ($expires_remaining !== '') : ?>
+                                <span>(<?php echo esc_html($expires_remaining); ?>)</span>
+                            <?php endif; ?>
+                        </p>
+                    </div>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                        <?php tk_nonce_field('tk_toolkits_access_save'); ?>
+                        <input type="hidden" name="action" value="tk_toolkits_access_save">
+                        <input type="hidden" name="tk_tab" value="license">
+                        <?php if ($license_status !== 'valid') : ?>
+                            <input type="hidden" name="heartbeat_collector_url" value="<?php echo esc_attr($collector_url); ?>">
+                            <input type="hidden" name="heartbeat_auth_key" value="<?php echo esc_attr($collector_key); ?>">
+                            <?php
+                            $collector_mask = '';
+                            if ($collector_key !== '') {
+                                $collector_mask = str_repeat('*', max(0, strlen($collector_key) - 4)) . substr($collector_key, -4);
+                            }
+                            ?>
+                            <p>
+                                <label>Collector token</label><br>
+                                <input class="regular-text" type="text" name="heartbeat_auth_key_display" value="<?php echo esc_attr($collector_mask); ?>" autocomplete="off">
+                            </p>
+                        <?php else : ?>
+                            <input type="hidden" name="heartbeat_collector_url" value="<?php echo esc_attr($collector_url); ?>">
+                            <p><small>Collector token is set.</small></p>
+                        <?php endif; ?>
+                        <input type="hidden" name="license_server_url" value="<?php echo esc_attr($license_server_url); ?>">
+                        <p>
+                            <label>License key</label><br>
+                            <input type="hidden" name="license_key" value="<?php echo esc_attr($license_key); ?>">
+                            <?php
+                            $license_mask = '';
+                            if ($license_key !== '') {
+                                $license_mask = str_repeat('*', max(0, strlen($license_key) - 4)) . substr($license_key, -4);
+                            }
+                            ?>
+                            <input class="regular-text" type="text" name="license_key_display" value="<?php echo esc_attr($license_mask); ?>" autocomplete="off">
+                        </p>
+                        <p><button class="button button-primary">Save</button></p>
+                    </form>
+                </div>
+                <?php if ($show_full_tabs) : ?>
                 <div class="tk-card tk-tab-panel" data-panel-id="owner">
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php tk_nonce_field('tk_toolkits_access_save'); ?>
@@ -930,6 +1071,7 @@ function tk_render_toolkits_access_page() {
                         </form>
                     <?php endif; ?>
                 </div>
+                <?php endif; ?>
             </div>
         </div>
         <script>
@@ -960,6 +1102,20 @@ function tk_render_toolkits_access_page() {
             if (initial) {
                 activateTab(initial);
             }
+            var tokenDisplay = document.querySelector('input[name="heartbeat_auth_key_display"]');
+            var tokenHidden = document.querySelector('input[name="heartbeat_auth_key"]');
+            if (tokenDisplay && tokenHidden) {
+                tokenDisplay.addEventListener('input', function() {
+                    tokenHidden.value = tokenDisplay.value;
+                });
+            }
+            var licenseDisplay = document.querySelector('input[name="license_key_display"]');
+            var licenseHidden = document.querySelector('input[name="license_key"]');
+            if (licenseDisplay && licenseHidden) {
+                licenseDisplay.addEventListener('input', function() {
+                    licenseHidden.value = licenseDisplay.value;
+                });
+            }
         })();
         </script>
     </div>
@@ -970,36 +1126,75 @@ function tk_toolkits_access_save() {
     if (!tk_toolkits_can_manage()) wp_die('Forbidden');
     tk_check_nonce('tk_toolkits_access_save');
     $tab = isset($_POST['tk_tab']) ? sanitize_key($_POST['tk_tab']) : 'access';
-    if (!in_array($tab, array('access', 'owner', 'alerts', 'audit'), true)) {
+    if (!in_array($tab, array('access', 'owner', 'alerts', 'audit', 'license'), true)) {
         $tab = 'access';
     }
-    tk_update_option('hide_toolkits_menu', !empty($_POST['hide_menu']) ? 1 : 0);
-    tk_update_option('hide_cff_menu', !empty($_POST['hide_cff_menu']) ? 1 : 0);
-    $roles = isset($_POST['toolkits_allowed_roles']) ? (array) $_POST['toolkits_allowed_roles'] : array();
-    $roles = array_filter(array_map('sanitize_key', $roles));
-    if (empty($roles)) {
-        $roles = array('administrator');
+    $posted_license_key = isset($_POST['license_key']) ? trim(wp_unslash($_POST['license_key'])) : null;
+    if ($posted_license_key !== null) {
+        tk_update_option('license_key', $posted_license_key);
+        tk_update_option('license_status', 'inactive');
+        tk_update_option('license_message', '');
+        tk_update_option('license_last_checked', 0);
     }
-    tk_update_option('toolkits_allowed_roles', $roles);
-    tk_update_option('toolkits_ip_allowlist', (string) tk_post('toolkits_ip_allowlist', ''));
-    tk_update_option('toolkits_lock_enabled', !empty($_POST['toolkits_lock_enabled']) ? 1 : 0);
-    tk_update_option('toolkits_mask_sensitive_fields', !empty($_POST['toolkits_mask_sensitive_fields']) ? 1 : 0);
-    tk_update_option('toolkits_owner_only_enabled', !empty($_POST['toolkits_owner_only_enabled']) ? 1 : 0);
-    $owner_id = isset($_POST['toolkits_owner_user_id']) ? (int) $_POST['toolkits_owner_user_id'] : 0;
-    if ($owner_id <= 0) {
-        $owner_id = get_current_user_id();
+    if ($tab === 'access') {
+        tk_update_option('hide_toolkits_menu', !empty($_POST['hide_menu']) ? 1 : 0);
+        tk_update_option('hide_cff_menu', !empty($_POST['hide_cff_menu']) ? 1 : 0);
+        $collector_url = isset($_POST['heartbeat_collector_url']) ? esc_url_raw(wp_unslash($_POST['heartbeat_collector_url'])) : '';
+        if ($collector_url !== '') {
+            tk_update_option('heartbeat_collector_url', $collector_url);
+        }
+        $collector_key = isset($_POST['heartbeat_auth_key']) ? trim(wp_unslash($_POST['heartbeat_auth_key'])) : '';
+        if ($collector_key !== '') {
+            tk_update_option('heartbeat_auth_key', $collector_key);
+        }
+        $roles = isset($_POST['toolkits_allowed_roles']) ? (array) $_POST['toolkits_allowed_roles'] : array();
+        $roles = array_filter(array_map('sanitize_key', $roles));
+        if (empty($roles)) {
+            $roles = array('administrator');
+        }
+        tk_update_option('toolkits_allowed_roles', $roles);
+        tk_update_option('toolkits_ip_allowlist', (string) tk_post('toolkits_ip_allowlist', ''));
+        tk_update_option('toolkits_lock_enabled', !empty($_POST['toolkits_lock_enabled']) ? 1 : 0);
+        tk_update_option('toolkits_mask_sensitive_fields', !empty($_POST['toolkits_mask_sensitive_fields']) ? 1 : 0);
+    } elseif ($tab === 'license') {
+        $collector_url = isset($_POST['heartbeat_collector_url']) ? esc_url_raw(wp_unslash($_POST['heartbeat_collector_url'])) : '';
+        if ($collector_url !== '') {
+            tk_update_option('heartbeat_collector_url', $collector_url);
+        }
+        $collector_key = isset($_POST['heartbeat_auth_key']) ? trim(wp_unslash($_POST['heartbeat_auth_key'])) : '';
+        if ($collector_key !== '') {
+            tk_update_option('heartbeat_auth_key', $collector_key);
+        }
+        $license_server_url = isset($_POST['license_server_url']) ? esc_url_raw(wp_unslash($_POST['license_server_url'])) : '';
+        if ($license_server_url === '') {
+            $base_url = $collector_url !== '' ? $collector_url : (string) tk_get_option('heartbeat_collector_url', '');
+            if (substr($base_url, -13) === 'heartbeat.php') {
+                $license_server_url = substr($base_url, 0, -13) . 'license.php';
+            } else {
+                $license_server_url = rtrim($base_url, '/') . '/license.php';
+            }
+        }
+        tk_update_option('license_server_url', $license_server_url);
+        tk_license_validate(true);
+    } elseif ($tab === 'owner') {
+        tk_update_option('toolkits_owner_only_enabled', !empty($_POST['toolkits_owner_only_enabled']) ? 1 : 0);
+        $owner_id = isset($_POST['toolkits_owner_user_id']) ? (int) $_POST['toolkits_owner_user_id'] : 0;
+        if ($owner_id <= 0) {
+            $owner_id = get_current_user_id();
+        }
+        $owner_user = get_user_by('id', $owner_id);
+        if (!$owner_user || !in_array('administrator', (array) $owner_user->roles, true)) {
+            $owner_id = get_current_user_id();
+        }
+        tk_update_option('toolkits_owner_user_id', $owner_id);
+    } elseif ($tab === 'alerts') {
+        tk_update_option('toolkits_alert_enabled', !empty($_POST['toolkits_alert_enabled']) ? 1 : 0);
+        $alert_email = isset($_POST['toolkits_alert_email']) ? sanitize_email(wp_unslash($_POST['toolkits_alert_email'])) : '';
+        tk_update_option('toolkits_alert_email', $alert_email);
+        tk_update_option('toolkits_alert_admin_created', !empty($_POST['toolkits_alert_admin_created']) ? 1 : 0);
+        tk_update_option('toolkits_alert_role_change', !empty($_POST['toolkits_alert_role_change']) ? 1 : 0);
+        tk_update_option('toolkits_alert_admin_login_new_ip', !empty($_POST['toolkits_alert_admin_login_new_ip']) ? 1 : 0);
     }
-    $owner_user = get_user_by('id', $owner_id);
-    if (!$owner_user || !in_array('administrator', (array) $owner_user->roles, true)) {
-        $owner_id = get_current_user_id();
-    }
-    tk_update_option('toolkits_owner_user_id', $owner_id);
-    tk_update_option('toolkits_alert_enabled', !empty($_POST['toolkits_alert_enabled']) ? 1 : 0);
-    $alert_email = isset($_POST['toolkits_alert_email']) ? sanitize_email(wp_unslash($_POST['toolkits_alert_email'])) : '';
-    tk_update_option('toolkits_alert_email', $alert_email);
-    tk_update_option('toolkits_alert_admin_created', !empty($_POST['toolkits_alert_admin_created']) ? 1 : 0);
-    tk_update_option('toolkits_alert_role_change', !empty($_POST['toolkits_alert_role_change']) ? 1 : 0);
-    tk_update_option('toolkits_alert_admin_login_new_ip', !empty($_POST['toolkits_alert_admin_login_new_ip']) ? 1 : 0);
     tk_toolkits_audit_log('access_update', array('user' => wp_get_current_user()->user_login));
     wp_redirect(admin_url('tools.php?page=tool-kits-access&tk_saved=1#' . $tab));
     exit;
