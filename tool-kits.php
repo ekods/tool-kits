@@ -2,20 +2,27 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 1.0.2
+ * Version: 1.0.3
  * Author: Eko Dwi Saputro
  * License: GPLv2 or later
- * Text Domain: https://theteamtheteam.com
+ * Text Domain: tool-kits
  */
 
 if (!defined('ABSPATH')) { exit; }
 
-define('TK_VERSION', '1.0.2');
+define('TK_VERSION', '1.0.3');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
 define('TK_GITHUB_REPO', 'ekods/tool-kits');
 define('TK_GITHUB_REPO_URL', 'https://github.com/' . TK_GITHUB_REPO);
+
+if (!defined('TK_HEARTBEAT_URL')) {
+    define('TK_HEARTBEAT_URL', 'https://theteamtheteam.com/collector/heartbeat.php');
+}
+if (!defined('TK_HEARTBEAT_AUTH_KEY')) {
+    define('TK_HEARTBEAT_AUTH_KEY', '60f23d902676ec03558ae6cc3697285d92f34a9af687233f2fca2da3a2be131f');
+}
 
 /**
  * Load translations after init so the textdomain is available to helpers and admin UI.

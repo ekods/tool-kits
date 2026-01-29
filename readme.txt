@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 1.0.2
+Stable tag: 1.0.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -21,6 +21,7 @@ Tool Kits adalah plugin admin toolkit untuk:
 - Change DB Prefix: plugin akan rename tabel dan update meta keys, tetapi Anda tetap harus update `$table_prefix` di wp-config.php manual.
 - Export SQL: best-effort via WPDB. Untuk database besar, gunakan phpMyAdmin/CLI.
 - Update checker mengambil rilis dari GitHub (release asset `tool-kits.zip` direkomendasikan untuk instalasi otomatis).
+- Added heartbeat collector integration improvements: heartbeat payload now includes hide-login slug/URL and collector dashboard surfaces those fields alongside the license data.
 
 == Developer Notes ==
 Filters to adjust CORS by environment (optional example):
@@ -56,9 +57,6 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
-= 1.0.2 =
-- Force the Tool Kits Access screen to open on the License tab so collectors and license credentials get configured before other controls.
-- Refresh the plugin version metadata so WordPress recognizes the GitHub release.
 = 1.0.1 =
 - Tambahkan pemeriksaan update otomatis dari GitHub.
 = 1.0.0 =

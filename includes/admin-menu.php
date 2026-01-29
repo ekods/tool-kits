@@ -4,6 +4,7 @@ if (!defined('ABSPATH')) { exit; }
 function tk_admin_menu_init() {
     add_action('admin_menu', 'tk_register_admin_menus');
     add_action('admin_post_tk_toolkits_access_save', 'tk_toolkits_access_save');
+    add_action('admin_post_tk_toolkits_license_activate', 'tk_toolkits_license_activate');
     add_action('admin_post_tk_toolkits_audit_clear', 'tk_toolkits_audit_clear');
     add_action('admin_post_tk_set_wpconfig_readonly', 'tk_set_wpconfig_readonly');
     add_action('admin_post_tk_set_wpconfig_writable', 'tk_set_wpconfig_writable');
@@ -802,6 +803,16 @@ function tk_render_security_table() {
     <?php
 }
 
+function tk_toolkits_default_license_server_url($collector_url) {
+    if (!is_string($collector_url) || $collector_url === '') {
+        return '';
+    }
+    if (substr($collector_url, -13) === 'heartbeat.php') {
+        return substr($collector_url, 0, -13) . 'license.php';
+    }
+    return rtrim($collector_url, '/') . '/license.php';
+}
+
 function tk_render_toolkits_access_page() {
     if (!tk_toolkits_can_manage()) return;
     $hidden = (int) tk_get_option('hide_toolkits_menu', 0);
@@ -845,6 +856,15 @@ function tk_render_toolkits_access_page() {
     $saved = isset($_GET['tk_saved']) ? sanitize_key($_GET['tk_saved']) : '';
     $cleared = isset($_GET['tk_cleared']) ? sanitize_key($_GET['tk_cleared']) : '';
     $license_required = isset($_GET['tk_license']) ? sanitize_key($_GET['tk_license']) : '';
+    $license_override_url = defined('TK_LICENSE_SERVER_URL') && TK_LICENSE_SERVER_URL !== '' ? TK_LICENSE_SERVER_URL : '';
+    $default_license_url = tk_toolkits_default_license_server_url($collector_url);
+    if ($license_override_url !== '') {
+        $license_server_value = $license_override_url;
+    } elseif ($license_server_url !== '') {
+        $license_server_value = $license_server_url;
+    } else {
+        $license_server_value = $default_license_url;
+    }
     ?>
     <div class="wrap tk-wrap">
         <h1>Tool Kits Access</h1>
@@ -867,7 +887,10 @@ function tk_render_toolkits_access_page() {
         <?php endif; ?>
         <div class="tk-tabs">
             <div class="tk-tabs-nav">
-                <button type="button" class="tk-tabs-nav-button is-active" data-panel="license">License</button>
+                <?php if (!$license_invalid) : ?>
+                    <button type="button" class="tk-tabs-nav-button is-active" data-panel="access">Access</button>
+                <?php endif; ?>
+                <button type="button" class="tk-tabs-nav-button <?php echo $license_missing ? 'is-active' : ''; ?>" data-panel="license">License</button>
                 <?php if ($show_full_tabs) : ?>
                     <button type="button" class="tk-tabs-nav-button" data-panel="owner">Owner</button>
                     <button type="button" class="tk-tabs-nav-button" data-panel="alerts">Alerts</button>
@@ -875,7 +898,37 @@ function tk_render_toolkits_access_page() {
                 <?php endif; ?>
             </div>
             <div class="tk-tabs-content">
-                <div class="tk-card tk-tab-panel is-active" data-panel-id="license">
+                <?php if (!$license_invalid) : ?>
+                <div class="tk-card tk-tab-panel is-active" data-panel-id="access">
+                    <p>Control who can access Tool Kits and lock settings on production.</p>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                        <?php tk_nonce_field('tk_toolkits_access_save'); ?>
+                        <input type="hidden" name="action" value="tk_toolkits_access_save">
+                        <input type="hidden" name="tk_tab" value="access">
+                        <p><label><input type="checkbox" name="hide_menu" value="1" <?php checked(1, $hidden); ?>> Hide Tool Kits menu</label></p>
+                        <?php if ($cff_installed) : ?>
+                            <p><label><input type="checkbox" name="hide_cff_menu" value="1" <?php checked(1, $hide_cff); ?>> Hide CFF menu</label></p>
+                        <?php endif; ?>
+                        <p><label><input type="checkbox" name="toolkits_lock_enabled" value="1" <?php checked(1, $lock); ?>> Lock Tool Kits settings</label></p>
+                        <p><label><input type="checkbox" name="toolkits_mask_sensitive_fields" value="1" <?php checked(1, $mask); ?>> Mask sensitive fields in UI</label></p>
+                        <p>
+                            <strong>Allowed roles</strong><br>
+                            <?php foreach (get_editable_roles() as $role_key => $role) : ?>
+                                <label style="display:inline-block;margin-right:12px;">
+                                    <input type="checkbox" name="toolkits_allowed_roles[]" value="<?php echo esc_attr($role_key); ?>" <?php checked(in_array($role_key, $roles, true)); ?>>
+                                    <?php echo esc_html($role['name']); ?>
+                                </label>
+                            <?php endforeach; ?>
+                        </p>
+                        <p>
+                            <label>IP allowlist (one per line)</label><br>
+                            <textarea name="toolkits_ip_allowlist" rows="3" class="large-text" placeholder="203.0.113.10"><?php echo esc_textarea($allowlist); ?></textarea>
+                        </p>
+                        <p><button class="button button-primary">Save</button></p>
+                    </form>
+                </div>
+                <?php endif; ?>
+                <div class="tk-card tk-tab-panel <?php echo $license_invalid ? 'is-active' : ''; ?>" data-panel-id="license">
                     <p>Set license server URL and key to unlock all Tool Kits features.</p>
                     <?php
                     $expires_label = 'Unlimited';
@@ -894,7 +947,14 @@ function tk_render_toolkits_access_page() {
                     }
                     ?>
                     <div class="tk-card" style="margin:12px 0;">
-                        <h3 style="margin-top:0;">License Status</h3>
+                        <div class="d-flex align-items-center justify-content-between">
+                            <h3 style="margin-top:0;margin-bottom:0;">License Status</h3>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0;">
+                                <?php tk_nonce_field('tk_license_activate'); ?>
+                                <input type="hidden" name="action" value="tk_toolkits_license_activate">
+                                <button type="submit" class="button button-secondary">Activator</button>
+                            </form>
+                        </div>
                         <?php
                         $status_class = 'tk-badge';
                         if ($license_status === 'valid') {
@@ -943,7 +1003,16 @@ function tk_render_toolkits_access_page() {
                             <input type="hidden" name="heartbeat_collector_url" value="<?php echo esc_attr($collector_url); ?>">
                             <p><small>Collector token is set.</small></p>
                         <?php endif; ?>
-                        <input type="hidden" name="license_server_url" value="<?php echo esc_attr($license_server_url); ?>">
+                        <?php if ($license_override_url !== '') : ?>
+                            <input type="hidden" name="license_server_url" value="<?php echo esc_attr($license_override_url); ?>">
+                            <p><small class="description">Using configured license server URL: <?php echo esc_html($license_override_url); ?></small></p>
+                        <?php else : ?>
+                            <p>
+                                <label>License server URL</label><br>
+                                <input class="regular-text" type="url" name="license_server_url" value="<?php echo esc_attr($license_server_value); ?>" placeholder="https://collector.example.com/license.php">
+                                <br><small class="description">Leave empty to derive from the Collector URL.</small>
+                            </p>
+                        <?php endif; ?>
                         <p>
                             <label>License key</label><br>
                             <input type="hidden" name="license_key" value="<?php echo esc_attr($license_key); ?>">
@@ -1092,10 +1161,11 @@ function tk_render_toolkits_access_page() {
 function tk_toolkits_access_save() {
     if (!tk_toolkits_can_manage()) wp_die('Forbidden');
     tk_check_nonce('tk_toolkits_access_save');
-    $tab = isset($_POST['tk_tab']) ? sanitize_key($_POST['tk_tab']) : 'license';
+    $tab = isset($_POST['tk_tab']) ? sanitize_key($_POST['tk_tab']) : 'access';
     if (!in_array($tab, array('access', 'owner', 'alerts', 'audit', 'license'), true)) {
-        $tab = 'license';
+        $tab = 'access';
     }
+    $license_override_url = defined('TK_LICENSE_SERVER_URL') && TK_LICENSE_SERVER_URL !== '' ? TK_LICENSE_SERVER_URL : '';
     $posted_license_key = isset($_POST['license_key']) ? trim(wp_unslash($_POST['license_key'])) : null;
     if ($posted_license_key !== null) {
         tk_update_option('license_key', $posted_license_key);
@@ -1133,13 +1203,11 @@ function tk_toolkits_access_save() {
             tk_update_option('heartbeat_auth_key', $collector_key);
         }
         $license_server_url = isset($_POST['license_server_url']) ? esc_url_raw(wp_unslash($_POST['license_server_url'])) : '';
-        if ($license_server_url === '') {
+        if ($license_override_url !== '') {
+            $license_server_url = $license_override_url;
+        } elseif ($license_server_url === '') {
             $base_url = $collector_url !== '' ? $collector_url : (string) tk_get_option('heartbeat_collector_url', '');
-            if (substr($base_url, -13) === 'heartbeat.php') {
-                $license_server_url = substr($base_url, 0, -13) . 'license.php';
-            } else {
-                $license_server_url = rtrim($base_url, '/') . '/license.php';
-            }
+            $license_server_url = tk_toolkits_default_license_server_url($base_url);
         }
         tk_update_option('license_server_url', $license_server_url);
         tk_license_validate(true);
@@ -1164,6 +1232,16 @@ function tk_toolkits_access_save() {
     }
     tk_toolkits_audit_log('access_update', array('user' => wp_get_current_user()->user_login));
     wp_redirect(admin_url('tools.php?page=tool-kits-access&tk_saved=1#' . $tab));
+    exit;
+}
+
+function tk_toolkits_license_activate() {
+    if (!tk_toolkits_can_manage()) {
+        wp_die('Forbidden');
+    }
+    tk_check_nonce('tk_license_activate');
+    tk_license_validate(true);
+    wp_redirect(admin_url('tools.php?page=tool-kits-access&tk_license=1'));
     exit;
 }
 

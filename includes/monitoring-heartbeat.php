@@ -13,9 +13,12 @@ if (!defined('TK_HEARTBEAT_HTTP_USER')) {
 if (!defined('TK_HEARTBEAT_HTTP_PASS')) {
     define('TK_HEARTBEAT_HTTP_PASS', '');
 }
+if (!defined('TK_LICENSE_SERVER_URL')) {
+    define('TK_LICENSE_SERVER_URL', '');
+}
 
 function tk_heartbeat_init() {
-    add_action('tk_heartbeat_cron', 'tk_heartbeat_send');
+    add_action('tk_heartbeat_cron', 'tk_heartbeat_cron_run');
     add_action('init', 'tk_heartbeat_schedule');
 }
 
@@ -55,6 +58,7 @@ function tk_heartbeat_send(): array {
     if ($url === '' || $secret === '') {
         return array('ok' => false, 'message' => 'Missing heartbeat URL or auth key.');
     }
+    $hide_login_enabled = (int) tk_get_option('hide_login_enabled', 0) === 1;
     $payload = array(
         'site_url' => home_url('/'),
         'plugin' => 'tool-kits',
@@ -63,6 +67,9 @@ function tk_heartbeat_send(): array {
         'active' => true,
         'wp_version' => get_bloginfo('version'),
         'php_version' => PHP_VERSION,
+        'hide_login_enabled' => $hide_login_enabled,
+        'hide_login_slug' => $hide_login_enabled ? tk_hide_login_slug() : '',
+        'hide_login_url' => $hide_login_enabled ? tk_hide_login_custom_url() : '',
     );
     $body = wp_json_encode($payload);
     if ($body === false) {
@@ -104,6 +111,29 @@ function tk_heartbeat_send(): array {
     return array('ok' => false, 'message' => 'HTTP ' . $code . ': ' . $detail);
 }
 
+function tk_heartbeat_record_result(array $result): bool {
+    $message = isset($result['message']) ? trim((string) $result['message']) : '';
+    if (empty($result['ok'])) {
+        if ($message !== '') {
+            set_transient('tk_heartbeat_last_error', $message, MINUTE_IN_SECONDS * 10);
+        }
+        return false;
+    }
+    if ($message === '') {
+        $message = 'Heartbeat sent.';
+    }
+    delete_transient('tk_heartbeat_last_error');
+    return true;
+}
+
+function tk_heartbeat_cron_run(): void {
+    $result = tk_heartbeat_send();
+    if (!$result['ok'] && !empty($result['message'])) {
+        error_log('[Tool Kits] Heartbeat cron failed: ' . $result['message']);
+    }
+    tk_heartbeat_record_result($result);
+}
+
 function tk_heartbeat_manual_send() {
     if (!tk_is_admin_user()) {
         wp_die('Forbidden');
@@ -112,11 +142,7 @@ function tk_heartbeat_manual_send() {
     $result = tk_heartbeat_send();
     $ok = !empty($result['ok']);
     $status = $ok ? 'ok' : 'fail';
-    if (!$ok && !empty($result['message'])) {
-        set_transient('tk_heartbeat_last_error', (string) $result['message'], MINUTE_IN_SECONDS * 10);
-    } else {
-        delete_transient('tk_heartbeat_last_error');
-    }
+    tk_heartbeat_record_result($result);
     wp_redirect(add_query_arg(array(
         'page' => 'tool-kits-monitoring',
         'tk_heartbeat' => $status,
