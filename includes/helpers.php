@@ -475,7 +475,7 @@ function tk_option_init_defaults() {
         'hide_login_redirect' => home_url('/'),
         // Captcha
         'captcha_enabled' => 1,
-        'captcha_on_login' => 1,
+        'captcha_on_login' => 0,
         'captcha_on_comments' => 0,
         'captcha_length' => 5,
         'captcha_strength' => 'medium',
@@ -490,6 +490,16 @@ function tk_option_init_defaults() {
         'rate_limit_block_on_fail' => 0,
         'rate_limit_whitelist' => '',
         'rate_limit_blocked_ips' => array(),
+        // SMTP
+        'smtp_enabled' => 0,
+        'smtp_provider' => 'gmail',
+        'smtp_host' => 'smtp.gmail.com',
+        'smtp_port' => 587,
+        'smtp_secure' => 'tls',
+        'smtp_username' => '',
+        'smtp_password' => '',
+        'smtp_from_email' => '',
+        'smtp_from_name' => '',
         // Login log
         'login_log_enabled' => 1,
         'login_log_keep_days' => 30,
@@ -1158,3 +1168,13 @@ function tk_maybe_unserialize_replace($find, $replace, $value) {
     }
     return str_replace($find, $replace, $value);
 }
+
+/**
+ * Keep taxonomy term checklists in the original order instead of moving checked terms to the top.
+ */
+function tk_terms_checklist_keep_order(array $args, $post_id) {
+    $args['checked_ontop'] = false;
+    $args['popular_cats'] = array();
+    return $args;
+}
+add_filter('wp_terms_checklist_args', 'tk_terms_checklist_keep_order', 10, 2);

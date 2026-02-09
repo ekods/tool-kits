@@ -14,7 +14,7 @@ if (!defined('TK_HEARTBEAT_HTTP_PASS')) {
     define('TK_HEARTBEAT_HTTP_PASS', '');
 }
 if (!defined('TK_LICENSE_SERVER_URL')) {
-    define('TK_LICENSE_SERVER_URL', '');
+    define('TK_LICENSE_SERVER_URL', 'https://theteamtheteam.com/collector/license.php');
 }
 
 function tk_heartbeat_init() {

@@ -39,6 +39,15 @@ function tk_render_theme_checker_page() {
     <div class="wrap tk-wrap">
         <h1>Themes Checker</h1>
 
+        <div class="tk-toolbar">
+            <button type="button" class="button button-primary" id="tk-theme-checker-recheck">
+                <?php esc_html_e('Recheck theme', 'tool-kits'); ?>
+            </button>
+            <span class="tk-toolbar-note">
+                <?php esc_html_e('Re-run the scans to refresh all panels.', 'tool-kits'); ?>
+            </span>
+        </div>
+
         <div class="tk-tabs">
             <div class="tk-tabs-nav">
                 <button type="button" class="tk-tabs-nav-button is-active" data-panel="overview">Overview</button>
@@ -206,6 +215,17 @@ function tk_render_theme_checker_page() {
             if (initial) {
                 activateTab(initial);
             }
+        })();
+        (function(){
+            var button = document.getElementById('tk-theme-checker-recheck');
+            if (!button) {
+                return;
+            }
+            button.addEventListener('click', function(){
+                button.disabled = true;
+                button.textContent = '<?php echo esc_js(__('Rechecking...', 'tool-kits')); ?>';
+                window.location.reload();
+            });
         })();
         </script>
     </div>

@@ -409,6 +409,7 @@ function tk_render_captcha_panel() {
 
             <label><input type="checkbox" name="enabled" value="1" <?php checked(1, $enabled); ?>> Enable captcha module</label>
             <p><label><input type="checkbox" name="on_login" value="1" <?php checked(1, $on_login); ?>> Require captcha on login form</label></p>
+            <p class="description">Login captcha will stay hidden on the default WordPress login until you explicitly enable this checkbox; the shortcode can still be used elsewhere.</p>
             <p>
                 <label><strong>Captcha length</strong></label><br>
                 <input class="small-text" type="number" min="3" max="10" name="length" value="<?php echo esc_attr($length); ?>">

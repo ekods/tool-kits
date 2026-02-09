@@ -52,12 +52,14 @@ function tk_register_admin_menus() {
             add_submenu_page('tool-kits', __('Rate Limit', 'tool-kits'), __('Rate Limit', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-rate-limit', 'tk_render_rate_limit_page');
             add_submenu_page('tool-kits', __('Login Log', 'tool-kits'), __('Login Log', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-login-log', 'tk_render_login_log_page');
             add_submenu_page('tool-kits', __('Hardening', 'tool-kits'), __('Hardening', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-hardening', 'tk_render_hardening_page');
+            add_submenu_page('tool-kits', __('SMTP', 'tool-kits'), __('SMTP', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-smtp', 'tk_render_smtp_page');
             add_submenu_page('tool-kits', __('Monitoring', 'tool-kits'), __('Monitoring', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-monitoring', 'tk_render_monitoring_page');
             add_submenu_page('tool-kits', __('Cache', 'tool-kits'), __('Cache', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-cache', 'tk_render_cache_page');
             add_submenu_page('tool-kits', __('Themes Checker', 'tool-kits'), __('Themes Checker', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-theme-checker', 'tk_render_theme_checker_page');
         } else {
             add_submenu_page('tool-kits', __('Database', 'tool-kits'), __('Database', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
             add_submenu_page('tool-kits', __('Optimization', 'tool-kits'), __('Optimization', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-optimization', 'tk_render_optimization_page');
+            add_submenu_page('tool-kits', __('SMTP', 'tool-kits'), __('SMTP', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-smtp', 'tk_render_smtp_page');
             add_submenu_page('tool-kits', __('Monitoring', 'tool-kits'), __('Monitoring', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-monitoring', 'tk_render_monitoring_page');
             add_submenu_page('tool-kits', __('Cache', 'tool-kits'), __('Cache', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-cache', 'tk_render_cache_page');
         }
@@ -856,14 +858,11 @@ function tk_render_toolkits_access_page() {
     $saved = isset($_GET['tk_saved']) ? sanitize_key($_GET['tk_saved']) : '';
     $cleared = isset($_GET['tk_cleared']) ? sanitize_key($_GET['tk_cleared']) : '';
     $license_required = isset($_GET['tk_license']) ? sanitize_key($_GET['tk_license']) : '';
-    $license_override_url = defined('TK_LICENSE_SERVER_URL') && TK_LICENSE_SERVER_URL !== '' ? TK_LICENSE_SERVER_URL : '';
-    $default_license_url = tk_toolkits_default_license_server_url($collector_url);
-    if ($license_override_url !== '') {
-        $license_server_value = $license_override_url;
-    } elseif ($license_server_url !== '') {
-        $license_server_value = $license_server_url;
+    $license_server_value = defined('TK_LICENSE_SERVER_URL') && TK_LICENSE_SERVER_URL !== '' ? TK_LICENSE_SERVER_URL : '';
+    if ($license_server_value !== '') {
+        $license_server_note = sprintf(__('License server URL is fixed to %s.', 'tool-kits'), $license_server_value);
     } else {
-        $license_server_value = $default_license_url;
+        $license_server_note = __('License server URL will be configured automatically once the Collector URL is saved.', 'tool-kits');
     }
     ?>
     <div class="wrap tk-wrap">
@@ -1003,16 +1002,12 @@ function tk_render_toolkits_access_page() {
                             <input type="hidden" name="heartbeat_collector_url" value="<?php echo esc_attr($collector_url); ?>">
                             <p><small>Collector token is set.</small></p>
                         <?php endif; ?>
-                        <?php if ($license_override_url !== '') : ?>
-                            <input type="hidden" name="license_server_url" value="<?php echo esc_attr($license_override_url); ?>">
-                            <p><small class="description">Using configured license server URL: <?php echo esc_html($license_override_url); ?></small></p>
-                        <?php else : ?>
-                            <p>
-                                <label>License server URL</label><br>
-                                <input class="regular-text" type="url" name="license_server_url" value="<?php echo esc_attr($license_server_value); ?>" placeholder="https://collector.example.com/license.php">
-                                <br><small class="description">Leave empty to derive from the Collector URL.</small>
-                            </p>
-                        <?php endif; ?>
+                        <p>
+                            <input type="hidden" name="license_server_url" value="<?php echo esc_attr($license_server_value); ?>">
+                            <?php if ($license_server_note !== '') : ?>
+                                <small class="description"><?php echo esc_html($license_server_note); ?></small>
+                            <?php endif; ?>
+                        </p>
                         <p>
                             <label>License key</label><br>
                             <input type="hidden" name="license_key" value="<?php echo esc_attr($license_key); ?>">

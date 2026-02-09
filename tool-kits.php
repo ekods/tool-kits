@@ -46,6 +46,7 @@ require_once TK_PATH . 'includes/security-spam.php';
 require_once TK_PATH . 'includes/security-rate-limit.php';
 require_once TK_PATH . 'includes/security-login-log.php';
 require_once TK_PATH . 'includes/security-hardening.php';
+require_once TK_PATH . 'includes/smtp.php';
 require_once TK_PATH . 'includes/monitoring-heartbeat.php';
 require_once TK_PATH . 'includes/minify.php';
 require_once TK_PATH . 'includes/cache.php';
@@ -108,6 +109,7 @@ add_action('plugins_loaded', function() {
     tk_rate_limit_init();
     tk_login_log_init();
     tk_hardening_init();
+    tk_smtp_init();
     tk_heartbeat_init();
     tk_minify_init();
     tk_cache_init();

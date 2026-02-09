@@ -67,6 +67,7 @@ function tk_security_headers() {
     header('X-Frame-Options: SAMEORIGIN');
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: strict-origin');
+    header('Cross-Origin-Resource-Policy: cross-origin');
     if (tk_get_option('hardening_csp_lite_enabled', 0)) {
         header("Content-Security-Policy: default-src 'self'; img-src 'self' data: blob: https:; font-src 'self' data: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; script-src-elem 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; style-src-elem 'self' 'unsafe-inline' https:; connect-src 'self' https:; worker-src 'self' blob: https:; frame-src https:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'");
     }
