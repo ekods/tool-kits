@@ -500,6 +500,9 @@ function tk_option_init_defaults() {
         'smtp_password' => '',
         'smtp_from_email' => '',
         'smtp_from_name' => '',
+        'smtp_force_from' => 1,
+        'smtp_return_path' => 1,
+        'smtp_test_log' => array(),
         // Login log
         'login_log_enabled' => 1,
         'login_log_keep_days' => 30,
