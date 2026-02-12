@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
  */
 add_filter('site_transient_update_plugins', 'tk_github_plugin_update_check', 20);
 add_filter('plugins_api', 'tk_github_plugin_api', 20, 3);
+add_filter('upgrader_source_selection', 'tk_github_upgrader_source_selection', 10, 4);
 
 function tk_github_plugin_update_check($transient) {
     if (empty($transient->checked)) {
@@ -124,4 +125,38 @@ function tk_github_resolve_package_url(array $release) {
     }
 
     return TK_GITHUB_REPO_URL . '/archive/refs/heads/main.zip';
+}
+
+function tk_github_upgrader_source_selection($source, $remote_source, $upgrader, $hook_extra) {
+    if (empty($hook_extra['plugin'])) {
+        return $source;
+    }
+
+    $plugin_file = plugin_basename(TK_PATH . 'tool-kits.php');
+    if ($hook_extra['plugin'] !== $plugin_file) {
+        return $source;
+    }
+
+    if (empty($remote_source) || !is_string($remote_source)) {
+        return $source;
+    }
+
+    $expected = trailingslashit($remote_source) . 'tool-kits';
+    if ($source === $expected) {
+        return $source;
+    }
+
+    require_once ABSPATH . 'wp-admin/includes/file.php';
+    $fs = WP_Filesystem();
+    if (!$fs) {
+        return $source;
+    }
+
+    $dest = trailingslashit($remote_source) . 'tool-kits';
+    if ($fs->is_dir($dest)) {
+        return $dest;
+    }
+
+    $fs->move($source, $dest, true);
+    return $dest;
 }
