@@ -70,8 +70,11 @@ function tk_db_export_temp_dir(): string {
     return $base;
 }
 
-function tk_db_apply_pairs_to_value($value, array $pairs) {
+function tk_db_apply_pairs_to_value($value, array $pairs, string $column = '', array $row = array()) {
     $out = $value;
+    if (tk_db_should_skip_replacement($column, $row)) {
+        return $out;
+    }
     foreach ($pairs as $pair) {
         if (!is_string($pair['find']) || $pair['find'] === '') {
             continue;
@@ -79,6 +82,17 @@ function tk_db_apply_pairs_to_value($value, array $pairs) {
         $out = tk_maybe_unserialize_replace($pair['find'], $pair['replace'], $out);
     }
     return $out;
+}
+
+/**
+ * Decide whether replacement should be skipped for a row/column pair.
+ */
+function tk_db_should_skip_replacement(string $column, array $row): bool {
+    if ($column !== 'option_value') {
+        return false;
+    }
+    $name = isset($row['option_name']) ? (string) $row['option_name'] : '';
+    return $name === 'permalink_structure';
 }
 
 function tk_db_register_temp_export(string $path): string {
@@ -124,6 +138,8 @@ function tk_db_export_with_pairs(array $pairs): array {
         $tables = array();
     }
 
+    $permalink_structure_sql_value = null;
+
     foreach ($tables as $table) {
         $create = $wpdb->get_row("SHOW CREATE TABLE `$table`", ARRAY_N);
         if (!empty($create[1])) {
@@ -136,13 +152,17 @@ function tk_db_export_with_pairs(array $pairs): array {
             foreach ($rows as $row) {
                 $cols = array_keys($row);
                 $vals = array();
-                foreach ($row as $v) {
+                foreach ($row as $col => $v) {
                     if (is_null($v)) {
                         $vals[] = "NULL";
                         continue;
                     }
-                    $processed = is_string($v) ? tk_db_apply_pairs_to_value($v, $pairs) : $v;
-                    $vals[] = "'" . esc_sql((string)$processed) . "'";
+                    $processed = is_string($v) ? tk_db_apply_pairs_to_value($v, $pairs, $col, $row) : $v;
+                    $escaped = esc_sql((string)$processed);
+                    if ($col === 'option_value' && isset($row['option_name']) && $row['option_name'] === 'permalink_structure') {
+                        $permalink_structure_sql_value = $escaped;
+                    }
+                    $vals[] = "'" . $escaped . "'";
                 }
                 fwrite($fh, "INSERT INTO `$table` (`" . implode("`,`", array_map('esc_sql', $cols)) . "`) VALUES (" . implode(",", $vals) . ");\n");
             }
@@ -160,6 +180,16 @@ function tk_db_export_with_pairs(array $pairs): array {
     }
 
     $raw = tk_db_apply_pairs_to_value($raw, $pairs);
+    if ($permalink_structure_sql_value !== null) {
+        $raw = preg_replace_callback(
+            "/('permalink_structure',')((?:\\\\'|[^'])*)(')/s",
+            function ($matches) use ($permalink_structure_sql_value) {
+                return $matches[1] . $permalink_structure_sql_value . $matches[3];
+            },
+            $raw,
+            1
+        );
+    }
 
     $gz_handle = @gzopen($gz_path, 'wb6');
     if (!$gz_handle) {
