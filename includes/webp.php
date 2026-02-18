@@ -6,6 +6,8 @@ function tk_webp_init() {
     add_action('admin_post_tk_webp_generate_all', 'tk_webp_generate_all');
     add_action('wp_ajax_tk_webp_generate_batch', 'tk_webp_generate_batch');
     add_filter('wp_generate_attachment_metadata', 'tk_webp_generate_on_upload', 20, 2);
+    add_action('add_attachment', 'tk_webp_generate_on_attachment_add');
+    add_action('wp_update_attachment_metadata', 'tk_webp_generate_on_attachment_add', 20, 2);
     add_filter('wp_get_attachment_image_src', 'tk_webp_filter_image_src', 20, 2);
     add_filter('wp_calculate_image_srcset', 'tk_webp_filter_srcset', 20, 5);
 }
@@ -22,6 +24,16 @@ function tk_webp_should_serve() {
 }
 
 function tk_webp_generate_on_upload($metadata, $attachment_id) {
+    if (!tk_get_option('webp_convert_enabled', 0)) {
+        return $metadata;
+    }
+    $quality = (int) tk_get_option('webp_quality', 82);
+    tk_webp_generate_for_attachment($attachment_id, $quality, $metadata);
+    update_post_meta($attachment_id, '_tk_webp_generated', time());
+    return $metadata;
+}
+
+function tk_webp_generate_on_attachment_add($attachment_id, $metadata = null) {
     if (!tk_get_option('webp_convert_enabled', 0)) {
         return $metadata;
     }
