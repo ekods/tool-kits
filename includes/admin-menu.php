@@ -985,8 +985,12 @@ function tk_render_toolkits_access_page() {
                         <?php tk_nonce_field('tk_toolkits_access_save'); ?>
                         <input type="hidden" name="action" value="tk_toolkits_access_save">
                         <input type="hidden" name="tk_tab" value="license">
+                        <p>
+                            <label>Collector URL</label><br>
+                            <input class="regular-text" type="url" name="heartbeat_collector_url" value="<?php echo esc_attr($collector_url); ?>" placeholder="https://monitor.example.com/heartbeat.php">
+                            <small class="description">Editable endpoint for heartbeat collector.</small>
+                        </p>
                         <?php if ($license_status !== 'valid') : ?>
-                            <input type="hidden" name="heartbeat_collector_url" value="<?php echo esc_attr($collector_url); ?>">
                             <input type="hidden" name="heartbeat_auth_key" value="<?php echo esc_attr($collector_key); ?>">
                             <?php
                             $collector_mask = '';
@@ -999,7 +1003,7 @@ function tk_render_toolkits_access_page() {
                                 <input class="regular-text" type="text" name="heartbeat_auth_key_display" value="<?php echo esc_attr($collector_mask); ?>" autocomplete="off">
                             </p>
                         <?php else : ?>
-                            <input type="hidden" name="heartbeat_collector_url" value="<?php echo esc_attr($collector_url); ?>">
+                            <input type="hidden" name="heartbeat_auth_key" value="<?php echo esc_attr($collector_key); ?>">
                             <p><small>Collector token is set.</small></p>
                         <?php endif; ?>
                         <p>
@@ -1172,9 +1176,7 @@ function tk_toolkits_access_save() {
         tk_update_option('hide_toolkits_menu', !empty($_POST['hide_menu']) ? 1 : 0);
         tk_update_option('hide_cff_menu', !empty($_POST['hide_cff_menu']) ? 1 : 0);
         $collector_url = isset($_POST['heartbeat_collector_url']) ? esc_url_raw(wp_unslash($_POST['heartbeat_collector_url'])) : '';
-        if ($collector_url !== '') {
-            tk_update_option('heartbeat_collector_url', $collector_url);
-        }
+        tk_update_option('heartbeat_collector_url', $collector_url);
         $collector_key = isset($_POST['heartbeat_auth_key']) ? trim(wp_unslash($_POST['heartbeat_auth_key'])) : '';
         if ($collector_key !== '') {
             tk_update_option('heartbeat_auth_key', $collector_key);
@@ -1190,9 +1192,7 @@ function tk_toolkits_access_save() {
         tk_update_option('toolkits_mask_sensitive_fields', !empty($_POST['toolkits_mask_sensitive_fields']) ? 1 : 0);
     } elseif ($tab === 'license') {
         $collector_url = isset($_POST['heartbeat_collector_url']) ? esc_url_raw(wp_unslash($_POST['heartbeat_collector_url'])) : '';
-        if ($collector_url !== '') {
-            tk_update_option('heartbeat_collector_url', $collector_url);
-        }
+        tk_update_option('heartbeat_collector_url', $collector_url);
         $collector_key = isset($_POST['heartbeat_auth_key']) ? trim(wp_unslash($_POST['heartbeat_auth_key'])) : '';
         if ($collector_key !== '') {
             tk_update_option('heartbeat_auth_key', $collector_key);
