@@ -179,15 +179,15 @@ function tk_db_export_with_pairs(array $pairs): array {
         return ['ok' => false, 'message' => 'Failed reading export file.'];
     }
 
-    $raw = tk_db_apply_pairs_to_value($raw, $pairs);
+    // Rows are already processed column-by-column above (serialized-safe).
+    // Avoid a second full-SQL replacement pass because it can mutate permalink_structure.
     if ($permalink_structure_sql_value !== null) {
         $raw = preg_replace_callback(
             "/('permalink_structure',')((?:\\\\'|[^'])*)(')/s",
             function ($matches) use ($permalink_structure_sql_value) {
                 return $matches[1] . $permalink_structure_sql_value . $matches[3];
             },
-            $raw,
-            1
+            $raw
         );
     }
 
@@ -292,8 +292,11 @@ function tk_db_collect_pairs_from_request(): array {
     $pairs = array();
     $count = max(count($finds), count($replaces));
     for ($i = 0; $i < $count; $i++) {
-        $find = isset($finds[$i]) ? trim(sanitize_text_field($finds[$i])) : '';
-        $replace = isset($replaces[$i]) ? trim(sanitize_text_field($replaces[$i])) : '';
+        // Keep raw text (including `%...%` patterns) to avoid mutating tokens like `%category%`.
+        $find = isset($finds[$i]) ? trim((string) $finds[$i]) : '';
+        $replace = isset($replaces[$i]) ? trim((string) $replaces[$i]) : '';
+        $find = wp_check_invalid_utf8($find, true);
+        $replace = wp_check_invalid_utf8($replace, true);
         if ($find === '') {
             continue;
         }
