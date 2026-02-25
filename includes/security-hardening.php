@@ -21,6 +21,9 @@ function tk_hardening_init() {
     if (tk_get_option('hardening_httpauth_enabled', 0)) {
         add_action('init', 'tk_hardening_http_auth', 0);
     }
+    if (tk_get_option('hardening_disable_wp_cron', 0)) {
+        add_action('plugins_loaded', 'tk_hardening_disable_wp_cron_runtime', 0);
+    }
     if (tk_get_option('hardening_disable_comments', 0)) {
         add_action('init', 'tk_hardening_disable_comments');
     }
@@ -42,6 +45,28 @@ function tk_hardening_init() {
     if (tk_get_option('hardening_security_headers', 1)) {
         add_action('send_headers', 'tk_security_headers');
         add_action('send_headers', 'tk_hardening_cors_headers');
+    }
+    if (tk_get_option('hardening_server_signature_hide', 1)) {
+        add_action('send_headers', 'tk_hardening_hide_server_headers', 999);
+    }
+    if (tk_get_option('hardening_cookie_httponly_force', 0)) {
+        add_action('init', 'tk_hardening_cookie_httponly_ini', 0);
+        add_action('send_headers', 'tk_hardening_force_cookie_httponly', 999);
+    }
+    if (tk_get_option('hardening_url_param_guard_enabled', 0)) {
+        add_action('init', 'tk_hardening_url_param_guard', 1);
+    }
+    if (tk_get_option('hardening_block_dangerous_methods_enabled', 1)) {
+        add_action('init', 'tk_hardening_block_dangerous_methods', 0);
+    }
+    if (tk_get_option('hardening_http_methods_filter_enabled', 0)) {
+        add_action('init', 'tk_hardening_http_methods_filter', 0);
+    }
+    if (tk_get_option('hardening_robots_txt_hardened', 0)) {
+        add_filter('robots_txt', 'tk_hardening_robots_txt_content', 99, 2);
+    }
+    if (tk_get_option('hardening_block_unwanted_files_enabled', 1)) {
+        add_action('template_redirect', 'tk_hardening_block_unwanted_files', 0);
     }
     if (tk_get_option('hardening_disable_file_editor', 1)) {
         add_action('init', 'tk_define_disallow_file_edit');
@@ -68,11 +93,278 @@ function tk_security_headers() {
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: strict-origin');
     header('Cross-Origin-Resource-Policy: cross-origin');
-    if (tk_get_option('hardening_csp_lite_enabled', 0)) {
+    if (tk_get_option('hardening_csp_strict_enabled', 0)) {
+        header("Content-Security-Policy: default-src 'self'; img-src 'self' data: https:; font-src 'self' data: https:; script-src 'self' https:; style-src 'self' https:; connect-src 'self' https:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests");
+    } elseif (tk_get_option('hardening_csp_lite_enabled', 0)) {
         header("Content-Security-Policy: default-src 'self'; img-src 'self' data: blob: https:; font-src 'self' data: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; script-src-elem 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; style-src-elem 'self' 'unsafe-inline' https:; connect-src 'self' https:; worker-src 'self' blob: https:; frame-src https:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'");
     }
     if (tk_get_option('hardening_hsts_enabled', 0) && is_ssl()) {
         header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+    }
+}
+
+function tk_hardening_disable_wp_cron_runtime(): void {
+    if (!defined('DISABLE_WP_CRON')) {
+        define('DISABLE_WP_CRON', true);
+    }
+}
+
+function tk_hardening_cookie_httponly_ini(): void {
+    @ini_set('session.cookie_httponly', '1');
+    if (is_ssl()) {
+        @ini_set('session.cookie_secure', '1');
+    }
+}
+
+function tk_hardening_hide_server_headers(): void {
+    if (headers_sent()) {
+        return;
+    }
+    @ini_set('expose_php', '0');
+    if (function_exists('header_remove')) {
+        @header_remove('X-Powered-By');
+    }
+}
+
+function tk_hardening_force_cookie_httponly(): void {
+    if (headers_sent() || !function_exists('headers_list') || !function_exists('header_remove')) {
+        return;
+    }
+    $headers = headers_list();
+    if (!is_array($headers) || empty($headers)) {
+        return;
+    }
+    $cookies = array();
+    foreach ($headers as $header_line) {
+        if (stripos($header_line, 'Set-Cookie:') !== 0) {
+            continue;
+        }
+        $cookie = trim(substr($header_line, strlen('Set-Cookie:')));
+        if ($cookie === '') {
+            continue;
+        }
+        if (stripos($cookie, '; httponly') === false) {
+            $cookie .= '; HttpOnly';
+        }
+        if (is_ssl() && stripos($cookie, '; secure') === false) {
+            $cookie .= '; Secure';
+        }
+        $cookies[] = $cookie;
+    }
+    if (empty($cookies)) {
+        return;
+    }
+    @header_remove('Set-Cookie');
+    foreach ($cookies as $cookie_line) {
+        header('Set-Cookie: ' . $cookie_line, false);
+    }
+}
+
+function tk_hardening_url_param_guard(): void {
+    $doing_ajax = function_exists('wp_doing_ajax') ? wp_doing_ajax() : false;
+    if (is_admin() && !$doing_ajax) {
+        return;
+    }
+    $query = isset($_SERVER['QUERY_STRING']) ? (string) $_SERVER['QUERY_STRING'] : '';
+    if ($query === '') {
+        return;
+    }
+    if (strlen($query) > 2000) {
+        wp_die('Blocked malformed query string.', 'Forbidden', array('response' => 403));
+    }
+    if (preg_match('/%(?![0-9a-fA-F]{2})/', $query) === 1) {
+        wp_die('Blocked malformed query encoding.', 'Forbidden', array('response' => 403));
+    }
+    $decoded = rawurldecode($query);
+    $patterns = array(
+        '/<\s*script\b/i',
+        '/\.\.\//',
+        '/(?:\bunion\b|\bselect\b|\binsert\b|\bupdate\b|\bdrop\b)\s+/i',
+        '/\b(?:sleep|benchmark)\s*\(/i',
+        '/[\x00-\x08\x0B\x0C\x0E-\x1F]/',
+    );
+    foreach ($patterns as $pattern) {
+        if (preg_match($pattern, $decoded) === 1) {
+            wp_die('Blocked suspicious URL parameter.', 'Forbidden', array('response' => 403));
+        }
+    }
+}
+
+function tk_hardening_http_methods_filter(): void {
+    if (is_admin()) {
+        return;
+    }
+    $method = isset($_SERVER['REQUEST_METHOD']) ? strtoupper((string) $_SERVER['REQUEST_METHOD']) : '';
+    if ($method === '') {
+        return;
+    }
+    $allowed_raw = tk_get_option('hardening_http_methods_allowed', 'GET, POST');
+    $allowed = is_string($allowed_raw) ? array_map('trim', explode(',', $allowed_raw)) : array('GET', 'POST');
+    $allowed = array_filter(array_map('strtoupper', $allowed));
+    if (empty($allowed)) {
+        $allowed = array('GET', 'POST');
+    }
+    if (in_array($method, $allowed, true)) {
+        return;
+    }
+
+    $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+    $allow_paths = tk_get_option('hardening_http_methods_allow_paths', '');
+    if (is_string($allow_paths) && $allow_paths !== '') {
+        $lines = preg_split('/\r\n|\r|\n/', $allow_paths);
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            if (stripos($request_uri, $line) !== false) {
+                return;
+            }
+        }
+    }
+
+    status_header(405);
+    header('Allow: ' . implode(', ', $allowed));
+    wp_die('HTTP method not allowed.', 'Method Not Allowed', array('response' => 405));
+}
+
+function tk_hardening_block_dangerous_methods(): void {
+    if (is_admin()) {
+        return;
+    }
+    $method = isset($_SERVER['REQUEST_METHOD']) ? strtoupper((string) $_SERVER['REQUEST_METHOD']) : '';
+    if ($method === '') {
+        return;
+    }
+    $blocked_raw = tk_get_option('hardening_dangerous_http_methods', 'PUT, DELETE, TRACE, CONNECT');
+    $blocked = is_string($blocked_raw) ? array_map('trim', explode(',', $blocked_raw)) : array('PUT', 'DELETE', 'TRACE', 'CONNECT');
+    $blocked = array_filter(array_map('strtoupper', $blocked));
+    if (empty($blocked) || !in_array($method, $blocked, true)) {
+        return;
+    }
+
+    $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+    $allow_paths = tk_get_option('hardening_dangerous_methods_allow_paths', '');
+    if (is_string($allow_paths) && $allow_paths !== '') {
+        $lines = preg_split('/\r\n|\r|\n/', $allow_paths);
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            if (stripos($request_uri, $line) !== false) {
+                return;
+            }
+        }
+    }
+
+    status_header(405);
+    header('Allow: GET, POST');
+    wp_die('Dangerous HTTP method blocked.', 'Method Not Allowed', array('response' => 405));
+}
+
+function tk_hardening_db_host_value(): string {
+    if (!defined('DB_HOST')) {
+        return '';
+    }
+    return trim((string) DB_HOST);
+}
+
+function tk_hardening_db_host_parse(string $value): array {
+    $host = $value;
+    $port = 3306;
+
+    if ($host === '') {
+        return array('host' => '', 'port' => $port);
+    }
+    if (strpos($host, ':') !== false && strpos($host, ']') === false && substr_count($host, ':') === 1) {
+        $parts = explode(':', $host, 2);
+        $host = trim($parts[0]);
+        $port = is_numeric($parts[1]) ? (int) $parts[1] : 3306;
+    } elseif (strpos($host, '[') === 0 && strpos($host, ']') !== false) {
+        $end = strpos($host, ']');
+        $host_only = substr($host, 1, $end - 1);
+        $rest = substr($host, $end + 1);
+        $host = $host_only !== false ? $host_only : $host;
+        if (strpos($rest, ':') === 0) {
+            $candidate = substr($rest, 1);
+            if (is_numeric($candidate)) {
+                $port = (int) $candidate;
+            }
+        }
+    }
+
+    if (strpos($host, '/') !== false) {
+        $host = 'localhost';
+    }
+    if ($port <= 0 || $port > 65535) {
+        $port = 3306;
+    }
+    return array('host' => strtolower(trim($host)), 'port' => $port);
+}
+
+function tk_hardening_is_private_ip(string $ip): bool {
+    if (filter_var($ip, FILTER_VALIDATE_IP) === false) {
+        return false;
+    }
+    return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false;
+}
+
+function tk_hardening_robots_txt_content(string $output, bool $public): string {
+    if (!$public) {
+        return $output;
+    }
+    $lines = array(
+        'User-agent: *',
+        'Disallow: /wp-admin/',
+        'Allow: /wp-admin/admin-ajax.php',
+    );
+    $sitemap = '';
+    if (trim((string) get_option('blog_public')) === '1' && function_exists('wp_sitemaps_get_server')) {
+        $server = wp_sitemaps_get_server();
+        if (is_object($server) && method_exists($server, 'get_index_url')) {
+            $sitemap = trim((string) $server->get_index_url());
+        }
+    }
+    if ($sitemap !== '') {
+        $lines[] = 'Sitemap: ' . esc_url_raw($sitemap);
+    }
+    return implode("\n", $lines) . "\n";
+}
+
+function tk_hardening_unwanted_file_names(): array {
+    $raw = tk_get_option('hardening_unwanted_file_names', ".ds_store\nthumbs.db\nphpinfo.php\nerror_log\ndebug.log");
+    $lines = is_string($raw) ? preg_split('/\r\n|\r|\n/', strtolower($raw)) : array();
+    $names = array();
+    foreach ($lines as $line) {
+        $line = trim((string) $line);
+        if ($line !== '') {
+            $names[] = $line;
+        }
+    }
+    if (empty($names)) {
+        $names = array('.ds_store', 'thumbs.db', 'phpinfo.php', 'error_log', 'debug.log');
+    }
+    return array_values(array_unique($names));
+}
+
+function tk_hardening_block_unwanted_files(): void {
+    if (is_admin()) {
+        return;
+    }
+    $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+    if ($request_uri === '') {
+        return;
+    }
+    $path = wp_parse_url($request_uri, PHP_URL_PATH);
+    $basename = strtolower(basename((string) $path));
+    if ($basename === '') {
+        return;
+    }
+    $blocked = tk_hardening_unwanted_file_names();
+    if (in_array($basename, $blocked, true)) {
+        status_header(403);
+        wp_die('Forbidden.', 'Forbidden', array('response' => 403));
     }
 }
 
@@ -133,6 +425,39 @@ function tk_hardening_wp_config_path(): string {
     return '';
 }
 
+function tk_hardening_set_wp_config_constant(string $name, bool $enabled): bool {
+    $path = tk_hardening_wp_config_path();
+    if ($path === '' || !file_exists($path) || !is_writable($path)) {
+        return false;
+    }
+    $contents = @file_get_contents($path);
+    if (!is_string($contents) || $contents === '') {
+        return false;
+    }
+
+    $pattern = '/^[ \t]*define\s*\(\s*[\'"]' . preg_quote($name, '/') . '[\'"]\s*,\s*(?:true|false|1|0)\s*\)\s*;\s*$/im';
+    $replacement = "define('" . $name . "', " . ($enabled ? 'true' : 'false') . ");";
+    if (preg_match($pattern, $contents) === 1) {
+        $updated = preg_replace($pattern, $replacement, $contents, 1);
+        if (!is_string($updated)) {
+            return false;
+        }
+        return @file_put_contents($path, $updated) !== false;
+    }
+
+    if (!$enabled) {
+        return true;
+    }
+
+    $anchor = "/* That's all, stop editing! Happy publishing. */";
+    if (strpos($contents, $anchor) !== false) {
+        $updated = str_replace($anchor, $replacement . "\n" . $anchor, $contents);
+    } else {
+        $updated = rtrim($contents) . "\n" . $replacement . "\n";
+    }
+    return @file_put_contents($path, $updated) !== false;
+}
+
 function tk_hardening_apply_recommended_defaults(): void {
     if (!tk_get_option('hardening_auto_toggle', 1)) {
         return;
@@ -164,6 +489,8 @@ function tk_hardening_apply_recommended_defaults(): void {
     tk_update_option('hardening_disable_rest_user_enum', 1);
     tk_update_option('hardening_security_headers', 1);
     tk_update_option('hardening_csp_lite_enabled', 1);
+    tk_update_option('hardening_hsts_enabled', 1);
+    tk_update_option('hardening_server_signature_hide', 1);
     tk_update_option('hardening_server_aware_enabled', 1);
     tk_update_option('hardening_block_uploads_php', 1);
     tk_update_option('hardening_auto_applied', 1);
@@ -624,6 +951,25 @@ function tk_hardening_config_checks(): array {
         'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
     );
 
+    $unwanted_hits = array();
+    $root = rtrim(ABSPATH, '/');
+    foreach (tk_hardening_unwanted_file_names() as $name) {
+        $root_candidate = $root . '/' . ltrim($name, '/');
+        $content_candidate = WP_CONTENT_DIR . '/' . ltrim($name, '/');
+        if (file_exists($root_candidate)) {
+            $unwanted_hits[] = '/' . ltrim($name, '/');
+        } elseif (file_exists($content_candidate)) {
+            $unwanted_hits[] = '/wp-content/' . ltrim($name, '/');
+        }
+    }
+    $checks[] = array(
+        'label' => 'Unwanted files detected',
+        'status' => empty($unwanted_hits) ? 'ok' : 'warn',
+        'detail' => empty($unwanted_hits) ? 'No known unwanted files found in root/wp-content.' : 'Found: ' . implode(', ', $unwanted_hits),
+        'action_label' => 'Hardening settings',
+        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+    );
+
     $wp_config_path = tk_hardening_wp_config_path();
     if ($wp_config_path !== '') {
         $writable = is_writable($wp_config_path);
@@ -645,6 +991,15 @@ function tk_hardening_config_checks(): array {
         'detail' => $auto_core ? 'Enabled.' : 'Not enabled. Consider enabling for security patches.',
         'action_label' => 'Quick action',
         'action_url' => tk_admin_url('tool-kits-monitoring') . '#actions',
+    );
+
+    $wp_cron_disabled = defined('DISABLE_WP_CRON') ? (bool) DISABLE_WP_CRON : (bool) tk_get_option('hardening_disable_wp_cron', 0);
+    $checks[] = array(
+        'label' => 'WP-Cron disabled',
+        'status' => $wp_cron_disabled ? 'ok' : 'warn',
+        'detail' => $wp_cron_disabled ? 'Disabled.' : 'Enabled. Consider disabling and running real server cron.',
+        'action_label' => 'Hardening settings',
+        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
     );
 
     $disallow_file_mods = defined('DISALLOW_FILE_MODS') ? (bool) DISALLOW_FILE_MODS : false;
@@ -670,6 +1025,114 @@ function tk_hardening_config_checks(): array {
             'action_label' => 'Hardening settings',
             'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
         );
+    }
+
+    $strict_csp = tk_get_option('hardening_csp_strict_enabled', 0) ? true : false;
+    $checks[] = array(
+        'label' => 'CSP strict mode',
+        'status' => $strict_csp ? 'ok' : 'warn',
+        'detail' => $strict_csp ? 'Enabled (unsafe-inline/eval removed).' : 'Disabled. CSP may still allow unsafe-inline/eval.',
+        'action_label' => 'Hardening settings',
+        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+    );
+
+    $server_sig_hidden = tk_get_option('hardening_server_signature_hide', 1) ? true : false;
+    $checks[] = array(
+        'label' => 'Server signature headers hidden',
+        'status' => $server_sig_hidden ? 'ok' : 'warn',
+        'detail' => $server_sig_hidden ? 'Enabled.' : 'Disabled.',
+        'action_label' => 'Hardening settings',
+        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+    );
+
+    $httponly_forced = tk_get_option('hardening_cookie_httponly_force', 0) ? true : false;
+    $checks[] = array(
+        'label' => 'Cookie HttpOnly enforcement',
+        'status' => $httponly_forced ? 'ok' : 'warn',
+        'detail' => $httponly_forced ? 'Enabled.' : 'Disabled.',
+        'action_label' => 'Hardening settings',
+        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+    );
+
+    $method_filter = tk_get_option('hardening_http_methods_filter_enabled', 0) ? true : false;
+    $checks[] = array(
+        'label' => 'HTTP methods filtering',
+        'status' => $method_filter ? 'ok' : 'warn',
+        'detail' => $method_filter ? 'Enabled.' : 'Disabled.',
+        'action_label' => 'Hardening settings',
+        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+    );
+
+    $dangerous_methods_block = tk_get_option('hardening_block_dangerous_methods_enabled', 1) ? true : false;
+    $checks[] = array(
+        'label' => 'Dangerous HTTP methods blocked',
+        'status' => $dangerous_methods_block ? 'ok' : 'warn',
+        'detail' => $dangerous_methods_block ? 'PUT/DELETE/TRACE/CONNECT block enabled.' : 'Disabled.',
+        'action_label' => 'Hardening settings',
+        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+    );
+
+    $robots_hardened = tk_get_option('hardening_robots_txt_hardened', 0) ? true : false;
+    $checks[] = array(
+        'label' => 'robots.txt hardened',
+        'status' => $robots_hardened ? 'ok' : 'warn',
+        'detail' => $robots_hardened ? 'Enabled minimal robots policy.' : 'Disabled.',
+        'action_label' => 'Hardening settings',
+        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+    );
+
+    $unwanted_block = tk_get_option('hardening_block_unwanted_files_enabled', 1) ? true : false;
+    $checks[] = array(
+        'label' => 'Unwanted file access blocked',
+        'status' => $unwanted_block ? 'ok' : 'warn',
+        'detail' => $unwanted_block ? 'Enabled.' : 'Disabled.',
+        'action_label' => 'Hardening settings',
+        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+    );
+
+    $mysql_check = tk_get_option('hardening_mysql_exposure_check_enabled', 1) ? true : false;
+    if (!$mysql_check) {
+        $checks[] = array(
+            'label' => 'MySQL public exposure risk',
+            'status' => 'unknown',
+            'detail' => 'Check disabled.',
+            'action_label' => 'Hardening settings',
+            'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+        );
+    } else {
+        $parsed = tk_hardening_db_host_parse(tk_hardening_db_host_value());
+        $db_host = isset($parsed['host']) ? (string) $parsed['host'] : '';
+        $db_port = isset($parsed['port']) ? (int) $parsed['port'] : 3306;
+        $allow_public = tk_get_option('hardening_mysql_allow_public_host', 0) ? true : false;
+        if ($db_host === '' || $db_host === 'localhost' || $db_host === '127.0.0.1' || $db_host === '::1') {
+            $checks[] = array(
+                'label' => 'MySQL public exposure risk',
+                'status' => 'ok',
+                'detail' => 'DB host is local (' . ($db_host === '' ? 'localhost' : $db_host) . ').',
+                'action_label' => 'Hardening settings',
+                'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+            );
+        } elseif (filter_var($db_host, FILTER_VALIDATE_IP) && tk_hardening_is_private_ip($db_host)) {
+            $checks[] = array(
+                'label' => 'MySQL public exposure risk',
+                'status' => 'ok',
+                'detail' => 'DB host uses private IP ' . $db_host . ':' . $db_port . '.',
+                'action_label' => 'Hardening settings',
+                'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+            );
+        } else {
+            $status = $allow_public ? 'ok' : 'warn';
+            $detail = $allow_public
+                ? 'Public/remote DB host allowed by setting: ' . $db_host . ':' . $db_port . '.'
+                : 'DB host may be public/remote (' . $db_host . ':' . $db_port . '). Restrict 3306 via firewall.';
+            $checks[] = array(
+                'label' => 'MySQL public exposure risk',
+                'status' => $status,
+                'detail' => $detail,
+                'action_label' => 'Hardening settings',
+                'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+            );
+        }
     }
 
     $uploads = wp_upload_dir();
@@ -1144,7 +1607,23 @@ function tk_render_hardening_page() {
         'hardening_server_aware_enabled' => tk_get_option('hardening_server_aware_enabled', 1),
         'hardening_block_uploads_php' => tk_get_option('hardening_block_uploads_php', 1),
         'hardening_csp_lite_enabled' => tk_get_option('hardening_csp_lite_enabled', 0),
+        'hardening_csp_strict_enabled' => tk_get_option('hardening_csp_strict_enabled', 0),
         'hardening_hsts_enabled' => tk_get_option('hardening_hsts_enabled', 0),
+        'hardening_server_signature_hide' => tk_get_option('hardening_server_signature_hide', 1),
+        'hardening_cookie_httponly_force' => tk_get_option('hardening_cookie_httponly_force', 0),
+        'hardening_disable_wp_cron' => tk_get_option('hardening_disable_wp_cron', 0),
+        'hardening_url_param_guard_enabled' => tk_get_option('hardening_url_param_guard_enabled', 0),
+        'hardening_http_methods_filter_enabled' => tk_get_option('hardening_http_methods_filter_enabled', 0),
+        'hardening_http_methods_allowed' => tk_get_option('hardening_http_methods_allowed', 'GET, POST'),
+        'hardening_http_methods_allow_paths' => tk_get_option('hardening_http_methods_allow_paths', "/wp-json/\n/wp-admin/admin-ajax.php\n/wp-cron.php"),
+        'hardening_block_dangerous_methods_enabled' => tk_get_option('hardening_block_dangerous_methods_enabled', 1),
+        'hardening_dangerous_http_methods' => tk_get_option('hardening_dangerous_http_methods', 'PUT, DELETE, TRACE, CONNECT'),
+        'hardening_dangerous_methods_allow_paths' => tk_get_option('hardening_dangerous_methods_allow_paths', "/wp-json/\n/wp-admin/admin-ajax.php\n/wp-cron.php"),
+        'hardening_robots_txt_hardened' => tk_get_option('hardening_robots_txt_hardened', 0),
+        'hardening_block_unwanted_files_enabled' => tk_get_option('hardening_block_unwanted_files_enabled', 1),
+        'hardening_unwanted_file_names' => tk_get_option('hardening_unwanted_file_names', ".ds_store\nthumbs.db\nphpinfo.php\nerror_log\ndebug.log"),
+        'hardening_mysql_exposure_check_enabled' => tk_get_option('hardening_mysql_exposure_check_enabled', 1),
+        'hardening_mysql_allow_public_host' => tk_get_option('hardening_mysql_allow_public_host', 0),
         'hardening_block_plugin_installs' => tk_get_option('hardening_block_plugin_installs', 1),
     );
     ?>
@@ -1188,7 +1667,39 @@ function tk_render_hardening_page() {
                         <p><label><input type="checkbox" name="rest_user_enum" value="1" <?php checked(1, $opts['hardening_disable_rest_user_enum']); ?>> Disable REST user enumeration</label></p>
                         <p><label><input type="checkbox" name="headers" value="1" <?php checked(1, $opts['hardening_security_headers']); ?>> Send security headers</label></p>
                         <p><label><input type="checkbox" name="csp_lite" value="1" <?php checked(1, $opts['hardening_csp_lite_enabled']); ?>> Enable CSP lite header</label></p>
+                        <p><label><input type="checkbox" name="csp_strict" value="1" data-confirm="Strict CSP can break inline JS/CSS from theme/plugins if they are not nonce/hash based." <?php checked(1, $opts['hardening_csp_strict_enabled']); ?>> Enable strict CSP (no unsafe-inline/unsafe-eval)</label></p>
                         <p><label><input type="checkbox" name="hsts" value="1" <?php checked(1, $opts['hardening_hsts_enabled']); ?>> Enable HSTS header (HTTPS only)</label></p>
+                        <p><label><input type="checkbox" name="server_signature_hide" value="1" <?php checked(1, $opts['hardening_server_signature_hide']); ?>> Hide PHP signature headers (X-Powered-By/expose_php)</label></p>
+                        <p><label><input type="checkbox" name="cookie_httponly_force" value="1" data-confirm="Forcing HttpOnly on all Set-Cookie headers may affect integrations that require script-readable cookies." <?php checked(1, $opts['hardening_cookie_httponly_force']); ?>> Force HttpOnly/Secure on response cookies</label></p>
+                        <p><label><input type="checkbox" name="disable_wp_cron" value="1" data-confirm="Disabling WP-Cron requires server cron replacement (e.g. call wp-cron.php every 5 minutes)." <?php checked(1, $opts['hardening_disable_wp_cron']); ?>> Disable WP-Cron (set DISABLE_WP_CRON)</label></p>
+                        <p><label><input type="checkbox" name="url_param_guard" value="1" data-confirm="URL parameter guard may block unusual query patterns. Review logs after enabling." <?php checked(1, $opts['hardening_url_param_guard_enabled']); ?>> Enable URL parameter guard</label></p>
+                        <p><label><input type="checkbox" name="http_methods_filter" value="1" data-confirm="Blocking HTTP methods may break APIs and preflight requests if configuration is too strict." <?php checked(1, $opts['hardening_http_methods_filter_enabled']); ?>> Enable HTTP methods filtering</label></p>
+                        <p>
+                            Allowed HTTP methods (comma-separated)<br>
+                            <input class="regular-text" type="text" name="http_methods_allowed" value="<?php echo esc_attr((string)$opts['hardening_http_methods_allowed']); ?>" placeholder="GET, POST">
+                        </p>
+                        <p>
+                            HTTP methods allow paths (one per line)<br>
+                            <textarea class="large-text" rows="2" name="http_methods_allow_paths" placeholder="/wp-json/"><?php echo esc_textarea((string)$opts['hardening_http_methods_allow_paths']); ?></textarea>
+                        </p>
+                        <p><label><input type="checkbox" name="block_dangerous_methods" value="1" <?php checked(1, $opts['hardening_block_dangerous_methods_enabled']); ?>> Block dangerous HTTP methods (PUT/DELETE/TRACE/CONNECT)</label></p>
+                        <p>
+                            Dangerous methods list (comma-separated)<br>
+                            <input class="regular-text" type="text" name="dangerous_http_methods" value="<?php echo esc_attr((string)$opts['hardening_dangerous_http_methods']); ?>" placeholder="PUT, DELETE, TRACE, CONNECT">
+                        </p>
+                        <p>
+                            Dangerous methods allow paths (one per line)<br>
+                            <textarea class="large-text" rows="2" name="dangerous_methods_allow_paths" placeholder="/wp-json/"><?php echo esc_textarea((string)$opts['hardening_dangerous_methods_allow_paths']); ?></textarea>
+                        </p>
+                        <p><label><input type="checkbox" name="robots_txt_hardened" value="1" <?php checked(1, $opts['hardening_robots_txt_hardened']); ?>> Harden robots.txt (minimal policy)</label></p>
+                        <p><label><input type="checkbox" name="block_unwanted_files" value="1" <?php checked(1, $opts['hardening_block_unwanted_files_enabled']); ?>> Block direct access to unwanted filenames</label></p>
+                        <p>
+                            Unwanted filenames (one per line)<br>
+                            <textarea class="large-text" rows="3" name="unwanted_file_names" placeholder=".ds_store"><?php echo esc_textarea((string)$opts['hardening_unwanted_file_names']); ?></textarea>
+                        </p>
+                        <p><label><input type="checkbox" name="mysql_exposure_check" value="1" <?php checked(1, $opts['hardening_mysql_exposure_check_enabled']); ?>> Enable MySQL public exposure risk check</label></p>
+                        <p><label><input type="checkbox" name="mysql_allow_public_host" value="1" <?php checked(1, $opts['hardening_mysql_allow_public_host']); ?>> Allow public/managed DB host (suppress warning)</label></p>
+                        <p class="description">Note: plugin cannot close port 3306 directly. Restrict MySQL access using firewall/security group (internal IP/VPN only).</p>
                         <p><label><input type="checkbox" name="server_aware" value="1" <?php checked(1, $opts['hardening_server_aware_enabled']); ?>> Enable server-aware rules</label></p>
                         <p><label><input type="checkbox" name="block_uploads_php" value="1" <?php checked(1, $opts['hardening_block_uploads_php']); ?>> Block PHP execution in uploads/ (Apache/LiteSpeed/IIS)</label></p>
                         <p><label><input type="checkbox" name="block_plugin_installs" value="1" <?php checked(1, $opts['hardening_block_plugin_installs']); ?>> Block plugin/theme install/update for non-admins</label></p>
@@ -1394,7 +1905,35 @@ function tk_hardening_save() {
         tk_update_option('hardening_disable_rest_user_enum', !empty($_POST['rest_user_enum']) ? 1 : 0);
         tk_update_option('hardening_security_headers', !empty($_POST['headers']) ? 1 : 0);
         tk_update_option('hardening_csp_lite_enabled', !empty($_POST['csp_lite']) ? 1 : 0);
+        tk_update_option('hardening_csp_strict_enabled', !empty($_POST['csp_strict']) ? 1 : 0);
         tk_update_option('hardening_hsts_enabled', !empty($_POST['hsts']) ? 1 : 0);
+        tk_update_option('hardening_server_signature_hide', !empty($_POST['server_signature_hide']) ? 1 : 0);
+        tk_update_option('hardening_cookie_httponly_force', !empty($_POST['cookie_httponly_force']) ? 1 : 0);
+        $disable_wp_cron = !empty($_POST['disable_wp_cron']) ? 1 : 0;
+        tk_update_option('hardening_disable_wp_cron', $disable_wp_cron);
+        tk_hardening_set_wp_config_constant('DISABLE_WP_CRON', (bool) $disable_wp_cron);
+        tk_update_option('hardening_url_param_guard_enabled', !empty($_POST['url_param_guard']) ? 1 : 0);
+        tk_update_option('hardening_http_methods_filter_enabled', !empty($_POST['http_methods_filter']) ? 1 : 0);
+        $http_methods_allowed = isset($_POST['http_methods_allowed']) ? wp_unslash($_POST['http_methods_allowed']) : 'GET, POST';
+        $http_methods_allowed = is_string($http_methods_allowed) ? trim(sanitize_text_field($http_methods_allowed)) : 'GET, POST';
+        tk_update_option('hardening_http_methods_allowed', $http_methods_allowed);
+        $http_methods_allow_paths = isset($_POST['http_methods_allow_paths']) ? wp_unslash($_POST['http_methods_allow_paths']) : '';
+        $http_methods_allow_paths = is_string($http_methods_allow_paths) ? trim($http_methods_allow_paths) : '';
+        tk_update_option('hardening_http_methods_allow_paths', $http_methods_allow_paths);
+        tk_update_option('hardening_block_dangerous_methods_enabled', !empty($_POST['block_dangerous_methods']) ? 1 : 0);
+        $dangerous_http_methods = isset($_POST['dangerous_http_methods']) ? wp_unslash($_POST['dangerous_http_methods']) : 'PUT, DELETE, TRACE, CONNECT';
+        $dangerous_http_methods = is_string($dangerous_http_methods) ? trim(sanitize_text_field($dangerous_http_methods)) : 'PUT, DELETE, TRACE, CONNECT';
+        tk_update_option('hardening_dangerous_http_methods', $dangerous_http_methods);
+        $dangerous_methods_allow_paths = isset($_POST['dangerous_methods_allow_paths']) ? wp_unslash($_POST['dangerous_methods_allow_paths']) : '';
+        $dangerous_methods_allow_paths = is_string($dangerous_methods_allow_paths) ? trim($dangerous_methods_allow_paths) : '';
+        tk_update_option('hardening_dangerous_methods_allow_paths', $dangerous_methods_allow_paths);
+        tk_update_option('hardening_robots_txt_hardened', !empty($_POST['robots_txt_hardened']) ? 1 : 0);
+        tk_update_option('hardening_block_unwanted_files_enabled', !empty($_POST['block_unwanted_files']) ? 1 : 0);
+        $unwanted_file_names = isset($_POST['unwanted_file_names']) ? wp_unslash($_POST['unwanted_file_names']) : '';
+        $unwanted_file_names = is_string($unwanted_file_names) ? trim($unwanted_file_names) : '';
+        tk_update_option('hardening_unwanted_file_names', $unwanted_file_names);
+        tk_update_option('hardening_mysql_exposure_check_enabled', !empty($_POST['mysql_exposure_check']) ? 1 : 0);
+        tk_update_option('hardening_mysql_allow_public_host', !empty($_POST['mysql_allow_public_host']) ? 1 : 0);
         tk_update_option('hardening_server_aware_enabled', !empty($_POST['server_aware']) ? 1 : 0);
         tk_update_option('hardening_block_uploads_php', !empty($_POST['block_uploads_php']) ? 1 : 0);
         tk_update_option('hardening_block_plugin_installs', !empty($_POST['block_plugin_installs']) ? 1 : 0);

@@ -16,6 +16,9 @@ function tk_webp_should_serve() {
     if (is_admin()) {
         return false;
     }
+    if (!tk_license_features_enabled()) {
+        return false;
+    }
     if (!tk_get_option('webp_serve_enabled', 0)) {
         return false;
     }
@@ -24,6 +27,9 @@ function tk_webp_should_serve() {
 }
 
 function tk_webp_generate_on_upload($metadata, $attachment_id) {
+    if (!tk_license_features_enabled()) {
+        return $metadata;
+    }
     if (!tk_get_option('webp_convert_enabled', 0)) {
         return $metadata;
     }
@@ -34,6 +40,9 @@ function tk_webp_generate_on_upload($metadata, $attachment_id) {
 }
 
 function tk_webp_generate_on_attachment_add($attachment_id, $metadata = null) {
+    if (!tk_license_features_enabled()) {
+        return $metadata;
+    }
     if (!tk_get_option('webp_convert_enabled', 0)) {
         return $metadata;
     }

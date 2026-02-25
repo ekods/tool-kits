@@ -9,6 +9,9 @@ function tk_upload_limits_init() {
 }
 
 function tk_upload_limits_enabled(): bool {
+    if (!tk_license_features_enabled()) {
+        return false;
+    }
     return (int) tk_get_option('upload_images_limit_enabled', 1) === 1;
 }
 

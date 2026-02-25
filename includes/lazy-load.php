@@ -11,6 +11,9 @@ function tk_lazy_load_init() {
 }
 
 function tk_lazy_load_enabled(): bool {
+    if (!tk_license_features_enabled()) {
+        return false;
+    }
     return (int) tk_get_option('lazy_load_enabled', 0) === 1;
 }
 

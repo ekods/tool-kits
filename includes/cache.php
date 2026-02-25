@@ -37,6 +37,9 @@ function tk_page_cache_path() {
 }
 
 function tk_cache_is_cacheable_request() {
+    if (!tk_license_features_enabled()) {
+        return false;
+    }
     if (!tk_get_option('page_cache_enabled', 0)) {
         return false;
     }

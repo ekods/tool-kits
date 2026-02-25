@@ -32,6 +32,21 @@ Tool Kits membantu admin WordPress mengelola 5 area utama:
 - Theme checker (summary, largest file, duplicate PHP, risky functions).
 - Tool Kits Access (role/IP access, alerts, audit log, owner mode, license).
 
+### Pembaruan Terbaru (Hardening)
+
+- HSTS header sekarang tersedia sebagai toggle dan default direkomendasikan aktif.
+- Opsi CSP strict ditambahkan (tanpa `unsafe-inline`/`unsafe-eval`).
+- Opsi hide server signature (`X-Powered-By`/`expose_php`) ditambahkan.
+- Opsi force `HttpOnly`/`Secure` pada cookie response ditambahkan.
+- Opsi disable WP-Cron (`DISABLE_WP_CRON`) ditambahkan dari panel hardening.
+- Opsi URL Parameter Guard ditambahkan untuk memblokir query string mencurigakan.
+- Opsi HTTP methods filtering ditambahkan (allowlist method + allowlist path).
+- Opsi block dangerous HTTP methods ditambahkan (default: PUT, DELETE, TRACE, CONNECT).
+- Opsi harden `robots.txt` ditambahkan (minimal policy).
+- Opsi block unwanted files ditambahkan (dengan daftar filename custom).
+- Check risiko MySQL publik (port 3306) ditambahkan di monitoring hardening.
+- Catatan: plugin tidak bisa menutup port 3306 langsung; mitigasi final tetap di firewall/security group server.
+
 ### Struktur Menu
 
 - `Tool Kits`
@@ -104,11 +119,20 @@ Untuk menurunkan attack surface WordPress.
 - Disable file editor.
 - Disable XML-RPC atau blok method berisiko.
 - Disable REST user enumeration.
-- Tambahkan security headers.
+- Tambahkan security headers (termasuk HSTS).
+- CSP strict mode (opsional).
+- Sembunyikan signature header server/PHP.
+- Force HttpOnly/Secure untuk cookie response.
+- Disable WP-Cron dari pengaturan.
+- URL parameter guard.
+- HTTP methods filtering + block dangerous methods.
 - Blok eksekusi PHP di uploads.
 - WAF basic berbasis path/method.
 - HTTP Basic Auth scope frontend/backend.
 - CORS allowlist custom.
+- Harden robots.txt.
+- Block akses file tidak diinginkan.
+- Check risiko DB host publik (indikasi eksposur MySQL 3306).
 
 #### 7) SMTP
 
@@ -199,6 +223,21 @@ Tool Kits is an all-in-one WordPress admin toolkit focused on:
 - Theme checker (summary, largest files, duplicate PHP, risky functions).
 - Access controls (roles/IP allowlist, alerts, audit log, owner mode, license).
 
+### Recent Updates (Hardening)
+
+- HSTS header toggle is available and recommended defaults are enabled.
+- Strict CSP mode added (without `unsafe-inline`/`unsafe-eval`).
+- Server signature hiding option added (`X-Powered-By`/`expose_php`).
+- Force `HttpOnly`/`Secure` cookie response flags added.
+- WP-Cron disable option (`DISABLE_WP_CRON`) added in hardening settings.
+- URL Parameter Guard added for suspicious query strings.
+- HTTP methods filtering added (method allowlist + path allowlist).
+- Dangerous HTTP methods blocking added (default: PUT, DELETE, TRACE, CONNECT).
+- `robots.txt` hardening option added (minimal policy).
+- Unwanted file access blocking added with custom filename list.
+- MySQL public exposure risk check (port 3306 indicator) added in monitoring checks.
+- Note: the plugin cannot close port 3306 directly; final mitigation must be done via server firewall/security groups.
+
 ### Menu Structure
 
 - `Tool Kits`
@@ -270,11 +309,20 @@ Reduces WordPress attack surface.
 - Disable file editor.
 - Disable XML-RPC or block risky methods.
 - Disable REST user enumeration.
-- Apply security headers.
+- Apply security headers (including HSTS).
+- Optional strict CSP mode.
+- Hide server/PHP signature headers.
+- Force HttpOnly/Secure cookie response flags.
+- Disable WP-Cron from settings.
+- URL parameter guard.
+- HTTP methods filtering + dangerous methods block.
 - Block PHP execution in uploads.
 - Basic request filtering via WAF options.
 - HTTP Basic Auth for frontend/backend scope.
 - Custom CORS allowlist.
+- Harden robots.txt output.
+- Block direct access to unwanted files.
+- Check public DB host risk (possible MySQL 3306 exposure).
 
 #### 7) SMTP
 

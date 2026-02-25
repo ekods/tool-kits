@@ -5,10 +5,13 @@ function tk_smtp_init() {
     add_action('admin_post_tk_smtp_save', 'tk_smtp_save');
     add_action('admin_post_tk_smtp_test', 'tk_smtp_test_send');
     add_action('admin_post_tk_smtp_test_log_clear', 'tk_smtp_test_log_clear');
-    add_action('phpmailer_init', 'tk_smtp_phpmailer_init');
+    // Run late so this SMTP config wins if other plugins also hook phpmailer_init.
+    add_action('phpmailer_init', 'tk_smtp_phpmailer_init', 99999);
     add_filter('wp_mail_from', 'tk_smtp_mail_from', 20);
     add_filter('wp_mail_from_name', 'tk_smtp_mail_from_name', 20);
     add_action('wp_mail_failed', 'tk_smtp_test_log_capture_wp_mail_error');
+    // Capture final PHPMailer transport after all plugins finish mutating it.
+    add_action('phpmailer_init', 'tk_smtp_capture_transport_observer', 1000000);
 }
 
 function tk_smtp_enabled() {
@@ -86,7 +89,12 @@ function tk_smtp_phpmailer_init($phpmailer = null) {
         $username_domain = tk_smtp_email_domain($config['username']);
         if ($from_domain === '' || $username_domain === '' || $from_domain !== $username_domain) {
             $phpmailer->setFrom($config['username'], $phpmailer->FromName, false);
-            if (is_email($original_from) && method_exists($phpmailer, 'getReplyToAddresses')) {
+            if (
+                is_email($original_from)
+                && method_exists($phpmailer, 'getReplyToAddresses')
+                && $from_domain !== ''
+                && $from_domain === $username_domain
+            ) {
                 $reply_to = $phpmailer->getReplyToAddresses();
                 if (empty($reply_to)) {
                     $phpmailer->addReplyTo($original_from, $original_from_name);
@@ -115,6 +123,8 @@ function tk_smtp_phpmailer_init($phpmailer = null) {
     if ($config['return_path'] && is_email($phpmailer->From)) {
         $phpmailer->Sender = $phpmailer->From;
     }
+
+    tk_smtp_capture_last_transport($phpmailer);
 }
 
 function tk_smtp_mail_from($current) {
@@ -179,6 +189,7 @@ function tk_render_smtp_page() {
     $test_email = isset($_GET['tk_smtp_test_email']) ? sanitize_email(wp_unslash($_GET['tk_smtp_test_email'])) : '';
     $smtp_test_log = tk_smtp_test_log_get();
     $log_cleared = isset($_GET['tk_smtp_log_cleared']) ? sanitize_key($_GET['tk_smtp_log_cleared']) : '';
+    $transport_warning = tk_smtp_transport_warning($opts);
     ?>
     <div class="wrap tk-wrap">
         <h1>SMTP</h1>
@@ -187,6 +198,9 @@ function tk_render_smtp_page() {
         <?php endif; ?>
         <?php if ($log_cleared === '1') : ?>
             <?php tk_notice('SMTP test log cleared.', 'success'); ?>
+        <?php endif; ?>
+        <?php if ($transport_warning !== '') : ?>
+            <?php tk_notice($transport_warning, 'warning'); ?>
         <?php endif; ?>
         <div class="tk-tabs">
             <div class="tk-tabs-nav">
@@ -281,7 +295,12 @@ function tk_render_smtp_page() {
                         </p>
                         <p>
                             <label for="tk-smtp-test-message">Message (optional)</label><br>
-                            <textarea id="tk-smtp-test-message" name="smtp_test_message" class="large-text" rows="3">This is a test email sent via Tool Kits SMTP.</textarea>
+                            <textarea id="tk-smtp-test-message" name="smtp_test_message" class="large-text" rows="3">Hello,
+
+This is a delivery check message from the website mail system.
+
+Regards,
+Mail Service</textarea>
                         </p>
                         <p><button class="button button-secondary">Send test email</button></p>
                     </form>
@@ -524,12 +543,20 @@ function tk_smtp_test_send() {
 
     $message = isset($_POST['smtp_test_message']) ? sanitize_textarea_field(wp_unslash($_POST['smtp_test_message'])) : '';
     if ($message === '') {
-        $message = sprintf('This is a test email sent from %s via Tool Kits SMTP.', home_url('/'));
+        $message = sprintf(
+            "Hello,\n\nThis message confirms outbound email delivery from %s.\nSent at: %s\n\nRegards,\nMail Service",
+            home_url('/'),
+            wp_date('Y-m-d H:i:s T')
+        );
     }
 
     tk_smtp_test_log_clear_error();
 
-    $subject = 'Tool Kits SMTP test';
+    $site_name = wp_specialchars_decode((string) get_option('blogname'), ENT_QUOTES);
+    if ($site_name === '') {
+        $site_name = parse_url(home_url('/'), PHP_URL_HOST) ?: 'Website';
+    }
+    $subject = sprintf('Message delivery check - %s', $site_name);
 
     $config = tk_smtp_get_config();
     $original_from = (string) get_option('admin_email');
@@ -537,14 +564,18 @@ function tk_smtp_test_send() {
     $from_name = tk_smtp_mail_from_name((string) get_option('blogname'));
     $reply_to = '';
     if ($config['force_from'] && is_email($original_from) && $from_email !== $original_from) {
-        $reply_to = $original_from;
+        $from_domain = tk_smtp_email_domain($from_email);
+        $original_domain = tk_smtp_email_domain($original_from);
+        if ($from_domain !== '' && $from_domain === $original_domain) {
+            $reply_to = $original_from;
+        }
     }
     $details = array(
         'from' => $from_email,
         'from_name' => $from_name,
         'reply_to' => $reply_to,
         'return_path' => $config['return_path'] ? $from_email : '',
-        'content_type' => 'text/html; charset=UTF-8',
+        'content_type' => 'text/plain; charset=UTF-8',
         'smtp_host' => $config['host'],
         'smtp_port' => $config['port'],
         'smtp_secure' => $config['secure'],
@@ -553,10 +584,19 @@ function tk_smtp_test_send() {
         'smtp_user' => $config['username'],
         'force_from' => $config['force_from'] ? 'on' : 'off',
         'return_path_enabled' => $config['return_path'] ? 'on' : 'off',
-        'auth_check' => 'not available',
+        'auth_check' => tk_smtp_auth_check_summary($from_email),
     );
 
-    $sent = wp_mail($recipient, $subject, $message);
+    $headers = array(
+        'Content-Type: text/plain; charset=UTF-8',
+        'Auto-Submitted: auto-generated',
+        'X-Auto-Response-Suppress: All',
+        'X-Mailer: Tool Kits SMTP',
+    );
+    $sent = wp_mail($recipient, $subject, $message, $headers);
+    $transport = tk_smtp_last_transport();
+    $details['transport_mailer'] = isset($transport['mailer']) ? (string) $transport['mailer'] : '';
+    $details['transport_host'] = isset($transport['host']) ? (string) $transport['host'] : '';
     $status = $sent ? 'success' : 'fail';
     tk_log(sprintf('SMTP test email to %s %s', $recipient, $status));
     $reason = $status === 'fail' ? tk_smtp_test_log_get_error() : '';
@@ -637,6 +677,124 @@ function tk_smtp_email_domain(string $value): string {
     return strtolower($parts[1]);
 }
 
+function tk_smtp_dns_txt_records(string $host): array {
+    $host = trim(strtolower($host));
+    if ($host === '') {
+        return array();
+    }
+    if (function_exists('dns_get_record')) {
+        $records = @dns_get_record($host, DNS_TXT);
+        if (is_array($records)) {
+            return $records;
+        }
+    }
+    return array();
+}
+
+function tk_smtp_dns_txt_contains(string $host, string $needle): bool {
+    $needle = strtolower($needle);
+    $records = tk_smtp_dns_txt_records($host);
+    if (!empty($records)) {
+        foreach ($records as $record) {
+            $txt = '';
+            if (isset($record['txt']) && is_string($record['txt'])) {
+                $txt = $record['txt'];
+            } elseif (isset($record['entries']) && is_array($record['entries'])) {
+                $txt = implode('', array_map('strval', $record['entries']));
+            }
+            if ($txt !== '' && strpos(strtolower($txt), $needle) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (function_exists('checkdnsrr')) {
+        return @checkdnsrr($host, 'TXT');
+    }
+    return false;
+}
+
+function tk_smtp_dkim_exists(string $domain): bool {
+    $selectors = array('selector1', 'selector2', 'default', 'google', 'k1', 'dkim');
+    foreach ($selectors as $selector) {
+        $host = $selector . '._domainkey.' . $domain;
+        if (tk_smtp_dns_txt_contains($host, 'v=dkim1') || tk_smtp_dns_txt_contains($host, ' p=')) {
+            return true;
+        }
+    }
+    if (function_exists('checkdnsrr')) {
+        $domainkey = '_domainkey.' . $domain;
+        if (@checkdnsrr($domainkey, 'NS') || @checkdnsrr($domainkey, 'CNAME') || @checkdnsrr($domainkey, 'TXT')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function tk_smtp_auth_check_summary(string $from_email): string {
+    $domain = tk_smtp_email_domain($from_email);
+    if ($domain === '') {
+        return 'not available';
+    }
+    $spf_ok = tk_smtp_dns_txt_contains($domain, 'v=spf1');
+    $dmarc_ok = tk_smtp_dns_txt_contains('_dmarc.' . $domain, 'v=dmarc1');
+    $dkim_ok = tk_smtp_dkim_exists($domain);
+
+    $parts = array(
+        'SPF: ' . ($spf_ok ? 'ok' : 'missing'),
+        'DKIM: ' . ($dkim_ok ? 'ok' : 'missing'),
+        'DMARC: ' . ($dmarc_ok ? 'ok' : 'missing'),
+    );
+    return implode(', ', $parts);
+}
+
+function tk_smtp_capture_last_transport(PHPMailer $phpmailer): void {
+    $data = array(
+        'time' => time(),
+        'mailer' => isset($phpmailer->Mailer) ? (string) $phpmailer->Mailer : '',
+        'host' => isset($phpmailer->Host) ? (string) $phpmailer->Host : '',
+        'port' => isset($phpmailer->Port) ? (int) $phpmailer->Port : 0,
+        'secure' => isset($phpmailer->SMTPSecure) ? (string) $phpmailer->SMTPSecure : '',
+        'auth' => !empty($phpmailer->SMTPAuth) ? 'on' : 'off',
+    );
+    tk_update_option('smtp_last_transport', $data);
+}
+
+function tk_smtp_capture_transport_observer($phpmailer = null): void {
+    if (!($phpmailer instanceof PHPMailer)) {
+        return;
+    }
+    tk_smtp_capture_last_transport($phpmailer);
+}
+
+function tk_smtp_last_transport(): array {
+    $data = tk_get_option('smtp_last_transport', array());
+    return is_array($data) ? $data : array();
+}
+
+function tk_smtp_transport_warning(array $opts): string {
+    if ((int) $opts['smtp_enabled'] !== 1) {
+        return '';
+    }
+    if (!isset($opts['smtp_provider']) || (string) $opts['smtp_provider'] !== 'office365') {
+        return '';
+    }
+    $last = tk_smtp_last_transport();
+    if (empty($last)) {
+        return 'No transport data yet. Send a test email first to verify the actual delivery path.';
+    }
+    $mailer = isset($last['mailer']) ? strtolower((string) $last['mailer']) : '';
+    $host = isset($last['host']) ? strtolower((string) $last['host']) : '';
+    if ($mailer !== 'smtp' || $host !== 'smtp.office365.com') {
+        return sprintf(
+            'Last detected transport is Mailer=%s Host=%s. This is not Office365 SMTP and can cause Junk/Unverified.',
+            $mailer !== '' ? $mailer : '(empty)',
+            $host !== '' ? $host : '(empty)'
+        );
+    }
+    return '';
+}
+
 function tk_smtp_from_username_match(): bool {
     $from = tk_get_option('smtp_from_email', '');
     $username = tk_get_option('smtp_username', '');
@@ -685,6 +843,8 @@ function tk_smtp_test_log_format_details(array $details): string {
         'force_from' => 'Force From',
         'return_path_enabled' => 'Return-Path Enabled',
         'auth_check' => 'SPF/DKIM/DMARC',
+        'transport_mailer' => 'Transport',
+        'transport_host' => 'Transport Host',
     );
     $parts = array();
     foreach ($map as $key => $label) {

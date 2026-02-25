@@ -12,6 +12,9 @@ function tk_minify_start_buffer() {
     if (is_admin() || wp_doing_ajax() || is_feed() || is_preview()) {
         return;
     }
+    if (!tk_license_features_enabled()) {
+        return;
+    }
     if (!tk_get_option('minify_html_enabled', 0)) {
         return;
     }
@@ -20,6 +23,9 @@ function tk_minify_start_buffer() {
 
 function tk_minify_filter_asset_src($src, $handle) {
     if (is_admin()) {
+        return $src;
+    }
+    if (!tk_license_features_enabled()) {
         return $src;
     }
     if (!tk_get_option('minify_assets_enabled', 0)) {

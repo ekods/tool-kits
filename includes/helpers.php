@@ -355,8 +355,18 @@ function tk_tamper_detect_security(): array {
         'hardening_disable_rest_user_enum' => 'REST user enumeration disabled',
         'hardening_security_headers' => 'Security headers',
         'hardening_csp_lite_enabled' => 'CSP lite',
+        'hardening_csp_strict_enabled' => 'CSP strict',
         'hardening_block_uploads_php' => 'Block uploads PHP',
         'hardening_block_plugin_installs' => 'Block plugin/theme installs',
+        'hardening_server_signature_hide' => 'Server signature hidden',
+        'hardening_cookie_httponly_force' => 'Cookie HttpOnly',
+        'hardening_disable_wp_cron' => 'WP-Cron disabled',
+        'hardening_url_param_guard_enabled' => 'URL parameter guard',
+        'hardening_http_methods_filter_enabled' => 'HTTP methods filter',
+        'hardening_block_dangerous_methods_enabled' => 'Dangerous HTTP methods blocked',
+        'hardening_robots_txt_hardened' => 'Robots.txt hardened',
+        'hardening_block_unwanted_files_enabled' => 'Unwanted file block',
+        'hardening_mysql_exposure_check_enabled' => 'MySQL exposure check',
     );
     $disabled = array();
     foreach ($checks as $key => $label) {
@@ -438,8 +448,35 @@ function tk_hardening_active_items(): array {
     if (tk_get_option('hardening_csp_lite_enabled', 0)) {
         $items[] = 'CSP lite';
     }
+    if (tk_get_option('hardening_csp_strict_enabled', 0)) {
+        $items[] = 'CSP strict';
+    }
     if (tk_get_option('hardening_hsts_enabled', 0)) {
         $items[] = 'HSTS';
+    }
+    if (tk_get_option('hardening_server_signature_hide', 1)) {
+        $items[] = 'Server signature hidden';
+    }
+    if (tk_get_option('hardening_cookie_httponly_force', 0)) {
+        $items[] = 'Cookie HttpOnly forced';
+    }
+    if (tk_get_option('hardening_disable_wp_cron', 0)) {
+        $items[] = 'WP-Cron disabled';
+    }
+    if (tk_get_option('hardening_url_param_guard_enabled', 0)) {
+        $items[] = 'URL parameter guard';
+    }
+    if (tk_get_option('hardening_http_methods_filter_enabled', 0)) {
+        $items[] = 'HTTP methods filter';
+    }
+    if (tk_get_option('hardening_block_dangerous_methods_enabled', 1)) {
+        $items[] = 'Dangerous HTTP methods blocked';
+    }
+    if (tk_get_option('hardening_robots_txt_hardened', 0)) {
+        $items[] = 'Robots.txt hardened';
+    }
+    if (tk_get_option('hardening_block_unwanted_files_enabled', 1)) {
+        $items[] = 'Unwanted file block';
     }
     if (tk_get_option('hardening_block_uploads_php', 1)) {
         $items[] = 'Block uploads PHP';
@@ -546,7 +583,23 @@ function tk_option_init_defaults() {
         'hardening_auto_applied' => 0,
         'hardening_block_uploads_php' => 1,
         'hardening_csp_lite_enabled' => 1,
-        'hardening_hsts_enabled' => 0,
+        'hardening_csp_strict_enabled' => 0,
+        'hardening_hsts_enabled' => 1,
+        'hardening_server_signature_hide' => 1,
+        'hardening_cookie_httponly_force' => 0,
+        'hardening_disable_wp_cron' => 0,
+        'hardening_url_param_guard_enabled' => 0,
+        'hardening_http_methods_filter_enabled' => 0,
+        'hardening_http_methods_allowed' => 'GET, POST',
+        'hardening_http_methods_allow_paths' => "/wp-json/\n/wp-admin/admin-ajax.php\n/wp-cron.php",
+        'hardening_block_dangerous_methods_enabled' => 1,
+        'hardening_dangerous_http_methods' => 'PUT, DELETE, TRACE, CONNECT',
+        'hardening_dangerous_methods_allow_paths' => "/wp-json/\n/wp-admin/admin-ajax.php\n/wp-cron.php",
+        'hardening_robots_txt_hardened' => 0,
+        'hardening_block_unwanted_files_enabled' => 1,
+        'hardening_unwanted_file_names' => ".ds_store\nthumbs.db\nphpinfo.php\nerror_log\ndebug.log",
+        'hardening_mysql_exposure_check_enabled' => 1,
+        'hardening_mysql_allow_public_host' => 0,
         'hardening_core_auto_updates' => 1,
         'hardening_block_plugin_installs' => 1,
         'monitoring_alert_email' => '',
@@ -976,6 +1029,10 @@ function tk_license_is_valid(): bool {
     $status = (string) tk_get_option('license_status', 'inactive');
     $last_checked = (int) tk_get_option('license_last_checked', 0);
     return $status === 'valid' && $last_checked > 0 && (time() - $last_checked) < DAY_IN_SECONDS;
+}
+
+function tk_license_features_enabled(): bool {
+    return (string) tk_get_option('license_status', 'inactive') === 'valid';
 }
 
 function tk_toolkits_is_locked(): bool {

@@ -13,7 +13,7 @@ function tk_assets_opt_init() {
 }
 
 function tk_assets_opt_enabled(): bool {
-    return !is_admin();
+    return !is_admin() && tk_license_features_enabled();
 }
 
 function tk_assets_parse_handles($raw): array {

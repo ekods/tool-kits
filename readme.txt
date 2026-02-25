@@ -22,6 +22,9 @@ Tool Kits adalah plugin admin toolkit untuk:
 - Export SQL: best-effort via WPDB. Untuk database besar, gunakan phpMyAdmin/CLI.
 - Update checker mengambil rilis dari GitHub (release asset `tool-kits.zip` direkomendasikan untuk instalasi otomatis).
 - Added heartbeat collector integration improvements: heartbeat payload now includes hide-login slug/URL and collector dashboard surfaces those fields alongside the license data.
+- Hardening update: added HSTS toggle, strict CSP, server signature hide, cookie HttpOnly/Secure enforcement, WP-Cron disable toggle, URL parameter guard, HTTP methods filtering, dangerous method block, robots.txt hardening, and unwanted file access block.
+- Monitoring checks now include risky public DB host detection (possible MySQL port 3306 exposure indicator).
+- Penting: plugin tidak dapat menutup port 3306 secara langsung; pembatasan akses DB tetap wajib di firewall/security group server.
 
 == Developer Notes ==
 Filters to adjust CORS by environment (optional example):
@@ -57,6 +60,11 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= Unreleased =
+- Hardening: tambah HSTS toggle, strict CSP, hide server signature header, force HttpOnly/Secure cookies.
+- Hardening: tambah disable WP-Cron, URL parameter guard, HTTP method filtering, dan block dangerous methods (PUT/DELETE/TRACE/CONNECT).
+- Hardening: tambah robots.txt minimal policy dan block direct access unwanted filenames.
+- Monitoring: tambah check risiko DB host publik (indikasi eksposur MySQL port 3306).
 = 1.0.1 =
 - Tambahkan pemeriksaan update otomatis dari GitHub.
 = 1.0.0 =
