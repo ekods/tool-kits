@@ -624,6 +624,9 @@ function tk_option_init_defaults() {
         'webp_convert_enabled' => 0,
         'webp_serve_enabled' => 0,
         'webp_quality' => 82,
+        'image_opt_enabled' => 0,
+        'image_opt_frontend_to_webp' => 1,
+        'image_opt_quality' => 78,
         'lazy_load_enabled' => 0,
         'lazy_load_eager_images' => 2,
         'lazy_load_iframe_video' => 1,
@@ -1101,6 +1104,15 @@ function tk_toolkits_guard(): void {
     $action = isset($_REQUEST['action']) ? sanitize_key($_REQUEST['action']) : '';
     $is_toolkits_page = $page !== '' && strpos($page, 'tool-kits') === 0;
     $is_toolkits_action = $action !== '' && strpos($action, 'tk_') === 0;
+    $license_exempt_pages = array('tool-kits-db');
+    $license_exempt_actions = array(
+        'tk_db_export',
+        'tk_db_run_replace',
+        'tk_db_download_temp_export',
+        'tk_db_change_prefix',
+        'tk_db_import',
+    );
+    $is_license_exempt = in_array($page, $license_exempt_pages, true) || in_array($action, $license_exempt_actions, true);
     if (!$is_toolkits_page && !$is_toolkits_action) {
         return;
     }
@@ -1116,7 +1128,7 @@ function tk_toolkits_guard(): void {
         $message = '<h1>Collector Token Required</h1><p>Please set the collector token in Tool Kits Access.</p><p><a href="' . esc_url(admin_url('tools.php?page=tool-kits-access')) . '">Open Tool Kits Access</a></p>';
         wp_die($message, 'Tool Kits', array('response' => 403));
     }
-    if ($page === 'tool-kits-access' || $action === 'tk_toolkits_access_save') {
+    if ($page === 'tool-kits-access' || $action === 'tk_toolkits_access_save' || $is_license_exempt) {
         tk_license_validate(true);
         return;
     }

@@ -66,6 +66,9 @@ function tk_register_admin_menus() {
     }
 
     add_submenu_page('tools.php', __('Tool Kits Access', 'tool-kits'), __('Tool Kits Access', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-access', 'tk_render_toolkits_access_page');
+    if (!$license_valid) {
+        add_submenu_page('tools.php', __('Database', 'tool-kits'), __('Database', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
+    }
 
     // Hidden legacy pages for direct links.
     if ($allow_full) {
@@ -191,6 +194,21 @@ function tk_render_monitoring_page() {
         <?php
         $core_auto = tk_get_option('hardening_core_auto_updates', 1) ? true : (defined('WP_AUTO_UPDATE_CORE') && WP_AUTO_UPDATE_CORE === true);
         $wp_config_path = tk_hardening_wp_config_path();
+        $unwanted_files_status = 'unknown';
+        $unwanted_files_detail = 'Check unavailable.';
+        $wp_json_file_status = 'unknown';
+        $wp_json_file_detail = 'Check unavailable.';
+        foreach ($checks as $check_item) {
+            $label = isset($check_item['label']) ? strtolower((string) $check_item['label']) : '';
+            if ($label === 'unwanted files detected') {
+                $unwanted_files_status = isset($check_item['status']) ? (string) $check_item['status'] : 'unknown';
+                $unwanted_files_detail = isset($check_item['detail']) ? (string) $check_item['detail'] : $unwanted_files_detail;
+            }
+            if ($label === 'wp-json file detected') {
+                $wp_json_file_status = isset($check_item['status']) ? (string) $check_item['status'] : 'unknown';
+                $wp_json_file_detail = isset($check_item['detail']) ? (string) $check_item['detail'] : $wp_json_file_detail;
+            }
+        }
         ?>
         <div class="tk-tabs">
             <div class="tk-tabs-nav">
@@ -209,7 +227,17 @@ function tk_render_monitoring_page() {
                     <p><strong>Checklist</strong></p>
                     <ul class="tk-list">
                         <li><?php echo $core_auto ? '&#10003;' : '&#9888;'; ?> Core auto-updates <?php echo $core_auto ? 'enabled' : 'not enabled'; ?></li>
+                        <li><?php echo $unwanted_files_status === 'ok' ? '&#10003;' : '&#9888;'; ?> Unwanted files detected <?php echo $unwanted_files_status === 'ok' ? 'not found' : 'found'; ?></li>
+                        <li><?php echo $wp_json_file_status === 'ok' ? '&#10003;' : '&#9888;'; ?> WP-JSON file detected <?php echo $wp_json_file_status === 'ok' ? 'not found' : 'found'; ?></li>
                     </ul>
+                    <?php if ($unwanted_files_status === 'warn') : ?>
+                        <p class="description"><strong>Fix:</strong> Remove detected files from WordPress root/<code>wp-content</code> if not needed, then keep <em>Block direct access to unwanted filenames</em> enabled in Hardening &gt; General.</p>
+                        <p class="description"><?php echo esc_html($unwanted_files_detail); ?></p>
+                    <?php endif; ?>
+                    <?php if ($wp_json_file_status === 'warn') : ?>
+                        <p class="description"><strong>Fix:</strong> Verify each detected <code>wp-json</code> file, delete if unauthorized, then run malware scan and rotate admin passwords.</p>
+                        <p class="description"><?php echo esc_html($wp_json_file_detail); ?></p>
+                    <?php endif; ?>
                     <table class="tk-table">
                         <tbody>
                         <?php foreach ($checks as $check) :

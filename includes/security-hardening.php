@@ -962,10 +962,44 @@ function tk_hardening_config_checks(): array {
             $unwanted_hits[] = '/wp-content/' . ltrim($name, '/');
         }
     }
+    $unwanted_detail = 'No known unwanted files found in root/wp-content.';
+    if (!empty($unwanted_hits)) {
+        $unwanted_detail = 'Found: ' . implode(', ', $unwanted_hits) . '. Fix: remove these files if not needed, then keep "Block direct access to unwanted filenames" enabled in Hardening > General.';
+    }
     $checks[] = array(
         'label' => 'Unwanted files detected',
         'status' => empty($unwanted_hits) ? 'ok' : 'warn',
-        'detail' => empty($unwanted_hits) ? 'No known unwanted files found in root/wp-content.' : 'Found: ' . implode(', ', $unwanted_hits),
+        'detail' => $unwanted_detail,
+        'action_label' => 'Hardening settings',
+        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+    );
+
+    $wp_json_hits = array();
+    $wp_json_candidates = array(
+        '/wp-json',
+        '/wp-json.php',
+        '/wp_json.php',
+        '/wp-content/wp-json',
+        '/wp-content/wp-json.php',
+        '/wp-content/wp_json.php',
+    );
+    foreach ($wp_json_candidates as $candidate) {
+        $absolute = rtrim(ABSPATH, '/') . $candidate;
+        if (strpos($candidate, '/wp-content/') === 0) {
+            $absolute = WP_CONTENT_DIR . '/' . ltrim(substr($candidate, strlen('/wp-content/')), '/');
+        }
+        if (file_exists($absolute)) {
+            $wp_json_hits[] = $candidate;
+        }
+    }
+    $wp_json_detail = 'No wp-json file found in root/wp-content.';
+    if (!empty($wp_json_hits)) {
+        $wp_json_detail = 'Found: ' . implode(', ', $wp_json_hits) . '. Fix: inspect file contents, remove if not required, and scan site for malware/backdoor.';
+    }
+    $checks[] = array(
+        'label' => 'WP-JSON file detected',
+        'status' => empty($wp_json_hits) ? 'ok' : 'warn',
+        'detail' => $wp_json_detail,
         'action_label' => 'Hardening settings',
         'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
     );
