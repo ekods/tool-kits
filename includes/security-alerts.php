@@ -215,7 +215,8 @@ function tk_security_alert_login($user_login, $user) {
         $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : 'Unknown';
     }
 
-    $subject = 'Tool Kits: Admin login from new IP';
+    $site_name = trim((string) $site['site_name']);
+    $subject = ($site_name !== '' ? '[' . $site_name . '] ' : '') . 'Tool Kits: Admin login from new IP';
     $message = "Admin login from new IP detected.\n\n";
     $message .= 'User: ' . $user_login . "\n";
     $message .= 'IP: ' . $ip . "\n";

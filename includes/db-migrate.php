@@ -5,6 +5,7 @@ function tk_db_migrate_init() {
     add_action('admin_post_tk_db_export', 'tk_db_export_handler');
     add_action('admin_post_tk_db_run_replace', 'tk_db_run_find_replace_handler');
     add_action('admin_post_tk_db_download_temp_export', 'tk_db_download_temp_export_handler');
+    add_action('admin_post_tk_db_export_local_prod', 'tk_db_export_local_prod_handler');
     add_action('admin_post_tk_db_change_prefix', 'tk_db_change_prefix_handler');
     add_action('admin_post_tk_db_import', 'tk_db_import_handler');
 }
@@ -42,6 +43,117 @@ function tk_db_default_find_path(): string {
         return rtrim(get_home_path(), '/');
     }
     return rtrim(untrailingslashit(get_template_directory()), '/');
+}
+
+function tk_db_normalize_site_reference(string $url): string {
+    $url = trim($url);
+    if ($url === '') {
+        return '';
+    }
+    if (strpos($url, '//') === 0) {
+        $url = 'https:' . $url;
+    } elseif (!preg_match('#^https?://#i', $url)) {
+        $url = 'https://' . ltrim($url, '/');
+    }
+    $parts = wp_parse_url($url);
+    if (!is_array($parts) || empty($parts['host'])) {
+        return '';
+    }
+    $host = strtolower((string) $parts['host']);
+    if (isset($parts['port']) && (int) $parts['port'] > 0) {
+        $host .= ':' . (int) $parts['port'];
+    }
+    $path = isset($parts['path']) ? trim((string) $parts['path']) : '';
+    $path = $path === '' ? '' : '/' . ltrim(rtrim($path, '/'), '/');
+    return '//' . $host . $path;
+}
+
+function tk_db_normalize_site_absolute_url(string $url): string {
+    $url = trim($url);
+    if ($url === '') {
+        return '';
+    }
+    if (strpos($url, '//') === 0) {
+        $url = 'https:' . $url;
+    } elseif (!preg_match('#^https?://#i', $url)) {
+        $url = 'https://' . ltrim($url, '/');
+    }
+    $parts = wp_parse_url($url);
+    if (!is_array($parts) || empty($parts['host'])) {
+        return '';
+    }
+    $scheme = isset($parts['scheme']) && in_array(strtolower((string) $parts['scheme']), array('http', 'https'), true)
+        ? strtolower((string) $parts['scheme'])
+        : 'https';
+    $host = strtolower((string) $parts['host']);
+    if (isset($parts['port']) && (int) $parts['port'] > 0) {
+        $host .= ':' . (int) $parts['port'];
+    }
+    $path = isset($parts['path']) ? trim((string) $parts['path']) : '';
+    $path = $path === '' ? '' : '/' . ltrim(rtrim($path, '/'), '/');
+    return $scheme . '://' . $host . $path;
+}
+
+function tk_db_local_prod_add_pair(array &$pairs, array &$seen, string $find, string $replace): void {
+    $find = trim($find);
+    if ($find === '') {
+        return;
+    }
+    $key = $find . '||' . $replace;
+    if (isset($seen[$key])) {
+        return;
+    }
+    $seen[$key] = true;
+    $pairs[] = array('find' => $find, 'replace' => $replace);
+}
+
+function tk_db_local_prod_add_url_pairs(array &$pairs, array &$seen, string $find, string $replace): void {
+    tk_db_local_prod_add_pair($pairs, $seen, $find, $replace);
+    // Cover JSON-escaped URLs commonly found in block content/meta.
+    tk_db_local_prod_add_pair($pairs, $seen, str_replace('/', '\\/', $find), str_replace('/', '\\/', $replace));
+}
+
+function tk_db_local_prod_build_pairs(string $local_site_url, string $production_site_url, string $local_site_path, string $production_site_path): array {
+    $pairs = array();
+    $seen = array();
+    $local_ref = tk_db_normalize_site_reference($local_site_url);
+    $prod_ref = tk_db_normalize_site_reference($production_site_url);
+    $local_abs = tk_db_normalize_site_absolute_url($local_site_url);
+    $prod_abs = tk_db_normalize_site_absolute_url($production_site_url);
+    if ($local_ref !== '' && $prod_ref !== '') {
+        tk_db_local_prod_add_url_pairs($pairs, $seen, $local_ref, $prod_ref);
+        if ($prod_abs !== '') {
+            tk_db_local_prod_add_url_pairs($pairs, $seen, 'http:' . $local_ref, $prod_abs);
+            tk_db_local_prod_add_url_pairs($pairs, $seen, 'https:' . $local_ref, $prod_abs);
+        }
+    }
+    if ($local_abs !== '' && $prod_abs !== '') {
+        $local_no_slash = rtrim($local_abs, '/');
+        $prod_no_slash = rtrim($prod_abs, '/');
+        tk_db_local_prod_add_url_pairs($pairs, $seen, $local_no_slash, $prod_no_slash);
+        tk_db_local_prod_add_url_pairs($pairs, $seen, $local_no_slash . '/', $prod_no_slash . '/');
+    }
+    // Ensure exact current WordPress URL options are replaced.
+    $current_home = trim((string) get_option('home', ''));
+    $current_siteurl = trim((string) get_option('siteurl', ''));
+    if ($prod_abs !== '') {
+        $prod_no_slash = rtrim($prod_abs, '/');
+        if ($current_home !== '') {
+            tk_db_local_prod_add_url_pairs($pairs, $seen, rtrim($current_home, '/'), $prod_no_slash);
+            tk_db_local_prod_add_url_pairs($pairs, $seen, rtrim($current_home, '/') . '/', $prod_no_slash . '/');
+        }
+        if ($current_siteurl !== '') {
+            tk_db_local_prod_add_url_pairs($pairs, $seen, rtrim($current_siteurl, '/'), $prod_no_slash);
+            tk_db_local_prod_add_url_pairs($pairs, $seen, rtrim($current_siteurl, '/') . '/', $prod_no_slash . '/');
+        }
+    }
+    $local_path = rtrim(trim($local_site_path), '/');
+    $prod_path = rtrim(trim($production_site_path), '/');
+    if ($local_path !== '' && $prod_path !== '' && $local_path !== $prod_path) {
+        tk_db_local_prod_add_pair($pairs, $seen, $local_path, $prod_path);
+        tk_db_local_prod_add_pair($pairs, $seen, $local_path . '/', $prod_path . '/');
+    }
+    return $pairs;
 }
 
 function tk_db_default_pairs(): array {
@@ -91,6 +203,13 @@ function tk_db_apply_pairs_to_value($value, array $pairs, string $column = '', a
     $out = $value;
     if (tk_db_should_skip_replacement($column, $row)) {
         return $out;
+    }
+    if ($column === 'option_value') {
+        $name = isset($row['option_name']) ? (string) $row['option_name'] : '';
+        // WP code editor cache can leak local absolute file paths into migrations.
+        if ($name === 'recently_edited') {
+            return serialize(array());
+        }
     }
     foreach ($pairs as $pair) {
         if (!is_string($pair['find']) || $pair['find'] === '') {
@@ -156,6 +275,12 @@ function tk_db_export_with_pairs(array $pairs): array {
     }
 
     foreach ($tables as $table) {
+        $expected_rows = (int) $wpdb->get_var("SELECT COUNT(*) FROM `$table`");
+        if (!empty($wpdb->last_error)) {
+            fclose($fh);
+            @unlink($sql_path);
+            return ['ok' => false, 'message' => 'Failed reading row count for table `' . $table . '`: ' . $wpdb->last_error];
+        }
         $create = $wpdb->get_row("SHOW CREATE TABLE `$table`", ARRAY_N);
         if (!empty($create[1])) {
             fwrite($fh, "DROP TABLE IF EXISTS `$table`;\n");
@@ -163,6 +288,12 @@ function tk_db_export_with_pairs(array $pairs): array {
         }
 
         $rows = $wpdb->get_results("SELECT * FROM `$table`", ARRAY_A);
+        if (!empty($wpdb->last_error)) {
+            fclose($fh);
+            @unlink($sql_path);
+            return ['ok' => false, 'message' => 'Failed reading rows for table `' . $table . '`: ' . $wpdb->last_error];
+        }
+        $exported_rows = 0;
         if (!empty($rows)) {
             foreach ($rows as $row) {
                 $cols = array_keys($row);
@@ -176,8 +307,14 @@ function tk_db_export_with_pairs(array $pairs): array {
                     $vals[] = tk_db_quote_value((string) $processed);
                 }
                 fwrite($fh, "INSERT INTO `$table` (`" . implode("`,`", array_map('tk_db_escape_identifier', $cols)) . "`) VALUES (" . implode(",", $vals) . ");\n");
+                $exported_rows++;
             }
             fwrite($fh, "\n");
+        }
+        if ($expected_rows !== $exported_rows) {
+            fclose($fh);
+            @unlink($sql_path);
+            return ['ok' => false, 'message' => 'Row count mismatch on table `' . $table . '` (expected ' . $expected_rows . ', exported ' . $exported_rows . '). Export cancelled to prevent data loss.'];
         }
     }
 
@@ -342,6 +479,10 @@ function tk_render_db_tools_page() {
     $prefix_msg = isset($_GET['tk_prefix_msg']) ? sanitize_text_field((string) $_GET['tk_prefix_msg']) : '';
     $import_msg = isset($_GET['tk_import_msg']) ? sanitize_text_field((string) $_GET['tk_import_msg']) : '';
     $import_status = isset($_GET['tk_import_status']) ? sanitize_key((string) $_GET['tk_import_status']) : '';
+    $local_prod_msg = isset($_GET['tk_local_prod_msg']) ? sanitize_text_field((string) $_GET['tk_local_prod_msg']) : '';
+    $local_prod_status = isset($_GET['tk_local_prod_status']) ? sanitize_key((string) $_GET['tk_local_prod_status']) : '';
+    $local_prod_export_token = isset($_GET['tk_local_prod_token']) ? sanitize_text_field((string) $_GET['tk_local_prod_token']) : '';
+    $local_prod_export_name = isset($_GET['tk_local_prod_name']) ? sanitize_file_name((string) $_GET['tk_local_prod_name']) : '';
     $backup_token = isset($_GET['tk_backup_token']) ? sanitize_text_field((string) $_GET['tk_backup_token']) : '';
     $backup_name = isset($_GET['tk_backup_name']) ? sanitize_file_name((string) $_GET['tk_backup_name']) : '';
     $suggested_prefix = tk_db_random_prefix();
@@ -350,7 +491,12 @@ function tk_render_db_tools_page() {
         $pairs_for_render = tk_db_default_pairs();
     }
 
-    $allowed_tabs = array('export-db', 'preload-export', 'import-db', 'change-prefix', 'db-cleanup');
+    $local_site_url_default = home_url('/');
+    $local_site_path_default = tk_db_default_find_path();
+    $saved_prod_url = (string) tk_get_option('db_local_prod_url', '');
+    $saved_prod_path = (string) tk_get_option('db_local_prod_path', '');
+
+    $allowed_tabs = array('export-db', 'preload-export', 'local-to-prod', 'import-db', 'change-prefix', 'db-cleanup');
     $requested_tab = isset($_GET['tk_tab']) ? sanitize_key($_GET['tk_tab']) : '';
     $active_tab = in_array($requested_tab, $allowed_tabs, true) ? $requested_tab : 'export-db';
     ?>
@@ -360,6 +506,7 @@ function tk_render_db_tools_page() {
             <div class="tk-tabs-nav">
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'export-db' ? ' is-active' : ''; ?>" data-panel="export-db">Export Database</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'preload-export' ? ' is-active' : ''; ?>" data-panel="preload-export">Export Download</button>
+                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'local-to-prod' ? ' is-active' : ''; ?>" data-panel="local-to-prod">Local to Production</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'import-db' ? ' is-active' : ''; ?>" data-panel="import-db">Import Database</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'change-prefix' ? ' is-active' : ''; ?>" data-panel="change-prefix">Change Prefix</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'db-cleanup' ? ' is-active' : ''; ?>" data-panel="db-cleanup">DB Cleanup</button>
@@ -397,8 +544,44 @@ function tk_render_db_tools_page() {
                         <p><button class="button button-primary" onclick="return confirm('Run the find/replace pairs and prepare a temporary export now? Ensure the database is backed up or already exported.')">Export</button></p>
                     </form>
                 </div>
+                <div class="tk-card tk-tab-panel<?php echo $active_tab === 'local-to-prod' ? ' is-active' : ''; ?>" data-panel-id="local-to-prod">
+                    <h2>3) Local to Production (Migration Export)</h2>
+                    <p>Create a production-ready SQL export from local data by applying serialized-safe URL/path replacements.</p>
+                    <?php if ($local_prod_msg !== '') : ?>
+                        <?php tk_notice($local_prod_msg, $local_prod_status === 'ok' ? 'success' : 'error'); ?>
+                    <?php endif; ?>
+                    <?php if ($local_prod_export_token && $local_prod_export_name) : ?>
+                        <?php $download_local_prod = admin_url('admin-post.php?action=tk_db_download_temp_export&token=' . urlencode($local_prod_export_token)); ?>
+                        <p class="description">
+                            Migration export ready: <code><?php echo esc_html($local_prod_export_name); ?></code>. <a href="<?php echo esc_url($download_local_prod); ?>">Download prepared SQL file</a>.
+                        </p>
+                    <?php endif; ?>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                        <?php tk_nonce_field('tk_db_export_local_prod'); ?>
+                        <input type="hidden" name="action" value="tk_db_export_local_prod">
+                        <input type="hidden" name="tk_tab" value="local-to-prod">
+                        <p>
+                            <label><strong>Local Site URL</strong></label><br>
+                            <input class="regular-text" type="text" name="local_site_url" value="<?php echo esc_attr($local_site_url_default); ?>" required>
+                        </p>
+                        <p>
+                            <label><strong>Production Site URL</strong></label><br>
+                            <input class="regular-text" type="text" name="production_site_url" value="<?php echo esc_attr($saved_prod_url); ?>" placeholder="https://example.com" required>
+                        </p>
+                        <p>
+                            <label><strong>Local Absolute Path</strong></label><br>
+                            <input class="regular-text" type="text" name="local_site_path" value="<?php echo esc_attr($local_site_path_default); ?>">
+                        </p>
+                        <p>
+                            <label><strong>Production Absolute Path (optional)</strong></label><br>
+                            <input class="regular-text" type="text" name="production_site_path" value="<?php echo esc_attr($saved_prod_path); ?>" placeholder="/home/user/public_html">
+                        </p>
+                        <p><button class="button button-primary" onclick="return confirm('Create migration export for production now?')">Generate Local -> Prod Export</button></p>
+                    </form>
+                    <p class="description">Recommended flow: generate export here on local, download it, then import via the Import Database tab on production.</p>
+                </div>
                 <div class="tk-card tk-tab-panel<?php echo $active_tab === 'import-db' ? ' is-active' : ''; ?>" data-panel-id="import-db">
-                    <h2>3) Import Database (SQL)</h2>
+                    <h2>4) Import Database (SQL)</h2>
                     <p>Upload a <code>.sql</code> or <code>.sql.gz</code> file to import into the current database. Use only on trusted files.</p>
                     <?php if ($import_msg !== '') : ?>
                         <?php tk_notice($import_msg, $import_status === 'ok' ? 'success' : 'error'); ?>
@@ -415,7 +598,7 @@ function tk_render_db_tools_page() {
                     <p class="description">Tip: For large files, use WP-CLI or phpMyAdmin if this times out.</p>
                 </div>
                 <div class="tk-card tk-tab-panel<?php echo $active_tab === 'change-prefix' ? ' is-active' : ''; ?>" data-panel-id="change-prefix">
-                    <h2>4) Change DB Prefix (Rename Tables)</h2>
+                    <h2>5) Change DB Prefix (Rename Tables)</h2>
                     <p>Rename tables from <code><?php global $wpdb; echo esc_html($wpdb->prefix); ?></code> to a new prefix.
                     This updates <code>options</code> and <code>usermeta</code> keys, but please edit <code>$table_prefix</code> in <code>wp-config.php</code> manually afterward.</p>
                     <?php if ($prefix_msg) : ?>
@@ -803,6 +986,62 @@ function tk_db_run_find_replace_handler() {
         'tk_msg' => $result['message'],
         'tk_export_name' => $result['name'],
         'tk_tab' => 'preload-export',
+    ), admin_url('admin.php')));
+    exit;
+}
+
+function tk_db_export_local_prod_handler() {
+    if (!tk_is_admin_user()) wp_die('Forbidden');
+    tk_check_nonce('tk_db_export_local_prod');
+
+    $local_site_url = trim((string) tk_post('local_site_url', home_url('/')));
+    $production_site_url = trim((string) tk_post('production_site_url', ''));
+    $local_site_path = trim((string) tk_post('local_site_path', tk_db_default_find_path()));
+    $production_site_path = trim((string) tk_post('production_site_path', ''));
+
+    if ($production_site_url === '') {
+        wp_redirect(add_query_arg(array(
+            'page' => 'tool-kits-db',
+            'tk_tab' => 'local-to-prod',
+            'tk_local_prod_status' => 'fail',
+            'tk_local_prod_msg' => 'Production Site URL is required.',
+        ), admin_url('admin.php')));
+        exit;
+    }
+
+    $pairs = tk_db_local_prod_build_pairs($local_site_url, $production_site_url, $local_site_path, $production_site_path);
+    if (empty($pairs)) {
+        wp_redirect(add_query_arg(array(
+            'page' => 'tool-kits-db',
+            'tk_tab' => 'local-to-prod',
+            'tk_local_prod_status' => 'fail',
+            'tk_local_prod_msg' => 'No valid find/replace pairs generated. Check local and production URL/path values.',
+        ), admin_url('admin.php')));
+        exit;
+    }
+
+    tk_update_option('db_local_prod_url', $production_site_url);
+    tk_update_option('db_local_prod_path', $production_site_path);
+    tk_db_save_pairs($pairs);
+    $result = tk_db_export_with_pairs($pairs);
+    if (empty($result['ok'])) {
+        $message = isset($result['message']) ? (string) $result['message'] : 'Failed to create migration export.';
+        wp_redirect(add_query_arg(array(
+            'page' => 'tool-kits-db',
+            'tk_tab' => 'local-to-prod',
+            'tk_local_prod_status' => 'fail',
+            'tk_local_prod_msg' => $message,
+        ), admin_url('admin.php')));
+        exit;
+    }
+
+    wp_redirect(add_query_arg(array(
+        'page' => 'tool-kits-db',
+        'tk_tab' => 'local-to-prod',
+        'tk_local_prod_status' => 'ok',
+        'tk_local_prod_msg' => 'Migration export is ready.',
+        'tk_local_prod_token' => $result['token'],
+        'tk_local_prod_name' => $result['name'],
     ), admin_url('admin.php')));
     exit;
 }

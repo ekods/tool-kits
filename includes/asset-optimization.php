@@ -8,12 +8,229 @@ function tk_assets_opt_init() {
     add_action('wp_head', 'tk_assets_render_critical_css', 5);
     add_filter('style_loader_tag', 'tk_assets_style_loader_tag', 10, 4);
     add_filter('style_loader_src', 'tk_assets_style_loader_src', 25, 2);
+    add_filter('script_loader_tag', 'tk_assets_script_loader_tag', 20, 3);
     add_filter('wp_get_attachment_image_attributes', 'tk_assets_image_attributes', 20, 3);
     add_action('wp_head', 'tk_assets_preload_fonts', 4);
+    add_action('wp_footer', 'tk_assets_delay_js_bootstrap', 99);
+    add_action('template_redirect', 'tk_assets_start_perf_buffer', 2);
 }
 
 function tk_assets_opt_enabled(): bool {
     return !is_admin() && tk_license_features_enabled();
+}
+
+function tk_assets_start_perf_buffer() {
+    if (!tk_assets_opt_enabled()) {
+        return;
+    }
+    if (is_feed() || (function_exists('is_robots') && is_robots()) || (function_exists('is_trackback') && is_trackback())) {
+        return;
+    }
+    ob_start('tk_assets_perf_buffer');
+}
+
+function tk_assets_perf_buffer($html) {
+    if (!is_string($html) || $html === '') {
+        return $html;
+    }
+    $html = tk_assets_apply_cls_guard($html);
+    $html = tk_assets_apply_lcp_boost($html);
+    if ((int) tk_get_option('assets_lcp_bg_preload_enabled', 1) === 1) {
+        $html = tk_assets_apply_lcp_bg_preload($html);
+    }
+    if ((int) tk_get_option('assets_preconnect_auto_enabled', 1) === 1) {
+        $html = tk_assets_apply_auto_preconnect($html);
+    }
+    return $html;
+}
+
+function tk_assets_apply_lcp_bg_preload($html) {
+    $bg_url = tk_assets_find_lcp_background_url($html);
+    if ($bg_url === '') {
+        return $html;
+    }
+    if (stripos($html, 'rel="preload"') !== false && stripos($html, 'as="image"') !== false && stripos($html, $bg_url) !== false) {
+        return $html;
+    }
+    $preload = '<link rel="preload" as="image" href="' . esc_url($bg_url) . '">' . "\n";
+    if (preg_match('/<head\b[^>]*>/i', $html)) {
+        return (string) preg_replace('/<head\b[^>]*>/i', '$0' . "\n" . $preload, $html, 1);
+    }
+    return $html;
+}
+
+function tk_assets_find_lcp_background_url($html) {
+    if (!is_string($html) || $html === '') {
+        return '';
+    }
+    if (!preg_match_all('/style=("|\')(.*?)\1/is', $html, $styles)) {
+        return '';
+    }
+    foreach ($styles[2] as $style) {
+        if (!is_string($style) || stripos($style, 'background') === false) {
+            continue;
+        }
+        if (!preg_match('/background(?:-image)?\s*:[^;]*url\((["\']?)([^)\'"]+)\1\)/i', $style, $m)) {
+            continue;
+        }
+        $url = isset($m[2]) ? trim((string) $m[2]) : '';
+        if ($url === '' || strpos($url, 'data:') === 0) {
+            continue;
+        }
+        return $url;
+    }
+    return '';
+}
+
+function tk_assets_apply_auto_preconnect($html) {
+    $hosts = tk_assets_collect_preconnect_hosts($html);
+    if (empty($hosts)) {
+        return $html;
+    }
+    $inject = '';
+    foreach ($hosts as $origin) {
+        if (stripos($html, 'rel="preconnect"') !== false && stripos($html, $origin) !== false) {
+            continue;
+        }
+        $inject .= '<link rel="preconnect" href="' . esc_url($origin) . '" crossorigin>' . "\n";
+        $inject .= '<link rel="dns-prefetch" href="' . esc_url($origin) . '">' . "\n";
+    }
+    if ($inject === '') {
+        return $html;
+    }
+    if (preg_match('/<head\b[^>]*>/i', $html)) {
+        return (string) preg_replace('/<head\b[^>]*>/i', '$0' . "\n" . $inject, $html, 1);
+    }
+    return $html;
+}
+
+function tk_assets_collect_preconnect_hosts($html) {
+    if (!is_string($html) || $html === '') {
+        return array();
+    }
+    $matches = array();
+    preg_match_all('/<(?:script|link)\b[^>]*(?:src|href)=("|\')(https?:\/\/[^"\']+)\1/i', $html, $matches);
+    if (empty($matches[2]) || !is_array($matches[2])) {
+        return array();
+    }
+    $site_host = (string) wp_parse_url(home_url(), PHP_URL_HOST);
+    $origins = array();
+    foreach ($matches[2] as $url) {
+        $host = (string) wp_parse_url($url, PHP_URL_HOST);
+        $scheme = (string) wp_parse_url($url, PHP_URL_SCHEME);
+        if ($host === '' || $scheme === '') {
+            continue;
+        }
+        if ($site_host !== '' && strcasecmp($host, $site_host) === 0) {
+            continue;
+        }
+        $origin = strtolower($scheme . '://' . $host);
+        $origins[$origin] = true;
+    }
+    $origins = array_keys($origins);
+    sort($origins);
+    return array_slice($origins, 0, 3);
+}
+
+function tk_assets_apply_cls_guard($html) {
+    return preg_replace_callback('/<img\b[^>]*>/i', function($m) {
+        $tag = (string) $m[0];
+        $src = tk_assets_html_get_attr($tag, 'src');
+        if ($src === '' || strpos($src, 'data:') === 0) {
+            return $tag;
+        }
+        $path = tk_assets_map_url_to_path($src);
+        if ($path === '' || !is_readable($path)) {
+            return tk_assets_html_upsert_attr($tag, 'decoding', 'async');
+        }
+        $size = @getimagesize($path);
+        if (!is_array($size) || empty($size[0]) || empty($size[1])) {
+            return tk_assets_html_upsert_attr($tag, 'decoding', 'async');
+        }
+        $w = (int) $size[0];
+        $h = (int) $size[1];
+        if ($w <= 0 || $h <= 0) {
+            return tk_assets_html_upsert_attr($tag, 'decoding', 'async');
+        }
+        if (!tk_assets_html_has_attr($tag, 'width')) {
+            $tag = tk_assets_html_upsert_attr($tag, 'width', (string) $w);
+        }
+        if (!tk_assets_html_has_attr($tag, 'height')) {
+            $tag = tk_assets_html_upsert_attr($tag, 'height', (string) $h);
+        }
+        $style = tk_assets_html_get_attr($tag, 'style');
+        if ($style === '' || stripos($style, 'aspect-ratio') === false) {
+            $style = trim($style);
+            if ($style !== '' && substr($style, -1) !== ';') {
+                $style .= ';';
+            }
+            $style .= ' aspect-ratio: ' . $w . ' / ' . $h . ';';
+            $tag = tk_assets_html_upsert_attr($tag, 'style', trim($style));
+        }
+        $tag = tk_assets_html_upsert_attr($tag, 'decoding', 'async');
+        return $tag;
+    }, $html);
+}
+
+function tk_assets_apply_lcp_boost($html) {
+    if (!preg_match_all('/<img\b[^>]*>/i', $html, $matches)) {
+        return $html;
+    }
+    $hero_tag = '';
+    $hero_src = '';
+    foreach ($matches[0] as $tag) {
+        $src = tk_assets_html_get_attr((string) $tag, 'src');
+        if ($src === '' || strpos($src, 'data:') === 0) {
+            continue;
+        }
+        $hero_tag = (string) $tag;
+        $hero_src = $src;
+        break;
+    }
+    if ($hero_tag === '' || $hero_src === '') {
+        return $html;
+    }
+
+    $updated_tag = tk_assets_html_upsert_attr($hero_tag, 'loading', 'eager');
+    $updated_tag = tk_assets_html_upsert_attr($updated_tag, 'fetchpriority', 'high');
+    $updated_tag = tk_assets_html_upsert_attr($updated_tag, 'decoding', 'async');
+
+    $html = preg_replace('/' . preg_quote($hero_tag, '/') . '/', $updated_tag, $html, 1);
+    if (!is_string($html)) {
+        return '';
+    }
+
+    if (stripos($html, 'rel="preload"') !== false && stripos($html, 'as="image"') !== false && stripos($html, $hero_src) !== false) {
+        return $html;
+    }
+    $preload = '<link rel="preload" as="image" href="' . esc_url($hero_src) . '">' . "\n";
+    if (preg_match('/<head\b[^>]*>/i', $html)) {
+        $html = preg_replace('/<head\b[^>]*>/i', '$0' . "\n" . $preload, $html, 1);
+    }
+    return $html;
+}
+
+function tk_assets_html_has_attr($tag, $attr) {
+    return preg_match('/\b' . preg_quote($attr, '/') . '\s*=\s*("|\').*?\1/i', $tag) === 1;
+}
+
+function tk_assets_html_get_attr($tag, $attr) {
+    if (!preg_match('/\b' . preg_quote($attr, '/') . '\s*=\s*("|\')(.*?)\1/i', $tag, $m)) {
+        return '';
+    }
+    return isset($m[2]) ? html_entity_decode((string) $m[2], ENT_QUOTES) : '';
+}
+
+function tk_assets_html_upsert_attr($tag, $attr, $value) {
+    $value = esc_attr($value);
+    if (tk_assets_html_has_attr($tag, $attr)) {
+        return (string) preg_replace('/\b' . preg_quote($attr, '/') . '\s*=\s*("|\').*?\1/i', $attr . '="' . $value . '"', $tag, 1);
+    }
+    $self_close = substr(trim($tag), -2) === '/>';
+    if ($self_close) {
+        return rtrim(substr($tag, 0, -2)) . ' ' . $attr . '="' . $value . '" />';
+    }
+    return rtrim(substr($tag, 0, -1)) . ' ' . $attr . '="' . $value . '">';
 }
 
 function tk_assets_parse_handles($raw): array {
@@ -26,6 +243,89 @@ function tk_assets_parse_handles($raw): array {
     }
     $items = array_filter(array_map('trim', $items));
     return array_values(array_unique($items));
+}
+
+function tk_assets_script_loader_tag($tag, $handle, $src) {
+    if (!tk_assets_opt_enabled()) {
+        return $tag;
+    }
+    if ((int) tk_get_option('assets_js_delay_enabled', 0) !== 1) {
+        return $tag;
+    }
+    if (!is_string($tag) || stripos($tag, '<script') === false) {
+        return $tag;
+    }
+    if (stripos($tag, 'data-tk-delay=') !== false || stripos($tag, 'data-tk-assets-delay=') !== false) {
+        return $tag;
+    }
+    if (!is_string($handle) || $handle === '' || tk_assets_is_protected_script_handle($handle)) {
+        return $tag;
+    }
+    $targets = tk_assets_parse_handles((string) tk_get_option('assets_js_delay_handles', ''));
+    if (empty($targets) || !in_array($handle, $targets, true)) {
+        return $tag;
+    }
+    $url = is_string($src) ? esc_url($src) : '';
+    if ($url === '') {
+        return $tag;
+    }
+    return '<script type="text/plain" data-tk-assets-delay="1" data-tk-assets-handle="' . esc_attr($handle) . '" data-tk-assets-src="' . $url . '"></script>';
+}
+
+function tk_assets_is_protected_script_handle($handle) {
+    $protected = array(
+        'jquery',
+        'jquery-core',
+        'jquery-migrate',
+        'wp-hooks',
+        'wp-i18n',
+        'wp-element',
+        'wp-polyfill',
+        'wp-api-fetch',
+        'wp-dom-ready',
+        'regenerator-runtime',
+    );
+    return in_array((string) $handle, $protected, true);
+}
+
+function tk_assets_delay_js_bootstrap() {
+    if (!tk_assets_opt_enabled()) {
+        return;
+    }
+    if ((int) tk_get_option('assets_js_delay_enabled', 0) !== 1) {
+        return;
+    }
+    $targets = tk_assets_parse_handles((string) tk_get_option('assets_js_delay_handles', ''));
+    if (empty($targets)) {
+        return;
+    }
+    ?>
+    <script id="tk-assets-delay-js">
+    (function(){
+        var nodes = Array.prototype.slice.call(document.querySelectorAll('script[data-tk-assets-delay="1"]'));
+        if (!nodes.length) { return; }
+        var done = false;
+        function activate() {
+            if (done) { return; }
+            done = true;
+            nodes.forEach(function(node){
+                var src = node.getAttribute('data-tk-assets-src');
+                if (!src) { return; }
+                var s = document.createElement('script');
+                s.src = src;
+                s.defer = true;
+                s.setAttribute('data-tk-assets-loaded', '1');
+                document.head.appendChild(s);
+            });
+        }
+        ['scroll','mousemove','keydown','touchstart','click'].forEach(function(evt){
+            window.addEventListener(evt, activate, { once: true, passive: true });
+        });
+        setTimeout(activate, 3000);
+        window.addEventListener('load', activate, { once: true });
+    })();
+    </script>
+    <?php
 }
 
 function tk_assets_render_critical_css() {
@@ -438,6 +738,10 @@ function tk_render_assets_panel() {
     $preload_fonts = (string) tk_get_option('assets_preload_fonts', '');
     $font_swap = (int) tk_get_option('assets_font_display_swap', 1);
     $dimensions = (int) tk_get_option('assets_dimensions_enabled', 1);
+    $js_delay_enabled = (int) tk_get_option('assets_js_delay_enabled', 0);
+    $js_delay_handles = (string) tk_get_option('assets_js_delay_handles', '');
+    $lcp_bg_preload = (int) tk_get_option('assets_lcp_bg_preload_enabled', 1);
+    $preconnect_auto = (int) tk_get_option('assets_preconnect_auto_enabled', 1);
     ?>
     <div class="tk-card">
         <h2>Asset Optimization</h2>
@@ -503,6 +807,31 @@ function tk_render_assets_panel() {
                     Add width/height + aspect-ratio to attachment images
                 </label>
             </p>
+            <p>
+                <label>
+                    <input type="checkbox" name="assets_lcp_bg_preload_enabled" value="1" <?php checked(1, $lcp_bg_preload); ?>>
+                    Auto preload LCP background image from inline style
+                </label>
+            </p>
+            <p>
+                <label>
+                    <input type="checkbox" name="assets_preconnect_auto_enabled" value="1" <?php checked(1, $preconnect_auto); ?>>
+                    Auto preconnect external script/style hosts
+                </label>
+            </p>
+            <hr style="margin:16px 0;">
+            <p>
+                <label>
+                    <input type="checkbox" name="assets_js_delay_enabled" value="1" <?php checked(1, $js_delay_enabled); ?>>
+                    Delay non-critical JS (safe mode, by handle list)
+                </label>
+            </p>
+            <p>
+                <label>Delay JS handles (comma/space separated)</label><br>
+                <input type="text" name="assets_js_delay_handles" value="<?php echo esc_attr($js_delay_handles); ?>" class="large-text" placeholder="e.g. contact-form-7, recaptcha, analytics-js">
+                <small>Core handles like jquery/wp-element are auto-protected and will not be delayed.</small>
+            </p>
+            <p class="description">Auto mode: CLS Guard and LCP Boost are always enabled on frontend output.</p>
             <p><button class="button button-primary">Save Settings</button></p>
         </form>
         <form id="tk-assets-scan-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
@@ -526,6 +855,12 @@ function tk_assets_opt_save() {
     tk_update_option('assets_preload_fonts', (string) tk_post('assets_preload_fonts', ''));
     tk_update_option('assets_font_display_swap', !empty($_POST['assets_font_display_swap']) ? 1 : 0);
     tk_update_option('assets_dimensions_enabled', !empty($_POST['assets_dimensions_enabled']) ? 1 : 0);
+    tk_update_option('assets_lcp_bg_preload_enabled', !empty($_POST['assets_lcp_bg_preload_enabled']) ? 1 : 0);
+    tk_update_option('assets_preconnect_auto_enabled', !empty($_POST['assets_preconnect_auto_enabled']) ? 1 : 0);
+    tk_update_option('assets_js_delay_enabled', !empty($_POST['assets_js_delay_enabled']) ? 1 : 0);
+    tk_update_option('assets_js_delay_handles', sanitize_text_field((string) tk_post('assets_js_delay_handles', '')));
+    tk_update_option('assets_cls_guard_enabled', 1);
+    tk_update_option('assets_lcp_boost_enabled', 1);
     wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'assets', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }

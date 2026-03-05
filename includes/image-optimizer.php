@@ -5,6 +5,7 @@ function tk_image_opt_init() {
     add_action('admin_post_tk_image_opt_save', 'tk_image_opt_save');
     add_action('wp_ajax_tk_image_opt_batch', 'tk_image_opt_batch');
     add_filter('wp_generate_attachment_metadata', 'tk_image_opt_on_upload', 15, 2);
+    add_action('template_redirect', 'tk_image_opt_start_output_rewrite', 1);
 }
 
 function tk_image_opt_on_upload($metadata, $attachment_id) {
@@ -23,10 +24,6 @@ function tk_image_opt_on_upload($metadata, $attachment_id) {
 }
 
 function tk_image_opt_should_convert_frontend_to_webp() {
-    if ((int) tk_get_option('image_opt_frontend_to_webp', 1) !== 1) {
-        return false;
-    }
-
     if (!is_admin()) {
         return true;
     }
@@ -44,7 +41,8 @@ function tk_image_opt_is_frontend_ajax_request() {
         $referer = isset($_SERVER['HTTP_REFERER']) ? (string) $_SERVER['HTTP_REFERER'] : '';
     }
     if ($referer === '') {
-        return false;
+        // Some frontend upload flows do not send referer.
+        return true;
     }
 
     $home_host = (string) wp_parse_url(home_url(), PHP_URL_HOST);
@@ -59,6 +57,84 @@ function tk_image_opt_is_frontend_ajax_request() {
     }
 
     return true;
+}
+
+function tk_image_opt_start_output_rewrite() {
+    if (is_admin()) {
+        return;
+    }
+    if (!tk_license_features_enabled() || !tk_get_option('image_opt_enabled', 0)) {
+        return;
+    }
+    if (is_feed() || (function_exists('is_robots') && is_robots()) || (function_exists('is_trackback') && is_trackback())) {
+        return;
+    }
+    ob_start('tk_image_opt_rewrite_html_buffer');
+}
+
+function tk_image_opt_rewrite_html_buffer($html) {
+    if (!is_string($html) || $html === '' || stripos($html, '.jpg') === false && stripos($html, '.png') === false && stripos($html, '.jpeg') === false) {
+        return $html;
+    }
+
+    return preg_replace_callback(
+        '/https?:\/\/[^\s"\']+\.(?:jpe?g|png)(?:\?[^\s"\']*)?/i',
+        function($matches) {
+            $url = isset($matches[0]) ? (string) $matches[0] : '';
+            if ($url === '') {
+                return $url;
+            }
+            return tk_image_opt_get_or_create_webp_url($url);
+        },
+        $html
+    );
+}
+
+function tk_image_opt_get_or_create_webp_url($url) {
+    if (!is_string($url) || $url === '') {
+        return $url;
+    }
+    if (!preg_match('/\.(jpe?g|png)(\?|$)/i', $url)) {
+        return $url;
+    }
+
+    $path = tk_image_opt_url_to_local_path($url);
+    if ($path === '' || !file_exists($path)) {
+        return $url;
+    }
+
+    $webp_path = (string) preg_replace('/\.(jpe?g|png)$/i', '.webp', $path);
+    if ($webp_path === '') {
+        return $url;
+    }
+
+    if (!file_exists($webp_path)) {
+        $quality = max(10, min(100, (int) tk_get_option('webp_quality', 82)));
+        $result = tk_image_opt_convert_file_to_webp($path, $quality, false);
+        if (empty($result['new_path']) || !file_exists($result['new_path'])) {
+            return $url;
+        }
+    }
+
+    return (string) preg_replace('/\.(jpe?g|png)(\?|$)/i', '.webp$2', $url);
+}
+
+function tk_image_opt_url_to_local_path($url) {
+    if (!is_string($url) || $url === '') {
+        return '';
+    }
+    $parts = wp_parse_url($url);
+    if (!is_array($parts) || empty($parts['path']) || !is_string($parts['path'])) {
+        return '';
+    }
+    if (!empty($parts['host'])) {
+        $home_host = (string) wp_parse_url(home_url(), PHP_URL_HOST);
+        if ($home_host !== '' && strcasecmp($home_host, (string) $parts['host']) !== 0) {
+            return '';
+        }
+    }
+    $path = wp_normalize_path(ABSPATH . ltrim((string) $parts['path'], '/'));
+    return is_string($path) ? $path : '';
 }
 
 function tk_image_opt_optimize_attachment($attachment_id, $quality, $metadata = null) {
@@ -187,7 +263,7 @@ function tk_image_opt_convert_attachment_to_webp($attachment_id, $metadata) {
     }
 
     $quality = max(10, min(100, (int) tk_get_option('webp_quality', 82)));
-    $main = tk_image_opt_convert_file_to_webp($file, $quality);
+    $main = tk_image_opt_convert_file_to_webp($file, $quality, true);
     if (empty($main['new_path'])) {
         return $metadata;
     }
@@ -197,7 +273,7 @@ function tk_image_opt_convert_attachment_to_webp($attachment_id, $metadata) {
     }
     if (!empty($metadata['original_image']) && is_string($metadata['original_image'])) {
         $original_path = trailingslashit(dirname($file)) . $metadata['original_image'];
-        $orig = tk_image_opt_convert_file_to_webp($original_path, $quality);
+        $orig = tk_image_opt_convert_file_to_webp($original_path, $quality, true);
         if (!empty($orig['new_basename'])) {
             $metadata['original_image'] = $orig['new_basename'];
         }
@@ -209,7 +285,7 @@ function tk_image_opt_convert_attachment_to_webp($attachment_id, $metadata) {
                 continue;
             }
             $size_path = trailingslashit(dirname($file)) . $size_item['file'];
-            $size = tk_image_opt_convert_file_to_webp($size_path, $quality);
+            $size = tk_image_opt_convert_file_to_webp($size_path, $quality, true);
             if (empty($size['new_basename'])) {
                 continue;
             }
@@ -231,7 +307,7 @@ function tk_image_opt_convert_attachment_to_webp($attachment_id, $metadata) {
     return $metadata;
 }
 
-function tk_image_opt_convert_file_to_webp($path, $quality) {
+function tk_image_opt_convert_file_to_webp($path, $quality, $delete_original = false) {
     if (!is_string($path) || $path === '' || !file_exists($path)) {
         return array('new_path' => '', 'new_basename' => '', 'new_size' => 0);
     }
@@ -257,7 +333,9 @@ function tk_image_opt_convert_file_to_webp($path, $quality) {
         return array('new_path' => '', 'new_basename' => '', 'new_size' => 0);
     }
 
-    @unlink($path);
+    if ($delete_original) {
+        @unlink($path);
+    }
     clearstatcache(true, $new_path);
     $size = filesize($new_path);
     return array(
@@ -287,12 +365,7 @@ function tk_render_image_opt_panel() {
                     Enable automatic JPG/PNG compression on upload
                 </label>
             </p>
-            <p>
-                <label>
-                    <input type="checkbox" name="image_opt_frontend_to_webp" value="1" <?php checked(1, tk_get_option('image_opt_frontend_to_webp', 1)); ?>>
-                    On frontend upload, convert image file to WebP
-                </label>
-            </p>
+            <p class="description">Auto mode: frontend upload is converted to WebP and local JPG/PNG asset URLs are rewritten to WebP automatically.</p>
             <p>
                 <label>Compression quality (30-95)</label><br>
                 <input type="number" name="image_opt_quality" min="30" max="95" value="<?php echo esc_attr((string) tk_get_option('image_opt_quality', 78)); ?>">
@@ -385,7 +458,8 @@ function tk_render_image_opt_panel() {
 function tk_image_opt_save() {
     tk_check_nonce('tk_image_opt_save');
     tk_update_option('image_opt_enabled', !empty($_POST['image_opt_enabled']) ? 1 : 0);
-    tk_update_option('image_opt_frontend_to_webp', !empty($_POST['image_opt_frontend_to_webp']) ? 1 : 0);
+    tk_update_option('image_opt_frontend_to_webp', 1);
+    tk_update_option('image_opt_rewrite_all_assets', 1);
     tk_update_option('image_opt_quality', max(30, min(95, (int) tk_post('image_opt_quality', 78))));
     wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'image-opt', 'tk_saved' => 1), admin_url('admin.php')));
     exit;

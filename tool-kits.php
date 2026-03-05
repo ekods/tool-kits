@@ -52,6 +52,7 @@ require_once TK_PATH . 'includes/minify.php';
 require_once TK_PATH . 'includes/cache.php';
 require_once TK_PATH . 'includes/webp.php';
 require_once TK_PATH . 'includes/image-optimizer.php';
+require_once TK_PATH . 'includes/seo-optimization.php';
 require_once TK_PATH . 'includes/monitoring-404-health.php';
 require_once TK_PATH . 'includes/optimization.php';
 require_once TK_PATH . 'includes/lazy-load.php';
@@ -116,6 +117,7 @@ add_action('plugins_loaded', function() {
     tk_cache_init();
     tk_webp_init();
     tk_image_opt_init();
+    tk_seo_opt_init();
     tk_monitoring_404_health_init();
     tk_lazy_load_init();
     tk_assets_opt_init();
