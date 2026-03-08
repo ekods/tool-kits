@@ -7,6 +7,8 @@ function tk_cache_init() {
     add_action('admin_post_tk_cache_object_flush', 'tk_cache_object_flush');
     add_action('admin_post_tk_cache_opcache_reset', 'tk_cache_opcache_reset');
     add_action('admin_post_tk_fragment_cache_flush', 'tk_fragment_cache_flush');
+    add_action('admin_bar_menu', 'tk_cache_admin_bar_menu', 100);
+    add_action('admin_notices', 'tk_cache_admin_notice');
 
     add_action('template_redirect', 'tk_page_cache_maybe_serve', 0);
     add_action('template_redirect', 'tk_page_cache_start_buffer', 1);
@@ -162,8 +164,53 @@ function tk_cache_purge() {
     }
     tk_check_nonce('tk_cache_purge');
     tk_page_cache_purge();
-    wp_redirect(admin_url('admin.php?page=tool-kits-cache&tk_purged=1'));
+    $redirect = wp_get_referer();
+    if (!$redirect) {
+        $redirect = admin_url('admin.php?page=tool-kits-cache');
+    }
+    $redirect = add_query_arg('tk_purged', '1', $redirect);
+    wp_safe_redirect($redirect);
     exit;
+}
+
+function tk_cache_admin_bar_menu($wp_admin_bar) {
+    if (!is_admin_bar_showing() || !tk_is_admin_user() || !tk_get_option('page_cache_enabled', 0)) {
+        return;
+    }
+
+    $url = wp_nonce_url(
+        add_query_arg('action', 'tk_cache_purge', admin_url('admin-post.php')),
+        'tk_cache_purge',
+        '_tk_nonce'
+    );
+
+    $wp_admin_bar->add_node(array(
+        'id' => 'tk-cache-purge',
+        'title' => __('Purge Page Cache', 'tool-kits'),
+        'href' => $url,
+        'meta' => array(
+            'title' => __('Clear Tool Kits page cache', 'tool-kits'),
+        ),
+    ));
+}
+
+function tk_cache_admin_notice() {
+    if (!is_admin() || empty($_GET['tk_purged'])) {
+        return;
+    }
+    if (!tk_is_admin_user()) {
+        return;
+    }
+    if (isset($_GET['page']) && sanitize_key((string) $_GET['page']) === 'tool-kits-cache') {
+        return;
+    }
+
+    $status = sanitize_key((string) $_GET['tk_purged']);
+    if ($status !== '1') {
+        return;
+    }
+
+    tk_notice('Page cache cleared.', 'success');
 }
 
 function tk_cache_object_flush() {
