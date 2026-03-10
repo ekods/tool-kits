@@ -193,17 +193,21 @@ function tk_github_upgrader_source_selection($source, $remote_source, $upgrader,
     }
 
     require_once ABSPATH . 'wp-admin/includes/file.php';
-    $fs = WP_Filesystem();
-    if (!$fs) {
+    global $wp_filesystem;
+    if (!WP_Filesystem() || !is_object($wp_filesystem)) {
+        tk_github_log('WP_Filesystem initialization failed during source selection.');
         return $source;
     }
 
     $dest = trailingslashit($remote_source) . 'tool-kits';
-    if ($fs->is_dir($dest)) {
+    if ($wp_filesystem->is_dir($dest)) {
         return $dest;
     }
 
-    $fs->move($source, $dest, true);
+    if (!$wp_filesystem->move($source, $dest, true)) {
+        tk_github_log('Failed to move extracted update package from ' . $source . ' to ' . $dest . '.');
+        return $source;
+    }
     return $dest;
 }
 

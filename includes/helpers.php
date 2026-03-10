@@ -16,7 +16,9 @@ function tk_update_option($key, $value) {
     $old = array_key_exists($key, $opts) ? $opts[$key] : null;
     $opts[$key] = $value;
     update_option('tk_options', $opts, false);
-    update_option('tk_killswitch_last_key', $key, false);
+    if (tk_killswitch_is_recoverable_key($key)) {
+        update_option('tk_killswitch_last_key', $key, false);
+    }
     tk_toolkits_audit_log_option_change($key, $old, $value);
 }
 
@@ -227,6 +229,10 @@ function tk_killswitch_init() {
     add_action('admin_notices', 'tk_killswitch_notice');
 }
 
+function tk_killswitch_is_recoverable_key(string $key): bool {
+    return strpos($key, 'hardening_') === 0;
+}
+
 function tk_killswitch_snapshot(string $context = ''): void {
     $opts = get_option('tk_options', array());
     if (!is_array($opts)) {
@@ -239,6 +245,7 @@ function tk_killswitch_snapshot(string $context = ''): void {
     );
     update_option('tk_killswitch_snapshot', $data, false);
     update_option('tk_killswitch_last_context', $context, false);
+    update_option('tk_killswitch_last_key', '', false);
 }
 
 function tk_killswitch_shutdown(): void {
@@ -266,17 +273,24 @@ function tk_killswitch_maybe_recover(): void {
         delete_transient('tk_killswitch_triggered');
         return;
     }
+    $snapshot_time = isset($snapshot['time']) ? (int) $snapshot['time'] : 0;
+    if ($snapshot_time <= 0 || (time() - $snapshot_time) > (15 * MINUTE_IN_SECONDS)) {
+        delete_transient('tk_killswitch_triggered');
+        return;
+    }
     $opts = $snapshot['options'];
     $last_key = get_option('tk_killswitch_last_key', '');
     $last_context = get_option('tk_killswitch_last_context', '');
+    $recovery_key = '';
     if ($last_context === 'hardening' || $last_context === 'core-updates') {
-        if (is_string($last_key) && $last_key !== '' && array_key_exists($last_key, $opts)) {
+        if (is_string($last_key) && $last_key !== '' && tk_killswitch_is_recoverable_key($last_key) && array_key_exists($last_key, $opts)) {
             $opts[$last_key] = 0;
+            $recovery_key = $last_key;
         }
     }
     update_option('tk_options', $opts, false);
     update_option('tk_killswitch_last_recovery', time(), false);
-    update_option('tk_killswitch_last_recovery_key', $last_key, false);
+    update_option('tk_killswitch_last_recovery_key', $recovery_key, false);
     delete_transient('tk_killswitch_triggered');
 }
 
@@ -289,7 +303,9 @@ function tk_killswitch_notice(): void {
         return;
     }
     $key = (string) get_option('tk_killswitch_last_recovery_key', '');
-    $msg = 'Tool Kits recovery applied after a fatal error. Last rule disabled: ' . ($key !== '' ? $key : 'unknown');
+    $msg = $key !== ''
+        ? 'Tool Kits recovery applied after a fatal error. Last rule disabled: ' . $key
+        : 'Tool Kits recovery restored the last safe settings after a fatal error.';
     tk_notice($msg, 'warning');
 }
 
@@ -355,6 +371,7 @@ function tk_tamper_detect_security(): array {
         'hardening_disable_rest_user_enum' => 'REST user enumeration disabled',
         'hardening_security_headers' => 'Security headers',
         'hardening_csp_lite_enabled' => 'CSP lite',
+        'hardening_csp_balanced_enabled' => 'CSP balanced',
         'hardening_csp_strict_enabled' => 'CSP strict',
         'hardening_block_uploads_php' => 'Block uploads PHP',
         'hardening_block_plugin_installs' => 'Block plugin/theme installs',
@@ -448,11 +465,14 @@ function tk_hardening_active_items(): array {
     if (tk_get_option('hardening_csp_lite_enabled', 0)) {
         $items[] = 'CSP lite';
     }
+    if (tk_get_option('hardening_csp_balanced_enabled', 0)) {
+        $items[] = 'CSP balanced';
+    }
     if (tk_get_option('hardening_csp_strict_enabled', 0)) {
         $items[] = 'CSP strict';
     }
     if (tk_get_option('hardening_hsts_enabled', 0)) {
-        $items[] = 'HSTS';
+        $items[] = tk_get_option('hardening_hsts_preload', 0) ? 'HSTS preload' : 'HSTS';
     }
     if (tk_get_option('hardening_server_signature_hide', 1)) {
         $items[] = 'Server signature hidden';
@@ -583,8 +603,10 @@ function tk_option_init_defaults() {
         'hardening_auto_applied' => 0,
         'hardening_block_uploads_php' => 1,
         'hardening_csp_lite_enabled' => 1,
+        'hardening_csp_balanced_enabled' => 0,
         'hardening_csp_strict_enabled' => 0,
         'hardening_hsts_enabled' => 1,
+        'hardening_hsts_preload' => 0,
         'hardening_server_signature_hide' => 1,
         'hardening_cookie_httponly_force' => 0,
         'hardening_disable_wp_cron' => 0,
