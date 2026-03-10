@@ -13,6 +13,7 @@ function tk_hardening_init() {
     add_filter('allow_major_auto_core_updates', 'tk_hardening_core_auto_updates');
     if (tk_get_option('hardening_disable_xmlrpc', 1)) {
         add_filter('xmlrpc_enabled', '__return_false');
+        add_action('init', 'tk_hardening_block_xmlrpc_request', 0);
     }
     if (tk_get_option('hardening_block_plugin_installs', 1)) {
         add_filter('user_has_cap', 'tk_hardening_block_plugin_caps', 10, 4);
@@ -29,6 +30,10 @@ function tk_hardening_init() {
     }
     if (tk_get_option('hardening_block_uploads_php', 1)) {
         add_action('init', 'tk_hardening_block_uploads_php', 1);
+    }
+    if (tk_get_option('hardening_server_aware_enabled', 1)) {
+        add_action('init', 'tk_hardening_block_public_wp_cron_request', 0);
+        add_action('init', 'tk_hardening_apply_root_server_rules', 1);
     }
     if (tk_get_option('hardening_xmlrpc_block_methods', 1)) {
         add_filter('xmlrpc_methods', 'tk_xmlrpc_block_methods');
@@ -107,6 +112,53 @@ function tk_hardening_disable_wp_cron_runtime(): void {
     if (!defined('DISABLE_WP_CRON')) {
         define('DISABLE_WP_CRON', true);
     }
+}
+
+function tk_hardening_request_path(): string {
+    $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+    if ($request_uri === '') {
+        return '';
+    }
+    $path = wp_parse_url($request_uri, PHP_URL_PATH);
+    return is_string($path) ? $path : '';
+}
+
+function tk_hardening_is_local_request(): bool {
+    $remote_addr = isset($_SERVER['REMOTE_ADDR']) ? trim((string) $_SERVER['REMOTE_ADDR']) : '';
+    if ($remote_addr === '') {
+        return false;
+    }
+    if ($remote_addr === '127.0.0.1' || $remote_addr === '::1') {
+        return true;
+    }
+    $server_addr = isset($_SERVER['SERVER_ADDR']) ? trim((string) $_SERVER['SERVER_ADDR']) : '';
+    if ($server_addr !== '' && $remote_addr === $server_addr) {
+        return true;
+    }
+    return filter_var($remote_addr, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false;
+}
+
+function tk_hardening_block_xmlrpc_request(): void {
+    $path = tk_hardening_request_path();
+    if ($path === '' || substr($path, -11) !== '/xmlrpc.php') {
+        return;
+    }
+    status_header(403);
+    nocache_headers();
+    wp_die('XML-RPC disabled.', 'Forbidden', array('response' => 403));
+}
+
+function tk_hardening_block_public_wp_cron_request(): void {
+    $path = tk_hardening_request_path();
+    if ($path === '' || substr($path, -12) !== '/wp-cron.php') {
+        return;
+    }
+    if (tk_hardening_is_local_request()) {
+        return;
+    }
+    status_header(403);
+    nocache_headers();
+    wp_die('Public WP-Cron access disabled.', 'Forbidden', array('response' => 403));
 }
 
 function tk_hardening_cookie_httponly_ini(): void {
@@ -700,6 +752,41 @@ function tk_hardening_server_rule_snippet(): string {
         return "<system.webServer>\n  <directoryBrowse enabled=\"false\" />\n  <security>\n    <requestFiltering>\n      <fileExtensions>\n        <add fileExtension=\".env\" allowed=\"false\" />\n        <add fileExtension=\".log\" allowed=\"false\" />\n        <add fileExtension=\".php\" allowed=\"false\" />\n      </fileExtensions>\n    </requestFiltering>\n  </security>\n</system.webServer>";
     }
     return '';
+}
+
+function tk_hardening_apply_root_server_rules(): void {
+    $server = tk_hardening_detect_server();
+    if (!in_array($server, array('apache', 'litespeed', 'openlitespeed'), true)) {
+        return;
+    }
+
+    $path = rtrim(ABSPATH, '/') . '/.htaccess';
+    $marker = '# Tool Kits: root hardening';
+    $snippet = $marker . "\n" . tk_hardening_server_rule_snippet() . "\n";
+    if (trim($snippet) === $marker) {
+        return;
+    }
+
+    if (file_exists($path)) {
+        if (!is_writable($path)) {
+            return;
+        }
+        $contents = @file_get_contents($path);
+        if (!is_string($contents)) {
+            return;
+        }
+        if (strpos($contents, $marker) !== false) {
+            return;
+        }
+        @file_put_contents($path, rtrim($contents, "\r\n") . "\n\n" . $snippet);
+        return;
+    }
+
+    $dir = dirname($path);
+    if (!is_dir($dir) || !is_writable($dir)) {
+        return;
+    }
+    @file_put_contents($path, $snippet);
 }
 
 function tk_hardening_server_rule_status(): array {

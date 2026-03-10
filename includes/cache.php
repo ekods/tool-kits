@@ -185,7 +185,17 @@ function tk_cache_admin_bar_menu($wp_admin_bar) {
     );
 
     $wp_admin_bar->add_node(array(
+        'id' => 'tool-kits',
+        'title' => __('Tool Kits', 'tool-kits'),
+        'href' => tk_admin_url('tool-kits-cache'),
+        'meta' => array(
+            'title' => __('Open Tool Kits cache settings', 'tool-kits'),
+        ),
+    ));
+
+    $wp_admin_bar->add_node(array(
         'id' => 'tk-cache-purge',
+        'parent' => 'tool-kits',
         'title' => __('Purge Page Cache', 'tool-kits'),
         'href' => $url,
         'meta' => array(
