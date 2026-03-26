@@ -162,6 +162,12 @@ function tk_lazy_frontend_script() {
 })();
 JS;
     wp_add_inline_script('tool-kits-lazy', $script);
+    add_filter('script_loader_tag', function($tag, $handle, $src) {
+        if ($handle !== 'tool-kits-lazy') {
+            return $tag;
+        }
+        return tk_csp_add_nonce_to_tag($tag, 'script');
+    }, 1000, 3);
 }
 
 function tk_render_lazy_load_panel() {

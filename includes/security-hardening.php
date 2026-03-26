@@ -50,6 +50,8 @@ function tk_hardening_init() {
     if (tk_get_option('hardening_security_headers', 1)) {
         add_action('send_headers', 'tk_security_headers');
         add_action('send_headers', 'tk_hardening_cors_headers');
+        add_filter('script_loader_tag', 'tk_csp_script_loader_tag', 999, 3);
+        add_filter('style_loader_tag', 'tk_csp_style_loader_tag', 999, 4);
     }
     if (tk_get_option('hardening_server_signature_hide', 1)) {
         add_action('send_headers', 'tk_hardening_hide_server_headers', 999);
@@ -82,6 +84,7 @@ function tk_hardening_init() {
     }
     add_action('tk_hardening_waf_cleanup', 'tk_hardening_waf_cleanup_cron');
     add_action('admin_post_tk_hardening_save', 'tk_hardening_save');
+    add_action('admin_post_tk_hardening_waf_reset', 'tk_hardening_waf_reset');
     if (tk_get_option('hardening_waf_log_to_file', 0)) {
         tk_hardening_waf_schedule_cleanup();
     }
@@ -98,12 +101,16 @@ function tk_security_headers() {
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: strict-origin');
     header('Cross-Origin-Resource-Policy: cross-origin');
+    $nonce = tk_csp_nonce();
+    $nonce_token = $nonce !== '' ? " 'nonce-" . $nonce . "'" : '';
     if (tk_get_option('hardening_csp_strict_enabled', 0)) {
-        header("Content-Security-Policy: default-src 'self'; img-src 'self' data: https:; font-src 'self' data: https:; script-src 'self'; style-src 'self'; connect-src 'self' https:; frame-src 'self' https:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests");
+        header("Content-Security-Policy: default-src 'self'; img-src 'self' data: https:; font-src 'self' data: https:; script-src 'self'" . $nonce_token . "; style-src 'self'" . $nonce_token . "; style-src-attr 'unsafe-inline'; connect-src 'self' https:; frame-src 'self' https:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests");
+    } elseif (tk_get_option('hardening_csp_hardened_enabled', 0)) {
+        header("Content-Security-Policy: default-src 'self'; img-src 'self' data: blob: https:; font-src 'self' data: https:; script-src 'self'" . $nonce_token . "; style-src 'self' 'unsafe-inline'" . $nonce_token . "; style-src-attr 'unsafe-inline'; connect-src 'self' https:; worker-src 'self' blob:; frame-src 'self' https:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests");
     } elseif (tk_get_option('hardening_csp_balanced_enabled', 0)) {
-        header("Content-Security-Policy: default-src 'self'; img-src 'self' data: blob: https:; font-src 'self' data: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https:; worker-src 'self' blob:; frame-src 'self' https:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests");
+        header("Content-Security-Policy: default-src 'self'; img-src 'self' data: blob: https:; font-src 'self' data: https:; script-src 'self' 'unsafe-inline'" . $nonce_token . "; style-src 'self' 'unsafe-inline'" . $nonce_token . "; connect-src 'self' https:; worker-src 'self' blob:; frame-src 'self' https:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests");
     } elseif (tk_get_option('hardening_csp_lite_enabled', 0)) {
-        header("Content-Security-Policy: default-src 'self'; img-src 'self' data: blob: https:; font-src 'self' data: https:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; connect-src 'self' https:; worker-src 'self' blob:; frame-src 'self' https:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests");
+        header("Content-Security-Policy: default-src 'self'; img-src 'self' data: blob: https:; font-src 'self' data: https:; script-src 'self' 'unsafe-inline' https:" . $nonce_token . "; style-src 'self' 'unsafe-inline' https:" . $nonce_token . "; connect-src 'self' https:; worker-src 'self' blob:; frame-src 'self' https:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests");
     }
     if (tk_get_option('hardening_hsts_enabled', 0) && is_ssl()) {
         $hsts = 'max-age=31536000; includeSubDomains';
@@ -112,6 +119,20 @@ function tk_security_headers() {
         }
         header('Strict-Transport-Security: ' . $hsts);
     }
+}
+
+function tk_csp_script_loader_tag($tag, $handle, $src) {
+    if (!is_string($tag)) {
+        return $tag;
+    }
+    return tk_csp_add_nonce_to_tag($tag, 'script');
+}
+
+function tk_csp_style_loader_tag($tag, $handle, $href, $media) {
+    if (!is_string($tag)) {
+        return $tag;
+    }
+    return tk_csp_add_nonce_to_tag($tag, 'style');
 }
 
 function tk_hardening_disable_wp_cron_runtime(): void {
@@ -391,8 +412,8 @@ function tk_hardening_robots_txt_content(string $output, bool $public): string {
 }
 
 function tk_hardening_unwanted_file_names(): array {
-    $raw = tk_get_option('hardening_unwanted_file_names', ".ds_store\nthumbs.db\nphpinfo.php\nerror_log\ndebug.log");
-    $lines = is_string($raw) ? preg_split('/\r\n|\r|\n/', strtolower($raw)) : array();
+    $raw = tk_get_option('hardening_unwanted_file_names', '.ds_store, thumbs.db, phpinfo.php, error_log, debug.log');
+    $lines = is_string($raw) ? preg_split('/[\s,]+/', strtolower($raw)) : array();
     $names = array();
     foreach ($lines as $line) {
         $line = trim((string) $line);
@@ -1042,7 +1063,7 @@ function tk_hardening_config_checks(): array {
         'status' => $rest_disabled ? 'ok' : 'warn',
         'detail' => $rest_disabled ? 'Disabled by hardening setting.' : 'REST user listing is enabled.',
         'action_label' => 'Hardening settings',
-        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+        'action_url' => tk_admin_url('tool-kits-guard') . '#general',
     );
 
     $unwanted_hits = array();
@@ -1065,7 +1086,7 @@ function tk_hardening_config_checks(): array {
         'status' => empty($unwanted_hits) ? 'ok' : 'warn',
         'detail' => $unwanted_detail,
         'action_label' => 'Hardening settings',
-        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+        'action_url' => tk_admin_url('tool-kits-guard') . '#general',
     );
 
     $wp_json_hits = array();
@@ -1095,7 +1116,7 @@ function tk_hardening_config_checks(): array {
         'status' => empty($wp_json_hits) ? 'ok' : 'warn',
         'detail' => $wp_json_detail,
         'action_label' => 'Hardening settings',
-        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+        'action_url' => tk_admin_url('tool-kits-guard') . '#general',
     );
 
     $wp_config_path = tk_hardening_wp_config_path();
@@ -1127,7 +1148,7 @@ function tk_hardening_config_checks(): array {
         'status' => $wp_cron_disabled ? 'ok' : 'warn',
         'detail' => $wp_cron_disabled ? 'Disabled.' : 'Enabled. Consider disabling and running real server cron.',
         'action_label' => 'Hardening settings',
-        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+        'action_url' => tk_admin_url('tool-kits-guard') . '#general',
     );
 
     $disallow_file_mods = defined('DISALLOW_FILE_MODS') ? (bool) DISALLOW_FILE_MODS : false;
@@ -1143,7 +1164,7 @@ function tk_hardening_config_checks(): array {
             'status' => 'warn',
             'detail' => 'HSTS is not enabled. Consider enabling HSTS at the server level.',
             'action_label' => 'Hardening settings',
-            'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+            'action_url' => tk_admin_url('tool-kits-guard') . '#general',
         );
     } else {
         $checks[] = array(
@@ -1151,7 +1172,7 @@ function tk_hardening_config_checks(): array {
             'status' => is_ssl() ? 'ok' : 'ok',
             'detail' => is_ssl() ? 'HTTPS detected.' : 'Not applicable (HTTP).',
             'action_label' => 'Hardening settings',
-            'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+            'action_url' => tk_admin_url('tool-kits-guard') . '#general',
         );
     }
 
@@ -1161,7 +1182,7 @@ function tk_hardening_config_checks(): array {
         'status' => $strict_csp ? 'ok' : 'warn',
         'detail' => $strict_csp ? 'Enabled (unsafe-inline/eval removed).' : 'Disabled. CSP may still allow unsafe-inline/eval.',
         'action_label' => 'Hardening settings',
-        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+        'action_url' => tk_admin_url('tool-kits-guard') . '#general',
     );
 
     $server_sig_hidden = tk_get_option('hardening_server_signature_hide', 1) ? true : false;
@@ -1170,7 +1191,7 @@ function tk_hardening_config_checks(): array {
         'status' => $server_sig_hidden ? 'ok' : 'warn',
         'detail' => $server_sig_hidden ? 'Enabled.' : 'Disabled.',
         'action_label' => 'Hardening settings',
-        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+        'action_url' => tk_admin_url('tool-kits-guard') . '#general',
     );
 
     $home_result = tk_hardening_fetch_url(home_url('/'));
@@ -1213,7 +1234,7 @@ function tk_hardening_config_checks(): array {
         'status' => $httponly_forced ? 'ok' : 'warn',
         'detail' => $httponly_forced ? 'Enabled.' : 'Disabled.',
         'action_label' => 'Hardening settings',
-        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+        'action_url' => tk_admin_url('tool-kits-guard') . '#general',
     );
 
     $method_filter = tk_get_option('hardening_http_methods_filter_enabled', 0) ? true : false;
@@ -1222,7 +1243,7 @@ function tk_hardening_config_checks(): array {
         'status' => $method_filter ? 'ok' : 'warn',
         'detail' => $method_filter ? 'Enabled.' : 'Disabled.',
         'action_label' => 'Hardening settings',
-        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+        'action_url' => tk_admin_url('tool-kits-guard') . '#general',
     );
 
     $dangerous_methods_block = tk_get_option('hardening_block_dangerous_methods_enabled', 1) ? true : false;
@@ -1231,7 +1252,7 @@ function tk_hardening_config_checks(): array {
         'status' => $dangerous_methods_block ? 'ok' : 'warn',
         'detail' => $dangerous_methods_block ? 'PUT/DELETE/TRACE/CONNECT block enabled.' : 'Disabled.',
         'action_label' => 'Hardening settings',
-        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+        'action_url' => tk_admin_url('tool-kits-guard') . '#general',
     );
 
     $robots_hardened = tk_get_option('hardening_robots_txt_hardened', 0) ? true : false;
@@ -1240,7 +1261,7 @@ function tk_hardening_config_checks(): array {
         'status' => $robots_hardened ? 'ok' : 'warn',
         'detail' => $robots_hardened ? 'Enabled minimal robots policy.' : 'Disabled.',
         'action_label' => 'Hardening settings',
-        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+        'action_url' => tk_admin_url('tool-kits-guard') . '#general',
     );
 
     $unwanted_block = tk_get_option('hardening_block_unwanted_files_enabled', 1) ? true : false;
@@ -1249,7 +1270,7 @@ function tk_hardening_config_checks(): array {
         'status' => $unwanted_block ? 'ok' : 'warn',
         'detail' => $unwanted_block ? 'Enabled.' : 'Disabled.',
         'action_label' => 'Hardening settings',
-        'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+        'action_url' => tk_admin_url('tool-kits-guard') . '#general',
     );
 
     $mysql_check = tk_get_option('hardening_mysql_exposure_check_enabled', 1) ? true : false;
@@ -1259,7 +1280,7 @@ function tk_hardening_config_checks(): array {
             'status' => 'unknown',
             'detail' => 'Check disabled.',
             'action_label' => 'Hardening settings',
-            'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+            'action_url' => tk_admin_url('tool-kits-guard') . '#general',
         );
     } else {
         $parsed = tk_hardening_db_host_parse(tk_hardening_db_host_value());
@@ -1272,7 +1293,7 @@ function tk_hardening_config_checks(): array {
                 'status' => 'ok',
                 'detail' => 'DB host is local (' . ($db_host === '' ? 'localhost' : $db_host) . ').',
                 'action_label' => 'Hardening settings',
-                'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+                'action_url' => tk_admin_url('tool-kits-guard') . '#general',
             );
         } elseif (filter_var($db_host, FILTER_VALIDATE_IP) && tk_hardening_is_private_ip($db_host)) {
             $checks[] = array(
@@ -1280,7 +1301,7 @@ function tk_hardening_config_checks(): array {
                 'status' => 'ok',
                 'detail' => 'DB host uses private IP ' . $db_host . ':' . $db_port . '.',
                 'action_label' => 'Hardening settings',
-                'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+                'action_url' => tk_admin_url('tool-kits-guard') . '#general',
             );
         } else {
             $status = $allow_public ? 'ok' : 'warn';
@@ -1292,7 +1313,7 @@ function tk_hardening_config_checks(): array {
                 'status' => $status,
                 'detail' => $detail,
                 'action_label' => 'Hardening settings',
-                'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+                'action_url' => tk_admin_url('tool-kits-guard') . '#general',
             );
         }
     }
@@ -1305,7 +1326,7 @@ function tk_hardening_config_checks(): array {
             'status' => 'unknown',
             'detail' => 'Uploads directory not found.',
             'action_label' => 'Hardening settings',
-            'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+            'action_url' => tk_admin_url('tool-kits-guard') . '#general',
         );
     } elseif (in_array($server, array('apache', 'litespeed', 'openlitespeed'), true)) {
         $htaccess = trailingslashit($uploads_path) . '.htaccess';
@@ -1322,7 +1343,7 @@ function tk_hardening_config_checks(): array {
             'status' => $ok ? 'ok' : 'warn',
             'detail' => $ok ? 'Upload PHP blocking rule detected.' : 'No uploads PHP blocking rule detected.',
             'action_label' => 'Hardening settings',
-            'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+            'action_url' => tk_admin_url('tool-kits-guard') . '#general',
         );
     } elseif ($server === 'iis') {
         $web_config = trailingslashit($uploads_path) . 'web.config';
@@ -1339,7 +1360,7 @@ function tk_hardening_config_checks(): array {
             'status' => $ok ? 'ok' : 'warn',
             'detail' => $ok ? 'Upload PHP blocking rule detected.' : 'No uploads PHP blocking rule detected.',
             'action_label' => 'Hardening settings',
-            'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+            'action_url' => tk_admin_url('tool-kits-guard') . '#general',
         );
     } else {
         $checks[] = array(
@@ -1347,7 +1368,7 @@ function tk_hardening_config_checks(): array {
             'status' => 'unknown',
             'detail' => 'Check server config to block PHP in uploads.',
             'action_label' => 'Hardening settings',
-            'action_url' => tk_admin_url('tool-kits-security-hardening') . '#general',
+            'action_url' => tk_admin_url('tool-kits-guard') . '#general',
         );
     }
 
@@ -1770,6 +1791,7 @@ function tk_render_hardening_page() {
         'hardening_block_uploads_php' => tk_get_option('hardening_block_uploads_php', 1),
         'hardening_csp_lite_enabled' => tk_get_option('hardening_csp_lite_enabled', 0),
         'hardening_csp_balanced_enabled' => tk_get_option('hardening_csp_balanced_enabled', 0),
+        'hardening_csp_hardened_enabled' => tk_get_option('hardening_csp_hardened_enabled', 0),
         'hardening_csp_strict_enabled' => tk_get_option('hardening_csp_strict_enabled', 0),
         'hardening_hsts_enabled' => tk_get_option('hardening_hsts_enabled', 0),
         'hardening_hsts_preload' => tk_get_option('hardening_hsts_preload', 0),
@@ -1785,11 +1807,21 @@ function tk_render_hardening_page() {
         'hardening_dangerous_methods_allow_paths' => tk_get_option('hardening_dangerous_methods_allow_paths', "/wp-json/\n/wp-admin/admin-ajax.php\n/wp-cron.php"),
         'hardening_robots_txt_hardened' => tk_get_option('hardening_robots_txt_hardened', 0),
         'hardening_block_unwanted_files_enabled' => tk_get_option('hardening_block_unwanted_files_enabled', 1),
-        'hardening_unwanted_file_names' => tk_get_option('hardening_unwanted_file_names', ".ds_store\nthumbs.db\nphpinfo.php\nerror_log\ndebug.log"),
+        'hardening_unwanted_file_names' => tk_get_option('hardening_unwanted_file_names', '.ds_store, thumbs.db, phpinfo.php, error_log, debug.log'),
         'hardening_mysql_exposure_check_enabled' => tk_get_option('hardening_mysql_exposure_check_enabled', 1),
         'hardening_mysql_allow_public_host' => tk_get_option('hardening_mysql_allow_public_host', 0),
         'hardening_block_plugin_installs' => tk_get_option('hardening_block_plugin_installs', 1),
     );
+    $csp_mode = 'off';
+    if (!empty($opts['hardening_csp_strict_enabled'])) {
+        $csp_mode = 'strict';
+    } elseif (!empty($opts['hardening_csp_hardened_enabled'])) {
+        $csp_mode = 'hardened';
+    } elseif (!empty($opts['hardening_csp_balanced_enabled'])) {
+        $csp_mode = 'balanced';
+    } elseif (!empty($opts['hardening_csp_lite_enabled'])) {
+        $csp_mode = 'lite';
+    }
     ?>
     <div class="wrap tk-wrap">
         <h1>Hardening</h1>
@@ -1820,22 +1852,28 @@ function tk_render_hardening_page() {
                 </div>
                 <div class="tk-card tk-tab-panel" data-panel-id="general">
                     <p>Toggle the most effective WordPress hardening toggles that can be flipped without touching core files.</p>
+                    <p><strong>Active CSP mode:</strong> <?php echo esc_html(strtoupper($csp_mode)); ?></p>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php tk_nonce_field('tk_hardening_save'); ?>
                         <input type="hidden" name="action" value="tk_hardening_save">
                         <input type="hidden" name="tk_tab" value="general">
 
                         <p><label><input type="checkbox" name="file_editor" value="1" data-confirm="Disables the built-in theme/plugin editor. You will need FTP or file access to edit files." <?php checked(1, $opts['hardening_disable_file_editor']); ?>> Disable theme/plugin file editor</label></p>
-                        <p class="description">Warning: requires FTP or file access to edit theme/plugin files.</p>
+                        <p class="description">Requires FTP or file access to edit theme/plugin files.</p>
                         <p><label><input type="checkbox" name="disable_comments" value="1" <?php checked(1, $opts['hardening_disable_comments']); ?>> Disable comments site-wide</label></p>
                         <p><label><input type="checkbox" name="rest_user_enum" value="1" <?php checked(1, $opts['hardening_disable_rest_user_enum']); ?>> Disable REST user enumeration</label></p>
                         <p><label><input type="checkbox" name="headers" value="1" <?php checked(1, $opts['hardening_security_headers']); ?>> Send security headers</label></p>
-                        <p><label><input type="checkbox" name="csp_lite" value="1" <?php checked(1, $opts['hardening_csp_lite_enabled']); ?>> Enable CSP lite header</label></p>
-                        <p class="description">Lite CSP is the compatibility-first mode. It still allows inline scripts/styles and broad HTTPS script sources.</p>
-                        <p><label><input type="checkbox" name="csp_balanced" value="1" <?php checked(1, $opts['hardening_csp_balanced_enabled']); ?>> Enable CSP balanced header</label></p>
-                        <p class="description">Balanced CSP is recommended for most production WordPress sites. It keeps <code>'unsafe-inline'</code> for compatibility, but removes broad <code>https:</code> script/style execution and <code>'unsafe-eval'</code>.</p>
-                        <p><label><input type="checkbox" name="csp_strict" value="1" data-confirm="Strict CSP can break inline JS/CSS from theme/plugins if they are not nonce/hash based." <?php checked(1, $opts['hardening_csp_strict_enabled']); ?>> Enable strict CSP (self-hosted scripts/styles only)</label></p>
-                        <p class="description">Strict CSP removes <code>'unsafe-inline'</code>, <code>'unsafe-eval'</code>, and wildcard script sources. Use only if theme/plugins are CSP-ready.</p>
+                        <p>
+                            <label for="tk-csp-mode"><strong>CSP mode</strong></label><br>
+                            <select id="tk-csp-mode" name="csp_mode">
+                                <option value="off" <?php selected('off', $csp_mode); ?>>Off</option>
+                                <option value="lite" <?php selected('lite', $csp_mode); ?>>Lite</option>
+                                <option value="balanced" <?php selected('balanced', $csp_mode); ?>>Balanced</option>
+                                <option value="hardened" <?php selected('hardened', $csp_mode); ?>>Hardened</option>
+                                <option value="strict" <?php selected('strict', $csp_mode); ?>>Strict</option>
+                            </select>
+                        </p>
+                        <p class="description">Lite: compatibility-first. Balanced: safe default for most WordPress sites. Hardened: stronger middle ground for modern themes/builders. Strict: only for CSP-ready themes/plugins.</p>
                         <p><label><input type="checkbox" name="hsts" value="1" <?php checked(1, $opts['hardening_hsts_enabled']); ?>> Enable HSTS header (HTTPS only)</label></p>
                         <p><label><input type="checkbox" name="hsts_preload" value="1" data-confirm="Enable this only if the entire site and all subdomains are HTTPS-only and ready for HSTS preload." <?php checked(1, $opts['hardening_hsts_preload']); ?>> Add preload to HSTS header</label></p>
                         <p class="description">Sends <code>Strict-Transport-Security: max-age=31536000; includeSubDomains; preload</code> when enabled.</p>
@@ -1864,8 +1902,8 @@ function tk_render_hardening_page() {
                         <p><label><input type="checkbox" name="robots_txt_hardened" value="1" <?php checked(1, $opts['hardening_robots_txt_hardened']); ?>> Harden robots.txt (minimal policy)</label></p>
                         <p><label><input type="checkbox" name="block_unwanted_files" value="1" <?php checked(1, $opts['hardening_block_unwanted_files_enabled']); ?>> Block direct access to unwanted filenames</label></p>
                         <p>
-                            Unwanted filenames (one per line)<br>
-                            <textarea class="large-text" rows="3" name="unwanted_file_names" placeholder=".ds_store"><?php echo esc_textarea((string)$opts['hardening_unwanted_file_names']); ?></textarea>
+                            Unwanted filenames (comma-separated)<br>
+                            <input class="large-text" type="text" name="unwanted_file_names" value="<?php echo esc_attr((string)$opts['hardening_unwanted_file_names']); ?>" placeholder=".ds_store, thumbs.db, phpinfo.php, error_log, debug.log">
                         </p>
                         <p><label><input type="checkbox" name="mysql_exposure_check" value="1" <?php checked(1, $opts['hardening_mysql_exposure_check_enabled']); ?>> Enable MySQL public exposure risk check</label></p>
                         <p><label><input type="checkbox" name="mysql_allow_public_host" value="1" <?php checked(1, $opts['hardening_mysql_allow_public_host']); ?>> Allow public/managed DB host (suppress warning)</label></p>
@@ -1911,7 +1949,7 @@ function tk_render_hardening_page() {
                         <input type="hidden" name="action" value="tk_hardening_save">
                         <input type="hidden" name="tk_tab" value="waf">
                         <p><label><input type="checkbox" name="waf_enabled" value="1" data-confirm="Enabling WAF can block legitimate traffic if rules are too strict." <?php checked(1, $opts['hardening_waf_enabled']); ?>> Enable simple WAF</label></p>
-                        <p class="description">Warning: review allowlist and logs after enabling.</p>
+                        <p class="description">Review allowlist and logs after enabling.</p>
                         <p>
                             <label for="tk-waf-check-methods">WAF check methods (comma-separated)</label><br>
                             <input class="regular-text" type="text" id="tk-waf-check-methods" name="waf_check_methods" value="<?php echo esc_attr((string)$opts['hardening_waf_check_methods']); ?>" placeholder="GET, POST">
@@ -2074,17 +2112,26 @@ function tk_hardening_save() {
         tk_update_option('hardening_disable_comments', !empty($_POST['disable_comments']) ? 1 : 0);
         tk_update_option('hardening_disable_rest_user_enum', !empty($_POST['rest_user_enum']) ? 1 : 0);
         tk_update_option('hardening_security_headers', !empty($_POST['headers']) ? 1 : 0);
-        $csp_lite = !empty($_POST['csp_lite']) ? 1 : 0;
-        $csp_balanced = !empty($_POST['csp_balanced']) ? 1 : 0;
-        $csp_strict = !empty($_POST['csp_strict']) ? 1 : 0;
-        if ($csp_strict) {
-            $csp_balanced = 0;
-            $csp_lite = 0;
-        } elseif ($csp_balanced) {
-            $csp_lite = 0;
+        $posted_csp_mode = isset($_POST['csp_mode']) ? sanitize_key($_POST['csp_mode']) : '';
+        if (!in_array($posted_csp_mode, array('off', 'lite', 'balanced', 'hardened', 'strict'), true)) {
+            $posted_csp_mode = 'off';
+            if (!empty($_POST['csp_strict'])) {
+                $posted_csp_mode = 'strict';
+            } elseif (!empty($_POST['csp_hardened'])) {
+                $posted_csp_mode = 'hardened';
+            } elseif (!empty($_POST['csp_balanced'])) {
+                $posted_csp_mode = 'balanced';
+            } elseif (!empty($_POST['csp_lite'])) {
+                $posted_csp_mode = 'lite';
+            }
         }
+        $csp_lite = $posted_csp_mode === 'lite' ? 1 : 0;
+        $csp_balanced = $posted_csp_mode === 'balanced' ? 1 : 0;
+        $csp_hardened = $posted_csp_mode === 'hardened' ? 1 : 0;
+        $csp_strict = $posted_csp_mode === 'strict' ? 1 : 0;
         tk_update_option('hardening_csp_lite_enabled', $csp_lite);
         tk_update_option('hardening_csp_balanced_enabled', $csp_balanced);
+        tk_update_option('hardening_csp_hardened_enabled', $csp_hardened);
         tk_update_option('hardening_csp_strict_enabled', $csp_strict);
         tk_update_option('hardening_hsts_enabled', !empty($_POST['hsts']) ? 1 : 0);
         tk_update_option('hardening_hsts_preload', !empty($_POST['hsts_preload']) ? 1 : 0);
@@ -2111,7 +2158,7 @@ function tk_hardening_save() {
         tk_update_option('hardening_robots_txt_hardened', !empty($_POST['robots_txt_hardened']) ? 1 : 0);
         tk_update_option('hardening_block_unwanted_files_enabled', !empty($_POST['block_unwanted_files']) ? 1 : 0);
         $unwanted_file_names = isset($_POST['unwanted_file_names']) ? wp_unslash($_POST['unwanted_file_names']) : '';
-        $unwanted_file_names = is_string($unwanted_file_names) ? trim($unwanted_file_names) : '';
+        $unwanted_file_names = is_string($unwanted_file_names) ? trim(preg_replace('/[\r\n]+/', ', ', $unwanted_file_names)) : '';
         tk_update_option('hardening_unwanted_file_names', $unwanted_file_names);
         tk_update_option('hardening_mysql_exposure_check_enabled', !empty($_POST['mysql_exposure_check']) ? 1 : 0);
         tk_update_option('hardening_mysql_allow_public_host', !empty($_POST['mysql_allow_public_host']) ? 1 : 0);
@@ -2192,13 +2239,41 @@ function tk_hardening_save() {
         tk_update_option('hardening_cors_allow_credentials', !empty($_POST['cors_allow_credentials']) ? 1 : 0);
     }
 
-    $redirect = add_query_arg(array('page'=>'tool-kits-security-hardening','tk_saved'=>1), admin_url('admin.php'));
+    $redirect = add_query_arg(array('page'=>'tool-kits-guard','tk_saved'=>1), admin_url('admin.php'));
     if ($tab !== '') {
         $redirect .= '#' . $tab;
     }
     wp_redirect($redirect);
     exit;
 }
+
+function tk_hardening_waf_reset() {
+    if (!tk_is_admin_user()) {
+        wp_die('Forbidden');
+    }
+    tk_check_nonce('tk_hardening_waf_reset');
+
+    tk_update_option('hardening_waf_enabled', 0);
+    tk_update_option('hardening_waf_allow_paths', '');
+    tk_update_option('hardening_waf_allow_regex', '');
+    tk_update_option('hardening_waf_check_methods', 'GET, POST');
+    tk_update_option('hardening_waf_log_to_file', 0);
+    tk_update_option('hardening_waf_log_max_kb', 1024);
+    tk_update_option('hardening_waf_log_max_files', 3);
+    tk_update_option('hardening_waf_log_compress', 0);
+    tk_update_option('hardening_waf_log_compress_min_kb', 256);
+    tk_update_option('hardening_waf_log_keep_days', 14);
+    tk_update_option('hardening_waf_log_schedule', 'daily');
+    tk_hardening_waf_clear_cleanup();
+
+    $redirect = add_query_arg(array(
+        'page' => 'tool-kits',
+        'tk_waf_reset' => '1',
+    ), admin_url('admin.php'));
+    wp_safe_redirect($redirect);
+    exit;
+}
+
 function tk_hardening_waf_cron_schedules($schedules) {
     $schedules['tk_hourly'] = array(
         'interval' => HOUR_IN_SECONDS,

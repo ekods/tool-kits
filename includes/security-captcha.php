@@ -135,7 +135,6 @@ function tk_captcha_render_markup(): string {
     if (!$css_loaded) {
         $css_loaded = true;
         $css = '
-<style>
   .tk-captcha-field{
     margin:12px 0;
     display:flex;
@@ -229,11 +228,10 @@ function tk_captcha_render_markup(): string {
 
 .tk-captcha-refresh:active .tk-captcha-refresh-icon {
   transform: rotate(360deg);
-}
-</style>';
+}';
     }
 
-    $html  = $css;
+    $html  = $css !== '' ? '<style' . tk_csp_nonce_attr() . '>' . $css . '</style>' : '';
     $html .= '<div class="tk-captcha-field">';
     $html .= '<label class="tk-captcha-label">Enter the code below</label>';
 
@@ -311,50 +309,49 @@ function tk_captcha_refresh_script() {
     }
     $ajax_url = admin_url('admin-ajax.php');
     $nonce = wp_create_nonce('tk_captcha_refresh');
-    ?>
-    <script>
-    (function(){
-        var ajaxUrl = '<?php echo esc_js($ajax_url); ?>';
-        var nonce = '<?php echo esc_js($nonce); ?>';
-        document.addEventListener('click', function(e){
-            var btn = e.target.closest('.tk-captcha-refresh');
-            if (!btn) {
-                return;
-            }
-            e.preventDefault();
-            var field = btn.closest('.tk-captcha-field');
-            if (!field) {
-                return;
-            }
-            btn.disabled = true;
-            var originalLabel = btn.getAttribute('data-tk-label');
-            if (!originalLabel) {
-                originalLabel = btn.innerHTML;
-                btn.setAttribute('data-tk-label', originalLabel);
-            }
-            btn.innerHTML = 'Refreshing…';
-            fetch(ajaxUrl, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: new URLSearchParams({
-                    action: 'tk_captcha_refresh',
-                    nonce: nonce
-                })
-            }).then(function(resp){ return resp.json(); }).then(function(data){
-                if (data.success && data.data.markup) {
-                    field.outerHTML = data.data.markup;
+    tk_csp_print_inline_script(
+        "(function(){
+            var ajaxUrl = '" . esc_js($ajax_url) . "';
+            var nonce = '" . esc_js($nonce) . "';
+            document.addEventListener('click', function(e){
+                var btn = e.target.closest('.tk-captcha-refresh');
+                if (!btn) {
+                    return;
                 }
-            }).finally(function(){
-                btn.disabled = false;
-                if (originalLabel) {
-                    btn.innerHTML = originalLabel;
+                e.preventDefault();
+                var field = btn.closest('.tk-captcha-field');
+                if (!field) {
+                    return;
                 }
+                btn.disabled = true;
+                var originalLabel = btn.getAttribute('data-tk-label');
+                if (!originalLabel) {
+                    originalLabel = btn.innerHTML;
+                    btn.setAttribute('data-tk-label', originalLabel);
+                }
+                btn.innerHTML = 'Refreshing…';
+                fetch(ajaxUrl, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: new URLSearchParams({
+                        action: 'tk_captcha_refresh',
+                        nonce: nonce
+                    })
+                }).then(function(resp){ return resp.json(); }).then(function(data){
+                    if (data.success && data.data.markup) {
+                        field.outerHTML = data.data.markup;
+                    }
+                }).finally(function(){
+                    btn.disabled = false;
+                    if (originalLabel) {
+                        btn.innerHTML = originalLabel;
+                    }
+                });
             });
-        });
-    })();
-    </script>
-    <?php
+        })();",
+        array('id' => 'tk-captcha-refresh')
+    );
 }
 
 function tk_captcha_validate($user) {

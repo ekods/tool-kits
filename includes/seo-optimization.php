@@ -103,7 +103,7 @@ function tk_seo_render_head_tags() {
     if ((int) tk_get_option('seo_schema_enabled', 1) === 1) {
         $schema = tk_seo_build_schema_graph($url, $title, $description);
         if (!empty($schema)) {
-            echo '<script type="application/ld+json">' . wp_json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . '</script>' . "\n";
+            echo '<script type="application/ld+json"' . tk_csp_nonce_attr() . '>' . wp_json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . '</script>' . "\n";
         }
     }
 }

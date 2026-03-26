@@ -299,9 +299,8 @@ function tk_assets_delay_js_bootstrap() {
     if (empty($targets)) {
         return;
     }
-    ?>
-    <script id="tk-assets-delay-js">
-    (function(){
+    $script = <<<'JS'
+(function(){
         var nodes = Array.prototype.slice.call(document.querySelectorAll('script[data-tk-assets-delay="1"]'));
         if (!nodes.length) { return; }
         var done = false;
@@ -324,8 +323,8 @@ function tk_assets_delay_js_bootstrap() {
         setTimeout(activate, 3000);
         window.addEventListener('load', activate, { once: true });
     })();
-    </script>
-    <?php
+JS;
+    tk_csp_print_inline_script($script, array('id' => 'tk-assets-delay-js'));
 }
 
 function tk_assets_render_critical_css() {
@@ -340,7 +339,7 @@ function tk_assets_render_critical_css() {
     if ($css === '') {
         return;
     }
-    echo "\n<style id=\"tk-critical-css\">\n" . $css . "\n</style>\n";
+    tk_csp_print_inline_style($css, array('id' => 'tk-critical-css'));
 }
 
 function tk_assets_style_loader_tag($tag, $handle, $href, $media) {

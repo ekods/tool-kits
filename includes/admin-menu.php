@@ -51,7 +51,7 @@ function tk_register_admin_menus() {
             add_submenu_page('tool-kits', __('Spam Protection', 'tool-kits'), __('Spam Protection', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-spam', 'tk_render_spam_protection_page');
             add_submenu_page('tool-kits', __('Rate Limit', 'tool-kits'), __('Rate Limit', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-rate-limit', 'tk_render_rate_limit_page');
             add_submenu_page('tool-kits', __('Login Log', 'tool-kits'), __('Login Log', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-login-log', 'tk_render_login_log_page');
-            add_submenu_page('tool-kits', __('Hardening', 'tool-kits'), __('Hardening', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-hardening', 'tk_render_hardening_page');
+            add_submenu_page('tool-kits', __('Hardening', 'tool-kits'), __('Hardening', 'tool-kits'), tk_toolkits_capability(), tk_hardening_page_slug(), 'tk_render_hardening_page');
             add_submenu_page('tool-kits', __('SMTP', 'tool-kits'), __('SMTP', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-smtp', 'tk_render_smtp_page');
             add_submenu_page('tool-kits', __('Monitoring', 'tool-kits'), __('Monitoring', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-monitoring', 'tk_render_monitoring_page');
             add_submenu_page('tool-kits', __('Cache', 'tool-kits'), __('Cache', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-cache', 'tk_render_cache_page');
@@ -68,6 +68,9 @@ function tk_register_admin_menus() {
     add_submenu_page('tools.php', __('Tool Kits Access', 'tool-kits'), __('Tool Kits Access', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-access', 'tk_render_toolkits_access_page');
     if (!$license_valid) {
         add_submenu_page('tools.php', __('Database', 'tool-kits'), __('Database', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
+    }
+    if ($license_valid && $allow_full) {
+        add_submenu_page('tools.php', __('Hardening', 'tool-kits'), __('Hardening', 'tool-kits'), tk_toolkits_capability(), tk_hardening_fallback_slug(), 'tk_render_hardening_page');
     }
 
     // Hidden legacy pages for direct links.
@@ -502,8 +505,9 @@ function tk_render_monitoring_page() {
                 </div>
             </div>
         </div>
-        <script>
-        (function(){
+        <?php
+        tk_csp_print_inline_script(
+            "(function(){
             function activateTab(panelId) {
                 document.querySelectorAll('.tk-tab-panel').forEach(function(panel){
                     panel.classList.toggle('is-active', panel.getAttribute('data-panel-id') === panelId);
@@ -530,10 +534,11 @@ function tk_render_monitoring_page() {
             if (initial) {
                 activateTab(initial);
             }
-        })();
-        </script>
-        <script>
-        (function(){
+        })();",
+            array('id' => 'tk-monitoring-tabs')
+        );
+        tk_csp_print_inline_script(
+            "(function(){
             var loadEl = document.getElementById('tk-rt-load');
             var rttEl = document.getElementById('tk-rt-rtt');
             var memEl = document.getElementById('tk-rt-mem');
@@ -546,7 +551,7 @@ function tk_render_monitoring_page() {
             }
             var intervalId = null;
             function isRealtimeActive() {
-                var panel = document.querySelector('.tk-tab-panel[data-panel-id="realtime"]');
+                var panel = document.querySelector('.tk-tab-panel[data-panel-id=\"realtime\"]');
                 return panel && panel.classList.contains('is-active');
             }
             function formatBytes(bytes) {
@@ -582,7 +587,7 @@ function tk_render_monitoring_page() {
                 var start = Date.now();
                 var data = new URLSearchParams();
                 data.append('action', 'tk_realtime_health');
-                data.append('nonce', '<?php echo esc_js(wp_create_nonce('tk_realtime_health')); ?>');
+                data.append('nonce', '" . esc_js(wp_create_nonce('tk_realtime_health')) . "');
                 fetch(ajaxurl, {
                     method: 'POST',
                     credentials: 'same-origin',
@@ -662,8 +667,10 @@ function tk_render_monitoring_page() {
             if (isRealtimeActive()) {
                 startPolling();
             }
-        })();
-        </script>
+        })();",
+            array('id' => 'tk-monitoring-realtime')
+        );
+        ?>
     </div>
     <?php
 }
@@ -673,6 +680,9 @@ function tk_render_overview_page() {
     ?>
     <div class="wrap tk-wrap">
         <h1>Tool Kits</h1>
+        <?php if (isset($_GET['tk_waf_reset']) && sanitize_key((string) $_GET['tk_waf_reset']) === '1') : ?>
+            <?php tk_notice('WAF settings reset to safe defaults.', 'success'); ?>
+        <?php endif; ?>
         <div class="tk-card" style="margin-top:24px;">
             <h2>Security Modules</h2>
             <p class="description">Control each module directly from this page.</p>
@@ -712,7 +722,7 @@ function tk_render_overview_page() {
                     <tr>
                         <td>Enable WAF or HTTP Auth protections</td>
                         <td><span class="tk-badge tk-adv">Advanced / expert only</span></td>
-                        <td><a href="<?php echo esc_url(tk_admin_url('tool-kits-security-hardening') . '#waf'); ?>">Hardening settings</a></td>
+                        <td><a href="<?php echo esc_url(tk_admin_url(tk_hardening_page_slug()) . '#waf'); ?>">Hardening settings</a></td>
                     </tr>
                 </tbody>
             </table>
@@ -826,7 +836,14 @@ function tk_render_security_table() {
                         <small>-</small>
                     <?php endif; ?>
                 </td>
-                <td><a href="<?php echo esc_url(tk_admin_url('tool-kits-security-hardening')); ?>">Settings</a></td>
+                <td>
+                    <a href="<?php echo esc_url(tk_admin_url(tk_hardening_page_slug())); ?>">Settings</a>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:8px;">
+                        <?php tk_nonce_field('tk_hardening_waf_reset'); ?>
+                        <input type="hidden" name="action" value="tk_hardening_waf_reset">
+                        <button class="button button-secondary" data-confirm="Reset WAF settings to safe defaults and disable WAF?">Reset WAF</button>
+                    </form>
+                </td>
             </tr>
         </tbody>
     </table>
@@ -1137,8 +1154,9 @@ function tk_render_toolkits_access_page() {
                 <?php endif; ?>
             </div>
         </div>
-        <script>
-        (function(){
+        <?php
+        tk_csp_print_inline_script(
+            "(function(){
             function activateTab(panelId) {
                 document.querySelectorAll('.tk-tab-panel').forEach(function(panel){
                     panel.classList.toggle('is-active', panel.getAttribute('data-panel-id') === panelId);
@@ -1165,22 +1183,24 @@ function tk_render_toolkits_access_page() {
             if (initial) {
                 activateTab(initial);
             }
-            var tokenDisplay = document.querySelector('input[name="heartbeat_auth_key_display"]');
-            var tokenHidden = document.querySelector('input[name="heartbeat_auth_key"]');
+            var tokenDisplay = document.querySelector('input[name=\"heartbeat_auth_key_display\"]');
+            var tokenHidden = document.querySelector('input[name=\"heartbeat_auth_key\"]');
             if (tokenDisplay && tokenHidden) {
                 tokenDisplay.addEventListener('input', function() {
                     tokenHidden.value = tokenDisplay.value;
                 });
             }
-            var licenseDisplay = document.querySelector('input[name="license_key_display"]');
-            var licenseHidden = document.querySelector('input[name="license_key"]');
+            var licenseDisplay = document.querySelector('input[name=\"license_key_display\"]');
+            var licenseHidden = document.querySelector('input[name=\"license_key\"]');
             if (licenseDisplay && licenseHidden) {
                 licenseDisplay.addEventListener('input', function() {
                     licenseHidden.value = licenseDisplay.value;
                 });
             }
-        })();
-        </script>
+        })();",
+            array('id' => 'tk-access-tabs')
+        );
+        ?>
     </div>
     <?php
 }

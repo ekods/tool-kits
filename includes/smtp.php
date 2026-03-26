@@ -18,6 +18,37 @@ function tk_smtp_enabled() {
     return (int) tk_get_option('smtp_enabled', 0) === 1;
 }
 
+function tk_smtp_is_phpmailer_compatible($phpmailer): bool {
+    return is_object($phpmailer)
+        && method_exists($phpmailer, 'isSMTP')
+        && method_exists($phpmailer, 'setFrom')
+        && method_exists($phpmailer, 'addReplyTo');
+}
+
+function tk_smtp_normalize_email(string $email): string {
+    $email = trim(strtolower($email));
+    return is_email($email) ? $email : '';
+}
+
+function tk_smtp_force_from_address(string $current_from = ''): string {
+    $force_from = (int) tk_get_option('smtp_force_from', 1) === 1;
+    $from = tk_smtp_normalize_email((string) tk_get_option('smtp_from_email', ''));
+    $username = tk_smtp_normalize_email((string) tk_get_option('smtp_username', ''));
+    $current_from = tk_smtp_normalize_email($current_from);
+
+    if ($force_from && $username !== '') {
+        if ($from === '' || $from !== $username) {
+            return $username;
+        }
+    }
+
+    if ($from !== '') {
+        return $from;
+    }
+
+    return $current_from;
+}
+
 function tk_smtp_provider_presets() {
     return array(
         'gmail' => array(
@@ -69,7 +100,7 @@ function tk_smtp_phpmailer_init($phpmailer = null) {
         return;
     }
 
-    if (!($phpmailer instanceof PHPMailer)) {
+    if (!tk_smtp_is_phpmailer_compatible($phpmailer)) {
         return;
     }
 
@@ -85,15 +116,12 @@ function tk_smtp_phpmailer_init($phpmailer = null) {
     if ($config['force_from'] && is_email($config['username'])) {
         $original_from = $phpmailer->From;
         $original_from_name = $phpmailer->FromName;
-        $from_domain = tk_smtp_email_domain($original_from);
-        $username_domain = tk_smtp_email_domain($config['username']);
-        if ($from_domain === '' || $username_domain === '' || $from_domain !== $username_domain) {
+        $forced_from = tk_smtp_force_from_address($original_from);
+        if ($forced_from !== '' && tk_smtp_normalize_email($original_from) !== $forced_from) {
             $phpmailer->setFrom($config['username'], $phpmailer->FromName, false);
             if (
                 is_email($original_from)
                 && method_exists($phpmailer, 'getReplyToAddresses')
-                && $from_domain !== ''
-                && $from_domain === $username_domain
             ) {
                 $reply_to = $phpmailer->getReplyToAddresses();
                 if (empty($reply_to)) {
@@ -131,20 +159,8 @@ function tk_smtp_mail_from($current) {
     if (!tk_smtp_enabled()) {
         return $current;
     }
-    $force_from = (int) tk_get_option('smtp_force_from', 1) === 1;
-    $from = tk_get_option('smtp_from_email', '');
-    $username = tk_get_option('smtp_username', '');
-    if ($force_from && is_email($username)) {
-        if ($from === '') {
-            return $username;
-        }
-        $from_domain = tk_smtp_email_domain($from);
-        $username_domain = tk_smtp_email_domain($username);
-        if ($from_domain === '' || $username_domain === '' || $from_domain !== $username_domain) {
-            return $username;
-        }
-    }
-    if (is_email($from)) {
+    $from = tk_smtp_force_from_address((string) $current);
+    if ($from !== '') {
         return $from;
     }
     return $current;
@@ -564,11 +580,7 @@ function tk_smtp_test_send() {
     $from_name = tk_smtp_mail_from_name((string) get_option('blogname'));
     $reply_to = '';
     if ($config['force_from'] && is_email($original_from) && $from_email !== $original_from) {
-        $from_domain = tk_smtp_email_domain($from_email);
-        $original_domain = tk_smtp_email_domain($original_from);
-        if ($from_domain !== '' && $from_domain === $original_domain) {
-            $reply_to = $original_from;
-        }
+        $reply_to = $original_from;
     }
     $details = array(
         'from' => $from_email,
@@ -593,6 +605,9 @@ function tk_smtp_test_send() {
         'X-Auto-Response-Suppress: All',
         'X-Mailer: Tool Kits SMTP',
     );
+    if ($reply_to !== '') {
+        $headers[] = 'Reply-To: ' . $reply_to;
+    }
     $sent = wp_mail($recipient, $subject, $message, $headers);
     $transport = tk_smtp_last_transport();
     $details['transport_mailer'] = isset($transport['mailer']) ? (string) $transport['mailer'] : '';
@@ -642,7 +657,7 @@ function tk_smtp_test_log_default_reason(): string {
     return __('No SMTP error message was recorded.', 'tool-kits');
 }
 
-function tk_smtp_test_log_error_helper(string $value = null): string {
+function tk_smtp_test_log_error_helper(?string $value = null): string {
     static $last_error = '';
     if (func_num_args() > 0) {
         $last_error = $value !== null ? (string) $value : '';
@@ -748,7 +763,10 @@ function tk_smtp_auth_check_summary(string $from_email): string {
     return implode(', ', $parts);
 }
 
-function tk_smtp_capture_last_transport(PHPMailer $phpmailer): void {
+function tk_smtp_capture_last_transport($phpmailer): void {
+    if (!tk_smtp_is_phpmailer_compatible($phpmailer)) {
+        return;
+    }
     $data = array(
         'time' => time(),
         'mailer' => isset($phpmailer->Mailer) ? (string) $phpmailer->Mailer : '',
@@ -761,7 +779,7 @@ function tk_smtp_capture_last_transport(PHPMailer $phpmailer): void {
 }
 
 function tk_smtp_capture_transport_observer($phpmailer = null): void {
-    if (!($phpmailer instanceof PHPMailer)) {
+    if (!tk_smtp_is_phpmailer_compatible($phpmailer)) {
         return;
     }
     tk_smtp_capture_last_transport($phpmailer);
@@ -776,20 +794,33 @@ function tk_smtp_transport_warning(array $opts): string {
     if ((int) $opts['smtp_enabled'] !== 1) {
         return '';
     }
-    if (!isset($opts['smtp_provider']) || (string) $opts['smtp_provider'] !== 'office365') {
-        return '';
-    }
     $last = tk_smtp_last_transport();
     if (empty($last)) {
         return 'No transport data yet. Send a test email first to verify the actual delivery path.';
     }
+    $provider = isset($opts['smtp_provider']) ? (string) $opts['smtp_provider'] : 'custom';
+    $presets = tk_smtp_provider_presets();
     $mailer = isset($last['mailer']) ? strtolower((string) $last['mailer']) : '';
     $host = isset($last['host']) ? strtolower((string) $last['host']) : '';
-    if ($mailer !== 'smtp' || $host !== 'smtp.office365.com') {
+    $expected_host = '';
+    if ($provider !== 'custom' && isset($presets[$provider]['host'])) {
+        $expected_host = strtolower((string) $presets[$provider]['host']);
+    } elseif (!empty($opts['smtp_host'])) {
+        $expected_host = strtolower(trim((string) $opts['smtp_host']));
+    }
+    if ($mailer !== 'smtp') {
         return sprintf(
-            'Last detected transport is Mailer=%s Host=%s. This is not Office365 SMTP and can cause Junk/Unverified.',
+            'Last detected transport is Mailer=%s Host=%s. Email is not leaving through SMTP and can cause spam or unverified sender issues.',
             $mailer !== '' ? $mailer : '(empty)',
             $host !== '' ? $host : '(empty)'
+        );
+    }
+    if ($expected_host !== '' && $host !== $expected_host) {
+        return sprintf(
+            'Last detected transport is Mailer=%s Host=%s, expected Host=%s. This mismatch can cause spam or unverified sender issues.',
+            $mailer !== '' ? $mailer : '(empty)',
+            $host !== '' ? $host : '(empty)',
+            $expected_host
         );
     }
     return '';

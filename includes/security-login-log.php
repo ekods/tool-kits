@@ -143,19 +143,22 @@ function tk_render_login_log_page() {
             </div>
         </div>
     </div>
-    <script>
-    (function(){
-        var base = '<?php echo esc_js(add_query_arg(array('page' => 'tool-kits-security-login-log'), admin_url('admin.php'))); ?>';
-        document.querySelectorAll('.tk-tabs-nav-button').forEach(function(button){
-            button.addEventListener('click', function(){
-                var status = button.getAttribute('data-status') || 'all';
-                var url = base;
-                url += '&tk_status=' + encodeURIComponent(status);
-                window.location.href = url + '#' + status;
+    <?php
+    tk_csp_print_inline_script(
+        "(function(){
+            var base = '" . esc_js(add_query_arg(array('page' => 'tool-kits-security-login-log'), admin_url('admin.php'))) . "';
+            document.querySelectorAll('.tk-tabs-nav-button').forEach(function(button){
+                button.addEventListener('click', function(){
+                    var status = button.getAttribute('data-status') || 'all';
+                    var url = base;
+                    url += '&tk_status=' + encodeURIComponent(status);
+                    window.location.href = url + '#' + status;
+                });
             });
-        });
-    })();
-    </script>
+        })();",
+        array('id' => 'tk-login-log-tabs')
+    );
+    ?>
     <?php
 }
 

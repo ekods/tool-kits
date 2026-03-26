@@ -431,36 +431,39 @@ echo $block;</pre>
                 </div>
             </div>
         </div>
-        <script>
-        (function(){
-            function activateTab(panelId) {
-                document.querySelectorAll('.tk-tab-panel').forEach(function(panel){
-                    panel.classList.toggle('is-active', panel.getAttribute('data-panel-id') === panelId);
+        <?php
+        tk_csp_print_inline_script(
+            "(function(){
+                function activateTab(panelId) {
+                    document.querySelectorAll('.tk-tab-panel').forEach(function(panel){
+                        panel.classList.toggle('is-active', panel.getAttribute('data-panel-id') === panelId);
+                    });
+                    document.querySelectorAll('.tk-tabs-nav-button').forEach(function(btn){
+                        btn.classList.toggle('is-active', btn.getAttribute('data-panel') === panelId);
+                    });
+                }
+                function getPanelFromHash() {
+                    var hash = window.location.hash || '';
+                    if (!hash) { return ''; }
+                    return hash.replace('#', '');
+                }
+                document.querySelectorAll('.tk-tabs-nav-button').forEach(function(button){
+                    button.addEventListener('click', function(){
+                        var panelId = button.getAttribute('data-panel');
+                        if (panelId) {
+                            window.location.hash = panelId;
+                            activateTab(panelId);
+                        }
+                    });
                 });
-                document.querySelectorAll('.tk-tabs-nav-button').forEach(function(btn){
-                    btn.classList.toggle('is-active', btn.getAttribute('data-panel') === panelId);
-                });
-            }
-            function getPanelFromHash() {
-                var hash = window.location.hash || '';
-                if (!hash) { return ''; }
-                return hash.replace('#', '');
-            }
-            document.querySelectorAll('.tk-tabs-nav-button').forEach(function(button){
-                button.addEventListener('click', function(){
-                    var panelId = button.getAttribute('data-panel');
-                    if (panelId) {
-                        window.location.hash = panelId;
-                        activateTab(panelId);
-                    }
-                });
-            });
-            var initial = getPanelFromHash();
-            if (initial) {
-                activateTab(initial);
-            }
-        })();
-        </script>
+                var initial = getPanelFromHash();
+                if (initial) {
+                    activateTab(initial);
+                }
+            })();",
+            array('id' => 'tk-cache-tabs')
+        );
+        ?>
     </div>
     <?php
 }
