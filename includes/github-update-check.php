@@ -9,6 +9,7 @@ if (!defined('ABSPATH')) {
 add_filter('pre_set_site_transient_update_plugins', 'tk_github_plugin_update_check', 20);
 add_filter('plugins_api', 'tk_github_plugin_api', 20, 3);
 add_filter('upgrader_source_selection', 'tk_github_upgrader_source_selection', 10, 4);
+add_filter('upgrader_post_install', 'tk_github_upgrader_post_install', 10, 3);
 add_action('admin_post_tk_github_check_now', 'tk_github_check_now_handler');
 add_filter('plugin_action_links_' . plugin_basename(TK_PATH . 'tool-kits.php'), 'tk_github_plugin_action_links');
 add_action('admin_notices', 'tk_github_check_now_notice');
@@ -194,21 +195,59 @@ function tk_github_upgrader_source_selection($source, $remote_source, $upgrader,
 
     require_once ABSPATH . 'wp-admin/includes/file.php';
     global $wp_filesystem;
-    if (!WP_Filesystem() || !is_object($wp_filesystem)) {
+    if (!WP_Filesystem()) {
         tk_github_log('WP_Filesystem initialization failed during source selection.');
         return $source;
     }
 
+    $filesystem = isset($GLOBALS['wp_filesystem']) ? $GLOBALS['wp_filesystem'] : $wp_filesystem;
+    if (
+        !is_object($filesystem)
+        || !method_exists($filesystem, 'is_dir')
+        || !method_exists($filesystem, 'exists')
+        || !method_exists($filesystem, 'move')
+    ) {
+        tk_github_log('WP_Filesystem returned an invalid filesystem instance during source selection.');
+        return $source;
+    }
+
     $dest = trailingslashit($remote_source) . 'tool-kits';
-    if ($wp_filesystem->is_dir($dest)) {
+    if ($filesystem->is_dir($dest)) {
         return $dest;
     }
 
-    if (!$wp_filesystem->move($source, $dest, true)) {
+    if (!$filesystem->exists($source)) {
+        tk_github_log('Extracted update source no longer exists: ' . $source);
+        return $source;
+    }
+
+    if (!$filesystem->move($source, $dest, true)) {
         tk_github_log('Failed to move extracted update package from ' . $source . ' to ' . $dest . '.');
         return $source;
     }
     return $dest;
+}
+
+function tk_github_upgrader_post_install($response, $hook_extra, $result) {
+    if (empty($hook_extra['plugin'])) {
+        return $response;
+    }
+
+    $plugin_file = plugin_basename(TK_PATH . 'tool-kits.php');
+    if ($hook_extra['plugin'] !== $plugin_file) {
+        return $response;
+    }
+
+    if (!is_array($result) || empty($result['destination']) || !is_string($result['destination'])) {
+        return $response;
+    }
+
+    $expected_destination = trailingslashit(WP_PLUGIN_DIR) . 'tool-kits';
+    if (untrailingslashit($result['destination']) !== untrailingslashit($expected_destination)) {
+        tk_github_log('Unexpected plugin destination after install: ' . $result['destination']);
+    }
+
+    return $response;
 }
 
 function tk_github_log(string $message): void {

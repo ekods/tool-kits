@@ -25,6 +25,18 @@ function tk_smtp_is_phpmailer_compatible($phpmailer): bool {
         && method_exists($phpmailer, 'addReplyTo');
 }
 
+function tk_smtp_is_core_mail_flow(): bool {
+    if (defined('DOING_CRON') && DOING_CRON) {
+        return true;
+    }
+
+    if (!function_exists('wp_doing_cron')) {
+        return false;
+    }
+
+    return wp_doing_cron();
+}
+
 function tk_smtp_normalize_email(string $email): string {
     $email = trim(strtolower($email));
     return is_email($email) ? $email : '';
@@ -101,6 +113,7 @@ function tk_smtp_phpmailer_init($phpmailer = null) {
     }
 
     if (!tk_smtp_is_phpmailer_compatible($phpmailer)) {
+        tk_log('SMTP hook received an incompatible mailer instance; skipping override.');
         return;
     }
 
@@ -780,6 +793,9 @@ function tk_smtp_capture_last_transport($phpmailer): void {
 
 function tk_smtp_capture_transport_observer($phpmailer = null): void {
     if (!tk_smtp_is_phpmailer_compatible($phpmailer)) {
+        if (tk_smtp_is_core_mail_flow()) {
+            tk_log('SMTP transport observer skipped because WordPress provided an incompatible mailer instance.');
+        }
         return;
     }
     tk_smtp_capture_last_transport($phpmailer);
