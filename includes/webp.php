@@ -96,12 +96,18 @@ function tk_webp_convert_file($path, $quality) {
     $editor = wp_get_image_editor($path);
     if (is_wp_error($editor)) {
         tk_webp_maybe_mark_palette_error($editor);
+        if ($ext === 'png') {
+            tk_webp_convert_png_with_gd_fallback($path, $webp_path, $quality);
+        }
         return;
     }
     $editor->set_quality(max(10, min(100, (int) $quality)));
     $result = $editor->save($webp_path, 'image/webp');
     if (is_wp_error($result)) {
         tk_webp_maybe_mark_palette_error($result);
+        if ($ext === 'png') {
+            tk_webp_convert_png_with_gd_fallback($path, $webp_path, $quality);
+        }
     }
 }
 
@@ -387,4 +393,38 @@ function tk_webp_maybe_mark_palette_error($error) {
     if (strpos($message, 'palette') !== false && strpos($message, 'webp') !== false) {
         set_transient('tk_webp_palette_error', 1, 10 * MINUTE_IN_SECONDS);
     }
+}
+
+function tk_webp_convert_png_with_gd_fallback($path, $webp_path, $quality) {
+    if (!function_exists('imagecreatefrompng') || !function_exists('imagewebp') || !function_exists('imagecreatetruecolor')) {
+        return false;
+    }
+    $source = @imagecreatefrompng($path);
+    if (!$source) {
+        return false;
+    }
+
+    $width = imagesx($source);
+    $height = imagesy($source);
+    if ($width <= 0 || $height <= 0) {
+        imagedestroy($source);
+        return false;
+    }
+
+    $image = imagecreatetruecolor($width, $height);
+    if (!$image) {
+        imagedestroy($source);
+        return false;
+    }
+
+    imagealphablending($image, false);
+    imagesavealpha($image, true);
+    $transparent = imagecolorallocatealpha($image, 0, 0, 0, 127);
+    imagefilledrectangle($image, 0, 0, $width, $height, $transparent);
+    imagecopy($image, $source, 0, 0, 0, 0, $width, $height);
+
+    $ok = @imagewebp($image, $webp_path, max(10, min(100, (int) $quality)));
+    imagedestroy($image);
+    imagedestroy($source);
+    return (bool) $ok && file_exists($webp_path);
 }

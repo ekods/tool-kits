@@ -24,6 +24,12 @@ function tk_image_opt_on_upload($metadata, $attachment_id) {
 }
 
 function tk_image_opt_should_convert_frontend_to_webp() {
+    if (!tk_get_option('image_opt_frontend_to_webp', 0)) {
+        return false;
+    }
+    if (!tk_get_option('webp_serve_enabled', 0)) {
+        return false;
+    }
     if (!is_admin()) {
         return true;
     }
@@ -64,6 +70,9 @@ function tk_image_opt_start_output_rewrite() {
         return;
     }
     if (!tk_license_features_enabled() || !tk_get_option('image_opt_enabled', 0)) {
+        return;
+    }
+    if (!tk_image_opt_should_convert_frontend_to_webp()) {
         return;
     }
     if (is_feed() || (function_exists('is_robots') && is_robots()) || (function_exists('is_trackback') && is_trackback())) {
@@ -324,12 +333,42 @@ function tk_image_opt_convert_file_to_webp($path, $quality, $delete_original = f
 
     $editor = wp_get_image_editor($path);
     if (is_wp_error($editor)) {
+        if ($ext === 'png' && function_exists('tk_webp_convert_png_with_gd_fallback')) {
+            $ok = tk_webp_convert_png_with_gd_fallback($path, $new_path, $quality);
+            if ($ok) {
+                if ($delete_original) {
+                    @unlink($path);
+                }
+                clearstatcache(true, $new_path);
+                $size = filesize($new_path);
+                return array(
+                    'new_path' => $new_path,
+                    'new_basename' => basename($new_path),
+                    'new_size' => is_int($size) ? $size : 0,
+                );
+            }
+        }
         return array('new_path' => '', 'new_basename' => '', 'new_size' => 0);
     }
 
     $editor->set_quality(max(10, min(100, (int) $quality)));
     $saved = $editor->save($new_path, 'image/webp');
     if (is_wp_error($saved) || !file_exists($new_path)) {
+        if ($ext === 'png' && function_exists('tk_webp_convert_png_with_gd_fallback')) {
+            $ok = tk_webp_convert_png_with_gd_fallback($path, $new_path, $quality);
+            if ($ok) {
+                if ($delete_original) {
+                    @unlink($path);
+                }
+                clearstatcache(true, $new_path);
+                $size = filesize($new_path);
+                return array(
+                    'new_path' => $new_path,
+                    'new_basename' => basename($new_path),
+                    'new_size' => is_int($size) ? $size : 0,
+                );
+            }
+        }
         return array('new_path' => '', 'new_basename' => '', 'new_size' => 0);
     }
 
@@ -458,8 +497,8 @@ function tk_render_image_opt_panel() {
 function tk_image_opt_save() {
     tk_check_nonce('tk_image_opt_save');
     tk_update_option('image_opt_enabled', !empty($_POST['image_opt_enabled']) ? 1 : 0);
-    tk_update_option('image_opt_frontend_to_webp', 1);
-    tk_update_option('image_opt_rewrite_all_assets', 1);
+    tk_update_option('image_opt_frontend_to_webp', (int) tk_get_option('webp_serve_enabled', 0));
+    tk_update_option('image_opt_rewrite_all_assets', (int) tk_get_option('webp_serve_enabled', 0));
     tk_update_option('image_opt_quality', max(30, min(95, (int) tk_post('image_opt_quality', 78))));
     wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'image-opt', 'tk_saved' => 1), admin_url('admin.php')));
     exit;

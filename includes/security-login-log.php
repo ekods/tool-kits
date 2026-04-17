@@ -28,6 +28,7 @@ function tk_login_log_install_table() {
         username VARCHAR(60),
         user_id BIGINT,
         ip VARCHAR(64),
+        location VARCHAR(191),
         agent VARCHAR(255),
         status VARCHAR(20),
         PRIMARY KEY (id)
@@ -40,14 +41,37 @@ function tk_login_log_insert($username, $user_id, $status) {
     if (!tk_get_option('login_log_enabled', 1)) return;
 
     global $wpdb;
+    $ip = tk_get_ip();
+    $location = tk_login_log_location_for_ip($ip);
     $wpdb->insert(tk_login_log_table(), [
         'time'     => current_time('mysql', 1),
         'username' => $username,
         'user_id'  => $user_id,
-        'ip'       => tk_get_ip(),
+        'ip'       => $ip,
+        'location' => $location,
         'agent'    => tk_user_agent(),
         'status'   => $status,
     ]);
+}
+
+function tk_login_log_location_for_ip($ip): string {
+    $ip = is_string($ip) ? trim($ip) : '';
+    if ($ip === '') {
+        return 'Unknown';
+    }
+    if (function_exists('tk_security_alert_ip_location')) {
+        return tk_security_alert_ip_location($ip);
+    }
+    return 'Unknown';
+}
+
+function tk_login_log_row_location($row): string {
+    $stored = isset($row->location) ? trim((string) $row->location) : '';
+    if ($stored !== '') {
+        return $stored;
+    }
+    $ip = isset($row->ip) ? (string) $row->ip : '';
+    return tk_login_log_location_for_ip($ip);
 }
 
 function tk_login_log_failed($username) {
@@ -106,7 +130,7 @@ function tk_render_login_log_page() {
         </div>
         <h2>Recent Entries</h2>
         <table class="widefat striped">
-            <thead><tr><th>Time</th><th>Username</th><th>User ID</th><th>IP</th><th>Status</th></tr></thead>
+            <thead><tr><th>Time</th><th>Username</th><th>User ID</th><th>IP</th><th>Location</th><th>Status</th></tr></thead>
             <tbody>
                 <?php if ($rows) : ?>
                     <?php foreach ($rows as $row) : ?>
@@ -115,11 +139,12 @@ function tk_render_login_log_page() {
                             <td><?php echo esc_html($row->username); ?></td>
                             <td><?php echo esc_html($row->user_id); ?></td>
                             <td><?php echo esc_html($row->ip); ?></td>
+                            <td><?php echo esc_html(tk_login_log_row_location($row)); ?></td>
                             <td><?php echo esc_html(ucfirst($row->status)); ?></td>
                         </tr>
                     <?php endforeach; ?>
                 <?php else : ?>
-                    <tr><td colspan="5">No log entries yet.</td></tr>
+                    <tr><td colspan="6">No log entries yet.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>

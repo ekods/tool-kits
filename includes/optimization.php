@@ -495,7 +495,18 @@ function tk_render_page_speed_diagnostics_panel() {
             <p>
                 <label><strong>Google API Key (optional)</strong></label><br>
                 <input class="large-text" type="text" name="ps_api_key" value="<?php echo esc_attr($ps_api_key); ?>" placeholder="AIza...">
-                <small>Disarankan isi API key agar limit lebih stabil dan mengurangi HTTP 429.</small>
+                <small>Disarankan isi API key agar limit lebih stabil dan mengurangi HTTP 429.</small><br>
+                <small>
+                    Cara buat API key:
+                    buka <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Google Cloud Credentials</a>,
+                    buat project jika belum ada, lalu klik <code>Create credentials</code> > <code>API key</code>.
+                    Dokumentasi resmi PageSpeed Insights API:
+                    <a href="https://developers.google.com/speed/docs/insights/v5/get-started" target="_blank" rel="noopener noreferrer">developers.google.com/speed/docs/insights/v5/get-started</a>
+                </small>
+            </p>
+            <p>
+                <a class="button button-secondary" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Open Google Cloud</a>
+                <a class="button button-secondary" href="https://developers.google.com/speed/docs/insights/v5/get-started" target="_blank" rel="noopener noreferrer">Open API Docs</a>
             </p>
             <p><button class="button button-primary">Run PageSpeed Test</button></p>
         </form>

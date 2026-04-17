@@ -248,6 +248,126 @@ function tk_db_get_temp_export_path(string $token): ?string {
     return $path;
 }
 
+function tk_db_list_export_objects(): array {
+    global $wpdb;
+
+    $results = $wpdb->get_results('SHOW FULL TABLES', ARRAY_N);
+    if (!is_array($results)) {
+        return array(
+            'tables' => array(),
+            'views' => array(),
+        );
+    }
+
+    $objects = array(
+        'tables' => array(),
+        'views' => array(),
+    );
+
+    foreach ($results as $row) {
+        $name = isset($row[0]) ? (string) $row[0] : '';
+        $type = strtoupper(isset($row[1]) ? (string) $row[1] : 'BASE TABLE');
+        if ($name === '') {
+            continue;
+        }
+        if ($type === 'VIEW') {
+            $objects['views'][] = $name;
+            continue;
+        }
+        $objects['tables'][] = $name;
+    }
+
+    return $objects;
+}
+
+function tk_db_normalize_create_statement(string $statement, string $type = 'table'): string {
+    if ($type === 'view') {
+        $statement = preg_replace('/\s+DEFINER=`[^`]+`@`[^`]+`/i', '', $statement);
+        if (!is_string($statement)) {
+            return '';
+        }
+    }
+
+    return $statement;
+}
+
+function tk_db_get_additional_export_objects(): array {
+    global $wpdb;
+
+    $objects = array(
+        'triggers' => array(),
+        'procedures' => array(),
+        'functions' => array(),
+        'events' => array(),
+    );
+
+    $triggers = $wpdb->get_results('SHOW TRIGGERS', ARRAY_A);
+    if (is_array($triggers)) {
+        foreach ($triggers as $row) {
+            $name = isset($row['Trigger']) ? (string) $row['Trigger'] : '';
+            if ($name !== '') {
+                $objects['triggers'][] = $name;
+            }
+        }
+    }
+
+    $procedures = $wpdb->get_results('SHOW PROCEDURE STATUS WHERE Db = DATABASE()', ARRAY_A);
+    if (is_array($procedures)) {
+        foreach ($procedures as $row) {
+            $name = isset($row['Name']) ? (string) $row['Name'] : '';
+            if ($name !== '') {
+                $objects['procedures'][] = $name;
+            }
+        }
+    }
+
+    $functions = $wpdb->get_results('SHOW FUNCTION STATUS WHERE Db = DATABASE()', ARRAY_A);
+    if (is_array($functions)) {
+        foreach ($functions as $row) {
+            $name = isset($row['Name']) ? (string) $row['Name'] : '';
+            if ($name !== '') {
+                $objects['functions'][] = $name;
+            }
+        }
+    }
+
+    $events = $wpdb->get_results('SHOW EVENTS WHERE Db = DATABASE()', ARRAY_A);
+    if (is_array($events)) {
+        foreach ($events as $row) {
+            $name = isset($row['Name']) ? (string) $row['Name'] : '';
+            if ($name !== '') {
+                $objects['events'][] = $name;
+            }
+        }
+    }
+
+    return $objects;
+}
+
+function tk_db_export_additional_objects_notice(array $objects): string {
+    $lines = array();
+    $labels = array(
+        'triggers' => 'Triggers',
+        'procedures' => 'Procedures',
+        'functions' => 'Functions',
+        'events' => 'Events',
+    );
+
+    foreach ($labels as $key => $label) {
+        $items = isset($objects[$key]) && is_array($objects[$key]) ? array_values(array_filter($objects[$key], 'strlen')) : array();
+        if (empty($items)) {
+            continue;
+        }
+        $lines[] = '-- Warning: ' . $label . ' are not included in this export: ' . implode(', ', $items);
+    }
+
+    if (empty($lines)) {
+        return '';
+    }
+
+    return implode("\n", $lines) . "\n\n";
+}
+
 function tk_db_export_with_pairs(array $pairs): array {
     global $wpdb;
     @set_time_limit(0);
@@ -267,12 +387,12 @@ function tk_db_export_with_pairs(array $pairs): array {
     fwrite($fh, "-- Tool Kits Preloaded Export\n");
     fwrite($fh, "-- Site: " . home_url('/') . "\n");
     fwrite($fh, "-- Date: " . gmdate('c') . " (UTC)\n\n");
+    fwrite($fh, tk_db_export_additional_objects_notice(tk_db_get_additional_export_objects()));
     fwrite($fh, "SET FOREIGN_KEY_CHECKS=0;\n\n");
 
-    $tables = $wpdb->get_col("SHOW TABLES");
-    if (!is_array($tables)) {
-        $tables = array();
-    }
+    $objects = tk_db_list_export_objects();
+    $tables = $objects['tables'];
+    $views = $objects['views'];
 
     foreach ($tables as $table) {
         $expected_rows = (int) $wpdb->get_var("SELECT COUNT(*) FROM `$table`");
@@ -315,6 +435,19 @@ function tk_db_export_with_pairs(array $pairs): array {
             fclose($fh);
             @unlink($sql_path);
             return ['ok' => false, 'message' => 'Row count mismatch on table `' . $table . '` (expected ' . $expected_rows . ', exported ' . $exported_rows . '). Export cancelled to prevent data loss.'];
+        }
+    }
+
+    foreach ($views as $view) {
+        $create = $wpdb->get_row("SHOW CREATE TABLE `$view`", ARRAY_N);
+        if (!empty($wpdb->last_error)) {
+            fclose($fh);
+            @unlink($sql_path);
+            return ['ok' => false, 'message' => 'Failed reading view definition for `' . $view . '`: ' . $wpdb->last_error];
+        }
+        if (!empty($create[1])) {
+            fwrite($fh, "DROP VIEW IF EXISTS `$view`;\n");
+            fwrite($fh, tk_db_normalize_create_statement((string) $create[1], 'view') . ";\n\n");
         }
     }
 
@@ -755,14 +888,17 @@ function tk_db_export_handler() {
     $prefix = tk_db_export_file_prefix();
     tk_log("Generating SQL export for {$prefix}.");
 
-    $tables = $wpdb->get_col("SHOW TABLES");
-    if (empty($tables)) {
+    $objects = tk_db_list_export_objects();
+    $tables = $objects['tables'];
+    $views = $objects['views'];
+    if (empty($tables) && empty($views)) {
         wp_die('No tables found.');
     }
 
     $sql = "-- Tool Kits SQL Export\n";
     $sql .= "-- Site: " . home_url('/') . "\n";
     $sql .= "-- Date: " . gmdate('c') . " (UTC)\n\n";
+    $sql .= tk_db_export_additional_objects_notice(tk_db_get_additional_export_objects());
     $sql .= "SET FOREIGN_KEY_CHECKS=0;\n\n";
 
     foreach ($tables as $table) {
@@ -787,6 +923,14 @@ function tk_db_export_handler() {
                 $sql .= "INSERT INTO `$table` (`" . implode("`,`", array_map('tk_db_escape_identifier', $cols)) . "`) VALUES (" . implode(",", $vals) . ");\n";
             }
             $sql .= "\n";
+        }
+    }
+
+    foreach ($views as $view) {
+        $create = $wpdb->get_row("SHOW CREATE TABLE `$view`", ARRAY_N);
+        if (!empty($create[1])) {
+            $sql .= "DROP VIEW IF EXISTS `$view`;\n";
+            $sql .= tk_db_normalize_create_statement((string) $create[1], 'view') . ";\n\n";
         }
     }
 

@@ -159,12 +159,29 @@ function tk_github_normalize_version($tag) {
 }
 
 function tk_github_resolve_package_url(array $release) {
+    $tag_name = (string) ($release['tag_name'] ?? '');
+
     if (!empty($release['assets']) && is_array($release['assets'])) {
         foreach ($release['assets'] as $asset) {
-            if (!empty($asset['browser_download_url']) && stripos($asset['name'] ?? '', 'tool-kits') !== false && stripos($asset['name'] ?? '', '.zip') !== false) {
+            $asset_name = (string) ($asset['name'] ?? '');
+            if ($asset_name === '') {
+                continue;
+            }
+            if (!empty($asset['browser_download_url']) && strtolower($asset_name) === 'tool-kits.zip') {
                 return $asset['browser_download_url'];
             }
         }
+
+        foreach ($release['assets'] as $asset) {
+            $asset_name = (string) ($asset['name'] ?? '');
+            if (!empty($asset['browser_download_url']) && stripos($asset_name, 'tool-kits') !== false && stripos($asset_name, '.zip') !== false) {
+                return $asset['browser_download_url'];
+            }
+        }
+    }
+
+    if ($tag_name !== '') {
+        return TK_GITHUB_REPO_URL . '/archive/refs/tags/' . rawurlencode($tag_name) . '.zip';
     }
 
     if (!empty($release['zipball_url'])) {

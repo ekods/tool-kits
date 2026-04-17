@@ -91,6 +91,15 @@ function tk_minify_buffer_callback($html) {
 
     $placeholders = array();
     $html = preg_replace_callback(
+        '#<textarea\b[^>]*name=(["\'])theme_options\[themes_mix\]\1[^>]*>.*?</textarea>#is',
+        function($m) use (&$placeholders) {
+            $key = '%%TKMINIFY' . count($placeholders) . '%%';
+            $placeholders[$key] = $m[0];
+            return $key;
+        },
+        $html
+    );
+    $html = preg_replace_callback(
         '#<(pre|textarea)\b[^>]*>.*?</\1>#is',
         function($m) use (&$placeholders) {
             $key = '%%TKMINIFY' . count($placeholders) . '%%';
@@ -118,6 +127,7 @@ function tk_minify_buffer_callback($html) {
             '#<script\b([^>]*)>(.*?)</script>#is',
             function($m) {
                 $attrs = $m[1];
+                $content = $m[2];
                 if (preg_match('/\bsrc\s*=/i', $attrs)) {
                     return $m[0];
                 }
@@ -134,7 +144,24 @@ function tk_minify_buffer_callback($html) {
                         return $m[0];
                     }
                 }
-                $minified = tk_minify_inline_js($m[2]);
+                // Leave analytics snippets untouched because many themes paste vendor code
+                // directly and even conservative whitespace/comment changes can break them.
+                $analytics_markers = array(
+                    'gtag(',
+                    'googletagmanager.com',
+                    'google-analytics.com',
+                    'dataLayer',
+                    'ga(',
+                    'G-',
+                    'UA-',
+                    'AW-',
+                );
+                foreach ($analytics_markers as $marker) {
+                    if (stripos($content, $marker) !== false) {
+                        return $m[0];
+                    }
+                }
+                $minified = tk_minify_inline_js($content);
                 return '<script' . $attrs . '>' . $minified . '</script>';
             },
             $html
@@ -159,8 +186,8 @@ function tk_minify_buffer_callback($html) {
         return '';
     }, $html);
 
-    // Strip indentation/newlines to keep HTML output left aligned.
-    $html = preg_replace('/[\r\n\t]+/', '', $html);
+    // Normalize indentation/newlines without merging attribute or text tokens.
+    $html = preg_replace('/[\r\n\t]+/', ' ', $html);
     $html = preg_replace('/\s{2,}/', ' ', $html);
     $html = preg_replace('/>\s+</', '><', $html);
     $html = trim($html);

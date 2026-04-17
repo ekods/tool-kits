@@ -312,6 +312,7 @@ function tk_render_smtp_page() {
                 <div class="tk-card tk-tab-panel" data-panel-id="test">
                     <h2>Send test email</h2>
                     <p>Use this to confirm SMTP is working with the configured credentials.</p>
+                    <p class="description">A successful result here means the message was accepted by the configured SMTP server. It does not guarantee delivery to the recipient inbox.</p>
                     <?php if ($last_failure_reason !== '') : ?>
                         <p class="description"><strong><?php esc_html_e('Last failure:', 'tool-kits'); ?></strong> <?php echo esc_html($last_failure_reason); ?></p>
                     <?php endif; ?>
@@ -335,7 +336,9 @@ Mail Service</textarea>
                     </form>
                     <?php if ($test_status !== '') : ?>
                         <?php if ($test_status === 'success') : ?>
-                            <?php tk_notice('Test email sent successfully to ' . esc_html($test_email), 'success'); ?>
+                            <?php tk_notice('Test email was accepted by the SMTP server for ' . esc_html($test_email) . '. Inbox delivery still depends on the receiving provider.', 'success'); ?>
+                        <?php elseif ($test_status === 'warning') : ?>
+                            <?php tk_notice('Test email was accepted, but the final transport did not match the configured SMTP settings. Check the SMTP log details and message headers.', 'warning'); ?>
                         <?php elseif ($test_status === 'invalid') : ?>
                             <?php tk_notice('Invalid recipient email for test message.', 'error'); ?>
                         <?php else : ?>
@@ -346,6 +349,7 @@ Mail Service</textarea>
                 <div class="tk-card tk-tab-panel" data-panel-id="log">
                     <h2>SMTP test log</h2>
                     <p><small>Recent test attempts (successes/failures) are recorded here.</small></p>
+                    <p><small><strong>Success</strong> means the SMTP server accepted the message. Gmail, Outlook, or another provider can still spam-filter, defer, or reject the message later.</small></p>
                     <?php if (!empty($smtp_test_log)) : ?>
                         <div class="tk-table-scroll">
                         <table class="widefat striped tk-table">
@@ -626,8 +630,15 @@ function tk_smtp_test_send() {
     $details['transport_mailer'] = isset($transport['mailer']) ? (string) $transport['mailer'] : '';
     $details['transport_host'] = isset($transport['host']) ? (string) $transport['host'] : '';
     $status = $sent ? 'success' : 'fail';
-    tk_log(sprintf('SMTP test email to %s %s', $recipient, $status));
     $reason = $status === 'fail' ? tk_smtp_test_log_get_error() : '';
+    if ($status === 'success') {
+        $mismatch_reason = tk_smtp_transport_mismatch_reason($config, $transport);
+        if ($mismatch_reason !== '') {
+            $reason = $mismatch_reason;
+            $status = 'warning';
+        }
+    }
+    tk_log(sprintf('SMTP test email to %s %s', $recipient, $status));
     tk_smtp_test_log_record($recipient, $status, $message, $reason, $details);
 
     $redirect_args = array(
@@ -836,6 +847,37 @@ function tk_smtp_transport_warning(array $opts): string {
             'Last detected transport is Mailer=%s Host=%s, expected Host=%s. This mismatch can cause spam or unverified sender issues.',
             $mailer !== '' ? $mailer : '(empty)',
             $host !== '' ? $host : '(empty)',
+            $expected_host
+        );
+    }
+    return '';
+}
+
+function tk_smtp_transport_mismatch_reason(array $opts, array $transport = array()): string {
+    if ((int) $opts['enabled'] !== 1) {
+        return '';
+    }
+    $mailer = isset($transport['mailer']) ? strtolower((string) $transport['mailer']) : '';
+    $host = isset($transport['host']) ? strtolower((string) $transport['host']) : '';
+    $expected_host = '';
+    $provider = isset($opts['provider']) ? (string) $opts['provider'] : 'custom';
+    $presets = tk_smtp_provider_presets();
+    if ($provider !== 'custom' && isset($presets[$provider]['host'])) {
+        $expected_host = strtolower((string) $presets[$provider]['host']);
+    } elseif (!empty($opts['host'])) {
+        $expected_host = strtolower(trim((string) $opts['host']));
+    }
+    if ($mailer !== 'smtp') {
+        return sprintf(
+            'Configured SMTP was not the final transport. Last detected Mailer=%s Host=%s.',
+            $mailer !== '' ? $mailer : '(empty)',
+            $host !== '' ? $host : '(empty)'
+        );
+    }
+    if ($expected_host !== '' && $host !== '' && $host !== $expected_host) {
+        return sprintf(
+            'Configured SMTP host mismatch. Last detected Host=%s, expected Host=%s.',
+            $host,
             $expected_host
         );
     }

@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 1.0.3
+Stable tag: 2.0.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,9 @@ Filters to adjust CORS by environment (optional example):
 - Hardening: tambah disable WP-Cron, URL parameter guard, HTTP method filtering, dan block dangerous methods (PUT/DELETE/TRACE/CONNECT).
 - Hardening: tambah robots.txt minimal policy dan block direct access unwanted filenames.
 - Monitoring: tambah check risiko DB host publik (indikasi eksposur MySQL port 3306).
+= 2.0.4 =
+- Sync plugin metadata with the current release version.
+- Prefer tagged GitHub release archives when no `tool-kits.zip` asset is attached.
 = 1.0.1 =
 - Tambahkan pemeriksaan update otomatis dari GitHub.
 = 1.0.0 =

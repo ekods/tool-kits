@@ -26,6 +26,45 @@ function tk_page_cache_dir() {
     return trailingslashit(tk_cache_dir()) . 'page';
 }
 
+function tk_page_cache_stats() {
+    $dir = tk_page_cache_dir();
+    $stats = array(
+        'files' => 0,
+        'bytes' => 0,
+    );
+
+    if (!is_dir($dir)) {
+        return $stats;
+    }
+
+    $files = glob($dir . '/*.html');
+    if (!is_array($files)) {
+        return $stats;
+    }
+
+    foreach ($files as $file) {
+        if (!is_string($file) || $file === '' || !is_file($file)) {
+            continue;
+        }
+        $size = @filesize($file);
+        $stats['files']++;
+        $stats['bytes'] += $size !== false ? (int) $size : 0;
+    }
+
+    return $stats;
+}
+
+function tk_page_cache_summary_text(array $stats) {
+    $files = isset($stats['files']) ? max(0, (int) $stats['files']) : 0;
+    $bytes = isset($stats['bytes']) ? max(0, (int) $stats['bytes']) : 0;
+
+    if ($files === 0 || $bytes === 0) {
+        return '0 files (0 B)';
+    }
+
+    return $files . ' file' . ($files === 1 ? '' : 's') . ' (' . size_format($bytes) . ')';
+}
+
 function tk_page_cache_key() {
     $host = isset($_SERVER['HTTP_HOST']) ? strtolower((string) $_SERVER['HTTP_HOST']) : '';
     $uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
@@ -133,15 +172,30 @@ function tk_page_cache_callback($html) {
 
 function tk_page_cache_purge() {
     $dir = tk_page_cache_dir();
+    $before = tk_page_cache_stats();
+    $deleted = 0;
+
     if (!is_dir($dir)) {
-        return;
+        return array(
+            'files' => 0,
+            'bytes' => 0,
+            'deleted' => 0,
+        );
     }
     $files = glob($dir . '/*.html');
     if (is_array($files)) {
         foreach ($files as $file) {
-            @unlink($file);
+            if (@unlink($file)) {
+                $deleted++;
+            }
         }
     }
+
+    return array(
+        'files' => isset($before['files']) ? (int) $before['files'] : 0,
+        'bytes' => isset($before['bytes']) ? (int) $before['bytes'] : 0,
+        'deleted' => $deleted,
+    );
 }
 
 function tk_cache_save() {
@@ -163,14 +217,28 @@ function tk_cache_purge() {
         wp_die('Forbidden');
     }
     tk_check_nonce('tk_cache_purge');
-    tk_page_cache_purge();
+    $purged = tk_page_cache_purge();
+    $message = 'Page cache cleared. Removed ' . tk_page_cache_summary_text($purged) . '.';
+    if (isset($purged['files'], $purged['deleted']) && (int) $purged['files'] !== (int) $purged['deleted']) {
+        $message .= ' Deleted ' . (int) $purged['deleted'] . ' item(s).';
+    }
+    set_transient('tk_cache_purged_notice', $message, 30);
     $redirect = wp_get_referer();
     if (!$redirect) {
         $redirect = admin_url('admin.php?page=tool-kits-cache');
     }
-    $redirect = add_query_arg('tk_purged', '1', $redirect);
     wp_safe_redirect($redirect);
     exit;
+}
+
+function tk_cache_consume_purged_notice() {
+    $message = get_transient('tk_cache_purged_notice');
+    if (!is_string($message) || $message === '') {
+        return false;
+    }
+
+    delete_transient('tk_cache_purged_notice');
+    return $message;
 }
 
 function tk_cache_admin_bar_menu($wp_admin_bar) {
@@ -205,7 +273,7 @@ function tk_cache_admin_bar_menu($wp_admin_bar) {
 }
 
 function tk_cache_admin_notice() {
-    if (!is_admin() || empty($_GET['tk_purged'])) {
+    if (!is_admin()) {
         return;
     }
     if (!tk_is_admin_user()) {
@@ -215,12 +283,12 @@ function tk_cache_admin_notice() {
         return;
     }
 
-    $status = sanitize_key((string) $_GET['tk_purged']);
-    if ($status !== '1') {
+    $message = tk_cache_consume_purged_notice();
+    if (!$message) {
         return;
     }
 
-    tk_notice('Page cache cleared.', 'success');
+    tk_notice($message, 'success');
 }
 
 function tk_cache_object_flush() {
@@ -290,6 +358,7 @@ function tk_cache_render_status_rows() {
     $object = function_exists('wp_using_ext_object_cache') && wp_using_ext_object_cache();
     $redis = function_exists('wp_cache_get') && defined('WP_REDIS_VERSION');
     $opcache = function_exists('opcache_get_status') && ini_get('opcache.enable');
+    $page_stats = tk_page_cache_stats();
     ?>
     <table class="widefat striped tk-table">
         <thead><tr><th>Cache</th><th>Status</th><th>Detail</th></tr></thead>
@@ -297,7 +366,7 @@ function tk_cache_render_status_rows() {
             <tr>
                 <td>Page cache</td>
                 <td><?php echo tk_get_option('page_cache_enabled', 0) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?></td>
-                <td>File-based HTML cache for anonymous GET requests.</td>
+                <td>File-based HTML cache for anonymous GET requests. Current usage: <?php echo esc_html(tk_page_cache_summary_text($page_stats)); ?>.</td>
             </tr>
             <tr>
                 <td>Object cache</td>
@@ -327,18 +396,19 @@ function tk_cache_render_status_rows() {
 function tk_render_cache_page() {
     if (!tk_is_admin_user()) return;
     $updated = isset($_GET['tk_updated']) ? sanitize_key($_GET['tk_updated']) : '';
-    $purged = isset($_GET['tk_purged']) ? sanitize_key($_GET['tk_purged']) : '';
+    $purged = tk_cache_consume_purged_notice();
     $object = isset($_GET['tk_object']) ? sanitize_key($_GET['tk_object']) : '';
     $opcache = isset($_GET['tk_opcache']) ? sanitize_key($_GET['tk_opcache']) : '';
     $fragment = isset($_GET['tk_fragment']) ? sanitize_key($_GET['tk_fragment']) : '';
+    $page_stats = tk_page_cache_stats();
     ?>
     <div class="wrap tk-wrap">
         <h1>Cache</h1>
         <?php if ($updated === '1') : ?>
             <?php tk_notice('Cache settings saved.', 'success'); ?>
         <?php endif; ?>
-        <?php if ($purged === '1') : ?>
-            <?php tk_notice('Page cache cleared.', 'success'); ?>
+        <?php if ($purged) : ?>
+            <?php tk_notice($purged, 'success'); ?>
         <?php endif; ?>
         <?php if ($object === 'ok') : ?>
             <?php tk_notice('Object cache flushed.', 'success'); ?>
@@ -369,6 +439,7 @@ function tk_render_cache_page() {
                 </div>
                 <div class="tk-card tk-tab-panel" data-panel-id="page">
                     <h2>Page Cache (HTML statis)</h2>
+                    <p><strong>Current cache size:</strong> <?php echo esc_html(tk_page_cache_summary_text($page_stats)); ?></p>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php tk_nonce_field('tk_cache_save'); ?>
                         <input type="hidden" name="action" value="tk_cache_save">

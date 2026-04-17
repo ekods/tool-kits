@@ -5,6 +5,25 @@ if (!defined('ABSPATH')) exit;
  * Basic WP hardening
  */
 
+if (!function_exists('tk_csp_add_nonce_to_tag')) {
+    function tk_csp_add_nonce_to_tag(string $tag, string $element = 'script'): string {
+        if ($tag === '') {
+            return $tag;
+        }
+        if (!function_exists('tk_csp_nonce_enabled') || !tk_csp_nonce_enabled()) {
+            return $tag;
+        }
+        if (stripos($tag, '<' . $element) === false || stripos($tag, ' nonce=') !== false) {
+            return $tag;
+        }
+        $nonce_attr = function_exists('tk_csp_nonce_attr') ? tk_csp_nonce_attr() : '';
+        if ($nonce_attr === '') {
+            return $tag;
+        }
+        return preg_replace('/<' . preg_quote($element, '/') . '\b/i', '<' . $element . $nonce_attr, $tag, 1) ?: $tag;
+    }
+}
+
 function tk_hardening_init() {
     add_filter('cron_schedules', 'tk_hardening_waf_cron_schedules');
     tk_hardening_apply_recommended_defaults();
@@ -52,6 +71,7 @@ function tk_hardening_init() {
         add_action('send_headers', 'tk_hardening_cors_headers');
         add_filter('script_loader_tag', 'tk_csp_script_loader_tag', 999, 3);
         add_filter('style_loader_tag', 'tk_csp_style_loader_tag', 999, 4);
+        add_action('template_redirect', 'tk_csp_start_buffer', 999);
     }
     if (tk_get_option('hardening_server_signature_hide', 1)) {
         add_action('send_headers', 'tk_hardening_hide_server_headers', 999);
@@ -104,13 +124,70 @@ function tk_security_headers() {
     $nonce = tk_csp_nonce();
     $nonce_token = $nonce !== '' ? " 'nonce-" . $nonce . "'" : '';
     if (tk_get_option('hardening_csp_strict_enabled', 0)) {
-        header("Content-Security-Policy: default-src 'self'; img-src 'self' data: https:; font-src 'self' data: https:; script-src 'self'" . $nonce_token . "; style-src 'self'" . $nonce_token . "; style-src-attr 'unsafe-inline'; connect-src 'self' https:; frame-src 'self' https:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests");
+        header('Content-Security-Policy: ' . tk_hardening_build_csp_header(array(
+            "default-src 'self'",
+            "img-src 'self' data: https:" . tk_hardening_csp_custom_sources('img'),
+            "font-src 'self' data: https:",
+            "script-src 'self'" . $nonce_token . tk_hardening_csp_google_sources('script') . tk_hardening_csp_custom_sources('script'),
+            "style-src 'self'" . $nonce_token . tk_hardening_csp_custom_sources('style'),
+            "style-src-attr 'unsafe-inline'",
+            "connect-src 'self' https:" . tk_hardening_csp_google_sources('connect') . tk_hardening_csp_custom_sources('connect'),
+            "frame-src 'self' https:" . tk_hardening_csp_google_sources('frame') . tk_hardening_csp_custom_sources('frame'),
+            "object-src 'none'",
+            "frame-ancestors 'self'",
+            "base-uri 'self'",
+            "form-action 'self'",
+            'upgrade-insecure-requests',
+        )));
     } elseif (tk_get_option('hardening_csp_hardened_enabled', 0)) {
-        header("Content-Security-Policy: default-src 'self'; img-src 'self' data: blob: https:; font-src 'self' data: https:; script-src 'self'" . $nonce_token . "; style-src 'self' 'unsafe-inline'" . $nonce_token . "; style-src-attr 'unsafe-inline'; connect-src 'self' https:; worker-src 'self' blob:; frame-src 'self' https:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests");
+        header('Content-Security-Policy: ' . tk_hardening_build_csp_header(array(
+            "default-src 'self'",
+            "img-src 'self' data: blob: https:" . tk_hardening_csp_custom_sources('img'),
+            "font-src 'self' data: https:",
+            "script-src 'self'" . $nonce_token . tk_hardening_csp_google_sources('script') . tk_hardening_csp_custom_sources('script'),
+            "style-src 'self' 'unsafe-inline'" . $nonce_token . tk_hardening_csp_custom_sources('style'),
+            "style-src-attr 'unsafe-inline'",
+            "connect-src 'self' https:" . tk_hardening_csp_google_sources('connect') . tk_hardening_csp_custom_sources('connect'),
+            "worker-src 'self' blob:",
+            "frame-src 'self' https:" . tk_hardening_csp_google_sources('frame') . tk_hardening_csp_custom_sources('frame'),
+            "object-src 'none'",
+            "frame-ancestors 'self'",
+            "base-uri 'self'",
+            "form-action 'self'",
+            'upgrade-insecure-requests',
+        )));
     } elseif (tk_get_option('hardening_csp_balanced_enabled', 0)) {
-        header("Content-Security-Policy: default-src 'self'; img-src 'self' data: blob: https:; font-src 'self' data: https:; script-src 'self' 'unsafe-inline'" . $nonce_token . "; style-src 'self' 'unsafe-inline'" . $nonce_token . "; connect-src 'self' https:; worker-src 'self' blob:; frame-src 'self' https:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests");
+        header('Content-Security-Policy: ' . tk_hardening_build_csp_header(array(
+            "default-src 'self'",
+            "img-src 'self' data: blob: https:" . tk_hardening_csp_custom_sources('img'),
+            "font-src 'self' data: https:",
+            "script-src 'self' 'unsafe-inline'" . $nonce_token . tk_hardening_csp_google_sources('script') . tk_hardening_csp_custom_sources('script'),
+            "style-src 'self' 'unsafe-inline'" . $nonce_token . tk_hardening_csp_custom_sources('style'),
+            "connect-src 'self' https:" . tk_hardening_csp_google_sources('connect') . tk_hardening_csp_custom_sources('connect'),
+            "worker-src 'self' blob:",
+            "frame-src 'self' https:" . tk_hardening_csp_google_sources('frame') . tk_hardening_csp_custom_sources('frame'),
+            "object-src 'none'",
+            "frame-ancestors 'self'",
+            "base-uri 'self'",
+            "form-action 'self'",
+            'upgrade-insecure-requests',
+        )));
     } elseif (tk_get_option('hardening_csp_lite_enabled', 0)) {
-        header("Content-Security-Policy: default-src 'self'; img-src 'self' data: blob: https:; font-src 'self' data: https:; script-src 'self' 'unsafe-inline' https:" . $nonce_token . "; style-src 'self' 'unsafe-inline' https:" . $nonce_token . "; connect-src 'self' https:; worker-src 'self' blob:; frame-src 'self' https:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests");
+        header('Content-Security-Policy: ' . tk_hardening_build_csp_header(array(
+            "default-src 'self'",
+            "img-src 'self' data: blob: https:" . tk_hardening_csp_custom_sources('img'),
+            "font-src 'self' data: https:",
+            "script-src 'self' 'unsafe-inline' https:" . $nonce_token . tk_hardening_csp_google_sources('script') . tk_hardening_csp_custom_sources('script'),
+            "style-src 'self' 'unsafe-inline' https:" . $nonce_token . tk_hardening_csp_custom_sources('style'),
+            "connect-src 'self' https:" . tk_hardening_csp_google_sources('connect') . tk_hardening_csp_custom_sources('connect'),
+            "worker-src 'self' blob:",
+            "frame-src 'self' https:" . tk_hardening_csp_google_sources('frame') . tk_hardening_csp_custom_sources('frame'),
+            "object-src 'none'",
+            "frame-ancestors 'self'",
+            "base-uri 'self'",
+            "form-action 'self'",
+            'upgrade-insecure-requests',
+        )));
     }
     if (tk_get_option('hardening_hsts_enabled', 0) && is_ssl()) {
         $hsts = 'max-age=31536000; includeSubDomains';
@@ -119,6 +196,117 @@ function tk_security_headers() {
         }
         header('Strict-Transport-Security: ' . $hsts);
     }
+}
+
+function tk_hardening_csp_google_sources($directive = '') {
+    $sources = array(
+        'script' => array(
+            'https://www.googletagmanager.com',
+            'https://www.google-analytics.com',
+            'https://www.gstatic.com',
+            'https://www.google.com',
+            'https://recaptcha.google.com',
+        ),
+        'connect' => array(
+            'https://www.google-analytics.com',
+            'https://analytics.google.com',
+            'https://stats.g.doubleclick.net',
+            'https://www.googletagmanager.com',
+            'https://www.google.com',
+            'https://recaptcha.google.com',
+        ),
+        'frame' => array(
+            'https://www.google.com',
+            'https://recaptcha.google.com',
+        ),
+    );
+
+    $directive = is_string($directive) ? strtolower($directive) : '';
+    if (!isset($sources[$directive])) {
+        return '';
+    }
+
+    return ' ' . implode(' ', $sources[$directive]);
+}
+
+function tk_hardening_csp_option_key($directive = '') {
+    $map = array(
+        'script' => 'hardening_csp_script_sources',
+        'style' => 'hardening_csp_style_sources',
+        'connect' => 'hardening_csp_connect_sources',
+        'frame' => 'hardening_csp_frame_sources',
+        'img' => 'hardening_csp_img_sources',
+    );
+    $directive = is_string($directive) ? strtolower($directive) : '';
+    return isset($map[$directive]) ? $map[$directive] : '';
+}
+
+function tk_hardening_sanitize_csp_sources($value): string {
+    $value = is_string($value) ? $value : '';
+    if ($value === '') {
+        return '';
+    }
+
+    $lines = preg_split('/\r\n|\r|\n/', $value);
+    if (!is_array($lines)) {
+        return '';
+    }
+
+    $allowed = array();
+    foreach ($lines as $line) {
+        $line = trim((string) $line);
+        if ($line === '') {
+            continue;
+        }
+        $line = preg_replace('/\s+/', '', $line);
+        if (!is_string($line) || $line === '' || strpos($line, ';') !== false) {
+            continue;
+        }
+        if (!preg_match('/^(\'self\'|\'unsafe-inline\'|\'unsafe-eval\'|\'none\'|\'strict-dynamic\'|\'report-sample\'|\'unsafe-hashes\'|https?:\/\/[^\s]+|wss?:\/\/[^\s]+|blob:|data:|mediastream:|filesystem:|[a-z][a-z0-9+.-]*:|\*\.[a-z0-9.-]+|[a-z0-9.-]+\.[a-z]{2,})$/i', $line)) {
+            continue;
+        }
+        $allowed[] = $line;
+    }
+
+    if (empty($allowed)) {
+        return '';
+    }
+
+    $allowed = array_values(array_unique($allowed));
+    return implode("\n", $allowed);
+}
+
+function tk_hardening_csp_custom_sources($directive = '') {
+    $option_key = tk_hardening_csp_option_key($directive);
+    if ($option_key === '') {
+        return '';
+    }
+
+    $raw = tk_get_option($option_key, '');
+    if (!is_string($raw) || $raw === '') {
+        return '';
+    }
+
+    $items = preg_split('/\r\n|\r|\n/', $raw);
+    if (!is_array($items)) {
+        return '';
+    }
+
+    $items = array_values(array_filter(array_map('trim', $items)));
+    if (empty($items)) {
+        return '';
+    }
+
+    return ' ' . implode(' ', $items);
+}
+
+function tk_hardening_build_csp_header($directives) {
+    if (!is_array($directives)) {
+        return '';
+    }
+
+    $directives = array_values(array_filter(array_map('trim', $directives)));
+    return implode('; ', $directives);
 }
 
 function tk_csp_script_loader_tag($tag, $handle, $src) {
@@ -133,6 +321,40 @@ function tk_csp_style_loader_tag($tag, $handle, $href, $media) {
         return $tag;
     }
     return tk_csp_add_nonce_to_tag($tag, 'style');
+}
+
+function tk_csp_start_buffer(): void {
+    if (is_admin() || wp_doing_ajax() || is_feed() || is_preview()) {
+        return;
+    }
+    if (!tk_csp_nonce_enabled()) {
+        return;
+    }
+    ob_start('tk_csp_buffer_callback');
+}
+
+function tk_csp_buffer_callback($html) {
+    if (!is_string($html) || $html === '' || stripos($html, '<html') === false) {
+        return $html;
+    }
+
+    $html = preg_replace_callback(
+        '#<script\b([^>]*)>(.*?)</script>#is',
+        function($matches) {
+            return tk_csp_add_nonce_to_tag($matches[0], 'script');
+        },
+        $html
+    );
+
+    $html = preg_replace_callback(
+        '#<style\b([^>]*)>(.*?)</style>#is',
+        function($matches) {
+            return tk_csp_add_nonce_to_tag($matches[0], 'style');
+        },
+        $html
+    );
+
+    return $html;
 }
 
 function tk_hardening_disable_wp_cron_runtime(): void {
@@ -1531,6 +1753,10 @@ function tk_hardening_waf(): void {
     if (function_exists('wp_doing_cron') && wp_doing_cron()) {
         return;
     }
+    // Skip wp-admin requests to avoid blocking legitimate editor and settings saves.
+    if (is_admin()) {
+        return;
+    }
 
     $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
     $query = isset($_SERVER['QUERY_STRING']) ? (string) $_SERVER['QUERY_STRING'] : '';
@@ -1793,6 +2019,11 @@ function tk_render_hardening_page() {
         'hardening_csp_balanced_enabled' => tk_get_option('hardening_csp_balanced_enabled', 0),
         'hardening_csp_hardened_enabled' => tk_get_option('hardening_csp_hardened_enabled', 0),
         'hardening_csp_strict_enabled' => tk_get_option('hardening_csp_strict_enabled', 0),
+        'hardening_csp_script_sources' => tk_get_option('hardening_csp_script_sources', ''),
+        'hardening_csp_style_sources' => tk_get_option('hardening_csp_style_sources', ''),
+        'hardening_csp_connect_sources' => tk_get_option('hardening_csp_connect_sources', ''),
+        'hardening_csp_frame_sources' => tk_get_option('hardening_csp_frame_sources', ''),
+        'hardening_csp_img_sources' => tk_get_option('hardening_csp_img_sources', ''),
         'hardening_hsts_enabled' => tk_get_option('hardening_hsts_enabled', 0),
         'hardening_hsts_preload' => tk_get_option('hardening_hsts_preload', 0),
         'hardening_server_signature_hide' => tk_get_option('hardening_server_signature_hide', 1),
@@ -1874,6 +2105,29 @@ function tk_render_hardening_page() {
                             </select>
                         </p>
                         <p class="description">Lite: compatibility-first. Balanced: safe default for most WordPress sites. Hardened: stronger middle ground for modern themes/builders. Strict: only for CSP-ready themes/plugins.</p>
+                        <p><strong>Custom CSP allowlist</strong></p>
+                        <p class="description">Add one source per line. Use full origins like <code>https://www.tradingview-widget.com</code>. These values are appended to the matching CSP directive.</p>
+                        <p>
+                            Additional <code>script-src</code> sources<br>
+                            <textarea class="large-text" rows="3" name="csp_script_sources" placeholder="https://s3.tradingview.com"><?php echo esc_textarea((string) $opts['hardening_csp_script_sources']); ?></textarea>
+                        </p>
+                        <p>
+                            Additional <code>connect-src</code> sources<br>
+                            <textarea class="large-text" rows="3" name="csp_connect_sources" placeholder="https://s3.tradingview.com"><?php echo esc_textarea((string) $opts['hardening_csp_connect_sources']); ?></textarea>
+                        </p>
+                        <p>
+                            Additional <code>frame-src</code> sources<br>
+                            <textarea class="large-text" rows="3" name="csp_frame_sources" placeholder="https://www.tradingview-widget.com"><?php echo esc_textarea((string) $opts['hardening_csp_frame_sources']); ?></textarea>
+                        </p>
+                        <p>
+                            Additional <code>img-src</code> sources<br>
+                            <textarea class="large-text" rows="2" name="csp_img_sources" placeholder="https://s3.tradingview.com"><?php echo esc_textarea((string) $opts['hardening_csp_img_sources']); ?></textarea>
+                        </p>
+                        <p>
+                            Additional <code>style-src</code> sources<br>
+                            <textarea class="large-text" rows="2" name="csp_style_sources" placeholder="https://s3.tradingview.com"><?php echo esc_textarea((string) $opts['hardening_csp_style_sources']); ?></textarea>
+                        </p>
+                        <p class="description">TradingView biasanya butuh minimal <code>https://www.tradingview-widget.com</code> di <code>frame-src</code> dan <code>https://s3.tradingview.com</code> di <code>script-src</code>/<code>connect-src</code>.</p>
                         <p><label><input type="checkbox" name="hsts" value="1" <?php checked(1, $opts['hardening_hsts_enabled']); ?>> Enable HSTS header (HTTPS only)</label></p>
                         <p><label><input type="checkbox" name="hsts_preload" value="1" data-confirm="Enable this only if the entire site and all subdomains are HTTPS-only and ready for HSTS preload." <?php checked(1, $opts['hardening_hsts_preload']); ?>> Add preload to HSTS header</label></p>
                         <p class="description">Sends <code>Strict-Transport-Security: max-age=31536000; includeSubDomains; preload</code> when enabled.</p>
@@ -2133,6 +2387,16 @@ function tk_hardening_save() {
         tk_update_option('hardening_csp_balanced_enabled', $csp_balanced);
         tk_update_option('hardening_csp_hardened_enabled', $csp_hardened);
         tk_update_option('hardening_csp_strict_enabled', $csp_strict);
+        $csp_script_sources = isset($_POST['csp_script_sources']) ? wp_unslash($_POST['csp_script_sources']) : '';
+        $csp_style_sources = isset($_POST['csp_style_sources']) ? wp_unslash($_POST['csp_style_sources']) : '';
+        $csp_connect_sources = isset($_POST['csp_connect_sources']) ? wp_unslash($_POST['csp_connect_sources']) : '';
+        $csp_frame_sources = isset($_POST['csp_frame_sources']) ? wp_unslash($_POST['csp_frame_sources']) : '';
+        $csp_img_sources = isset($_POST['csp_img_sources']) ? wp_unslash($_POST['csp_img_sources']) : '';
+        tk_update_option('hardening_csp_script_sources', tk_hardening_sanitize_csp_sources($csp_script_sources));
+        tk_update_option('hardening_csp_style_sources', tk_hardening_sanitize_csp_sources($csp_style_sources));
+        tk_update_option('hardening_csp_connect_sources', tk_hardening_sanitize_csp_sources($csp_connect_sources));
+        tk_update_option('hardening_csp_frame_sources', tk_hardening_sanitize_csp_sources($csp_frame_sources));
+        tk_update_option('hardening_csp_img_sources', tk_hardening_sanitize_csp_sources($csp_img_sources));
         tk_update_option('hardening_hsts_enabled', !empty($_POST['hsts']) ? 1 : 0);
         tk_update_option('hardening_hsts_preload', !empty($_POST['hsts_preload']) ? 1 : 0);
         tk_update_option('hardening_server_signature_hide', !empty($_POST['server_signature_hide']) ? 1 : 0);
@@ -2140,6 +2404,9 @@ function tk_hardening_save() {
         $disable_wp_cron = !empty($_POST['disable_wp_cron']) ? 1 : 0;
         tk_update_option('hardening_disable_wp_cron', $disable_wp_cron);
         tk_hardening_set_wp_config_constant('DISABLE_WP_CRON', (bool) $disable_wp_cron);
+        if (function_exists('tk_page_cache_purge')) {
+            tk_page_cache_purge();
+        }
         tk_update_option('hardening_url_param_guard_enabled', !empty($_POST['url_param_guard']) ? 1 : 0);
         tk_update_option('hardening_http_methods_filter_enabled', !empty($_POST['http_methods_filter']) ? 1 : 0);
         $http_methods_allowed = isset($_POST['http_methods_allowed']) ? wp_unslash($_POST['http_methods_allowed']) : 'GET, POST';
