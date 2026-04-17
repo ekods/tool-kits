@@ -191,6 +191,38 @@ function tk_github_resolve_package_url(array $release) {
     return TK_GITHUB_REPO_URL . '/archive/refs/heads/main.zip';
 }
 
+function tk_github_find_plugin_root(string $source): string {
+    $source = untrailingslashit($source);
+    if ($source === '' || !is_dir($source)) {
+        return '';
+    }
+
+    $plugin_main = $source . '/tool-kits.php';
+    if (is_file($plugin_main)) {
+        return $source;
+    }
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($source, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST
+    );
+
+    foreach ($iterator as $item) {
+        if (!$item->isFile() || $item->getFilename() !== 'tool-kits.php') {
+            continue;
+        }
+
+        $path = $item->getPath();
+        if (!is_string($path) || $path === '') {
+            continue;
+        }
+
+        return untrailingslashit($path);
+    }
+
+    return '';
+}
+
 function tk_github_upgrader_source_selection($source, $remote_source, $upgrader, $hook_extra) {
     if (empty($hook_extra['plugin'])) {
         return $source;
@@ -205,8 +237,9 @@ function tk_github_upgrader_source_selection($source, $remote_source, $upgrader,
         return $source;
     }
 
-    $expected = trailingslashit($remote_source) . 'tool-kits';
-    if ($source === $expected) {
+    $plugin_root = tk_github_find_plugin_root($source);
+    if ($plugin_root === '') {
+        tk_github_log('Could not find tool-kits.php inside extracted package: ' . $source);
         return $source;
     }
 
@@ -228,19 +261,23 @@ function tk_github_upgrader_source_selection($source, $remote_source, $upgrader,
         return $source;
     }
 
-    $dest = trailingslashit($remote_source) . 'tool-kits';
+    $dest = untrailingslashit(trailingslashit($remote_source) . 'tool-kits');
+    if (untrailingslashit($plugin_root) === $dest) {
+        return $plugin_root;
+    }
+
     if ($filesystem->is_dir($dest)) {
         return $dest;
     }
 
-    if (!$filesystem->exists($source)) {
-        tk_github_log('Extracted update source no longer exists: ' . $source);
+    if (!$filesystem->exists($plugin_root)) {
+        tk_github_log('Extracted plugin root no longer exists: ' . $plugin_root);
         return $source;
     }
 
-    if (!$filesystem->move($source, $dest, true)) {
-        tk_github_log('Failed to move extracted update package from ' . $source . ' to ' . $dest . '.');
-        return $source;
+    if (!$filesystem->move($plugin_root, $dest, true)) {
+        tk_github_log('Failed to move extracted update package from ' . $plugin_root . ' to ' . $dest . '.');
+        return $plugin_root;
     }
     return $dest;
 }
