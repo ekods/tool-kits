@@ -151,8 +151,8 @@ function tk_github_fetch_latest_release() {
 }
 
 function tk_github_normalize_version($tag) {
-    $version = (string) $tag;
-    if (strpos($version, 'v') === 0) {
+    $version = trim((string) $tag);
+    if ($version !== '' && ($version[0] === 'v' || $version[0] === 'V')) {
         $version = substr($version, 1);
     }
     return trim($version);
