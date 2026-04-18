@@ -3,7 +3,11 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
+<<<<<<< Updated upstream
 Stable tag: 2.1.3
+=======
+Stable tag: 2.1.4
+>>>>>>> Stashed changes
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
