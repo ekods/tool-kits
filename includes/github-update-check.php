@@ -10,6 +10,9 @@ if (!defined('ABSPATH')) {
 add_filter('pre_set_site_transient_update_plugins', 'tk_github_plugin_update_check', 20);
 add_filter('plugins_api', 'tk_github_plugin_api', 20, 3);
 add_filter('upgrader_source_selection', 'tk_github_upgrader_source_selection', 10, 4);
+add_filter('upgrader_pre_download', 'tk_github_upgrader_pre_download', 10, 4);
+add_filter('upgrader_package_options', 'tk_github_upgrader_package_options', 10, 1);
+add_filter('upgrader_install_package_result', 'tk_github_upgrader_install_package_result', 10, 2);
 add_filter('upgrader_post_install', 'tk_github_upgrader_post_install', 10, 3);
 add_action('upgrader_process_complete', 'tk_github_upgrader_process_complete', 10, 2);
 
@@ -283,6 +286,85 @@ function tk_github_find_plugin_root(string $source): string {
     return '';
 }
 
+function tk_github_is_target_upgrade(array $hook_extra): bool {
+    $plugin_file = plugin_basename(TK_PATH . 'tool-kits.php');
+
+    if (!empty($hook_extra['plugin']) && $hook_extra['plugin'] === $plugin_file) {
+        return true;
+    }
+
+    if (!empty($hook_extra['plugins']) && is_array($hook_extra['plugins']) && in_array($plugin_file, $hook_extra['plugins'], true)) {
+        return true;
+    }
+
+    return false;
+}
+
+function tk_github_store_status(string $status, string $message, array $context = array()): void {
+    $payload = array(
+        'status'    => $status,
+        'message'   => $message,
+        'context'   => $context,
+        'timestamp' => time(),
+    );
+
+    set_transient('tk_github_updater_status', $payload, DAY_IN_SECONDS);
+    update_option('tk_github_updater_status', $payload, false);
+}
+
+function tk_github_upgrader_pre_download($reply, $package, $upgrader, $hook_extra) {
+    if (!is_array($hook_extra) || !tk_github_is_target_upgrade($hook_extra)) {
+        return $reply;
+    }
+
+    tk_github_store_status('running', 'Preparing to download update package.', array(
+        'package' => (string) $package,
+    ));
+    tk_github_log('Preparing to download package: ' . (string) $package);
+
+    return $reply;
+}
+
+function tk_github_upgrader_package_options($options) {
+    if (!is_array($options) || empty($options['hook_extra']) || !is_array($options['hook_extra']) || !tk_github_is_target_upgrade($options['hook_extra'])) {
+        return $options;
+    }
+
+    tk_github_log('Package options: destination=' . (string) ($options['destination'] ?? '') . ' clear_destination=' . (!empty($options['clear_destination']) ? 'yes' : 'no'));
+
+    return $options;
+}
+
+function tk_github_upgrader_install_package_result($result, $hook_extra) {
+    if (!is_array($hook_extra) || !tk_github_is_target_upgrade($hook_extra)) {
+        return $result;
+    }
+
+    if (is_wp_error($result)) {
+        $error_message = $result->get_error_message();
+        $error_code = $result->get_error_code();
+        $error_data = $result->get_error_data($error_code);
+
+        tk_github_store_status('failed', $error_message, array(
+            'error_code' => $error_code,
+            'error_data' => $error_data,
+        ));
+        tk_github_log('Install package failed: code=' . $error_code . ' message=' . $error_message . ' data=' . wp_json_encode($error_data));
+
+        return $result;
+    }
+
+    if (is_array($result)) {
+        tk_github_store_status('installed', 'Package installed by WordPress.', array(
+            'destination'      => (string) ($result['destination'] ?? ''),
+            'destination_name' => (string) ($result['destination_name'] ?? ''),
+        ));
+        tk_github_log('Install package succeeded: destination=' . (string) ($result['destination'] ?? ''));
+    }
+
+    return $result;
+}
+
 function tk_github_upgrader_source_selection($source, $remote_source, $upgrader, $hook_extra) {
     if (empty($hook_extra['plugin'])) {
         return $source;
@@ -347,6 +429,11 @@ function tk_github_upgrader_post_install($response, $hook_extra, $result) {
         tk_github_log('Unexpected destination_name after install: ' . $result['destination_name']);
     }
 
+    tk_github_store_status('installed', 'Plugin update installed.', array(
+        'destination'      => $result['destination'],
+        'destination_name' => (string) ($result['destination_name'] ?? ''),
+    ));
+
     $active_plugin = plugin_basename($expected_destination . '/tool-kits.php');
     if (is_plugin_active($plugin_file) && !is_plugin_active($active_plugin) && file_exists($expected_destination . '/tool-kits.php')) {
         activate_plugin($active_plugin);
@@ -371,22 +458,21 @@ function tk_github_upgrader_process_complete($upgrader, $hook_extra): void {
         return;
     }
 
-    $plugin_file = plugin_basename(TK_PATH . 'tool-kits.php');
-    if (!in_array($plugin_file, $hook_extra['plugins'], true)) {
+    if (!tk_github_is_target_upgrade($hook_extra)) {
         return;
     }
 
+    tk_github_store_status('completed', 'Plugin update process completed successfully.');
     delete_transient('tk_github_latest_release');
     delete_site_transient('update_plugins');
 }
 
 function tk_github_log(string $message): void {
+    error_log('[Tool Kits][GitHub Updater] ' . $message);
+
     if (function_exists('tk_log')) {
         tk_log('[GitHub Updater] ' . $message);
-        return;
     }
-
-    error_log('[Tool Kits][GitHub Updater] ' . $message);
 }
 
 function tk_github_plugin_action_links(array $links): array {
@@ -409,6 +495,8 @@ function tk_github_check_now_handler(): void {
 
     delete_transient('tk_github_latest_release');
     delete_site_transient('update_plugins');
+    delete_transient('tk_github_updater_status');
+    delete_option('tk_github_updater_status');
 
     wp_clean_plugins_cache(true);
     wp_update_plugins();
@@ -434,9 +522,39 @@ function tk_github_check_now_notice(): void {
         return;
     }
 
-    if (!isset($_GET['tk_update_checked']) || (string) $_GET['tk_update_checked'] !== '1') {
+    $status = get_transient('tk_github_updater_status');
+    if ($status === false) {
+        $status = get_option('tk_github_updater_status');
+    }
+
+    if (isset($_GET['tk_update_checked']) && (string) $_GET['tk_update_checked'] === '1' && empty($status)) {
+        echo '<div class="notice notice-success is-dismissible"><p>Tool Kits update check has been refreshed.</p></div>';
         return;
     }
 
-    echo '<div class="notice notice-success is-dismissible"><p>Tool Kits update check has been refreshed.</p></div>';
+    if (!is_array($status) || empty($status['status']) || empty($status['message'])) {
+        return;
+    }
+
+    $class = 'notice-info';
+    if ($status['status'] === 'failed') {
+        $class = 'notice-error';
+    } elseif ($status['status'] === 'completed' || $status['status'] === 'installed') {
+        $class = 'notice-success';
+    }
+
+    $context = '';
+    if (!empty($status['context']) && is_array($status['context'])) {
+        $pairs = array();
+        foreach ($status['context'] as $key => $value) {
+            if (is_scalar($value) && $value !== '') {
+                $pairs[] = $key . '=' . (string) $value;
+            }
+        }
+        if (!empty($pairs)) {
+            $context = '<br><small><code>' . esc_html(implode(' | ', $pairs)) . '</code></small>';
+        }
+    }
+
+    echo '<div class="notice ' . esc_attr($class) . ' is-dismissible"><p><strong>Tool Kits updater:</strong> ' . esc_html((string) $status['message']) . $context . '</p></div>';
 }
