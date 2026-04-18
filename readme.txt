@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.1.1
+Stable tag: 2.1.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -60,6 +60,10 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.1.3 =
+- Fix updater version parsing for release tags that start with uppercase `V`.
+- Continue preferring clean tag archives and clean packaged ZIP assets for updates.
+
 = 2.1.1 =
 - Fix GitHub updater package selection to prefer clean tag archives.
 - Exclude macOS metadata and build artifacts from release packaging.
