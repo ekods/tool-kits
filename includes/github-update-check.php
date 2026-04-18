@@ -54,6 +54,8 @@ function tk_github_plugin_update_check($transient) {
     }
 
     $package = tk_github_resolve_package_url($release);
+    tk_github_log('Resolved package URL: ' . $package);
+
     if ($package === '') {
         tk_github_log('Package URL could not be resolved.');
         return $transient;
@@ -210,49 +212,37 @@ function tk_github_normalize_version($tag) {
 }
 
 function tk_github_resolve_package_url(array $release) {
-    if (!empty($release['assets']) && is_array($release['assets'])) {
-        foreach ($release['assets'] as $asset) {
-            $asset_name = strtolower((string) ($asset['name'] ?? ''));
-            $download_url = (string) ($asset['browser_download_url'] ?? '');
+    if (empty($release['assets']) || !is_array($release['assets'])) {
+        tk_github_log('No release assets found on GitHub release.');
+        return '';
+    }
 
-            if ($download_url !== '' && $asset_name === 'tool-kits.zip') {
-                return $download_url;
-            }
-        }
+    foreach ($release['assets'] as $asset) {
+        $asset_name = strtolower((string) ($asset['name'] ?? ''));
+        $download_url = (string) ($asset['browser_download_url'] ?? '');
 
-        foreach ($release['assets'] as $asset) {
-            $asset_name = strtolower((string) ($asset['name'] ?? ''));
-            $download_url = (string) ($asset['browser_download_url'] ?? '');
-
-            if (
-                $download_url !== '' &&
-                strpos($asset_name, 'tool-kits') !== false &&
-                substr($asset_name, -4) === '.zip'
-            ) {
-                return $download_url;
-            }
-        }
-
-        foreach ($release['assets'] as $asset) {
-            $asset_name = strtolower((string) ($asset['name'] ?? ''));
-            $download_url = (string) ($asset['browser_download_url'] ?? '');
-
-            if ($download_url !== '' && substr($asset_name, -4) === '.zip') {
-                return $download_url;
-            }
+        if ($download_url !== '' && $asset_name === 'tool-kits.zip') {
+            tk_github_log('Using exact release asset: ' . $asset_name);
+            return $download_url;
         }
     }
 
-    if (!empty($release['zipball_url'])) {
-        return (string) $release['zipball_url'];
+    foreach ($release['assets'] as $asset) {
+        $asset_name = strtolower((string) ($asset['name'] ?? ''));
+        $download_url = (string) ($asset['browser_download_url'] ?? '');
+
+        if (
+            $download_url !== '' &&
+            strpos($asset_name, 'tool-kits') !== false &&
+            substr($asset_name, -4) === '.zip'
+        ) {
+            tk_github_log('Using fallback release asset: ' . $asset_name);
+            return $download_url;
+        }
     }
 
-    $tag_name = (string) ($release['tag_name'] ?? '');
-    if ($tag_name !== '') {
-        return TK_GITHUB_REPO_URL . '/archive/refs/tags/' . rawurlencode($tag_name) . '.zip';
-    }
-
-    return TK_GITHUB_REPO_URL . '/archive/refs/heads/main.zip';
+    tk_github_log('No valid ZIP asset found in GitHub release.');
+    return '';
 }
 
 function tk_github_find_plugin_root(string $source): string {
@@ -304,56 +294,76 @@ function tk_github_upgrader_source_selection($source, $remote_source, $upgrader,
     }
 
     if (empty($source) || !is_string($source) || !is_dir($source)) {
-        tk_github_log('Invalid source received during upgrader_source_selection.');
-        return $source;
+        tk_github_log('Invalid source during source selection: ' . print_r($source, true));
+        return new WP_Error('tk_github_invalid_source', 'Invalid upgrade source directory.');
     }
 
     $plugin_root = tk_github_find_plugin_root($source);
     if ($plugin_root === '') {
-        tk_github_log('Could not find tool-kits.php inside extracted package: ' . $source);
+        tk_github_log('tool-kits.php not found in extracted package. Source: ' . $source);
         return new WP_Error('tk_github_invalid_package', 'The update package does not contain tool-kits.php.');
+    }
+
+    $source = untrailingslashit($source);
+    $plugin_root = untrailingslashit($plugin_root);
+    $dest = untrailingslashit(trailingslashit($remote_source) . 'tool-kits');
+
+    tk_github_log('Source selection: source=' . $source . ' plugin_root=' . $plugin_root . ' dest=' . $dest);
+
+    // Kalau root plugin sudah benar, langsung pakai.
+    if ($plugin_root === $source && basename($source) === 'tool-kits') {
+        tk_github_log('Package root already correct.');
+        return $source;
+    }
+
+    // Kalau plugin_root sudah berada di lokasi tujuan, pakai saja.
+    if ($plugin_root === $dest) {
+        tk_github_log('Plugin root already matches destination.');
+        return $plugin_root;
     }
 
     require_once ABSPATH . 'wp-admin/includes/file.php';
 
+    // Coba rename native dulu. Biasanya lebih stabil untuk folder temp lokal.
+    if (@rename($plugin_root, $dest)) {
+        tk_github_log('Renamed extracted plugin root using native rename().');
+        return $dest;
+    }
+
+    // Fallback ke WP_Filesystem
     global $wp_filesystem;
     if (!WP_Filesystem()) {
-        tk_github_log('WP_Filesystem initialization failed during source selection.');
-        return $source;
+        tk_github_log('WP_Filesystem init failed.');
+        return new WP_Error('tk_github_fs_init_failed', 'Failed to initialize WordPress filesystem.');
     }
 
     $filesystem = isset($GLOBALS['wp_filesystem']) ? $GLOBALS['wp_filesystem'] : $wp_filesystem;
     if (
         !is_object($filesystem) ||
-        !method_exists($filesystem, 'is_dir') ||
         !method_exists($filesystem, 'exists') ||
+        !method_exists($filesystem, 'is_dir') ||
+        !method_exists($filesystem, 'delete') ||
         !method_exists($filesystem, 'move')
     ) {
-        tk_github_log('Invalid WP_Filesystem instance during source selection.');
-        return $source;
+        tk_github_log('Invalid WP_Filesystem instance.');
+        return new WP_Error('tk_github_fs_invalid', 'Invalid WordPress filesystem instance.');
     }
 
-    $dest = untrailingslashit(trailingslashit($remote_source) . 'tool-kits');
-
-    if (untrailingslashit($plugin_root) === $dest) {
-        return $plugin_root;
-    }
-
-    if ($filesystem->is_dir($dest)) {
-        return $dest;
+    if ($filesystem->exists($dest)) {
+        $filesystem->delete($dest, true);
     }
 
     if (!$filesystem->exists($plugin_root)) {
-        tk_github_log('Extracted plugin root no longer exists: ' . $plugin_root);
-        return $source;
+        tk_github_log('Plugin root missing before move: ' . $plugin_root);
+        return new WP_Error('tk_github_root_missing', 'Extracted plugin root no longer exists.');
     }
 
-    $moved = $filesystem->move($plugin_root, $dest, true);
-    if (!$moved) {
-        tk_github_log('Failed to move extracted update package from ' . $plugin_root . ' to ' . $dest);
-        return new WP_Error('tk_github_move_failed', 'Failed to move the extracted plugin to the expected directory.');
+    if (!$filesystem->move($plugin_root, $dest, true)) {
+        tk_github_log('WP_Filesystem move failed from ' . $plugin_root . ' to ' . $dest);
+        return new WP_Error('tk_github_move_failed', 'Failed to move extracted plugin into expected directory.');
     }
 
+    tk_github_log('Moved extracted plugin root using WP_Filesystem.');
     return $dest;
 }
 
