@@ -306,9 +306,8 @@ function tk_github_upgrader_source_selection($source, $remote_source, $upgrader,
 
     $source = untrailingslashit($source);
     $plugin_root = untrailingslashit($plugin_root);
-    $dest = untrailingslashit(trailingslashit($remote_source) . 'tool-kits');
 
-    tk_github_log('Source selection: source=' . $source . ' plugin_root=' . $plugin_root . ' dest=' . $dest);
+    tk_github_log('Source selection: source=' . $source . ' plugin_root=' . $plugin_root);
 
     // Kalau root plugin sudah benar, langsung pakai.
     if ($plugin_root === $source && basename($source) === 'tool-kits') {
@@ -316,55 +315,13 @@ function tk_github_upgrader_source_selection($source, $remote_source, $upgrader,
         return $source;
     }
 
-    // Kalau plugin_root sudah berada di lokasi tujuan, pakai saja.
-    if ($plugin_root === $dest) {
-        tk_github_log('Plugin root already matches destination.');
-        return $plugin_root;
+    if (basename($plugin_root) !== 'tool-kits') {
+        tk_github_log('Resolved plugin root has unexpected basename: ' . basename($plugin_root));
+        return new WP_Error('tk_github_invalid_root_name', 'The update package root must be named tool-kits.');
     }
 
-    require_once ABSPATH . 'wp-admin/includes/file.php';
-
-    // Coba rename native dulu. Biasanya lebih stabil untuk folder temp lokal.
-    if (@rename($plugin_root, $dest)) {
-        tk_github_log('Renamed extracted plugin root using native rename().');
-        return $dest;
-    }
-
-    // Fallback ke WP_Filesystem
-    global $wp_filesystem;
-    if (!WP_Filesystem()) {
-        tk_github_log('WP_Filesystem init failed.');
-        return new WP_Error('tk_github_fs_init_failed', 'Failed to initialize WordPress filesystem.');
-    }
-
-    $filesystem = isset($GLOBALS['wp_filesystem']) ? $GLOBALS['wp_filesystem'] : $wp_filesystem;
-    if (
-        !is_object($filesystem) ||
-        !method_exists($filesystem, 'exists') ||
-        !method_exists($filesystem, 'is_dir') ||
-        !method_exists($filesystem, 'delete') ||
-        !method_exists($filesystem, 'move')
-    ) {
-        tk_github_log('Invalid WP_Filesystem instance.');
-        return new WP_Error('tk_github_fs_invalid', 'Invalid WordPress filesystem instance.');
-    }
-
-    if ($filesystem->exists($dest)) {
-        $filesystem->delete($dest, true);
-    }
-
-    if (!$filesystem->exists($plugin_root)) {
-        tk_github_log('Plugin root missing before move: ' . $plugin_root);
-        return new WP_Error('tk_github_root_missing', 'Extracted plugin root no longer exists.');
-    }
-
-    if (!$filesystem->move($plugin_root, $dest, true)) {
-        tk_github_log('WP_Filesystem move failed from ' . $plugin_root . ' to ' . $dest);
-        return new WP_Error('tk_github_move_failed', 'Failed to move extracted plugin into expected directory.');
-    }
-
-    tk_github_log('Moved extracted plugin root using WP_Filesystem.');
-    return $dest;
+    tk_github_log('Using nested plugin root returned from extracted package.');
+    return $plugin_root;
 }
 
 function tk_github_upgrader_post_install($response, $hook_extra, $result) {
