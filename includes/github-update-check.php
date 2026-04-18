@@ -151,8 +151,8 @@ function tk_github_fetch_latest_release() {
 }
 
 function tk_github_normalize_version($tag) {
-    $version = (string) $tag;
-    if (strpos($version, 'v') === 0) {
+    $version = trim((string) $tag);
+    if ($version !== '' && ($version[0] === 'v' || $version[0] === 'V')) {
         $version = substr($version, 1);
     }
     return trim($version);
@@ -160,6 +160,10 @@ function tk_github_normalize_version($tag) {
 
 function tk_github_resolve_package_url(array $release) {
     $tag_name = (string) ($release['tag_name'] ?? '');
+
+    if ($tag_name !== '') {
+        return TK_GITHUB_REPO_URL . '/archive/refs/tags/' . rawurlencode($tag_name) . '.zip';
+    }
 
     if (!empty($release['assets']) && is_array($release['assets'])) {
         foreach ($release['assets'] as $asset) {
@@ -178,10 +182,6 @@ function tk_github_resolve_package_url(array $release) {
                 return $asset['browser_download_url'];
             }
         }
-    }
-
-    if ($tag_name !== '') {
-        return TK_GITHUB_REPO_URL . '/archive/refs/tags/' . rawurlencode($tag_name) . '.zip';
     }
 
     if (!empty($release['zipball_url'])) {

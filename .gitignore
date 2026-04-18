@@ -1,1 +1,5 @@
 collector/
+.DS_Store
+__MACOSX/
+*.zip
+temp/
