@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.0.4
+Stable tag: 2.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -60,6 +60,10 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.1.1 =
+- Fix GitHub updater package selection to prefer clean tag archives.
+- Exclude macOS metadata and build artifacts from release packaging.
+
 = Unreleased =
 - Hardening: tambah HSTS toggle, strict CSP, hide server signature header, force HttpOnly/Secure cookies.
 - Hardening: tambah disable WP-Cron, URL parameter guard, HTTP method filtering, dan block dangerous methods (PUT/DELETE/TRACE/CONNECT).
