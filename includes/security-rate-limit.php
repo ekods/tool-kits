@@ -301,7 +301,7 @@ function tk_render_rate_limit_page() {
 }
 
 function tk_rate_limit_save() {
-    tk_check_nonce('tk_rate_limit_save');
+    tk_require_admin_post('tk_rate_limit_save');
 
     tk_update_option('rate_limit_enabled', !empty($_POST['enabled']) ? 1 : 0);
     tk_update_option('rate_limit_window_minutes', (int) $_POST['window']);
@@ -319,7 +319,7 @@ function tk_rate_limit_save() {
         tk_update_option('rate_limit_blocked_ips', $blocked);
     }
 
-    wp_redirect(admin_url('admin.php?page=tool-kits-security-rate-limit'));
+    wp_safe_redirect(admin_url('admin.php?page=tool-kits-security-rate-limit'));
     exit;
 }
 

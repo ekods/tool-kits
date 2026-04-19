@@ -17,6 +17,7 @@ add_filter('upgrader_post_install', 'tk_github_upgrader_post_install', 10, 3);
 add_action('upgrader_process_complete', 'tk_github_upgrader_process_complete', 10, 2);
 
 add_action('admin_post_tk_github_check_now', 'tk_github_check_now_handler');
+add_action('admin_post_tk_github_clear_status', 'tk_github_clear_status_handler');
 add_filter('plugin_action_links_' . plugin_basename(TK_PATH . 'tool-kits.php'), 'tk_github_plugin_action_links');
 add_action('admin_notices', 'tk_github_check_now_notice');
 
@@ -312,6 +313,101 @@ function tk_github_store_status(string $status, string $message, array $context 
     update_option('tk_github_updater_status', $payload, false);
 }
 
+function tk_github_get_stored_status() {
+    $status = get_transient('tk_github_updater_status');
+    if ($status === false) {
+        $status = get_option('tk_github_updater_status');
+    }
+
+    return is_array($status) ? $status : array();
+}
+
+function tk_github_clear_stored_status(): void {
+    delete_transient('tk_github_updater_status');
+    delete_option('tk_github_updater_status');
+}
+
+function tk_github_get_diagnostics(): array {
+    $release = get_transient('tk_github_latest_release');
+    $package = '';
+    $asset_name = '';
+    $published_at = '';
+    $tag_name = '';
+    $release_url = '';
+    $cached = false;
+
+    if (is_array($release)) {
+        $cached = true;
+        $package = tk_github_resolve_package_url($release);
+        $published_at = (string) ($release['published_at'] ?? '');
+        $tag_name = (string) ($release['tag_name'] ?? '');
+        $release_url = (string) ($release['html_url'] ?? '');
+
+        if (!empty($release['assets']) && is_array($release['assets'])) {
+            foreach ($release['assets'] as $asset) {
+                $download_url = (string) ($asset['browser_download_url'] ?? '');
+                if ($download_url !== '' && $download_url === $package) {
+                    $asset_name = (string) ($asset['name'] ?? '');
+                    break;
+                }
+            }
+        }
+    }
+
+    $current_version = defined('TK_VERSION') ? (string) TK_VERSION : '';
+    $normalized_tag = tk_github_normalize_version($tag_name);
+    $update_available = $normalized_tag !== '' && $current_version !== '' ? version_compare($normalized_tag, $current_version, '>') : false;
+    $package_valid = $package !== '' && $asset_name === 'tool-kits.zip';
+    $release_age_hours = null;
+
+    if ($published_at !== '') {
+        $published_ts = strtotime($published_at);
+        if ($published_ts !== false) {
+            $release_age_hours = max(0, (int) floor((time() - $published_ts) / HOUR_IN_SECONDS));
+        }
+    }
+
+    $checks = array(
+        array(
+            'label'   => 'Release cache is available',
+            'status'  => $cached ? 'ok' : 'warn',
+            'detail'  => $cached ? 'A cached GitHub release payload is available.' : 'No cached GitHub release payload found. Refresh the release cache first.',
+        ),
+        array(
+            'label'   => 'Latest tag resolves to a version',
+            'status'  => $normalized_tag !== '' ? 'ok' : 'warn',
+            'detail'  => $normalized_tag !== '' ? 'Resolved latest version: ' . $normalized_tag : 'No valid tag/version could be resolved from the cached release.',
+        ),
+        array(
+            'label'   => 'Release package is exact asset',
+            'status'  => $package_valid ? 'ok' : 'warn',
+            'detail'  => $package_valid ? 'Updater resolved the exact asset tool-kits.zip.' : 'Updater did not resolve the exact tool-kits.zip asset. Old installs may fail to update.',
+        ),
+        array(
+            'label'   => 'Update availability',
+            'status'  => $update_available ? 'warn' : 'ok',
+            'detail'  => $update_available ? 'A newer version is available than the installed version.' : 'Installed version is up to date or release information is incomplete.',
+        ),
+    );
+
+    return array(
+        'current_version' => $current_version,
+        'repo'            => defined('TK_GITHUB_REPO') ? (string) TK_GITHUB_REPO : '',
+        'tag_name'        => $tag_name,
+        'normalized_tag'  => $normalized_tag,
+        'release_url'     => $release_url,
+        'published_at'    => $published_at,
+        'release_age_hours' => $release_age_hours,
+        'package_url'     => $package,
+        'asset_name'      => $asset_name,
+        'package_valid'   => $package_valid,
+        'update_available' => $update_available,
+        'release_cached'  => $cached,
+        'checks'          => $checks,
+        'status'          => tk_github_get_stored_status(),
+    );
+}
+
 function tk_github_upgrader_pre_download($reply, $package, $upgrader, $hook_extra) {
     if (!is_array($hook_extra) || !tk_github_is_target_upgrade($hook_extra)) {
         return $reply;
@@ -495,8 +591,7 @@ function tk_github_check_now_handler(): void {
 
     delete_transient('tk_github_latest_release');
     delete_site_transient('update_plugins');
-    delete_transient('tk_github_updater_status');
-    delete_option('tk_github_updater_status');
+    tk_github_clear_stored_status();
 
     wp_clean_plugins_cache(true);
     wp_update_plugins();
@@ -506,6 +601,27 @@ function tk_github_check_now_handler(): void {
             'tk_update_checked' => '1',
         ),
         admin_url('plugins.php')
+    );
+
+    wp_safe_redirect($redirect);
+    exit;
+}
+
+function tk_github_clear_status_handler(): void {
+    if (!current_user_can('update_plugins')) {
+        wp_die('Forbidden');
+    }
+
+    check_admin_referer('tk_github_clear_status');
+
+    tk_github_clear_stored_status();
+
+    $redirect = add_query_arg(
+        array(
+            'page'                    => 'tool-kits-diagnostics',
+            'tk_github_status_cleared' => '1',
+        ),
+        admin_url('admin.php')
     );
 
     wp_safe_redirect($redirect);

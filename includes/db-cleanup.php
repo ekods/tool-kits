@@ -9,6 +9,44 @@ function tk_render_db_cleanup_page() {
     tk_render_db_tools_page();
 }
 
+function tk_db_cleanup_status_message(): string {
+    $summary = get_transient('tk_db_cleanup_last_summary');
+    if (!is_array($summary)) {
+        return '';
+    }
+
+    $parts = array();
+
+    $map = array(
+        'revisions'        => 'revisions deleted',
+        'trash_posts'      => 'trash posts deleted',
+        'spam_comments'    => 'spam comments deleted',
+        'spam_commentmeta' => 'orphaned spam commentmeta deleted',
+        'trash_comments'   => 'trash comments deleted',
+        'trash_commentmeta'=> 'orphaned trash commentmeta deleted',
+        'transients'       => 'transients deleted',
+    );
+
+    foreach ($map as $key => $label) {
+        if (!isset($summary[$key])) {
+            continue;
+        }
+        $parts[] = ((int) $summary[$key]) . ' ' . $label;
+    }
+
+    if (!empty($summary['optimized_tables'])) {
+        $parts[] = ((int) $summary['optimized_tables']) . ' tables optimized';
+    }
+
+    delete_transient('tk_db_cleanup_last_summary');
+
+    if (empty($parts)) {
+        return 'Cleanup selesai, tetapi tidak ada perubahan yang dilaporkan.';
+    }
+
+    return 'Cleanup selesai: ' . implode('; ', $parts) . '.';
+}
+
 function tk_render_db_cleanup_panel() {
     if (!tk_is_admin_user()) return;
     global $wpdb;
@@ -25,7 +63,11 @@ function tk_render_db_cleanup_panel() {
     ?>
     <?php
     if (isset($_GET['tk_done'])) {
-        tk_notice('Cleanup selesai. Optimasi tabel dijalankan juga.', 'success');
+        $message = tk_db_cleanup_status_message();
+        if ($message === '') {
+            $message = 'Cleanup selesai.';
+        }
+        tk_notice($message, 'success');
     }
     ?>
 
@@ -40,7 +82,7 @@ function tk_render_db_cleanup_panel() {
             <li>Transients: <strong><?php echo esc_html($counts['transients']); ?></strong></li>
         </ul>
 
-        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-confirm="Jalankan cleanup? Pastikan backup dulu jika perlu.">
             <?php tk_nonce_field('tk_db_cleanup_run'); ?>
             <input type="hidden" name="action" value="tk_db_cleanup_run">
 
@@ -51,15 +93,14 @@ function tk_render_db_cleanup_panel() {
             <label><input type="checkbox" name="do_transients" value="1" checked> Delete transients</label><br>
             <label><input type="checkbox" name="do_optimize" value="1" checked> Optimize tables</label>
 
-            <p><button class="button button-primary" onclick="return confirm('Jalankan cleanup? Pastikan backup dulu jika perlu.')">Run Cleanup</button></p>
+            <p><button class="button button-primary">Run Cleanup</button></p>
         </form>
     </div>
     <?php
 }
 
 function tk_db_cleanup_run_handler() {
-    if (!tk_is_admin_user()) wp_die('Forbidden');
-    tk_check_nonce('tk_db_cleanup_run');
+    tk_require_admin_post('tk_db_cleanup_run');
 
     global $wpdb;
 
@@ -69,34 +110,56 @@ function tk_db_cleanup_run_handler() {
     $do_trash_comments = !empty($_POST['do_trash_comments']);
     $do_transients = !empty($_POST['do_transients']);
     $do_optimize = !empty($_POST['do_optimize']);
+    $summary = array(
+        'revisions'         => 0,
+        'trash_posts'       => 0,
+        'spam_comments'     => 0,
+        'spam_commentmeta'  => 0,
+        'trash_comments'    => 0,
+        'trash_commentmeta' => 0,
+        'transients'        => 0,
+        'optimized_tables'  => 0,
+    );
 
     @set_time_limit(0);
 
     if ($do_revisions) {
-        $wpdb->query("DELETE FROM {$wpdb->posts} WHERE post_type = 'revision'");
+        $result = $wpdb->query("DELETE FROM {$wpdb->posts} WHERE post_type = 'revision'");
+        $summary['revisions'] = $result !== false ? (int) $result : 0;
     }
     if ($do_trash_posts) {
-        $wpdb->query("DELETE FROM {$wpdb->posts} WHERE post_status = 'trash'");
+        $result = $wpdb->query("DELETE FROM {$wpdb->posts} WHERE post_status = 'trash'");
+        $summary['trash_posts'] = $result !== false ? (int) $result : 0;
     }
     if ($do_spam_comments) {
-        $wpdb->query("DELETE FROM {$wpdb->comments} WHERE comment_approved = 'spam'");
-        $wpdb->query("DELETE FROM {$wpdb->commentmeta} WHERE comment_id NOT IN (SELECT comment_ID FROM {$wpdb->comments})");
+        $result = $wpdb->query("DELETE FROM {$wpdb->comments} WHERE comment_approved = 'spam'");
+        $summary['spam_comments'] = $result !== false ? (int) $result : 0;
+        $result = $wpdb->query("DELETE FROM {$wpdb->commentmeta} WHERE comment_id NOT IN (SELECT comment_ID FROM {$wpdb->comments})");
+        $summary['spam_commentmeta'] = $result !== false ? (int) $result : 0;
     }
     if ($do_trash_comments) {
-        $wpdb->query("DELETE FROM {$wpdb->comments} WHERE comment_approved = 'trash'");
-        $wpdb->query("DELETE FROM {$wpdb->commentmeta} WHERE comment_id NOT IN (SELECT comment_ID FROM {$wpdb->comments})");
+        $result = $wpdb->query("DELETE FROM {$wpdb->comments} WHERE comment_approved = 'trash'");
+        $summary['trash_comments'] = $result !== false ? (int) $result : 0;
+        $result = $wpdb->query("DELETE FROM {$wpdb->commentmeta} WHERE comment_id NOT IN (SELECT comment_ID FROM {$wpdb->comments})");
+        $summary['trash_commentmeta'] = $result !== false ? (int) $result : 0;
     }
     if ($do_transients) {
-        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_%' OR option_name LIKE '_site_transient_%'");
+        $result = $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_%' OR option_name LIKE '_site_transient_%'");
+        $summary['transients'] = $result !== false ? (int) $result : 0;
     }
 
     if ($do_optimize) {
         $tables = $wpdb->get_col("SHOW TABLES");
         foreach ($tables as $t) {
-            $wpdb->query("OPTIMIZE TABLE `$t`");
+            $result = $wpdb->query("OPTIMIZE TABLE `$t`");
+            if ($result !== false) {
+                $summary['optimized_tables']++;
+            }
         }
     }
 
-    wp_redirect(add_query_arg(array('page'=>'tool-kits-db','tk_tab'=>'db-cleanup','tk_done'=>1), admin_url('admin.php')));
+    set_transient('tk_db_cleanup_last_summary', $summary, MINUTE_IN_SECONDS * 10);
+
+    wp_safe_redirect(add_query_arg(array('page'=>'tool-kits-db','tk_tab'=>'db-cleanup','tk_done'=>1), admin_url('admin.php')));
     exit;
 }

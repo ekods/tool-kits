@@ -602,6 +602,80 @@ function tk_db_render_pairs_summary(array $pairs): void {
     echo '</ul></div>';
 }
 
+function tk_db_import_status_message(): string {
+    $summary = get_transient('tk_db_import_last_summary');
+    if (!is_array($summary)) {
+        return '';
+    }
+
+    delete_transient('tk_db_import_last_summary');
+
+    $message = isset($summary['message']) ? (string) $summary['message'] : '';
+    $file_name = isset($summary['file_name']) ? (string) $summary['file_name'] : '';
+
+    if ($message === '') {
+        return '';
+    }
+
+    if ($file_name !== '') {
+        $message .= ' File: ' . $file_name . '.';
+    }
+
+    return $message;
+}
+
+function tk_db_prefix_status_message(): string {
+    $summary = get_transient('tk_db_prefix_last_summary');
+    if (!is_array($summary)) {
+        return '';
+    }
+
+    delete_transient('tk_db_prefix_last_summary');
+
+    $old_prefix = isset($summary['old_prefix']) ? (string) $summary['old_prefix'] : '';
+    $new_prefix = isset($summary['new_prefix']) ? (string) $summary['new_prefix'] : '';
+    $renamed_tables = isset($summary['renamed_tables']) ? (int) $summary['renamed_tables'] : 0;
+    $updated_columns = isset($summary['updated_columns']) ? (int) $summary['updated_columns'] : 0;
+
+    if ($old_prefix === '' || $new_prefix === '') {
+        return '';
+    }
+
+    return sprintf(
+        'Prefix renamed from %s to %s. %d tables renamed; %d metadata columns updated. Update wp-config.php accordingly.',
+        $old_prefix,
+        $new_prefix,
+        $renamed_tables,
+        $updated_columns
+    );
+}
+
+function tk_db_prefix_error_message(string $error_code, string $error_detail = ''): string {
+    switch ($error_code) {
+        case 'prefix_empty':
+            return 'New prefix is required.';
+        case 'prefix_same':
+            return 'New prefix must be different from the current prefix.';
+        case 'no_tables':
+            return 'No tables were found for the current prefix.';
+        case 'backup_failed':
+            return $error_detail !== '' ? 'Backup failed before renaming prefix: ' . $error_detail : 'Backup failed before renaming prefix.';
+        case 'rename_failed':
+            return $error_detail !== '' ? 'Failed to rename the database prefix: ' . $error_detail : 'Failed to rename the database prefix.';
+        default:
+            return $error_detail;
+    }
+}
+
+function tk_db_export_error_message(string $error_code, string $error_detail = ''): string {
+    switch ($error_code) {
+        case 'export_failed':
+            return $error_detail !== '' ? 'Failed to prepare export download: ' . $error_detail : 'Failed to prepare export download.';
+        default:
+            return $error_detail;
+    }
+}
+
 function tk_render_db_tools_page() {
     if (!tk_is_admin_user()) return;
 
@@ -609,15 +683,25 @@ function tk_render_db_tools_page() {
     $export_token = isset($_GET['tk_export_token']) ? sanitize_text_field((string) $_GET['tk_export_token']) : '';
     $export_name = isset($_GET['tk_export_name']) ? sanitize_file_name($_GET['tk_export_name']) : '';
     $tk_msg = isset($_GET['tk_msg']) ? sanitize_text_field((string) $_GET['tk_msg']) : '';
+    $tk_error_code = isset($_GET['tk_err']) ? sanitize_key((string) $_GET['tk_err']) : '';
+    $tk_error_msg = isset($_GET['tk_err_msg']) ? sanitize_text_field((string) $_GET['tk_err_msg']) : '';
     $prefix_msg = isset($_GET['tk_prefix_msg']) ? sanitize_text_field((string) $_GET['tk_prefix_msg']) : '';
+    $prefix_error_code = isset($_GET['tk_err']) ? sanitize_key((string) $_GET['tk_err']) : '';
+    $prefix_error_msg = isset($_GET['tk_err_msg']) ? sanitize_text_field((string) $_GET['tk_err_msg']) : '';
     $import_msg = isset($_GET['tk_import_msg']) ? sanitize_text_field((string) $_GET['tk_import_msg']) : '';
     $import_status = isset($_GET['tk_import_status']) ? sanitize_key((string) $_GET['tk_import_status']) : '';
+    if ($import_msg === '' && $import_status !== '') {
+        $import_msg = tk_db_import_status_message();
+    }
     $local_prod_msg = isset($_GET['tk_local_prod_msg']) ? sanitize_text_field((string) $_GET['tk_local_prod_msg']) : '';
     $local_prod_status = isset($_GET['tk_local_prod_status']) ? sanitize_key((string) $_GET['tk_local_prod_status']) : '';
     $local_prod_export_token = isset($_GET['tk_local_prod_token']) ? sanitize_text_field((string) $_GET['tk_local_prod_token']) : '';
     $local_prod_export_name = isset($_GET['tk_local_prod_name']) ? sanitize_file_name((string) $_GET['tk_local_prod_name']) : '';
     $backup_token = isset($_GET['tk_backup_token']) ? sanitize_text_field((string) $_GET['tk_backup_token']) : '';
     $backup_name = isset($_GET['tk_backup_name']) ? sanitize_file_name((string) $_GET['tk_backup_name']) : '';
+    if ($prefix_msg === '' && isset($_GET['tk_ok']) && (string) $_GET['tk_ok'] === '1') {
+        $prefix_msg = tk_db_prefix_status_message();
+    }
     $suggested_prefix = tk_db_random_prefix();
     $pairs_for_render = tk_db_get_saved_pairs();
     if (empty($pairs_for_render)) {
@@ -660,6 +744,15 @@ function tk_render_db_tools_page() {
                     <h2>2) Export Download (Preload temporary DB)</h2>
                     <p>Create a temporary export with serialized-safe find/replace pairs and download it immediately.</p>
                     <?php tk_db_render_pairs_summary($pairs_for_render); ?>
+                    <?php
+                    $export_error_notice = '';
+                    if ($active_tab === 'preload-export' && $tk_error_code !== '') {
+                        $export_error_notice = tk_db_export_error_message($tk_error_code, $tk_error_msg);
+                    }
+                    if ($export_error_notice !== '') :
+                    ?>
+                        <?php tk_notice($export_error_notice, 'error'); ?>
+                    <?php endif; ?>
                     <?php if ($export_token && $export_name) : ?>
                         <?php $download_url = admin_url('admin-post.php?action=tk_db_download_temp_export&token=' . urlencode($export_token)); ?>
                         <p class="description">
@@ -674,7 +767,7 @@ function tk_render_db_tools_page() {
                         <input type="hidden" name="action" value="tk_db_run_replace">
                         <input type="hidden" name="tk_tab" value="preload-export">
                         <?php tk_db_render_pairs_table($pairs_for_render, 'tk-run-pairs', 'pairs_find', 'pairs_replace', tk_db_default_pairs()); ?>
-                        <p><button class="button button-primary" onclick="return confirm('Run the find/replace pairs and prepare a temporary export now? Ensure the database is backed up or already exported.')">Export</button></p>
+                        <p><button class="button button-primary" data-confirm="Run the find/replace pairs and prepare a temporary export now? Ensure the database is backed up or already exported.">Export</button></p>
                     </form>
                 </div>
                 <div class="tk-card tk-tab-panel<?php echo $active_tab === 'local-to-prod' ? ' is-active' : ''; ?>" data-panel-id="local-to-prod">
@@ -709,7 +802,7 @@ function tk_render_db_tools_page() {
                             <label><strong>Production Absolute Path (optional)</strong></label><br>
                             <input class="regular-text" type="text" name="production_site_path" value="<?php echo esc_attr($saved_prod_path); ?>" placeholder="/home/user/public_html">
                         </p>
-                        <p><button class="button button-primary" onclick="return confirm('Create migration export for production now?')">Generate Local -> Prod Export</button></p>
+                        <p><button class="button button-primary" data-confirm="Create migration export for production now?">Generate Local -> Prod Export</button></p>
                     </form>
                     <p class="description">Recommended flow: generate export here on local, download it, then import via the Import Database tab on production.</p>
                 </div>
@@ -726,7 +819,7 @@ function tk_render_db_tools_page() {
                         <p>
                             <input type="file" name="sql_file" accept=".sql,.gz" required>
                         </p>
-                        <p><button class="button button-primary" onclick="return confirm('Importing will overwrite data in the database. Continue?')">Import SQL</button></p>
+                        <p><button class="button button-primary" data-confirm="Importing will overwrite data in the database. Continue?">Import SQL</button></p>
                     </form>
                     <p class="description">Tip: For large files, use WP-CLI or phpMyAdmin if this times out.</p>
                 </div>
@@ -734,8 +827,17 @@ function tk_render_db_tools_page() {
                     <h2>5) Change DB Prefix (Rename Tables)</h2>
                     <p>Rename tables from <code><?php global $wpdb; echo esc_html($wpdb->prefix); ?></code> to a new prefix.
                     This updates <code>options</code> and <code>usermeta</code> keys, but please edit <code>$table_prefix</code> in <code>wp-config.php</code> manually afterward.</p>
+                    <?php
+                    $prefix_error_notice = '';
+                    if ($active_tab === 'change-prefix' && $prefix_error_code !== '') {
+                        $prefix_error_notice = tk_db_prefix_error_message($prefix_error_code, $prefix_error_msg);
+                    }
+                    if ($prefix_error_notice !== '') :
+                    ?>
+                        <?php tk_notice($prefix_error_notice, 'error'); ?>
+                    <?php endif; ?>
                     <?php if ($prefix_msg) : ?>
-                        <p class="description"><?php echo esc_html($prefix_msg); ?></p>
+                        <?php tk_notice($prefix_msg, 'success'); ?>
                     <?php endif; ?>
                     <?php if ($backup_token && $backup_name) : ?>
                         <?php $download_url = admin_url('admin-post.php?action=tk_db_download_temp_export&token=' . urlencode($backup_token)); ?>
@@ -761,7 +863,7 @@ function tk_render_db_tools_page() {
                         <label><strong>New Prefix</strong></label>
                         <input class="regular-text" type="text" id="tk-prefix-input" name="new_prefix" value="<?php echo esc_attr($new_prefix); ?>" placeholder="abc_" required>
 
-                        <p><button class="button button-primary" onclick="return confirm('This is a risky operation. Backup first, then proceed with renaming the prefix?')">Rename Prefix</button></p>
+                        <p><button class="button button-primary" data-confirm="This is a risky operation. Backup first, then proceed with renaming the prefix?">Rename Prefix</button></p>
                     </form>
 
                     <p class="description">Tip: After renaming, update <code>wp-config.php</code>:
@@ -880,8 +982,7 @@ function tk_render_db_migrate_page() {
 }
 
 function tk_db_export_handler() {
-    if (!tk_is_admin_user()) wp_die('Forbidden');
-    tk_check_nonce('tk_db_export');
+    tk_require_admin_post('tk_db_export');
     global $wpdb;
 
     @set_time_limit(0);
@@ -945,11 +1046,10 @@ function tk_db_export_handler() {
 }
 
 function tk_db_import_handler() {
-    if (!tk_is_admin_user()) wp_die('Forbidden');
-    tk_check_nonce('tk_db_import');
+    tk_require_admin_post('tk_db_import');
 
     if (empty($_FILES['sql_file']) || !is_array($_FILES['sql_file'])) {
-        wp_redirect(add_query_arg(array(
+        wp_safe_redirect(add_query_arg(array(
             'page' => 'tool-kits-db',
             'tk_tab' => 'import-db',
             'tk_import_status' => 'fail',
@@ -960,7 +1060,7 @@ function tk_db_import_handler() {
 
     $file = $_FILES['sql_file'];
     if (!empty($file['error'])) {
-        wp_redirect(add_query_arg(array(
+        wp_safe_redirect(add_query_arg(array(
             'page' => 'tool-kits-db',
             'tk_tab' => 'import-db',
             'tk_import_status' => 'fail',
@@ -978,7 +1078,7 @@ function tk_db_import_handler() {
         'mimes' => $mimes,
     ));
     if (isset($uploaded['error'])) {
-        wp_redirect(add_query_arg(array(
+        wp_safe_redirect(add_query_arg(array(
             'page' => 'tool-kits-db',
             'tk_tab' => 'import-db',
             'tk_import_status' => 'fail',
@@ -988,13 +1088,19 @@ function tk_db_import_handler() {
     }
 
     $path = isset($uploaded['file']) ? (string) $uploaded['file'] : '';
+    $file_name = $path !== '' ? basename($path) : '';
     $result = tk_db_import_sql_file($path);
     if ($path !== '' && file_exists($path)) {
         @unlink($path);
     }
     $msg = $result['message'] ?? 'Import complete.';
     $status = !empty($result['ok']) ? 'ok' : 'fail';
-    wp_redirect(add_query_arg(array(
+    set_transient('tk_db_import_last_summary', array(
+        'status'    => $status,
+        'message'   => $msg,
+        'file_name' => $file_name,
+    ), MINUTE_IN_SECONDS * 10);
+    wp_safe_redirect(add_query_arg(array(
         'page' => 'tool-kits-db',
         'tk_tab' => 'import-db',
         'tk_import_status' => $status,
@@ -1106,15 +1212,14 @@ function tk_db_download_temp_export_handler() {
 }
 
 function tk_db_run_find_replace_handler() {
-    if (!tk_is_admin_user()) wp_die('Forbidden');
-    tk_check_nonce('tk_db_run_replace');
+    tk_require_admin_post('tk_db_run_replace');
 
     $pairs = tk_db_collect_pairs_from_request();
     tk_db_save_pairs($pairs);
     $result = tk_db_export_with_pairs($pairs);
 
     if (!$result['ok']) {
-        wp_redirect(add_query_arg(array(
+        wp_safe_redirect(add_query_arg(array(
             'page' => 'tool-kits-db',
             'tk_err' => 'export_failed',
             'tk_err_msg' => $result['message'],
@@ -1123,7 +1228,7 @@ function tk_db_run_find_replace_handler() {
         exit;
     }
 
-    wp_redirect(add_query_arg(array(
+    wp_safe_redirect(add_query_arg(array(
         'page' => 'tool-kits-db',
         'tk_export_token' => $result['token'],
         'tk_ok' => 1,
@@ -1135,8 +1240,7 @@ function tk_db_run_find_replace_handler() {
 }
 
 function tk_db_export_local_prod_handler() {
-    if (!tk_is_admin_user()) wp_die('Forbidden');
-    tk_check_nonce('tk_db_export_local_prod');
+    tk_require_admin_post('tk_db_export_local_prod');
 
     $local_site_url = trim((string) tk_post('local_site_url', home_url('/')));
     $production_site_url = trim((string) tk_post('production_site_url', ''));
@@ -1144,7 +1248,7 @@ function tk_db_export_local_prod_handler() {
     $production_site_path = trim((string) tk_post('production_site_path', ''));
 
     if ($production_site_url === '') {
-        wp_redirect(add_query_arg(array(
+        wp_safe_redirect(add_query_arg(array(
             'page' => 'tool-kits-db',
             'tk_tab' => 'local-to-prod',
             'tk_local_prod_status' => 'fail',
@@ -1155,7 +1259,7 @@ function tk_db_export_local_prod_handler() {
 
     $pairs = tk_db_local_prod_build_pairs($local_site_url, $production_site_url, $local_site_path, $production_site_path);
     if (empty($pairs)) {
-        wp_redirect(add_query_arg(array(
+        wp_safe_redirect(add_query_arg(array(
             'page' => 'tool-kits-db',
             'tk_tab' => 'local-to-prod',
             'tk_local_prod_status' => 'fail',
@@ -1170,7 +1274,7 @@ function tk_db_export_local_prod_handler() {
     $result = tk_db_export_with_pairs($pairs);
     if (empty($result['ok'])) {
         $message = isset($result['message']) ? (string) $result['message'] : 'Failed to create migration export.';
-        wp_redirect(add_query_arg(array(
+        wp_safe_redirect(add_query_arg(array(
             'page' => 'tool-kits-db',
             'tk_tab' => 'local-to-prod',
             'tk_local_prod_status' => 'fail',
@@ -1179,7 +1283,7 @@ function tk_db_export_local_prod_handler() {
         exit;
     }
 
-    wp_redirect(add_query_arg(array(
+    wp_safe_redirect(add_query_arg(array(
         'page' => 'tool-kits-db',
         'tk_tab' => 'local-to-prod',
         'tk_local_prod_status' => 'ok',
@@ -1191,21 +1295,20 @@ function tk_db_export_local_prod_handler() {
 }
 
 function tk_db_change_prefix_handler() {
-    if (!tk_is_admin_user()) wp_die('Forbidden');
-    tk_check_nonce('tk_db_change_prefix');
+    tk_require_admin_post('tk_db_change_prefix');
     global $wpdb;
 
     $new = tk_post('new_prefix');
     $new = preg_replace('/[^a-zA-Z0-9_]/', '', $new);
 
     if ($new === '') {
-        wp_redirect(add_query_arg(array('page'=>'tool-kits-db','tk_err'=>'prefix_empty','tk_tab'=>'change-prefix'), admin_url('admin.php')));
+        wp_safe_redirect(add_query_arg(array('page'=>'tool-kits-db','tk_err'=>'prefix_empty','tk_tab'=>'change-prefix'), admin_url('admin.php')));
         exit;
     }
 
     $old = $wpdb->prefix;
     if ($new === $old) {
-        wp_redirect(add_query_arg(array('page'=>'tool-kits-db','tk_err'=>'prefix_same','tk_tab'=>'change-prefix'), admin_url('admin.php')));
+        wp_safe_redirect(add_query_arg(array('page'=>'tool-kits-db','tk_err'=>'prefix_same','tk_tab'=>'change-prefix'), admin_url('admin.php')));
         exit;
     }
 
@@ -1213,14 +1316,14 @@ function tk_db_change_prefix_handler() {
 
     $tables = $wpdb->get_col("SHOW TABLES LIKE '{$old}%'");
     if (empty($tables)) {
-        wp_redirect(add_query_arg(array('page'=>'tool-kits-db','tk_err'=>'no_tables','tk_tab'=>'change-prefix'), admin_url('admin.php')));
+        wp_safe_redirect(add_query_arg(array('page'=>'tool-kits-db','tk_err'=>'no_tables','tk_tab'=>'change-prefix'), admin_url('admin.php')));
         exit;
     }
 
     $backup = tk_db_export_with_pairs(array());
     if (empty($backup['ok'])) {
         $msg = isset($backup['message']) ? (string) $backup['message'] : 'Backup failed.';
-        wp_redirect(add_query_arg(array(
+        wp_safe_redirect(add_query_arg(array(
             'page'=>'tool-kits-db',
             'tk_err'=>'backup_failed',
             'tk_err_msg'=>$msg,
@@ -1235,6 +1338,7 @@ function tk_db_change_prefix_handler() {
     $wpdb->query('START TRANSACTION');
     $errors = array();
     $renamed = array();
+    $updated_columns = 0;
 
     foreach ($tables as $table) {
         $suffix = substr($table, strlen($old));
@@ -1276,6 +1380,7 @@ function tk_db_change_prefix_handler() {
                 $errors[] = $wpdb->last_error;
                 break;
             }
+            $updated_columns++;
         }
     }
 
@@ -1288,7 +1393,7 @@ function tk_db_change_prefix_handler() {
         }
         $wpdb->query('ROLLBACK');
         $msg = implode('; ', $errors);
-        wp_redirect(add_query_arg(array(
+        wp_safe_redirect(add_query_arg(array(
             'page'=>'tool-kits-db',
             'tk_err'=>'rename_failed',
             'tk_err_msg'=>$msg,
@@ -1300,8 +1405,14 @@ function tk_db_change_prefix_handler() {
     }
 
     $wpdb->query('COMMIT');
+    set_transient('tk_db_prefix_last_summary', array(
+        'old_prefix'      => $old,
+        'new_prefix'      => $new,
+        'renamed_tables'  => count($renamed),
+        'updated_columns' => $updated_columns,
+    ), MINUTE_IN_SECONDS * 10);
 
-    wp_redirect(add_query_arg(array(
+    wp_safe_redirect(add_query_arg(array(
         'page'=>'tool-kits-db',
         'tk_ok' => 1,
         'tk_prefix_msg' => 'Prefix renamed; update wp-config.php accordingly.',

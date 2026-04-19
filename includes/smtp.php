@@ -498,10 +498,7 @@ Mail Service</textarea>
 }
 
 function tk_smtp_save() {
-    if (!tk_is_admin_user()) {
-        wp_die('Forbidden');
-    }
-    tk_check_nonce('tk_smtp_save');
+    tk_require_admin_post('tk_smtp_save');
 
     $presets = tk_smtp_provider_presets();
     $provider = isset($_POST['smtp_provider']) ? sanitize_key(wp_unslash($_POST['smtp_provider'])) : 'gmail';
@@ -554,15 +551,12 @@ function tk_smtp_save() {
     tk_update_option('smtp_return_path', !empty($_POST['smtp_return_path']) ? 1 : 0);
 
     $redirect = add_query_arg(array('page'=>'tool-kits-smtp','tk_saved'=>1), admin_url('admin.php'));
-    wp_redirect($redirect);
+    wp_safe_redirect($redirect);
     exit;
 }
 
 function tk_smtp_test_send() {
-    if (!tk_is_admin_user()) {
-        wp_die('Forbidden');
-    }
-    tk_check_nonce('tk_smtp_test');
+    tk_require_admin_post('tk_smtp_test');
 
     $recipient = isset($_POST['smtp_test_email']) ? sanitize_email(wp_unslash($_POST['smtp_test_email'])) : '';
     if ($recipient === '' || !is_email($recipient)) {
@@ -570,7 +564,7 @@ function tk_smtp_test_send() {
             'page' => 'tool-kits-smtp',
             'tk_smtp_test' => 'invalid',
         ), admin_url('admin.php'));
-        wp_redirect($redirect);
+        wp_safe_redirect($redirect);
         exit;
     }
 

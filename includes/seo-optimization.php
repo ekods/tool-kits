@@ -1335,7 +1335,7 @@ function tk_render_seo_opt_panel() {
 }
 
 function tk_seo_opt_save() {
-    tk_check_nonce('tk_seo_opt_save');
+    tk_require_admin_post('tk_seo_opt_save');
     tk_update_option('seo_enabled', !empty($_POST['seo_enabled']) ? 1 : 0);
     tk_update_option('seo_meta_desc_enabled', !empty($_POST['seo_meta_desc_enabled']) ? 1 : 0);
     tk_update_option('seo_canonical_enabled', !empty($_POST['seo_canonical_enabled']) ? 1 : 0);
@@ -1355,6 +1355,6 @@ function tk_seo_opt_save() {
     tk_update_option('seo_sitemap_include_taxonomies', !empty($_POST['seo_sitemap_include_taxonomies']) ? 1 : 0);
     tk_update_option('seo_sitemap_include_images', !empty($_POST['seo_sitemap_include_images']) ? 1 : 0);
 
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }

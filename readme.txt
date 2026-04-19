@@ -3,11 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-<<<<<<< Updated upstream
-Stable tag: 2.1.3
-=======
-Stable tag: 2.1.4
->>>>>>> Stashed changes
+Stable tag: 2.1.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -64,6 +60,15 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.1.5 =
+- Sync plugin metadata with the current plugin version.
+- Improve GitHub updater diagnostics and release-package validation workflow.
+
+= 2.1.4 =
+- Add heartbeat collector integration improvements with hide-login slug/URL reporting.
+- Add hardening controls for HSTS, strict CSP, server signature suppression, secure cookies, WP-Cron, URL parameter guard, HTTP method filtering, robots.txt, and unwanted-file blocking.
+- Add monitoring check for risky public DB host exposure indicators.
+
 = 2.1.3 =
 - Fix updater version parsing for release tags that start with uppercase `V`.
 - Continue preferring clean tag archives and clean packaged ZIP assets for updates.
@@ -72,11 +77,6 @@ Filters to adjust CORS by environment (optional example):
 - Fix GitHub updater package selection to prefer clean tag archives.
 - Exclude macOS metadata and build artifacts from release packaging.
 
-= Unreleased =
-- Hardening: tambah HSTS toggle, strict CSP, hide server signature header, force HttpOnly/Secure cookies.
-- Hardening: tambah disable WP-Cron, URL parameter guard, HTTP method filtering, dan block dangerous methods (PUT/DELETE/TRACE/CONNECT).
-- Hardening: tambah robots.txt minimal policy dan block direct access unwanted filenames.
-- Monitoring: tambah check risiko DB host publik (indikasi eksposur MySQL port 3306).
 = 2.0.4 =
 - Sync plugin metadata with the current release version.
 - Prefer tagged GitHub release archives when no `tool-kits.zip` asset is attached.

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.1.5
+ * Version: 2.1.6
  * Update URI: https://github.com/ekods/tool-kits
  * Author: Eko Dwi Saputro
  * License: GPLv2 or later
@@ -11,7 +11,7 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-define('TK_VERSION', '2.1.5');
+define('TK_VERSION', '2.1.6');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
@@ -136,3 +136,4 @@ add_action('admin_enqueue_scripts', function($hook) {
     }
 });
 add_action('admin_footer', 'tk_toolkits_mask_fields_script');
+add_action('admin_footer', 'tk_toolkits_confirm_actions_script');

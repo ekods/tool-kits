@@ -379,13 +379,13 @@ function tk_render_minify_panel() {
 }
 
 function tk_minify_save() {
-    tk_check_nonce('tk_minify_save');
+    tk_require_admin_post('tk_minify_save');
 
     tk_update_option('minify_html_enabled', !empty($_POST['minify_html_enabled']) ? 1 : 0);
     tk_update_option('minify_inline_css', !empty($_POST['minify_inline_css']) ? 1 : 0);
     tk_update_option('minify_inline_js', !empty($_POST['minify_inline_js']) ? 1 : 0);
     tk_update_option('minify_assets_enabled', !empty($_POST['minify_assets_enabled']) ? 1 : 0);
 
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'minify', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'minify', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }

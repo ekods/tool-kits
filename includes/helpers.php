@@ -866,6 +866,14 @@ function tk_check_nonce($action) {
     }
 }
 
+function tk_require_admin_post(string $nonce_action): void {
+    if (!tk_is_admin_user()) {
+        wp_die('Forbidden');
+    }
+
+    tk_check_nonce($nonce_action);
+}
+
 function tk_notice($message, $type = 'success') {
     $type = in_array($type, array('success','info','warning','error'), true) ? $type : 'success';
     printf('<div class="notice notice-%s is-dismissible"><p>%s</p></div>', esc_attr($type), wp_kses_post($message));
@@ -1497,6 +1505,41 @@ function tk_toolkits_mask_fields_script(): void {
             });
         })();",
         array('id' => 'tk-mask-sensitive-fields')
+    );
+}
+
+function tk_toolkits_confirm_actions_script(): void {
+    if (!is_admin()) {
+        return;
+    }
+
+    $page = isset($_GET['page']) ? sanitize_key($_GET['page']) : '';
+    if ($page === '' || strpos($page, 'tool-kits') !== 0) {
+        return;
+    }
+
+    tk_csp_print_inline_script(
+        "(function(){
+            document.addEventListener('submit', function(event){
+                var form = event.target;
+                if (!form || form.nodeName !== 'FORM') {
+                    return;
+                }
+                var trigger = document.activeElement;
+                var message = '';
+
+                if (trigger && form.contains(trigger) && trigger.hasAttribute('data-confirm')) {
+                    message = trigger.getAttribute('data-confirm') || '';
+                } else if (form.hasAttribute('data-confirm')) {
+                    message = form.getAttribute('data-confirm') || '';
+                }
+
+                if (message && !window.confirm(message)) {
+                    event.preventDefault();
+                }
+            }, true);
+        })();",
+        array('id' => 'tk-confirm-actions')
     );
 }
 

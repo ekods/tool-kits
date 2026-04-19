@@ -55,6 +55,7 @@ function tk_register_admin_menus() {
             add_submenu_page('tool-kits', __('Hardening', 'tool-kits'), __('Hardening', 'tool-kits'), 'manage_options', tk_hardening_page_slug(), 'tk_render_hardening_page');
             add_submenu_page('tool-kits', __('SMTP', 'tool-kits'), __('SMTP', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-smtp', 'tk_render_smtp_page');
             add_submenu_page('tool-kits', __('Monitoring', 'tool-kits'), __('Monitoring', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-monitoring', 'tk_render_monitoring_page');
+            add_submenu_page('tool-kits', __('Diagnostics', 'tool-kits'), __('Diagnostics', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-diagnostics', 'tk_render_diagnostics_page');
             add_submenu_page('tool-kits', __('Cache', 'tool-kits'), __('Cache', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-cache', 'tk_render_cache_page');
             add_submenu_page('tool-kits', __('Themes Checker', 'tool-kits'), __('Themes Checker', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-theme-checker', 'tk_render_theme_checker_page');
         } else {
@@ -62,6 +63,7 @@ function tk_register_admin_menus() {
             add_submenu_page('tool-kits', __('Optimization', 'tool-kits'), __('Optimization', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-optimization', 'tk_render_optimization_page');
             add_submenu_page('tool-kits', __('SMTP', 'tool-kits'), __('SMTP', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-smtp', 'tk_render_smtp_page');
             add_submenu_page('tool-kits', __('Monitoring', 'tool-kits'), __('Monitoring', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-monitoring', 'tk_render_monitoring_page');
+            add_submenu_page('tool-kits', __('Diagnostics', 'tool-kits'), __('Diagnostics', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-diagnostics', 'tk_render_diagnostics_page');
             add_submenu_page('tool-kits', __('Cache', 'tool-kits'), __('Cache', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-cache', 'tk_render_cache_page');
         }
     }
@@ -69,6 +71,7 @@ function tk_register_admin_menus() {
     add_submenu_page('tools.php', __('Tool Kits Access', 'tool-kits'), __('Tool Kits Access', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-access', 'tk_render_toolkits_access_page');
     if (!$license_valid) {
         add_submenu_page('tools.php', __('Database', 'tool-kits'), __('Database', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
+        add_submenu_page('tools.php', __('Diagnostics', 'tool-kits'), __('Diagnostics', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-diagnostics', 'tk_render_diagnostics_page');
     }
     // Hidden legacy pages for direct links.
     if ($allow_full) {
@@ -723,6 +726,188 @@ function tk_render_overview_page() {
                     </tr>
                 </tbody>
             </table>
+        </div>
+        <div class="tk-card" style="margin-top:24px;">
+            <h2>Diagnostics</h2>
+            <p class="description">Review updater status, GitHub release cache, and package details before troubleshooting update failures.</p>
+            <p><a class="button button-secondary" href="<?php echo esc_url(tk_admin_url('tool-kits-diagnostics')); ?>">Open Diagnostics</a></p>
+        </div>
+    </div>
+    <?php
+}
+
+function tk_render_diagnostics_page() {
+    if (!tk_is_admin_user()) return;
+
+    $diagnostics = function_exists('tk_github_get_diagnostics') ? tk_github_get_diagnostics() : array();
+    $status = isset($diagnostics['status']) && is_array($diagnostics['status']) ? $diagnostics['status'] : array();
+    $status_label = isset($status['status']) ? (string) $status['status'] : 'idle';
+    $status_message = isset($status['message']) ? (string) $status['message'] : 'No updater status recorded yet.';
+    $status_context = isset($status['context']) && is_array($status['context']) ? $status['context'] : array();
+    $published_at = isset($diagnostics['published_at']) ? (string) $diagnostics['published_at'] : '';
+    $checks = isset($diagnostics['checks']) && is_array($diagnostics['checks']) ? $diagnostics['checks'] : array();
+    ?>
+    <div class="wrap tk-wrap">
+        <h1>Diagnostics</h1>
+        <?php if (isset($_GET['tk_github_status_cleared']) && sanitize_key((string) $_GET['tk_github_status_cleared']) === '1') : ?>
+            <?php tk_notice('GitHub updater status cleared.', 'success'); ?>
+        <?php endif; ?>
+
+        <div class="tk-card" style="margin-top:24px;">
+            <h2>GitHub Updater</h2>
+            <p class="description">Use this page to verify the currently installed version, cached GitHub release data, and the last updater result stored by WordPress.</p>
+            <p>
+                <?php
+                $check_now_url = wp_nonce_url(admin_url('admin-post.php?action=tk_github_check_now'), 'tk_github_check_now');
+                $clear_status_url = wp_nonce_url(admin_url('admin-post.php?action=tk_github_clear_status'), 'tk_github_clear_status');
+                ?>
+                <a class="button button-primary" href="<?php echo esc_url($check_now_url); ?>">Refresh GitHub Release Cache</a>
+                <a class="button button-secondary" href="<?php echo esc_url($clear_status_url); ?>">Clear Stored Status</a>
+            </p>
+
+            <table class="widefat striped tk-table">
+                <tbody>
+                    <tr>
+                        <th>Installed version</th>
+                        <td><?php echo esc_html((string) ($diagnostics['current_version'] ?? '')); ?></td>
+                    </tr>
+                    <tr>
+                        <th>Repository</th>
+                        <td><code><?php echo esc_html((string) ($diagnostics['repo'] ?? '')); ?></code></td>
+                    </tr>
+                    <tr>
+                        <th>Cached release</th>
+                        <td><?php echo !empty($diagnostics['release_cached']) ? 'Yes' : 'No'; ?></td>
+                    </tr>
+                    <tr>
+                        <th>Update available</th>
+                        <td><?php echo !empty($diagnostics['update_available']) ? 'Yes' : 'No'; ?></td>
+                    </tr>
+                    <tr>
+                        <th>Latest tag</th>
+                        <td><?php echo esc_html((string) ($diagnostics['tag_name'] ?? '-')); ?></td>
+                    </tr>
+                    <tr>
+                        <th>Normalized version</th>
+                        <td><?php echo esc_html((string) ($diagnostics['normalized_tag'] ?? '-')); ?></td>
+                    </tr>
+                    <tr>
+                        <th>Published at</th>
+                        <td><?php echo $published_at !== '' ? esc_html(gmdate('Y-m-d H:i:s', strtotime($published_at)) . ' UTC') : '-'; ?></td>
+                    </tr>
+                    <tr>
+                        <th>Release age</th>
+                        <td>
+                            <?php
+                            if (isset($diagnostics['release_age_hours']) && $diagnostics['release_age_hours'] !== null) {
+                                echo esc_html((string) $diagnostics['release_age_hours'] . ' hour(s)');
+                            } else {
+                                echo '-';
+                            }
+                            ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Release URL</th>
+                        <td>
+                            <?php if (!empty($diagnostics['release_url'])) : ?>
+                                <a href="<?php echo esc_url((string) $diagnostics['release_url']); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html((string) $diagnostics['release_url']); ?></a>
+                            <?php else : ?>
+                                -
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Package asset</th>
+                        <td><?php echo esc_html((string) ($diagnostics['asset_name'] ?? '-')); ?></td>
+                    </tr>
+                    <tr>
+                        <th>Package asset exact match</th>
+                        <td><?php echo !empty($diagnostics['package_valid']) ? 'Yes' : 'No'; ?></td>
+                    </tr>
+                    <tr>
+                        <th>Package URL</th>
+                        <td><code><?php echo esc_html((string) ($diagnostics['package_url'] ?? '-')); ?></code></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="tk-card" style="margin-top:24px;">
+            <h2>Readiness Checks</h2>
+            <?php if (!empty($checks)) : ?>
+                <table class="widefat striped tk-table">
+                    <tbody>
+                    <?php foreach ($checks as $check) : ?>
+                        <?php
+                        $check_status = isset($check['status']) ? (string) $check['status'] : 'unknown';
+                        $check_badge = 'tk-badge';
+                        if ($check_status === 'ok') {
+                            $check_badge .= ' tk-on';
+                        } elseif ($check_status === 'warn') {
+                            $check_badge .= ' tk-warn';
+                        }
+                        ?>
+                        <tr>
+                            <th><?php echo esc_html((string) ($check['label'] ?? 'Check')); ?></th>
+                            <td><span class="<?php echo esc_attr($check_badge); ?>"><?php echo esc_html(strtoupper($check_status)); ?></span></td>
+                            <td><?php echo esc_html((string) ($check['detail'] ?? '')); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php else : ?>
+                <p><small>No readiness checks available yet.</small></p>
+            <?php endif; ?>
+        </div>
+
+        <div class="tk-card" style="margin-top:24px;">
+            <h2>Last Updater Result</h2>
+            <?php
+            $badge_class = 'tk-badge';
+            if ($status_label === 'failed') {
+                $badge_class .= ' tk-warn';
+            } elseif ($status_label === 'completed' || $status_label === 'installed') {
+                $badge_class .= ' tk-on';
+            }
+            ?>
+            <p><span class="<?php echo esc_attr($badge_class); ?>"><?php echo esc_html(strtoupper($status_label)); ?></span></p>
+            <p><?php echo esc_html($status_message); ?></p>
+            <?php if (!empty($status['timestamp'])) : ?>
+                <p><small>Recorded at <?php echo esc_html(date_i18n('Y-m-d H:i:s', (int) $status['timestamp'])); ?></small></p>
+            <?php endif; ?>
+            <?php if (!empty($status_context)) : ?>
+                <table class="widefat striped tk-table">
+                    <tbody>
+                    <?php foreach ($status_context as $key => $value) : ?>
+                        <tr>
+                            <th><?php echo esc_html((string) $key); ?></th>
+                            <td>
+                                <?php
+                                if (is_scalar($value) || $value === null) {
+                                    echo '<code>' . esc_html((string) $value) . '</code>';
+                                } else {
+                                    echo '<code>' . esc_html(wp_json_encode($value)) . '</code>';
+                                }
+                                ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php else : ?>
+                <p><small>No updater context stored yet.</small></p>
+            <?php endif; ?>
+        </div>
+
+        <div class="tk-card" style="margin-top:24px;">
+            <h2>Release Checklist</h2>
+            <ul class="tk-list">
+                <li>&#10003; GitHub asset should be named <code>tool-kits.zip</code>.</li>
+                <li>&#10003; ZIP root should be exactly <code>tool-kits/</code>.</li>
+                <li>&#10003; Main plugin file should exist at <code>tool-kits/tool-kits.php</code>.</li>
+                <li>&#10003; <code>Version</code> in <code>tool-kits.php</code>, <code>Stable tag</code> in <code>readme.txt</code>, and the GitHub tag should match.</li>
+            </ul>
         </div>
     </div>
     <?php

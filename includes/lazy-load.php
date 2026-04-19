@@ -217,12 +217,12 @@ function tk_render_lazy_load_panel() {
 }
 
 function tk_lazy_load_save() {
-    tk_check_nonce('tk_lazy_load_save');
+    tk_require_admin_post('tk_lazy_load_save');
     tk_update_option('lazy_load_enabled', !empty($_POST['lazy_load_enabled']) ? 1 : 0);
     tk_update_option('lazy_load_eager_images', max(0, (int) tk_post('lazy_load_eager_images', 2)));
     tk_update_option('lazy_load_iframe_video', !empty($_POST['lazy_load_iframe_video']) ? 1 : 0);
     tk_update_option('lazy_load_script_defer', sanitize_text_field((string) tk_post('lazy_load_script_defer', '')));
     tk_update_option('lazy_load_script_delay', sanitize_text_field((string) tk_post('lazy_load_script_delay', '')));
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'lazy-load', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'lazy-load', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }

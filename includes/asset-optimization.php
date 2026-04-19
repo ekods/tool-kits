@@ -846,7 +846,7 @@ function tk_render_assets_panel() {
 }
 
 function tk_assets_opt_save() {
-    tk_check_nonce('tk_assets_opt_save');
+    tk_require_admin_post('tk_assets_opt_save');
     tk_update_option('assets_critical_css_enabled', !empty($_POST['assets_critical_css_enabled']) ? 1 : 0);
     tk_update_option('assets_critical_css', (string) tk_post('assets_critical_css', ''));
     tk_update_option('assets_defer_css_handles', sanitize_text_field((string) tk_post('assets_defer_css_handles', '')));
@@ -860,6 +860,6 @@ function tk_assets_opt_save() {
     tk_update_option('assets_js_delay_handles', sanitize_text_field((string) tk_post('assets_js_delay_handles', '')));
     tk_update_option('assets_cls_guard_enabled', 1);
     tk_update_option('assets_lcp_boost_enabled', 1);
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'assets', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'assets', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }

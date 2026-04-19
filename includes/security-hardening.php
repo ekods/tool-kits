@@ -2356,8 +2356,7 @@ function tk_render_hardening_page() {
 }
 
 function tk_hardening_save() {
-    if (!tk_is_admin_user()) wp_die('Forbidden');
-    tk_check_nonce('tk_hardening_save');
+    tk_require_admin_post('tk_hardening_save');
     tk_killswitch_snapshot('hardening');
 
     $tab = isset($_POST['tk_tab']) ? sanitize_key($_POST['tk_tab']) : '';
@@ -2510,15 +2509,12 @@ function tk_hardening_save() {
     if ($tab !== '') {
         $redirect .= '#' . $tab;
     }
-    wp_redirect($redirect);
+    wp_safe_redirect($redirect);
     exit;
 }
 
 function tk_hardening_waf_reset() {
-    if (!tk_is_admin_user()) {
-        wp_die('Forbidden');
-    }
-    tk_check_nonce('tk_hardening_waf_reset');
+    tk_require_admin_post('tk_hardening_waf_reset');
 
     tk_update_option('hardening_waf_enabled', 0);
     tk_update_option('hardening_waf_allow_paths', '');
