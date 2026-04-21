@@ -11,6 +11,7 @@ function tk_captcha_init() {
     add_action('admin_post_tk_captcha_save', 'tk_captcha_save');
     add_shortcode('toolkits_captcha', 'tk_captcha_shortcode');
     add_action('wpcf7_init', 'tk_captcha_register_wpcf7_tag');
+    add_filter('wpcf7_validate', 'tk_captcha_validate_cf7', 30, 2);
     add_action('wp_footer', 'tk_captcha_refresh_script');
     add_action('wp_ajax_tk_captcha_refresh', 'tk_captcha_refresh_ajax');
     add_action('wp_ajax_nopriv_tk_captcha_refresh', 'tk_captcha_refresh_ajax');
@@ -358,18 +359,59 @@ function tk_captcha_validate($user) {
     if (!tk_get_option('captcha_enabled') || !tk_get_option('captcha_on_login')) {
         return $user;
     }
-    $names = tk_captcha_field_names();
-    $token = isset($_POST[$names['token']]) ? sanitize_text_field($_POST[$names['token']]) : '';
-    $answer = isset($_POST[$names['answer']]) ? wp_unslash($_POST[$names['answer']]) : '';
-    if ($token === '' || $answer === '') {
+    $validation = tk_captcha_validate_request();
+    if (!$validation['present']) {
         return new WP_Error('captcha_missing', 'Captcha is required.');
     }
-    $hash = get_transient('tk_captcha_' . $token);
-    delete_transient('tk_captcha_' . $token);
-    if (!$hash || !wp_check_password(trim($answer), $hash)) {
+    if (!$validation['valid']) {
         return new WP_Error('captcha_invalid', 'Captcha incorrect.');
     }
     return $user;
+}
+
+function tk_captcha_validate_request(): array {
+    $names = tk_captcha_field_names();
+    $token = isset($_POST[$names['token']]) ? sanitize_text_field(wp_unslash($_POST[$names['token']])) : '';
+    $answer = isset($_POST[$names['answer']]) ? trim((string) wp_unslash($_POST[$names['answer']])) : '';
+
+    if ($token === '' && $answer === '') {
+        return array(
+            'present' => false,
+            'valid' => false,
+        );
+    }
+
+    if ($token === '' || $answer === '') {
+        return array(
+            'present' => true,
+            'valid' => false,
+        );
+    }
+
+    $hash = get_transient('tk_captcha_' . $token);
+    delete_transient('tk_captcha_' . $token);
+
+    return array(
+        'present' => true,
+        'valid' => (bool) ($hash && wp_check_password($answer, $hash)),
+    );
+}
+
+function tk_captcha_validate_cf7($result, $tags) {
+    if (!tk_get_option('captcha_enabled') || !function_exists('wpcf7')) {
+        return $result;
+    }
+
+    $validation = tk_captcha_validate_request();
+    if (!$validation['present']) {
+        return $result;
+    }
+
+    if (!$validation['valid']) {
+        $result->invalidate(null, __('Captcha incorrect.', 'tool-kits'));
+    }
+
+    return $result;
 }
 
 function tk_render_captcha_page() {

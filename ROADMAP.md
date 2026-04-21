@@ -35,6 +35,22 @@ Definition of done:
 - Every admin action path enforces capability checks and nonces consistently.
 - Sensitive modules expose a clear recovery path.
 
+## v2.1.8
+
+Priority: form spam protection hardening.
+
+- Add server-side captcha validation for Contact Form 7.
+- Add stronger anti-spam heuristics for randomized contact-form payloads.
+- Add duplicate submission blocking plus cooldowns per email and per IP.
+- Add a global public form guard for suspicious user agents and repeated POST abuse.
+- Extend comment form protection with honeypot, timing checks, and optional captcha.
+
+Definition of done:
+
+- Contact form submissions are validated before mail is sent.
+- Replayed or repeated spam payloads are rejected consistently.
+- Public form abuse is throttled across login, comment, and contact flows.
+
 ## v2.2.0
 
 Priority: structure and maintainability.

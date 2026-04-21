@@ -223,7 +223,13 @@ function tk_cache_purge() {
         $message .= ' Deleted ' . (int) $purged['deleted'] . ' item(s).';
     }
     set_transient('tk_cache_purged_notice', $message, 30);
-    $redirect = wp_get_referer();
+    $redirect = trim((string) tk_post('redirect_to', ''));
+    if ($redirect === '' && isset($_GET['redirect_to'])) {
+        $redirect = trim((string) wp_unslash($_GET['redirect_to']));
+    }
+    if ($redirect === '') {
+        $redirect = wp_get_referer();
+    }
     if (!$redirect) {
         $redirect = admin_url('admin.php?page=tool-kits-cache');
     }
@@ -246,8 +252,15 @@ function tk_cache_admin_bar_menu($wp_admin_bar) {
         return;
     }
 
+    $current_url = isset($_SERVER['REQUEST_URI']) ? home_url(wp_unslash((string) $_SERVER['REQUEST_URI'])) : '';
     $url = wp_nonce_url(
-        add_query_arg('action', 'tk_cache_purge', admin_url('admin-post.php')),
+        add_query_arg(
+            array(
+                'action' => 'tk_cache_purge',
+                'redirect_to' => $current_url !== '' ? $current_url : tk_admin_url('tool-kits-cache'),
+            ),
+            admin_url('admin-post.php')
+        ),
         'tk_cache_purge',
         '_tk_nonce'
     );
@@ -463,6 +476,7 @@ function tk_render_cache_page() {
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:12px;">
                         <?php tk_nonce_field('tk_cache_purge'); ?>
                         <input type="hidden" name="action" value="tk_cache_purge">
+                        <input type="hidden" name="redirect_to" value="<?php echo esc_url(tk_admin_url('tool-kits-cache') . '#page'); ?>">
                         <button class="button button-secondary">Purge page cache</button>
                     </form>
                 </div>

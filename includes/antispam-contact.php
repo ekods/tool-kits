@@ -79,6 +79,17 @@ function tk_antispam_submission_email_domains(array $values): array {
     return array_values(array_unique($domains));
 }
 
+function tk_antispam_submission_emails(array $values): array {
+    $emails = array();
+    foreach ($values as $value) {
+        if (!is_string($value) || !is_email($value)) {
+            continue;
+        }
+        $emails[] = strtolower(trim($value));
+    }
+    return array_values(array_unique($emails));
+}
+
 function tk_antispam_message_value(array $values): string {
     foreach ($values as $key => $value) {
         if (!is_string($value) || $value === '') {
@@ -94,6 +105,227 @@ function tk_antispam_message_value(array $values): string {
         }
     }
     return '';
+}
+
+function tk_antispam_name_value(array $values): string {
+    foreach ($values as $key => $value) {
+        if (!is_string($value) || $value === '') {
+            continue;
+        }
+        if (
+            strpos($key, 'name') !== false ||
+            strpos($key, 'nama') !== false ||
+            strpos($key, 'full_name') !== false ||
+            strpos($key, 'fullname') !== false
+        ) {
+            return $value;
+        }
+    }
+    return '';
+}
+
+function tk_antispam_text_looks_random(string $value): bool {
+    $value = trim($value);
+    if ($value === '') {
+        return false;
+    }
+
+    $normalized = preg_replace('/[^a-z0-9]+/i', '', $value);
+    if (!is_string($normalized) || $normalized === '') {
+        return false;
+    }
+
+    $length = strlen($normalized);
+    if ($length < 8) {
+        return false;
+    }
+
+    $has_letters = (bool) preg_match('/[a-z]/i', $normalized);
+    $has_digits = (bool) preg_match('/\d/', $normalized);
+    $has_vowel = (bool) preg_match('/[aeiou]/i', $normalized);
+    $has_long_consonant_run = (bool) preg_match('/[bcdfghjklmnpqrstvwxyz]{5,}/i', $normalized);
+    $has_case_mix = (bool) (preg_match('/[a-z]/', $normalized) && preg_match('/[A-Z]/', $normalized));
+    $unique_ratio = count(array_unique(str_split(strtolower($normalized)))) / max(1, $length);
+
+    if ($has_long_consonant_run && $length >= 10) {
+        return true;
+    }
+
+    if ($has_letters && $has_digits && $length >= 10 && $unique_ratio > 0.7) {
+        return true;
+    }
+
+    if ($has_case_mix && !$has_vowel && $length >= 10) {
+        return true;
+    }
+
+    return false;
+}
+
+function tk_antispam_email_local_part_looks_suspicious(string $email): bool {
+    if (!is_email($email)) {
+        return false;
+    }
+
+    $parts = explode('@', strtolower($email), 2);
+    $local = $parts[0] ?? '';
+    if ($local === '') {
+        return false;
+    }
+
+    $segments = preg_split('/[._+-]+/', $local);
+    if (!is_array($segments)) {
+        $segments = array($local);
+    }
+    $segments = array_values(array_filter($segments, static function ($segment) {
+        return is_string($segment) && $segment !== '';
+    }));
+
+    $short_segments = 0;
+    foreach ($segments as $segment) {
+        if (strlen($segment) <= 2) {
+            $short_segments++;
+        }
+    }
+
+    if (count($segments) >= 4 && $short_segments >= 3) {
+        return true;
+    }
+
+    if (tk_antispam_text_looks_random($local)) {
+        return true;
+    }
+
+    return false;
+}
+
+function tk_antispam_detect_random_submission_reason(array $values): string {
+    $name = tk_antispam_name_value($values);
+    $message = tk_antispam_message_value($values);
+    $random_hits = 0;
+
+    if ($name !== '' && tk_antispam_text_looks_random($name)) {
+        $random_hits++;
+    }
+
+    if ($message !== '' && tk_antispam_text_looks_random($message)) {
+        $random_hits++;
+    }
+
+    foreach ($values as $value) {
+        if (!is_string($value) || $value === '') {
+            continue;
+        }
+        if (is_email($value) && tk_antispam_email_local_part_looks_suspicious($value)) {
+            return 'suspicious_email_local_part';
+        }
+    }
+
+    if ($random_hits >= 2) {
+        return 'randomized_submission_pattern';
+    }
+
+    return '';
+}
+
+function tk_antispam_normalize_text(string $value): string {
+    $value = strtolower(trim($value));
+    $value = preg_replace('/\s+/', ' ', $value);
+    return is_string($value) ? $value : '';
+}
+
+function tk_antispam_submission_signature(array $values): string {
+    $name = tk_antispam_normalize_text(tk_antispam_name_value($values));
+    $message = tk_antispam_normalize_text(tk_antispam_message_value($values));
+    $emails = tk_antispam_submission_emails($values);
+    sort($emails);
+
+    $payload = array(
+        'name' => $name,
+        'emails' => $emails,
+        'message' => $message,
+    );
+
+    return md5(wp_json_encode($payload));
+}
+
+function tk_antispam_duplicate_key(string $signature): string {
+    return 'tk_antispam_dup_' . $signature;
+}
+
+function tk_antispam_email_cooldown_key(string $email): string {
+    return 'tk_antispam_email_cd_' . md5(strtolower($email));
+}
+
+function tk_antispam_ip_cooldown_key(): string {
+    return 'tk_antispam_ip_cd_' . md5(tk_get_ip());
+}
+
+function tk_antispam_submission_request_cache(string $signature = '', bool $register = false): bool {
+    static $seen = array();
+
+    if ($signature === '') {
+        return false;
+    }
+
+    if ($register) {
+        $seen[$signature] = true;
+    }
+
+    return !empty($seen[$signature]);
+}
+
+function tk_antispam_replay_reason(array $values): string {
+    $signature = tk_antispam_submission_signature($values);
+    if ($signature !== '' && tk_antispam_submission_request_cache($signature)) {
+        return '';
+    }
+
+    $duplicate_window = max(0, (int) tk_get_option('antispam_duplicate_window_minutes', 30));
+    if (
+        $duplicate_window > 0 &&
+        $signature !== '' &&
+        get_transient(tk_antispam_duplicate_key($signature))
+    ) {
+        return 'duplicate_submission';
+    }
+
+    $email_cooldown = max(0, (int) tk_get_option('antispam_email_cooldown_minutes', 15));
+    if ($email_cooldown > 0) {
+        foreach (tk_antispam_submission_emails($values) as $email) {
+            if (get_transient(tk_antispam_email_cooldown_key($email))) {
+                return 'email_cooldown:' . $email;
+            }
+        }
+    }
+
+    $ip_cooldown = max(0, (int) tk_get_option('antispam_ip_cooldown_seconds', 60));
+    if ($ip_cooldown > 0 && get_transient(tk_antispam_ip_cooldown_key())) {
+        return 'ip_cooldown_active';
+    }
+
+    return '';
+}
+
+function tk_antispam_register_submission(array $values): void {
+    $signature = tk_antispam_submission_signature($values);
+    $duplicate_window = max(0, (int) tk_get_option('antispam_duplicate_window_minutes', 30));
+    if ($duplicate_window > 0 && $signature !== '') {
+        set_transient(tk_antispam_duplicate_key($signature), 1, $duplicate_window * MINUTE_IN_SECONDS);
+        tk_antispam_submission_request_cache($signature, true);
+    }
+
+    $email_cooldown = max(0, (int) tk_get_option('antispam_email_cooldown_minutes', 15));
+    if ($email_cooldown > 0) {
+        foreach (tk_antispam_submission_emails($values) as $email) {
+            set_transient(tk_antispam_email_cooldown_key($email), 1, $email_cooldown * MINUTE_IN_SECONDS);
+        }
+    }
+
+    $ip_cooldown = max(0, (int) tk_get_option('antispam_ip_cooldown_seconds', 60));
+    if ($ip_cooldown > 0) {
+        set_transient(tk_antispam_ip_cooldown_key(), 1, $ip_cooldown);
+    }
 }
 
 function tk_antispam_contains_html(array $values): bool {
@@ -277,11 +509,21 @@ function tk_antispam_pre_wp_mail($return, array $atts) {
         }
     }
 
+    if ($reason === '') {
+        $reason = tk_antispam_detect_random_submission_reason($values);
+    }
+
+    if ($reason === '') {
+        $reason = tk_antispam_replay_reason($values);
+    }
+
     if ($reason !== '') {
         tk_antispam_log_record($reason, $values);
         tk_log('Blocked suspicious contact notification email: ' . $reason);
         return false;
     }
+
+    tk_antispam_register_submission($values);
 
     return $return;
 }
@@ -387,6 +629,18 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
         }
     }
 
+    $random_reason = tk_antispam_detect_random_submission_reason($values);
+    if ($random_reason !== '') {
+        return tk_antispam_reject($result, __('Spam-like content detected.', 'tool-kits'), $random_reason, $values);
+    }
+
+    $replay_reason = tk_antispam_replay_reason($values);
+    if ($replay_reason !== '') {
+        return tk_antispam_reject($result, __('Please wait before sending another message.', 'tool-kits'), $replay_reason, $values);
+    }
+
+    tk_antispam_register_submission($values);
+
     return $result;
 }
 
@@ -408,19 +662,22 @@ function tk_render_antispam_contact_panel() {
     if (!tk_is_admin_user()) return;
 
     $enabled = (int) tk_get_option('antispam_cf7_enabled', 0);
-    $min_seconds = (int) tk_get_option('antispam_min_seconds', 3);
+    $min_seconds = (int) tk_get_option('antispam_min_seconds', 5);
     $block_links = (int) tk_get_option('antispam_block_links', 1);
     $max_links = (int) tk_get_option('antispam_max_links', 0);
     $block_disposable = (int) tk_get_option('antispam_block_disposable_email', 1);
     $disposable_domains = (string) tk_get_option('antispam_disposable_domains', "mailinator.com\ntrashmail.com\ntempmail.com\ntemp-mail.org\n10minutemail.com\nguerrillamail.com\nwildbmail.com\nyopmail.com\nsharklasers.com");
     $block_keywords = (string) tk_get_option('antispam_block_keywords', "crypto\nbitcoin\nforex\nseo service\nguest post\nbacklink\ncasino\nloan\nhref=\n<a \nis.gd\nbit.ly\ntinyurl.com\ncutt.ly\nfuck\nsex");
-    $message_min_chars = (int) tk_get_option('antispam_message_min_chars', 12);
-    $generic_phrases = (string) tk_get_option('antispam_generic_phrases', "hi\nhello\ncheck this\nsee it here\nsee here\nclick here\nhave a peek here\ncontact me\nwhatsapp me");
+    $message_min_chars = (int) tk_get_option('antispam_message_min_chars', 20);
+    $generic_phrases = (string) tk_get_option('antispam_generic_phrases', "hi\nhello\ncheck this\nsee it here\nsee here\nclick here\nhave a peek here\ncontact me\nwhatsapp me\ngood day\nhow are you\ni have a question\ntest");
     $block_html = (int) tk_get_option('antispam_block_html', 1);
     $block_shorteners = (int) tk_get_option('antispam_block_shorteners', 1);
+    $duplicate_window = (int) tk_get_option('antispam_duplicate_window_minutes', 30);
+    $email_cooldown = (int) tk_get_option('antispam_email_cooldown_minutes', 15);
+    $ip_cooldown = (int) tk_get_option('antispam_ip_cooldown_seconds', 60);
     $rate_limit_enabled = (int) tk_get_option('antispam_rate_limit_enabled', 1);
     $rate_limit_window = (int) tk_get_option('antispam_rate_limit_window_minutes', 15);
-    $rate_limit_max = (int) tk_get_option('antispam_rate_limit_max_attempts', 3);
+    $rate_limit_max = (int) tk_get_option('antispam_rate_limit_max_attempts', 2);
     $cf7_installed = function_exists('wpcf7');
 
     ?>
@@ -454,6 +711,15 @@ function tk_render_antispam_contact_panel() {
 
             <label><strong>Minimum message length</strong></label>
             <input class="small-text" type="number" min="0" name="message_min_chars" value="<?php echo esc_attr($message_min_chars); ?>"> characters
+
+            <label><strong>Duplicate submission window</strong></label>
+            <input class="small-text" type="number" min="0" name="duplicate_window_minutes" value="<?php echo esc_attr($duplicate_window); ?>"> minutes
+
+            <label><strong>Email cooldown</strong></label>
+            <input class="small-text" type="number" min="0" name="email_cooldown_minutes" value="<?php echo esc_attr($email_cooldown); ?>"> minutes
+
+            <label><strong>IP cooldown</strong></label>
+            <input class="small-text" type="number" min="0" name="ip_cooldown_seconds" value="<?php echo esc_attr($ip_cooldown); ?>"> seconds
 
             <label><strong>Generic spam phrases (one per line)</strong></label>
             <textarea class="large-text" rows="5" name="generic_phrases"><?php echo esc_textarea($generic_phrases); ?></textarea>
@@ -523,7 +789,7 @@ function tk_antispam_save_settings() {
     tk_check_nonce('tk_antispam_save');
 
     tk_update_option('antispam_cf7_enabled', !empty($_POST['enabled']) ? 1 : 0);
-    tk_update_option('antispam_min_seconds', max(0, (int) tk_post('min_seconds', 3)));
+    tk_update_option('antispam_min_seconds', max(0, (int) tk_post('min_seconds', 5)));
     tk_update_option('antispam_block_links', !empty($_POST['block_links']) ? 1 : 0);
     tk_update_option('antispam_max_links', max(0, (int) tk_post('max_links', 0)));
     tk_update_option('antispam_block_disposable_email', !empty($_POST['block_disposable_email']) ? 1 : 0);
@@ -531,14 +797,17 @@ function tk_antispam_save_settings() {
     tk_update_option('antispam_disposable_domains', $disposable_domains);
     $block_keywords = isset($_POST['block_keywords']) ? trim((string) wp_unslash($_POST['block_keywords'])) : '';
     tk_update_option('antispam_block_keywords', $block_keywords);
-    tk_update_option('antispam_message_min_chars', max(0, (int) tk_post('message_min_chars', 12)));
+    tk_update_option('antispam_message_min_chars', max(0, (int) tk_post('message_min_chars', 20)));
+    tk_update_option('antispam_duplicate_window_minutes', max(0, (int) tk_post('duplicate_window_minutes', 30)));
+    tk_update_option('antispam_email_cooldown_minutes', max(0, (int) tk_post('email_cooldown_minutes', 15)));
+    tk_update_option('antispam_ip_cooldown_seconds', max(0, (int) tk_post('ip_cooldown_seconds', 60)));
     $generic_phrases = isset($_POST['generic_phrases']) ? trim((string) wp_unslash($_POST['generic_phrases'])) : '';
     tk_update_option('antispam_generic_phrases', $generic_phrases);
     tk_update_option('antispam_block_html', !empty($_POST['block_html']) ? 1 : 0);
     tk_update_option('antispam_block_shorteners', !empty($_POST['block_shorteners']) ? 1 : 0);
     tk_update_option('antispam_rate_limit_enabled', !empty($_POST['rate_limit_enabled']) ? 1 : 0);
     tk_update_option('antispam_rate_limit_window_minutes', max(1, (int) tk_post('rate_limit_window_minutes', 15)));
-    tk_update_option('antispam_rate_limit_max_attempts', max(1, (int) tk_post('rate_limit_max_attempts', 3)));
+    tk_update_option('antispam_rate_limit_max_attempts', max(1, (int) tk_post('rate_limit_max_attempts', 2)));
 
     wp_redirect(add_query_arg(array('page'=>'tool-kits-security-spam','tk_tab'=>'antispam','tk_saved'=>1), admin_url('admin.php')));
     exit;

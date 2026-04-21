@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.1.6
+ * Version: 2.1.8
  * Update URI: https://github.com/ekods/tool-kits
  * Author: Eko Dwi Saputro
  * License: GPLv2 or later
@@ -11,7 +11,7 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-define('TK_VERSION', '2.1.6');
+define('TK_VERSION', '2.1.8');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
@@ -43,6 +43,7 @@ require_once TK_PATH . 'includes/db-cleanup.php';
 require_once TK_PATH . 'includes/security-hide-login.php';
 require_once TK_PATH . 'includes/security-captcha.php';
 require_once TK_PATH . 'includes/antispam-contact.php';
+require_once TK_PATH . 'includes/security-form-guard.php';
 require_once TK_PATH . 'includes/security-spam.php';
 require_once TK_PATH . 'includes/security-rate-limit.php';
 require_once TK_PATH . 'includes/security-login-log.php';
@@ -109,6 +110,7 @@ add_action('plugins_loaded', function() {
     tk_hide_login_init();
     tk_captcha_init();
     tk_antispam_contact_init();
+    tk_form_guard_init();
     tk_rate_limit_init();
     tk_login_log_init();
     tk_hardening_init();

@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.1.6
+Stable tag: 2.1.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -60,6 +60,11 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.1.8 =
+- Add server-side captcha validation for Contact Form 7 submissions.
+- Add stronger anti-spam contact protections: random-pattern detection, duplicate submission blocking, email cooldown, and IP cooldown.
+- Add a global form guard for public POST requests, suspicious user agents, comment honeypot/timing checks, and optional comment captcha enforcement.
+
 = 2.1.5 =
 - Sync plugin metadata with the current plugin version.
 - Improve GitHub updater diagnostics and release-package validation workflow.
