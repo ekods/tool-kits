@@ -51,6 +51,21 @@ Definition of done:
 - Replayed or repeated spam payloads are rejected consistently.
 - Public form abuse is throttled across login, comment, and contact flows.
 
+## v2.1.9
+
+Priority: updater download reliability.
+
+- Add a custom GitHub package downloader for Tool Kits updates.
+- Prefer GitHub release asset API downloads when the exact `tool-kits.zip` asset is available.
+- Validate HTTP status, downloaded file size, and ZIP signature before install.
+- Improve failure messages for 404 HTML responses and non-ZIP downloads.
+
+Definition of done:
+
+- Updater does not pass HTML error pages to the plugin installer.
+- Failed downloads produce actionable diagnostics instead of raw server HTML.
+- Release metadata remains synchronized for the patch release.
+
 ## v2.2.0
 
 Priority: structure and maintainability.
@@ -74,11 +89,15 @@ Priority: regression prevention.
 - Add smoke checks for release ZIP contents.
 - Add tests for serialized-safe replacement helpers where practical.
 - Add targeted tests for hardening option normalization.
+- Align license and heartbeat configuration status reporting across Access, Monitoring, and Diagnostics.
+- Add explicit connection diagnostics and reachability checks before license activation.
+- Hide invalid monitoring values instead of showing misleading placeholders.
 
 Definition of done:
 
 - Release packaging is validated automatically before publishing.
 - Core helper behavior is covered by repeatable checks.
+- Access and monitoring configuration diagnostics are consistent and support-friendly.
 
 ## Release Checklist
 

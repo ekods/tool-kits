@@ -5,9 +5,10 @@ function tk_db_migrate_init() {
     add_action('admin_post_tk_db_export', 'tk_db_export_handler');
     add_action('admin_post_tk_db_run_replace', 'tk_db_run_find_replace_handler');
     add_action('admin_post_tk_db_download_temp_export', 'tk_db_download_temp_export_handler');
-    add_action('admin_post_tk_db_export_local_prod', 'tk_db_export_local_prod_handler');
+    add_action('admin_post_tk_db_local_prod', 'tk_db_export_local_prod_handler');
     add_action('admin_post_tk_db_change_prefix', 'tk_db_change_prefix_handler');
     add_action('admin_post_tk_db_import', 'tk_db_import_handler');
+    add_action('admin_post_tk_db_live_replace', 'tk_db_live_replace_handler');
 }
 
 function tk_db_export_file_prefix(): string {
@@ -713,32 +714,36 @@ function tk_render_db_tools_page() {
     $saved_prod_url = (string) tk_get_option('db_local_prod_url', '');
     $saved_prod_path = (string) tk_get_option('db_local_prod_path', '');
 
-    $allowed_tabs = array('export-db', 'preload-export', 'local-to-prod', 'import-db', 'change-prefix', 'db-cleanup');
+    $allowed_tabs = array('export-db', 'preload-export', 'local-to-prod', 'live-replace', 'import-db', 'change-prefix', 'db-cleanup');
     $requested_tab = isset($_GET['tk_tab']) ? sanitize_key($_GET['tk_tab']) : '';
     $active_tab = in_array($requested_tab, $allowed_tabs, true) ? $requested_tab : 'export-db';
     ?>
-    <div class="wrap tk-wrap">
-        <h1>Database</h1>
-        <div class="tk-tabs tk-db-tools">
+    <div class="wrap tk-wrap tk-db-tools">
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero(__('Database Tools', 'tool-kits'), __('Advanced database management, find & replace, and prefix migration.', 'tool-kits'), 'dashicons-database'); ?>
+        <div class="tk-tabs">
             <div class="tk-tabs-nav">
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'export-db' ? ' is-active' : ''; ?>" data-panel="export-db">Export Database</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'preload-export' ? ' is-active' : ''; ?>" data-panel="preload-export">Export Download</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'local-to-prod' ? ' is-active' : ''; ?>" data-panel="local-to-prod">Local to Production</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'import-db' ? ' is-active' : ''; ?>" data-panel="import-db">Import Database</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'change-prefix' ? ' is-active' : ''; ?>" data-panel="change-prefix">Change Prefix</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'db-cleanup' ? ' is-active' : ''; ?>" data-panel="db-cleanup">DB Cleanup</button>
+                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'export-db' ? ' is-active' : ''; ?>" data-panel="export-db"><?php _e('Export', 'tool-kits'); ?></button>
+                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'preload-export' ? ' is-active' : ''; ?>" data-panel="preload-export"><?php _e('Quick Prepare', 'tool-kits'); ?></button>
+                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'local-to-prod' ? ' is-active' : ''; ?>" data-panel="local-to-prod"><?php _e('Migration', 'tool-kits'); ?></button>
+                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'live-replace' ? ' is-active' : ''; ?>" data-panel="live-replace"><?php _e('Search & Replace', 'tool-kits'); ?></button>
+                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'import-db' ? ' is-active' : ''; ?>" data-panel="import-db"><?php _e('Import', 'tool-kits'); ?></button>
+                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'change-prefix' ? ' is-active' : ''; ?>" data-panel="change-prefix"><?php _e('Prefix', 'tool-kits'); ?></button>
+                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'db-cleanup' ? ' is-active' : ''; ?>" data-panel="db-cleanup"><?php _e('Cleanup', 'tool-kits'); ?></button>
             </div>
             <div class="tk-tabs-content">
                 <div class="tk-card tk-tab-panel<?php echo $active_tab === 'export-db' ? ' is-active' : ''; ?>" data-panel-id="export-db">
-                    <h2>1) Export Database (SQL)</h2>
-                    <p>Export all WordPress tables into a <code>.sql</code> dump. Useful when moving between environments.</p>
+                    <h2 style="margin-bottom:8px;">Database Export</h2>
+                    <p class="description" style="margin-bottom:24px;">Export all WordPress tables into a <code>.sql</code> dump. Useful for manual backups or environment migration.</p>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php tk_nonce_field('tk_db_export'); ?>
                         <input type="hidden" name="action" value="tk_db_export">
                         <input type="hidden" name="tk_tab" value="export-db">
-                        <p><button class="button button-primary">Download SQL</button></p>
+                        <button class="button button-primary button-hero" style="min-width:200px; border-radius:10px;">Download SQL Dump</button>
                     </form>
-                    <p class="description">Note: SQL files can be large. If your host limits execution, use phpMyAdmin or WP-CLI instead.</p>
+                    <div style="margin-top:24px; padding:16px; background:rgba(243,156,18,0.05); border:1px solid rgba(243,156,18,0.2); border-radius:12px;">
+                        <p class="description" style="margin:0; color:#d35400;"><strong>Note:</strong> SQL files can be large. If your host limits execution, use phpMyAdmin or WP-CLI instead.</p>
+                    </div>
                 </div>
                 <div class="tk-card tk-tab-panel<?php echo $active_tab === 'preload-export' ? ' is-active' : ''; ?>" data-panel-id="preload-export">
                     <h2>2) Export Download (Preload temporary DB)</h2>
@@ -771,62 +776,100 @@ function tk_render_db_tools_page() {
                     </form>
                 </div>
                 <div class="tk-card tk-tab-panel<?php echo $active_tab === 'local-to-prod' ? ' is-active' : ''; ?>" data-panel-id="local-to-prod">
-                    <h2>3) Local to Production (Migration Export)</h2>
-                    <p>Create a production-ready SQL export from local data by applying serialized-safe URL/path replacements.</p>
+                    <h2 style="margin-bottom:8px;">Migration Export (Local to Prod)</h2>
+                    <p class="description" style="margin-bottom:24px;">Automatically replace URLs and paths in your database for a seamless move to production.</p>
+                    
                     <?php if ($local_prod_msg !== '') : ?>
                         <?php tk_notice($local_prod_msg, $local_prod_status === 'ok' ? 'success' : 'error'); ?>
                     <?php endif; ?>
+
                     <?php if ($local_prod_export_token && $local_prod_export_name) : ?>
-                        <?php $download_local_prod = admin_url('admin-post.php?action=tk_db_download_temp_export&token=' . urlencode($local_prod_export_token)); ?>
-                        <p class="description">
-                            Migration export ready: <code><?php echo esc_html($local_prod_export_name); ?></code>. <a href="<?php echo esc_url($download_local_prod); ?>">Download prepared SQL file</a>.
-                        </p>
+                        <div style="background:var(--tk-bg-soft); padding:16px; border-radius:12px; border:1px solid var(--tk-border-soft); margin-bottom:24px;">
+                            <?php $download_local_prod = admin_url('admin-post.php?action=tk_db_download_temp_export&token=' . urlencode($local_prod_export_token)); ?>
+                            <p style="margin:0; display:flex; align-items:center; justify-content:space-between;">
+                                <span>Prepared: <code><?php echo esc_html($local_prod_export_name); ?></code></span>
+                                <a href="<?php echo esc_url($download_local_prod); ?>" class="button button-primary"><?php _e('Download SQL', 'tool-kits'); ?></a>
+                            </p>
+                        </div>
                     <?php endif; ?>
+
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php tk_nonce_field('tk_db_export_local_prod'); ?>
                         <input type="hidden" name="action" value="tk_db_export_local_prod">
                         <input type="hidden" name="tk_tab" value="local-to-prod">
-                        <p>
-                            <label><strong>Local Site URL</strong></label><br>
-                            <input class="regular-text" type="text" name="local_site_url" value="<?php echo esc_attr($local_site_url_default); ?>" required>
-                        </p>
-                        <p>
-                            <label><strong>Production Site URL</strong></label><br>
-                            <input class="regular-text" type="text" name="production_site_url" value="<?php echo esc_attr($saved_prod_url); ?>" placeholder="https://example.com" required>
-                        </p>
-                        <p>
-                            <label><strong>Local Absolute Path</strong></label><br>
-                            <input class="regular-text" type="text" name="local_site_path" value="<?php echo esc_attr($local_site_path_default); ?>">
-                        </p>
-                        <p>
-                            <label><strong>Production Absolute Path (optional)</strong></label><br>
-                            <input class="regular-text" type="text" name="production_site_path" value="<?php echo esc_attr($saved_prod_path); ?>" placeholder="/home/user/public_html">
-                        </p>
-                        <p><button class="button button-primary" data-confirm="Create migration export for production now?">Generate Local -> Prod Export</button></p>
+                        
+                        <div class="tk-grid tk-grid-2" style="gap:20px;">
+                            <div style="background:var(--tk-bg-soft); padding:16px; border-radius:12px;">
+                                <h4 style="margin:0 0 12px;"><?php _e('Site URL Configuration', 'tool-kits'); ?></h4>
+                                <div style="margin-bottom:12px;">
+                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Local Site URL</label>
+                                    <input type="text" class="regular-text" name="local_site_url" value="<?php echo esc_attr($local_site_url_default); ?>" required style="width:100%;">
+                                </div>
+                                <div>
+                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Production Site URL</label>
+                                    <input type="text" class="regular-text" name="production_site_url" value="<?php echo esc_attr($saved_prod_url); ?>" placeholder="https://example.com" required style="width:100%;">
+                                </div>
+                            </div>
+                            <div style="background:var(--tk-bg-soft); padding:16px; border-radius:12px;">
+                                <h4 style="margin:0 0 12px;"><?php _e('Path Configuration (Optional)', 'tool-kits'); ?></h4>
+                                <div style="margin-bottom:12px;">
+                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Local Absolute Path</label>
+                                    <input type="text" class="regular-text" name="local_site_path" value="<?php echo esc_attr($local_site_path_default); ?>" style="width:100%;">
+                                </div>
+                                <div>
+                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Production Path</label>
+                                    <input type="text" class="regular-text" name="production_site_path" value="<?php echo esc_attr($saved_prod_path); ?>" placeholder="/home/user/public_html" style="width:100%;">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:24px; padding-top:20px; border-top:1px solid var(--tk-border-soft);">
+                            <button class="button button-primary button-hero" data-confirm="Create migration export for production now?">Generate Migration Export</button>
+                        </div>
                     </form>
-                    <p class="description">Recommended flow: generate export here on local, download it, then import via the Import Database tab on production.</p>
+                </div>
+                <div class="tk-card tk-tab-panel<?php echo $active_tab === 'live-replace' ? ' is-active' : ''; ?>" data-panel-id="live-replace">
+                    <h2>Live Search & Replace</h2>
+                    <p>Search and replace strings directly in the active database. <strong>Warning: This action is irreversible. Always backup first.</strong></p>
+                    <?php if (isset($_GET['tk_live_replace_msg'])) : ?>
+                        <?php tk_notice(sanitize_text_field((string) $_GET['tk_live_replace_msg']), isset($_GET['tk_live_replace_status']) && $_GET['tk_live_replace_status'] === 'ok' ? 'success' : 'error'); ?>
+                    <?php endif; ?>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                        <?php tk_nonce_field('tk_db_live_replace'); ?>
+                        <input type="hidden" name="action" value="tk_db_live_replace">
+                        <input type="hidden" name="tk_tab" value="live-replace">
+                        <?php tk_db_render_pairs_table($pairs_for_render, 'tk-live-pairs', 'pairs_find', 'pairs_replace', tk_db_default_pairs()); ?>
+                        <p><button class="button button-primary" data-confirm="Are you sure you want to run this replacement on the live database? This cannot be undone!">Run Live Replace</button></p>
+                    </form>
                 </div>
                 <div class="tk-card tk-tab-panel<?php echo $active_tab === 'import-db' ? ' is-active' : ''; ?>" data-panel-id="import-db">
-                    <h2>4) Import Database (SQL)</h2>
-                    <p>Upload a <code>.sql</code> or <code>.sql.gz</code> file to import into the current database. Use only on trusted files.</p>
+                    <h2 style="margin-bottom:8px;">Database Import</h2>
+                    <p class="description" style="margin-bottom:24px;">Upload a <code>.sql</code> or <code>.sql.gz</code> file to overwrite the current database.</p>
+                    
                     <?php if ($import_msg !== '') : ?>
                         <?php tk_notice($import_msg, $import_status === 'ok' ? 'success' : 'error'); ?>
                     <?php endif; ?>
+
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" enctype="multipart/form-data">
                         <?php tk_nonce_field('tk_db_import'); ?>
                         <input type="hidden" name="action" value="tk_db_import">
                         <input type="hidden" name="tk_tab" value="import-db">
-                        <p>
-                            <input type="file" name="sql_file" accept=".sql,.gz" required>
-                        </p>
-                        <p><button class="button button-primary" data-confirm="Importing will overwrite data in the database. Continue?">Import SQL</button></p>
+                        
+                        <div style="padding:40px; border:2px dashed var(--tk-border-soft); border-radius:16px; text-align:center; background:var(--tk-bg-soft); margin-bottom:24px;">
+                            <span class="dashicons dashicons-upload" style="font-size:48px; width:48px; height:48px; color:var(--tk-primary); margin-bottom:16px;"></span>
+                            <div style="margin-bottom:20px;">
+                                <input type="file" name="sql_file" accept=".sql,.gz" required style="font-size:13px;">
+                            </div>
+                            <p class="description"><?php _e('Supported formats: .sql, .sql.gz (Max file size: ', 'tool-kits'); ?><?php echo size_format(wp_max_upload_size()); ?>)</p>
+                        </div>
+
+                        <button class="button button-primary button-hero" style="width:100%; border-radius:10px;" data-confirm="Importing will overwrite data in the database. Continue?">Start Database Import</button>
                     </form>
-                    <p class="description">Tip: For large files, use WP-CLI or phpMyAdmin if this times out.</p>
                 </div>
                 <div class="tk-card tk-tab-panel<?php echo $active_tab === 'change-prefix' ? ' is-active' : ''; ?>" data-panel-id="change-prefix">
-                    <h2>5) Change DB Prefix (Rename Tables)</h2>
-                    <p>Rename tables from <code><?php global $wpdb; echo esc_html($wpdb->prefix); ?></code> to a new prefix.
-                    This updates <code>options</code> and <code>usermeta</code> keys, but please edit <code>$table_prefix</code> in <code>wp-config.php</code> manually afterward.</p>
+                    <h2 style="margin-bottom:8px;">Rename Database Prefix</h2>
+                    <p class="description" style="margin-bottom:24px;">Change your table prefix from <code><?php global $wpdb; echo esc_html($wpdb->prefix); ?></code> to enhance security against automated SQL injection.</p>
+                    
                     <?php
                     $prefix_error_notice = '';
                     if ($active_tab === 'change-prefix' && $prefix_error_code !== '') {
@@ -836,39 +879,51 @@ function tk_render_db_tools_page() {
                     ?>
                         <?php tk_notice($prefix_error_notice, 'error'); ?>
                     <?php endif; ?>
+                    
                     <?php if ($prefix_msg) : ?>
                         <?php tk_notice($prefix_msg, 'success'); ?>
                     <?php endif; ?>
+
                     <?php if ($backup_token && $backup_name) : ?>
-                        <?php $download_url = admin_url('admin-post.php?action=tk_db_download_temp_export&token=' . urlencode($backup_token)); ?>
-                        <p class="description">Backup created: <code><?php echo esc_html($backup_name); ?></code>.
-                            <a href="<?php echo esc_url($download_url); ?>">Download backup</a>.
-                        </p>
+                        <div style="background:var(--tk-bg-soft); padding:16px; border-radius:12px; border:1px solid var(--tk-border-soft); margin-bottom:24px;">
+                            <?php $download_url = admin_url('admin-post.php?action=tk_db_download_temp_export&token=' . urlencode($backup_token)); ?>
+                            <p style="margin:0; display:flex; align-items:center; justify-content:space-between;">
+                                <span>Backup created: <code><?php echo esc_html($backup_name); ?></code></span>
+                                <a href="<?php echo esc_url($download_url); ?>" class="button button-small"><?php _e('Download Backup', 'tool-kits'); ?></a>
+                            </p>
+                        </div>
                     <?php endif; ?>
-                    <?php
-                    $wp_config_path = tk_hardening_wp_config_path();
-                    if ($wp_config_path !== '' && !is_writable($wp_config_path)) :
-                    ?>
-                        <p class="description" style="color:#b32d2e;">wp-config.php is not writable. Please update <code>$table_prefix</code> manually.</p>
-                    <?php endif; ?>
-                    <p class="description">Suggested prefix: <code id="tk-prefix-example"><?php echo esc_html($suggested_prefix); ?></code>
-                        <button type="button" class="button button-secondary" id="tk-prefix-refresh">Refresh Suggestion</button>
-                    </p>
 
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-                        <?php tk_nonce_field('tk_db_change_prefix'); ?>
-                        <input type="hidden" name="action" value="tk_db_change_prefix">
-                        <input type="hidden" name="tk_tab" value="change-prefix">
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:24px;">
+                        <div style="background:var(--tk-bg-soft); padding:20px; border-radius:16px;">
+                            <h4 style="margin:0 0 16px;"><?php _e('Prefix Configuration', 'tool-kits'); ?></h4>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                <?php tk_nonce_field('tk_db_change_prefix'); ?>
+                                <input type="hidden" name="action" value="tk_db_change_prefix">
+                                <input type="hidden" name="tk_tab" value="change-prefix">
 
-                        <label><strong>New Prefix</strong></label>
-                        <input class="regular-text" type="text" id="tk-prefix-input" name="new_prefix" value="<?php echo esc_attr($new_prefix); ?>" placeholder="abc_" required>
-
-                        <p><button class="button button-primary" data-confirm="This is a risky operation. Backup first, then proceed with renaming the prefix?">Rename Prefix</button></p>
-                    </form>
-
-                    <p class="description">Tip: After renaming, update <code>wp-config.php</code>:
-                        <code>$table_prefix = 'NEWPREFIX_';</code>
-                    </p>
+                                <div style="margin-bottom:20px;">
+                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:8px;">New Database Prefix</label>
+                                    <input type="text" id="tk-prefix-input" name="new_prefix" value="<?php echo esc_attr($new_prefix); ?>" placeholder="abc_" required style="width:100%; border-radius:10px;">
+                                </div>
+                                <button class="button button-primary button-hero" style="width:100%; border-radius:10px;" data-confirm="This is a risky operation. Backup first, then proceed with renaming the prefix?">Start Renaming</button>
+                            </form>
+                        </div>
+                        <div style="background:var(--tk-bg-soft); padding:20px; border-radius:16px; border:1px dashed var(--tk-border-soft);">
+                            <h4 style="margin:0 0 12px;"><?php _e('Recommendations', 'tool-kits'); ?></h4>
+                            <div style="margin-bottom:16px;">
+                                <label style="display:block; font-size:12px; color:var(--tk-muted); margin-bottom:4px;">Suggested Prefix</label>
+                                <code id="tk-prefix-example" style="font-size:16px; font-weight:700; color:var(--tk-primary);"><?php echo esc_html($suggested_prefix); ?></code>
+                                <button type="button" class="button button-link" id="tk-prefix-refresh" style="font-size:11px; padding:0; margin-left:8px; vertical-align:baseline; text-decoration:none;">Refresh</button>
+                            </div>
+                            <div style="padding-top:12px; border-top:1px solid var(--tk-border-soft);">
+                                <p class="description" style="font-size:11px; line-height:1.4; color:#d35400;">
+                                    <strong>Important:</strong> After renaming, you must update <code>wp-config.php</code> manually:<br>
+                                    <code>$table_prefix = 'NEW_PREFIX_';</code>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="tk-tab-panel<?php echo $active_tab === 'db-cleanup' ? ' is-active' : ''; ?>" data-panel-id="db-cleanup">
                     <?php tk_render_db_cleanup_panel(); ?>
@@ -1419,6 +1474,92 @@ function tk_db_change_prefix_handler() {
         'tk_backup_token' => $backup_token,
         'tk_backup_name' => $backup_name,
         'tk_tab' => 'change-prefix',
+    ), admin_url('admin.php')));
+    exit;
+}
+
+function tk_db_live_replace_handler() {
+    tk_require_admin_post('tk_db_live_replace');
+    global $wpdb;
+
+    $pairs = tk_db_collect_pairs_from_request();
+    tk_db_save_pairs($pairs);
+
+    if (empty($pairs)) {
+        wp_safe_redirect(add_query_arg(array(
+            'page' => 'tool-kits-db',
+            'tk_tab' => 'live-replace',
+            'tk_live_replace_status' => 'fail',
+            'tk_live_replace_msg' => 'No pairs to replace.',
+        ), admin_url('admin.php')));
+        exit;
+    }
+
+    @set_time_limit(0);
+    $objects = tk_db_list_export_objects();
+    $tables = $objects['tables'];
+
+    $updated_rows = 0;
+    $errors = [];
+
+    foreach ($tables as $table) {
+        $rows = $wpdb->get_results("SELECT * FROM `$table`", ARRAY_A);
+        if (empty($rows)) {
+            continue;
+        }
+
+        $pk = '';
+        $cols = $wpdb->get_results("SHOW COLUMNS FROM `$table`");
+        foreach ($cols as $col) {
+            if ($col->Key === 'PRI') {
+                $pk = $col->Field;
+                break;
+            }
+        }
+
+        if (!$pk) {
+            continue; // Can't update without PK easily
+        }
+
+        foreach ($rows as $row) {
+            $update_data = array();
+            $update_format = array();
+            foreach ($row as $col => $v) {
+                if (is_null($v)) continue;
+                if ($col === $pk) continue; // Don't replace primary key value
+
+                $processed = is_string($v) ? tk_db_apply_pairs_to_value($v, $pairs, $col, $row) : $v;
+                if ($processed !== $v) {
+                    $update_data[$col] = $processed;
+                    $update_format[] = '%s';
+                }
+            }
+
+            if (!empty($update_data)) {
+                $res = $wpdb->update($table, $update_data, array($pk => $row[$pk]));
+                if ($res !== false) {
+                    $updated_rows++;
+                } else {
+                    $errors[] = "Failed updating table $table at $pk = " . $row[$pk];
+                }
+            }
+        }
+    }
+
+    if (!empty($errors)) {
+        $msg = "Replaced $updated_rows rows, but encountered errors. Check logs.";
+        tk_log("Live replace errors: " . implode(", ", $errors));
+        $status = 'fail';
+    } else {
+        $msg = "Successfully updated $updated_rows rows.";
+        $status = 'ok';
+    }
+
+    wp_safe_redirect(add_query_arg(array(
+        'page' => 'tool-kits-db',
+        'tk_tab' => 'live-replace',
+        'tk_live_replace_status' => $status,
+        'tk_live_replace_msg' => $msg,
     ), admin_url('admin.php')));
     exit;
 }

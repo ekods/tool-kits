@@ -32,6 +32,14 @@ Tool Kits membantu admin WordPress mengelola 5 area utama:
 - Theme checker (summary, largest file, duplicate PHP, risky functions).
 - Tool Kits Access (role/IP access, alerts, audit log, owner mode, license).
 
+### Pembaruan Terbaru (Access, License, Monitoring)
+
+- Konfigurasi collector, heartbeat, dan license sekarang mengikuti satu alur config yang sama.
+- Tab `Tool Kits Access > License` menampilkan `Collector URL`, hasil auto-derive `Heartbeat URL` dan `License server URL`, serta badge `Configured/Missing`.
+- Ditambahkan `Test Heartbeat` dan `Test License Reachability` sebelum aktivasi lisensi.
+- Diagnostics menampilkan status koneksi, last success, last failure, last error, dan endpoint terakhir untuk heartbeat/license.
+- Monitoring hanya menampilkan data valid untuk healthcheck agar tidak misleading di local atau shared hosting.
+
 ### Pembaruan Terbaru (Hardening)
 
 - HSTS header sekarang tersedia sebagai toggle dan default direkomendasikan aktif.
@@ -150,6 +158,7 @@ Untuk visibilitas operasional dan deteksi dini masalah.
 - 404 monitor + exclude rules.
 - Healthcheck endpoint + secret key.
 - Heartbeat terjadwal ke collector eksternal.
+- Ringkasan status collector/heartbeat dan hasil heartbeat terakhir.
 
 #### 9) Cache
 
@@ -178,6 +187,7 @@ Untuk kontrol siapa yang boleh akses plugin.
 - Security alerts via email.
 - Audit log perubahan.
 - Owner mode + pengaturan lisensi.
+- Status koneksi collector/heartbeat/license, token status, dan hasil check terakhir.
 
 ### Instalasi
 
@@ -222,6 +232,14 @@ Tool Kits is an all-in-one WordPress admin toolkit focused on:
 - Cache controls (page cache, object flush, OPcache reset, fragment flush).
 - Theme checker (summary, largest files, duplicate PHP, risky functions).
 - Access controls (roles/IP allowlist, alerts, audit log, owner mode, license).
+
+### Recent Updates (Access, License, Monitoring)
+
+- Collector, heartbeat, and license configuration now follow one shared setup flow.
+- `Tool Kits Access > License` now shows explicit collector input, derived heartbeat/license URLs, and `Configured/Missing` status badges.
+- Added `Test Heartbeat` and `Test License Reachability` actions before license activation.
+- Diagnostics now surfaces connection status, last success, last failure, last error, and last checked endpoint for heartbeat/license flows.
+- Monitoring now hides invalid healthcheck values instead of displaying misleading placeholders.
 
 ### Recent Updates (Hardening)
 
@@ -340,6 +358,7 @@ Provides operational visibility and early detection.
 - 404 monitor with exclusions.
 - Healthcheck endpoint with key.
 - Scheduled heartbeat to external collector.
+- Collector/heartbeat connection summary and latest heartbeat result.
 
 #### 9) Cache
 
@@ -367,6 +386,7 @@ Controls who can manage plugin features.
 - Email security alerts.
 - Audit log.
 - Owner mode and license settings.
+- Collector/heartbeat/license diagnostics, token state, and latest check results.
 
 ### Installation
 

@@ -37,7 +37,8 @@ function tk_render_theme_checker_page() {
     $risky = tk_theme_checker_risky_functions($roots);
     ?>
     <div class="wrap tk-wrap">
-        <h1>Themes Checker</h1>
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero(__('Theme Audit', 'tool-kits'), __('Analyze your active theme for security vulnerabilities and performance bottlenecks.', 'tool-kits'), 'dashicons-layout'); ?>
 
         <div class="tk-toolbar">
             <button type="button" class="button button-primary" id="tk-theme-checker-recheck">
@@ -50,45 +51,63 @@ function tk_render_theme_checker_page() {
 
         <div class="tk-tabs">
             <div class="tk-tabs-nav">
-                <button type="button" class="tk-tabs-nav-button is-active" data-panel="overview">Overview</button>
-                <button type="button" class="tk-tabs-nav-button" data-panel="summary">Summary</button>
-                <button type="button" class="tk-tabs-nav-button" data-panel="largest">Largest Files</button>
-                <button type="button" class="tk-tabs-nav-button" data-panel="duplicates">Duplicates</button>
-                <button type="button" class="tk-tabs-nav-button" data-panel="risky">Risky Functions</button>
+                <button type="button" class="tk-tabs-nav-button is-active" data-panel="overview"><?php _e('Profile', 'tool-kits'); ?></button>
+                <button type="button" class="tk-tabs-nav-button" data-panel="summary"><?php _e('Summary', 'tool-kits'); ?></button>
+                <button type="button" class="tk-tabs-nav-button" data-panel="largest"><?php _e('Largest Files', 'tool-kits'); ?></button>
+                <button type="button" class="tk-tabs-nav-button" data-panel="duplicates"><?php _e('Duplicates', 'tool-kits'); ?></button>
+                <button type="button" class="tk-tabs-nav-button" data-panel="risky"><?php _e('Risky Code', 'tool-kits'); ?></button>
             </div>
             <div class="tk-tabs-content">
                 <div class="tk-card tk-tab-panel is-active" data-panel-id="overview">
-                    <h2>Active Theme</h2>
-                    <table class="widefat striped tk-table">
-                        <tbody>
-                            <tr>
-                                <th>Name</th>
-                                <td><?php echo esc_html($theme->get('Name')); ?></td>
-                            </tr>
-                            <tr>
-                                <th>Version</th>
-                                <td><?php echo esc_html($theme->get('Version')); ?></td>
-                            </tr>
-                            <tr>
-                                <th>Child Theme</th>
-                                <td><?php echo $parent ? 'Yes' : 'No'; ?></td>
-                            </tr>
-                            <?php if ($parent) : ?>
-                            <tr>
-                                <th>Parent Theme</th>
-                                <td><?php echo esc_html($parent->get('Name')); ?></td>
-                            </tr>
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
+                        <h2 style="margin:0;">Active Theme Profile</h2>
+                        <div style="display:flex; gap:8px;">
+                            <span class="tk-badge <?php echo $parent ? 'tk-on' : 'tk-off'; ?>"><?php echo $parent ? 'Child Theme' : 'Parent Theme'; ?></span>
+                            <?php if (!empty($warnings)) : ?>
+                                <span class="tk-badge tk-adv"><?php echo count($warnings); ?> Recommendations</span>
                             <?php endif; ?>
-                        </tbody>
-                    </table>
+                        </div>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns: 200px 1fr; gap:24px; background:var(--tk-bg-soft); padding:24px; border-radius:16px; border:1px solid var(--tk-border-soft);">
+                        <div style="width:200px; height:150px; border-radius:12px; overflow:hidden; border:1px solid var(--tk-border-soft); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+                            <?php 
+                            $screenshot = $theme->get_screenshot();
+                            if ($screenshot) : ?>
+                                <img src="<?php echo esc_url($screenshot); ?>" style="width:100%; height:100%; object-fit:cover;" alt="Theme Screenshot">
+                            <?php else : ?>
+                                <div style="width:100%; height:100%; background:#f1f5f9; display:flex; align-items:center; justify-content:center; color:#94a3b8;">
+                                    <span class="dashicons dashicons-format-image" style="font-size:40px; width:40px; height:40px;"></span>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                        <div>
+                            <h3 style="margin:0; font-size:24px; font-weight:800; color:var(--tk-text);"><?php echo esc_html($theme->get('Name')); ?></h3>
+                            <div style="margin-top:8px; display:flex; gap:16px; font-size:13px; color:var(--tk-muted);">
+                                <span><strong style="color:var(--tk-text);">Version:</strong> <?php echo esc_html($theme->get('Version')); ?></span>
+                                <span><strong style="color:var(--tk-text);">Author:</strong> <?php echo $theme->get('Author'); ?></span>
+                            </div>
+                            <div style="margin-top:16px; font-size:13px; line-height:1.6; color:var(--tk-text);">
+                                <?php echo wp_kses_post($theme->get('Description')); ?>
+                            </div>
+                        </div>
+                    </div>
 
                     <?php if (!empty($warnings)) : ?>
-                        <h2 style="margin-top:20px;">Recommendations</h2>
-                        <ul class="tk-list">
+                        <h2 style="margin-top:32px; display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-lightbulb" style="color:#f39c12;"></span> Recommendations</h2>
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; margin-top:16px;">
                             <?php foreach ($warnings as $warning) : ?>
-                                <li><?php echo esc_html($warning); ?></li>
+                                <div style="background:#fffbeb; border:1px solid #fef3c7; border-left:4px solid #f39c12; padding:12px 16px; border-radius:8px; display:flex; align-items:center; gap:12px;">
+                                    <span class="dashicons dashicons-warning" style="color:#f39c12; font-size:18px; width:18px; height:18px;"></span>
+                                    <span style="font-size:13px; color:#92400e; font-weight:500;"><?php echo esc_html($warning); ?></span>
+                                </div>
                             <?php endforeach; ?>
-                        </ul>
+                        </div>
+                    <?php else : ?>
+                        <div style="margin-top:32px; background:rgba(39, 174, 96, 0.1); border:1px solid #27ae60; padding:16px; border-radius:12px; display:flex; align-items:center; gap:12px; color:#27ae60;">
+                            <span class="dashicons dashicons-yes-alt" style="font-size:20px; width:20px; height:20px;"></span>
+                            <span style="font-weight:600;">Your theme follows all analyzed best practices.</span>
+                        </div>
                     <?php endif; ?>
                 </div>
                 <div class="tk-card tk-tab-panel" data-panel-id="summary">
@@ -112,77 +131,159 @@ function tk_render_theme_checker_page() {
                     <?php echo tk_theme_checker_render_asset_list($child_summary, $parent_summary, 'js'); ?>
                 </div>
                 <div class="tk-card tk-tab-panel" data-panel-id="largest">
-                    <h2>Largest Files</h2>
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+                        <h2 style="margin:0;">Largest Files</h2>
+                        <span class="tk-badge tk-adv">Top 10</span>
+                    </div>
+                    <p class="description">Overview of the most resource-heavy files within your active theme.</p>
+                    
                     <?php if (empty($largest)) : ?>
-                        <p><small>No files found.</small></p>
-                    <?php else : ?>
-                        <table class="widefat striped tk-table">
-                            <thead><tr><th>File</th><th>Size</th><th>Scope</th></tr></thead>
-                            <tbody>
-                                <?php foreach ($largest as $item) : ?>
-                                    <tr>
-                                        <td><code><?php echo esc_html($item['path']); ?></code></td>
-                                        <td><?php echo esc_html(size_format((int) $item['size'])); ?></td>
-                                        <td><?php echo esc_html($item['scope']); ?></td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
+                        <p><em>No theme files found.</em></p>
+                    <?php else : 
+                        $max_size = 0;
+                        foreach ($largest as $item) {
+                            if ($item['size'] > $max_size) $max_size = $item['size'];
+                        }
+                    ?>
+                        <div style="margin-top:20px;">
+                            <?php foreach ($largest as $item) : 
+                                $p = $max_size > 0 ? round(($item['size'] / $max_size) * 100) : 0;
+                            ?>
+                                <div style="margin-bottom:16px; background:var(--tk-bg-soft); padding:12px; border-radius:10px; border:1px solid var(--tk-border-soft);">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                        <div style="display:flex; align-items:center; gap:8px; max-width:75%;">
+                                            <span class="dashicons dashicons-media-text" style="font-size:16px; color:var(--tk-muted);"></span>
+                                            <code style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; background:none; padding:0;"><?php echo esc_html($item['path']); ?></code>
+                                        </div>
+                                        <div style="text-align:right;">
+                                            <span style="font-weight:700; font-size:13px; color:var(--tk-text);"><?php echo esc_html(size_format((int) $item['size'])); ?></span>
+                                            <div style="font-size:10px; color:var(--tk-muted); text-transform:uppercase; letter-spacing:0.05em;"><?php echo esc_html($item['scope']); ?></div>
+                                        </div>
+                                    </div>
+                                    <div class="tk-progress" style="height:6px; background:rgba(0,0,0,0.05);"><div class="tk-progress-bar" style="width:<?php echo $p; ?>%; background:linear-gradient(90deg, #1d4ed8, #60a5fa); opacity:<?php echo 0.5 + ($p/200); ?>;"></div></div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
                     <?php endif; ?>
                 </div>
                 <div class="tk-card tk-tab-panel" data-panel-id="duplicates">
-                    <h2>Duplicate PHP Files</h2>
-                    <p><small>Exact content matches only (whitespace-sensitive).</small></p>
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+                        <h2 style="margin:0;">Duplicate PHP Files</h2>
+                        <span class="tk-badge tk-medium">Redundancy Check</span>
+                    </div>
+                    <p class="description">Identical PHP files found in your theme (whitespace-sensitive). Cleaning these can improve maintainability.</p>
+                    
                     <?php if (empty($duplicates)) : ?>
-                        <p><small>No duplicates found.</small></p>
-                    <?php else : ?>
-                        <table class="widefat striped tk-table">
-                            <thead><tr><th>Files</th><th>Total size</th><th>Paths</th></tr></thead>
-                            <tbody>
-                                <?php foreach ($duplicates as $group) : ?>
-                                    <tr>
-                                        <td><?php echo esc_html((string) $group['count']); ?></td>
-                                        <td><?php echo esc_html(size_format((int) $group['size'])); ?></td>
-                                        <td>
-                                            <ul class="tk-list">
-                                                <?php foreach ($group['paths'] as $path) : ?>
-                                                    <li><code><?php echo esc_html($path); ?></code></li>
-                                                <?php endforeach; ?>
-                                            </ul>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                        <p><small>Showing up to 20 groups (max 10 files per group).</small></p>
+                        <p><em>No duplicate PHP files detected. Great job!</em></p>
+                    <?php else : 
+                        $total_wasted = 0;
+                        $total_groups = count($duplicates);
+                        foreach ($duplicates as $group) {
+                            // Wasted = (count - 1) * individual_size
+                            $individual_size = $group['size'] / $group['count'];
+                            $total_wasted += ($group['count'] - 1) * $individual_size;
+                        }
+                    ?>
+                        <div class="tk-rt-grid" style="margin-bottom:24px;">
+                            <div class="tk-rt-card" style="padding:15px; border-left:4px solid #e67e22;">
+                                <span class="dashicons dashicons-database-remove" style="font-size:20px; color:#e67e22;"></span>
+                                <h4 style="font-size:10px;">Wasted Space</h4>
+                                <div class="tk-rt-value" style="font-size:18px; color:#e67e22;"><?php echo size_format($total_wasted); ?></div>
+                            </div>
+                            <div class="tk-rt-card" style="padding:15px;">
+                                <span class="dashicons dashicons-images-alt" style="font-size:20px;"></span>
+                                <h4 style="font-size:10px;">Duplicate Groups</h4>
+                                <div class="tk-rt-value" style="font-size:18px;"><?php echo number_format($total_groups); ?></div>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:20px;">
+                            <?php foreach ($duplicates as $group) : 
+                                $ind_size = $group['size'] / $group['count'];
+                            ?>
+                                <div class="tk-card" style="margin-bottom:16px; border-left:1px solid var(--tk-border-soft);">
+                                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                                        <div>
+                                            <h4 style="margin:0; font-size:14px; color:var(--tk-text);">Duplicate Group</h4>
+                                            <p style="margin:4px 0 0; font-size:11px; color:var(--tk-muted);"><?php echo (int) $group['count']; ?> identical copies detected</p>
+                                        </div>
+                                        <div style="text-align:right;">
+                                            <div style="font-size:13px; font-weight:700;"><?php echo size_format($ind_size); ?> <span style="font-weight:400; font-size:11px; color:var(--tk-muted);">per file</span></div>
+                                            <div style="font-size:11px; color:#e67e22; font-weight:600;">Saving: <?php echo size_format($ind_size * ($group['count'] - 1)); ?></div>
+                                        </div>
+                                    </div>
+                                    <ul class="tk-list" style="margin-top:10px; font-size:12px; background:var(--tk-bg-soft); padding:10px; border-radius:6px;">
+                                        <?php foreach ($group['paths'] as $path) : ?>
+                                            <li style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                                                <span class="dashicons dashicons-arrow-right-alt2" style="font-size:14px; width:14px; height:14px; color:var(--tk-muted);"></span>
+                                                <code><?php echo esc_html($path); ?></code>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <p class="description" style="font-size:11px;">Showing up to 20 groups (max 10 files per group).</p>
                     <?php endif; ?>
                 </div>
                 <div class="tk-card tk-tab-panel" data-panel-id="risky">
-                    <h2>Risky Functions</h2>
-                    <p><small>Scans PHP files for usage of eval, base64_decode, and shell_exec.</small></p>
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+                        <h2 style="margin:0;">Risky Functions</h2>
+                        <span class="tk-badge tk-adv">Security Audit</span>
+                    </div>
+                    <p class="description">Scanning PHP files for functions often used in malware or obfuscated code.</p>
+                    
                     <?php if (empty($risky)) : ?>
-                        <p><small>No risky functions found.</small></p>
-                    <?php else : ?>
-                        <table class="widefat striped tk-table">
-                            <thead><tr><th>Function</th><th>Count</th><th>Reason</th><th>Matches</th></tr></thead>
-                            <tbody>
-                                <?php foreach ($risky as $row) : ?>
-                                    <tr>
-                                        <td><code><?php echo esc_html($row['function']); ?></code></td>
-                                        <td><?php echo esc_html((string) $row['count']); ?></td>
-                                        <td><?php echo esc_html($row['reason']); ?></td>
-                                        <td>
-                                            <ul class="tk-list">
-                                                <?php foreach ($row['matches'] as $match) : ?>
-                                                    <li><code><?php echo esc_html($match); ?></code></li>
-                                                <?php endforeach; ?>
-                                            </ul>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                        <p><small>Showing up to 20 matches per function.</small></p>
+                        <div style="background:rgba(39, 174, 96, 0.1); border:1px solid #27ae60; padding:20px; border-radius:12px; text-align:center; margin-top:20px;">
+                            <span class="dashicons dashicons-shield-alt" style="font-size:40px; width:40px; height:40px; color:#27ae60; margin-bottom:12px;"></span>
+                            <h3 style="margin:0; color:#27ae60;">No Risky Functions Found</h3>
+                            <p style="margin:8px 0 0; color:#27ae60;">Your theme does not appear to use eval, base64_decode, or shell_exec.</p>
+                        </div>
+                    <?php else : 
+                        $total_risky = 0;
+                        foreach ($risky as $r) $total_risky += $r['count'];
+                    ?>
+                        <div class="tk-rt-grid" style="margin-bottom:24px;">
+                            <?php foreach ($risky as $row) : 
+                                $is_critical = in_array($row['function'], array('eval', 'shell_exec'));
+                            ?>
+                                <div class="tk-rt-card" style="padding:15px; border-top:3px solid <?php echo $is_critical ? '#e74c3c' : '#f39c12'; ?>;">
+                                    <h4 style="font-size:10px;"><?php echo esc_html($row['function']); ?></h4>
+                                    <div class="tk-rt-value" style="font-size:20px; color:<?php echo $is_critical ? '#e74c3c' : '#f39c12'; ?>;"><?php echo number_format($row['count']); ?></div>
+                                    <div style="font-size:10px; margin-top:4px; font-weight:600; color:<?php echo $is_critical ? '#e74c3c' : '#f39c12'; ?>;"><?php echo $is_critical ? 'CRITICAL' : 'WARNING'; ?></div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+
+                        <div style="margin-top:20px;">
+                            <?php foreach ($risky as $row) : 
+                                $is_critical = in_array($row['function'], array('eval', 'shell_exec'));
+                            ?>
+                                <div class="tk-card" style="margin-bottom:20px; border-left:4px solid <?php echo $is_critical ? '#e74c3c' : '#f39c12'; ?>;">
+                                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                                        <div>
+                                            <h3 style="margin:0; font-size:16px;"><code><?php echo esc_html($row['function']); ?>()</code></h3>
+                                            <p style="margin:5px 0 0; font-size:12px; color:var(--tk-muted);"><?php echo esc_html($row['reason']); ?></p>
+                                        </div>
+                                        <span class="tk-badge <?php echo $is_critical ? 'tk-adv' : 'tk-medium'; ?>"><?php echo (int) $row['count']; ?> Matches</span>
+                                    </div>
+                                    <div style="background:var(--tk-bg-soft); padding:12px; border-radius:8px; border:1px solid var(--tk-border-soft); margin-top:10px;">
+                                        <h4 style="margin:0 0 8px; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">Found in:</h4>
+                                        <ul class="tk-list" style="font-size:12px; margin:0;">
+                                            <?php foreach ($row['matches'] as $match) : ?>
+                                                <li style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                                                    <span class="dashicons dashicons-warning" style="font-size:14px; width:14px; height:14px; color:<?php echo $is_critical ? '#e74c3c' : '#f39c12'; ?>;"></span>
+                                                    <code><?php echo esc_html($match); ?></code>
+                                                </li>
+                                            <?php endforeach; ?>
+                                        </ul>
+                                        <?php if ($row['count'] > 20) : ?>
+                                            <p style="margin-top:8px; font-size:10px; font-style:italic; color:var(--tk-muted);">Showing first 20 occurrences.</p>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
                     <?php endif; ?>
                 </div>
             </div>
@@ -263,16 +364,33 @@ function tk_theme_checker_render_asset_list($child_summary, $parent_summary, $ty
         return $b['size'] <=> $a['size'];
     });
     $list = array_slice($list, 0, 20);
-    $out = '<table class="widefat striped tk-table"><thead><tr><th>File</th><th>Size</th><th>Scope</th></tr></thead><tbody>';
+    
+    $max_size = 0;
     foreach ($list as $item) {
-        $out .= '<tr>';
-        $out .= '<td><code>' . esc_html($item['path']) . '</code></td>';
-        $out .= '<td>' . esc_html(size_format((int) $item['size'])) . '</td>';
-        $out .= '<td>' . esc_html($item['scope']) . '</td>';
-        $out .= '</tr>';
+        if ($item['size'] > $max_size) $max_size = $item['size'];
     }
-    $out .= '</tbody></table>';
-    $out .= '<p><small>Showing up to 20 files.</small></p>';
+
+    $out = '<div style="margin-top:15px; display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px;">';
+    foreach ($list as $item) {
+        $p = $max_size > 0 ? round(($item['size'] / $max_size) * 100) : 0;
+        $icon = ($type === 'css') ? 'dashicons-editor-code' : 'dashicons-media-spreadsheet';
+        
+        $out .= '<div style="background:var(--tk-bg-soft); padding:10px; border-radius:8px; border:1px solid var(--tk-border-soft);">';
+        $out .= '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">';
+        $out .= '<div style="display:flex; align-items:center; gap:6px; max-width:70%;">';
+        $out .= '<span class="dashicons ' . esc_attr($icon) . '" style="font-size:14px; width:14px; height:14px; color:var(--tk-muted);"></span>';
+        $out .= '<code style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; background:none; padding:0;">' . esc_html($item['path']) . '</code>';
+        $out .= '</div>';
+        $out .= '<div style="text-align:right;">';
+        $out .= '<span style="font-weight:600; font-size:12px;">' . esc_html(size_format((int) $item['size'])) . '</span>';
+        $out .= '</div>';
+        $out .= '</div>';
+        $out .= '<div class="tk-progress" style="height:4px;"><div class="tk-progress-bar" style="width:' . $p . '%; opacity:' . (0.4 + ($p/200)) . ';"></div></div>';
+        $out .= '<div style="font-size:9px; color:var(--tk-muted); text-transform:uppercase; margin-top:4px; letter-spacing:0.05em;">' . esc_html($item['scope']) . '</div>';
+        $out .= '</div>';
+    }
+    $out .= '</div>';
+    $out .= '<p class="description" style="font-size:11px; margin-top:10px;">Showing up to 20 files.</p>';
     return $out;
 }
 
@@ -307,8 +425,15 @@ function tk_theme_checker_scan_dir($root, $scope) {
         if (!is_string($path) || $path === '') {
             continue;
         }
-        $dir = basename($file->getPath());
-        if (in_array($dir, $skip_dirs, true)) {
+        $normalized_path = wp_normalize_path($path);
+        $is_excluded = false;
+        foreach ($skip_dirs as $skip) {
+            if (strpos($normalized_path, '/' . $skip . '/') !== false) {
+                $is_excluded = true;
+                break;
+            }
+        }
+        if ($is_excluded) {
             continue;
         }
 
@@ -402,8 +527,15 @@ function tk_theme_checker_duplicate_files($roots) {
             if (!is_string($path) || $path === '') {
                 continue;
             }
-            $dir = basename($file->getPath());
-            if (in_array($dir, $skip_dirs, true)) {
+            $normalized_path = wp_normalize_path($path);
+            $is_excluded = false;
+            foreach ($skip_dirs as $skip) {
+                if (strpos($normalized_path, '/' . $skip . '/') !== false) {
+                    $is_excluded = true;
+                    break;
+                }
+            }
+            if ($is_excluded) {
                 continue;
             }
             if (strtolower($file->getExtension()) !== 'php') {
@@ -481,8 +613,15 @@ function tk_theme_checker_risky_functions($roots) {
             if (!is_string($path) || $path === '') {
                 continue;
             }
-            $dir = basename($file->getPath());
-            if (in_array($dir, $skip_dirs, true)) {
+            $normalized_path = wp_normalize_path($path);
+            $is_excluded = false;
+            foreach ($skip_dirs as $skip) {
+                if (strpos($normalized_path, '/' . $skip . '/') !== false) {
+                    $is_excluded = true;
+                    break;
+                }
+            }
+            if ($is_excluded) {
                 continue;
             }
             if (strtolower($file->getExtension()) !== 'php') {

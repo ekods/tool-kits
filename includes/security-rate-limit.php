@@ -184,7 +184,8 @@ function tk_render_rate_limit_page() {
     ksort($blocked);
     ?>
     <div class="wrap tk-wrap">
-        <h1>Rate Limit</h1>
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero(__('Login Rate Limiter', 'tool-kits'), __('Prevent brute-force attacks by limiting the number of login attempts from specific IPs.', 'tool-kits'), 'dashicons-warning'); ?>
         <div class="tk-tabs">
             <div class="tk-tabs-nav">
                 <button type="button" class="tk-tabs-nav-button is-active" data-panel="settings">Settings</button>

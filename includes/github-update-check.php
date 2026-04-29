@@ -231,22 +231,123 @@ function tk_github_resolve_package_url(array $release) {
         }
     }
 
-    foreach ($release['assets'] as $asset) {
-        $asset_name = strtolower((string) ($asset['name'] ?? ''));
-        $download_url = (string) ($asset['browser_download_url'] ?? '');
+    tk_github_log('Exact asset tool-kits.zip not found.');
+    return '';
+}
 
-        if (
-            $download_url !== '' &&
-            strpos($asset_name, 'tool-kits') !== false &&
-            substr($asset_name, -4) === '.zip'
-        ) {
-            tk_github_log('Using fallback release asset: ' . $asset_name);
-            return $download_url;
+function tk_github_asset_api_url_for_package(string $package): string {
+    $release = get_transient('tk_github_latest_release');
+    if (!is_array($release) || empty($release['assets']) || !is_array($release['assets'])) {
+        $release = tk_github_fetch_latest_release();
+    }
+
+    if (is_wp_error($release) || !is_array($release) || empty($release['assets']) || !is_array($release['assets'])) {
+        return '';
+    }
+
+    foreach ($release['assets'] as $asset) {
+        if (!is_array($asset)) {
+            continue;
+        }
+        $name = strtolower((string) ($asset['name'] ?? ''));
+        $browser_url = (string) ($asset['browser_download_url'] ?? '');
+        $api_url = (string) ($asset['url'] ?? '');
+        if ($name === 'tool-kits.zip' && $browser_url === $package && $api_url !== '') {
+            return $api_url;
         }
     }
 
-    tk_github_log('No valid ZIP asset found in GitHub release.');
     return '';
+}
+
+function tk_github_response_body_excerpt($body): string {
+    $body = is_scalar($body) ? (string) $body : '';
+    if ($body === '') {
+        return '';
+    }
+
+    $body = wp_strip_all_tags($body);
+    $body = preg_replace('/\s+/', ' ', $body);
+    $body = is_string($body) ? trim($body) : '';
+
+    return substr($body, 0, 220);
+}
+
+function tk_github_download_package(string $package) {
+    $host = parse_url($package, PHP_URL_HOST);
+    $host = is_string($host) ? strtolower($host) : '';
+    $allowed_hosts = array('github.com', 'api.github.com', 'release-assets.githubusercontent.com');
+
+    if ($package === '' || !in_array($host, $allowed_hosts, true)) {
+        return new WP_Error('tk_github_invalid_package_url', 'Invalid GitHub update package URL.');
+    }
+
+    $download_url = tk_github_asset_api_url_for_package($package);
+    $headers = array(
+        'User-Agent' => 'Tool Kits Updater',
+    );
+
+    if ($download_url !== '') {
+        $headers['Accept'] = 'application/octet-stream';
+    } else {
+        $download_url = $package;
+    }
+
+    $tmp_file = wp_tempnam('tool-kits.zip');
+    if (!$tmp_file) {
+        return new WP_Error('tk_github_temp_file', 'Could not create a temporary file for the update package.');
+    }
+
+    $response = wp_remote_get($download_url, array(
+        'timeout'     => 60,
+        'redirection' => 5,
+        'stream'      => true,
+        'filename'    => $tmp_file,
+        'headers'     => $headers,
+    ));
+
+    if (is_wp_error($response)) {
+        @unlink($tmp_file);
+        return $response;
+    }
+
+    $code = (int) wp_remote_retrieve_response_code($response);
+    $content_type = strtolower((string) wp_remote_retrieve_header($response, 'content-type'));
+    $size = file_exists($tmp_file) ? (int) filesize($tmp_file) : 0;
+
+    if ($code < 200 || $code >= 300) {
+        $body = file_exists($tmp_file) ? file_get_contents($tmp_file) : '';
+        @unlink($tmp_file);
+        $detail = tk_github_response_body_excerpt($body);
+        $message = 'GitHub update package returned HTTP ' . $code . '.';
+        if ($detail !== '') {
+            $message .= ' Response: ' . $detail;
+        }
+        return new WP_Error('tk_github_download_http', $message);
+    }
+
+    if ($size < 128) {
+        @unlink($tmp_file);
+        return new WP_Error('tk_github_download_empty', 'GitHub update package download was empty or too small.');
+    }
+
+    $signature = file_get_contents($tmp_file, false, null, 0, 4);
+    $looks_like_zip = is_string($signature) && substr($signature, 0, 2) === 'PK';
+    if (!$looks_like_zip) {
+        $body = file_exists($tmp_file) ? file_get_contents($tmp_file) : '';
+        @unlink($tmp_file);
+        $detail = tk_github_response_body_excerpt($body);
+        $message = 'GitHub update package did not return a valid ZIP file.';
+        if ($content_type !== '') {
+            $message .= ' Content-Type: ' . $content_type . '.';
+        }
+        if ($detail !== '') {
+            $message .= ' Response: ' . $detail;
+        }
+        return new WP_Error('tk_github_download_not_zip', $message);
+    }
+
+    return $tmp_file;
 }
 
 function tk_github_find_plugin_root(string $source): string {
@@ -418,7 +519,22 @@ function tk_github_upgrader_pre_download($reply, $package, $upgrader, $hook_extr
     ));
     tk_github_log('Preparing to download package: ' . (string) $package);
 
-    return $reply;
+    $download = tk_github_download_package((string) $package);
+    if (is_wp_error($download)) {
+        tk_github_store_status('failed', $download->get_error_message(), array(
+            'package'    => (string) $package,
+            'error_code' => $download->get_error_code(),
+        ));
+        tk_github_log('Package download failed: ' . $download->get_error_message());
+        return $download;
+    }
+
+    tk_github_store_status('running', 'Update package downloaded and validated.', array(
+        'package' => (string) $package,
+        'file'    => basename((string) $download),
+    ));
+
+    return $download;
 }
 
 function tk_github_upgrader_package_options($options) {
@@ -462,12 +578,7 @@ function tk_github_upgrader_install_package_result($result, $hook_extra) {
 }
 
 function tk_github_upgrader_source_selection($source, $remote_source, $upgrader, $hook_extra) {
-    if (empty($hook_extra['plugin'])) {
-        return $source;
-    }
-
-    $plugin_file = plugin_basename(TK_PATH . 'tool-kits.php');
-    if ($hook_extra['plugin'] !== $plugin_file) {
+    if (!is_array($hook_extra) || !tk_github_is_target_upgrade($hook_extra)) {
         return $source;
     }
 
@@ -487,18 +598,23 @@ function tk_github_upgrader_source_selection($source, $remote_source, $upgrader,
 
     tk_github_log('Source selection: source=' . $source . ' plugin_root=' . $plugin_root);
 
-    // Kalau root plugin sudah benar, langsung pakai.
     if ($plugin_root === $source && basename($source) === 'tool-kits') {
-        tk_github_log('Package root already correct.');
         return $source;
     }
 
     if (basename($plugin_root) !== 'tool-kits') {
-        tk_github_log('Resolved plugin root has unexpected basename: ' . basename($plugin_root));
-        return new WP_Error('tk_github_invalid_root_name', 'The update package root must be named tool-kits.');
+        $desired_root = trailingslashit(dirname($plugin_root)) . 'tool-kits';
+        
+        global $wp_filesystem;
+        if ($wp_filesystem && $wp_filesystem->move($plugin_root, $desired_root, true)) {
+            $plugin_root = $desired_root;
+        } elseif (@rename($plugin_root, $desired_root)) {
+            $plugin_root = $desired_root;
+        } else {
+            return new WP_Error('tk_github_invalid_root_name', 'The update package root must be named tool-kits, and could not be renamed automatically.');
+        }
     }
 
-    tk_github_log('Using nested plugin root returned from extracted package.');
     return $plugin_root;
 }
 

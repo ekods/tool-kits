@@ -1,0 +1,327 @@
+/* Tool Kits Overview Styles - Premium Dashboard */
+.tk-overview-wrap {
+    padding: 20px;
+    margin: 0 auto;
+}
+
+/* Hero Section */
+.tk-overview-hero {
+    background: #0f172a;
+    /* Deep Navy */
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    border-radius: 24px;
+    padding: 60px 50px;
+    color: #fff;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+}
+
+.tk-overview-hero::after {
+    content: '';
+    position: absolute;
+    bottom: -50px;
+    left: -50px;
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.1) 0%, transparent 70%);
+}
+
+.tk-overview-hero-content {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+}
+
+.tk-overview-hero-title {
+    font-size: 38px !important;
+    font-weight: 800 !important;
+    color: #fff !important;
+    margin: 0 0 15px 0 !important;
+    line-height: 1.2 !important;
+}
+
+.tk-overview-hero-subtitle {
+    font-size: 16px !important;
+    color: #94a3b8 !important;
+    margin-bottom: 35px !important;
+    line-height: 1.6 !important;
+    max-width: 500px;
+}
+
+.tk-overview-hero-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.tk-overview-hero-actions .button-hero {
+    height: 46px !important;
+    line-height: 44px !important;
+    padding: 0 24px !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
+}
+
+.tk-overview-hero-actions .button-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+/* Score Box */
+.tk-overview-score-box {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border-radius: 24px;
+    padding: 35px;
+    text-align: center;
+    position: relative;
+    z-index: 2;
+    min-width: 160px;
+}
+
+.tk-overview-score-circle {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    margin: 0 auto 15px;
+}
+
+.tk-overview-score-circle svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+
+.tk-overview-score-circle circle {
+    fill: none;
+    stroke-width: 3;
+}
+
+.tk-overview-score-circle .bg {
+    stroke: rgba(255, 255, 255, 0.1);
+}
+
+.tk-overview-score-circle .fg {
+    stroke-linecap: round;
+    transition: stroke-dasharray 1s ease-out;
+}
+
+.tk-overview-score-value {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 32px;
+    font-weight: 800;
+    color: #fff;
+}
+
+.tk-overview-score-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #22c55e;
+}
+
+/* Layout Grid */
+.tk-overview-grid {
+    display: grid;
+    grid-template-columns: 1fr 350px;
+    gap: 24px;
+}
+
+@media (max-width: 1100px) {
+    .tk-overview-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.tk-overview-section-title {
+    font-size: 18px !important;
+    font-weight: 700 !important;
+    color: #1e293b !important;
+    margin: 0 0 5px 0 !important;
+}
+
+.tk-overview-section-desc {
+    font-size: 13px !important;
+    color: #64748b !important;
+    margin-bottom: 25px !important;
+}
+
+/* Module Grid Overrides */
+.tk-module-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+    margin-top: 0;
+}
+
+.tk-module-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 0;
+    /* Header and body will have padding */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: all 0.2s ease;
+}
+
+.tk-module-card:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.04);
+}
+
+.tk-module-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid #f1f5f9;
+    background: transparent;
+}
+
+.tk-module-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1e293b;
+    gap: 10px;
+}
+
+.tk-module-title .dashicons {
+    color: #2563eb;
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+}
+
+.tk-module-body {
+    padding: 24px;
+    min-height: 80px;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.tk-module-body p.tk-empty {
+    font-style: italic;
+    color: #94a3b8;
+    margin: 0;
+}
+
+.tk-module-body .tk-list li {
+    margin-bottom: 8px;
+}
+
+.tk-module-footer {
+    padding: 16px 24px;
+    background: transparent;
+    border-top: 1px solid #f1f5f9;
+}
+
+.tk-module-footer .button {
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-size: 12px !important;
+    padding: 0 16px !important;
+    height: 32px !important;
+    line-height: 30px !important;
+}
+
+/* Sidebar Widgets */
+.tk-sidebar-widget {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 20px;
+}
+
+.tk-sidebar-widget h2 {
+    font-size: 16px !important;
+    font-weight: 700 !important;
+    color: #1e293b !important;
+    margin: 0 0 12px 0 !important;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.tk-sidebar-widget .description {
+    font-size: 12px !important;
+    color: #64748b !important;
+    margin-bottom: 16px !important;
+    line-height: 1.5;
+}
+
+.tk-stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 13px;
+}
+
+.tk-stat-row:last-child {
+    border-bottom: none;
+}
+
+.tk-stat-label {
+    color: #64748b;
+}
+
+.tk-stat-value {
+    font-weight: 700;
+    color: #1e293b;
+}
+
+/* Tips Widget */
+.tk-tips-widget {
+    background: #fffbeb;
+    border: 1px solid #fef3c7;
+    border-radius: 16px;
+    padding: 20px;
+}
+
+.tk-tips-widget h2 {
+    color: #92400e !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    margin: 0 0 10px 0 !important;
+}
+
+.tk-tips-content {
+    font-size: 13px;
+    color: #b45309;
+    line-height: 1.6;
+}
+
+.tk-tips-content strong {
+    color: #92400e;
+}
+
+/* GA Badge Positioning */
+.tk-sidebar-widget h2 .tk-badge {
+    margin-left: auto;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 12px;
+}
+
+/* Detailed Log Styles */
+.tk-log-details {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+}
+
+.tk-mini-table td {
+    border: none !important;
+    vertical-align: top;
+}

@@ -128,11 +128,10 @@ function tk_user_id_change_save() {
 
 function tk_user_id_change_redirect($status, $message) {
     wp_redirect(add_query_arg(array(
-        'page' => 'tool-kits-optimization',
-        'tk_tab' => 'user-id',
+        'page' => 'tool-kits-general',
         'tk_user_id_changed' => $status,
         'tk_user_id_msg' => $message,
-    ), admin_url('admin.php')));
+    ), admin_url('admin.php')) . '#user-id');
     exit;
 }
 

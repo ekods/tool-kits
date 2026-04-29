@@ -2,7 +2,7 @@
 if (!defined('ABSPATH')) { exit; }
 
 if (!defined('TK_HEARTBEAT_URL')) {
-    define('TK_HEARTBEAT_URL', '');
+    define('TK_HEARTBEAT_URL', 'https://nexamonitor.theteamtheteam.com/api/toolkits/heartbeat');
 }
 if (!defined('TK_HEARTBEAT_AUTH_KEY')) {
     define('TK_HEARTBEAT_AUTH_KEY', '');
@@ -47,23 +47,29 @@ function tk_heartbeat_unschedule() {
 }
 
 function tk_heartbeat_send(): array {
-    $url = (string) tk_get_option('heartbeat_collector_url', '');
-    if ($url === '') {
-        $url = TK_HEARTBEAT_URL;
-    }
-    $secret = (string) tk_get_option('heartbeat_auth_key', '');
-    if ($secret === '') {
-        $secret = TK_HEARTBEAT_AUTH_KEY;
-    }
+    $url = tk_heartbeat_collector_url();
+    $secret = tk_heartbeat_auth_key();
     if ($url === '' || $secret === '') {
-        return array('ok' => false, 'message' => 'Missing heartbeat URL or auth key.');
+        if ($url === '') {
+            return array('ok' => false, 'message' => tk_toolkits_missing_config_message('collector_url'));
+        }
+        return array('ok' => false, 'message' => tk_toolkits_missing_config_message('collector_token'));
     }
     $hide_login_enabled = (int) tk_get_option('hide_login_enabled', 0) === 1;
+    $site_url = home_url('/');
     $payload = array(
-        'site_url' => home_url('/'),
+        'action' => 'heartbeat',
+        'license_key' => trim((string) tk_get_option('license_key', '')),
+        'site_url' => $site_url,
+        'url' => $site_url,
+        'domain' => (string) parse_url($site_url, PHP_URL_HOST),
+        'site_id' => tk_toolkits_install_id(),
+        'site_name' => get_bloginfo('name'),
+        'env' => tk_license_env(),
         'plugin' => 'tool-kits',
         'version' => defined('TK_VERSION') ? TK_VERSION : '',
         'timestamp' => time(),
+        'status' => 'active',
         'active' => true,
         'wp_version' => get_bloginfo('version'),
         'php_version' => PHP_VERSION,
@@ -107,12 +113,17 @@ function tk_heartbeat_send(): array {
     $detail = $resp_message !== '' ? $resp_message : 'Unexpected response.';
     if (is_string($resp_body) && $resp_body !== '') {
         $detail .= ' ' . substr(trim($resp_body), 0, 160);
+        $data = json_decode($resp_body, true);
+        if (is_array($data) && isset($data['status']) && (string) $data['status'] === 'missing_fields') {
+            $detail .= ' Sent fields: ' . implode(', ', array_keys($payload)) . '.';
+        }
     }
     return array('ok' => false, 'message' => 'HTTP ' . $code . ': ' . $detail);
 }
 
 function tk_heartbeat_record_result(array $result): bool {
     $message = isset($result['message']) ? trim((string) $result['message']) : '';
+    tk_heartbeat_record_diagnostic_result($result, tk_heartbeat_collector_url());
     if (empty($result['ok'])) {
         if ($message !== '') {
             set_transient('tk_heartbeat_last_error', $message, MINUTE_IN_SECONDS * 10);

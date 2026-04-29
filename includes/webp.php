@@ -83,7 +83,8 @@ function tk_webp_convert_file($path, $quality) {
         return;
     }
     $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-    if ($ext !== 'jpg' && $ext !== 'jpeg' && $ext !== 'png') {
+    // Skip if not a convertible format (skipping gif and other non-jpg/png)
+    if (!in_array($ext, array('jpg', 'jpeg', 'png'), true)) {
         return;
     }
     $webp_path = preg_replace('/\.(jpe?g|png)$/i', '.webp', $path);
@@ -103,8 +104,10 @@ function tk_webp_convert_file($path, $quality) {
     }
     $editor->set_quality(max(10, min(100, (int) $quality)));
     $result = $editor->save($webp_path, 'image/webp');
-    if (is_wp_error($result)) {
-        tk_webp_maybe_mark_palette_error($result);
+    if (is_wp_error($result) || !file_exists($webp_path)) {
+        if (is_wp_error($result)) {
+            tk_webp_maybe_mark_palette_error($result);
+        }
         if ($ext === 'png') {
             tk_webp_convert_png_with_gd_fallback($path, $webp_path, $quality);
         }
@@ -194,6 +197,7 @@ function tk_render_webp_page() {
     if (!tk_is_admin_user()) return;
     ?>
     <div class="wrap tk-wrap">
+        <?php tk_render_header_branding(); ?>
         <h1>Optimization</h1>
         <?php tk_render_webp_panel(); ?>
     </div>
@@ -317,11 +321,11 @@ function tk_webp_generate_all() {
         wp_die(__('You do not have permission.', 'tool-kits'));
     }
     $offset = max(0, (int) tk_post('offset', 0));
-    $limit = 100;
+    $limit = 20;
     $query = new WP_Query(array(
         'post_type' => 'attachment',
         'post_status' => 'inherit',
-        'post_mime_type' => 'image',
+        'post_mime_type' => array('image/jpeg', 'image/png'),
         'posts_per_page' => $limit,
         'offset' => $offset,
         'fields' => 'ids',
@@ -355,11 +359,11 @@ function tk_webp_generate_batch() {
         wp_send_json_error(array('message' => 'unauthorized'));
     }
     $offset = max(0, (int) tk_post('offset', 0));
-    $limit = 100;
+    $limit = 20;
     $query = new WP_Query(array(
         'post_type' => 'attachment',
         'post_status' => 'inherit',
-        'post_mime_type' => 'image',
+        'post_mime_type' => array('image/jpeg', 'image/png'),
         'posts_per_page' => $limit,
         'offset' => $offset,
         'fields' => 'ids',

@@ -110,44 +110,95 @@ function tk_render_login_log_page() {
     $rows = $wpdb->get_results($wpdb->prepare("SELECT * FROM " . tk_login_log_table() . " {$where} ORDER BY time DESC LIMIT %d OFFSET %d", $params));
     ?>
     <div class="wrap tk-wrap">
-        <h1>Login Log</h1>
-        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-            <?php tk_nonce_field('tk_login_log_save'); ?>
-            <input type="hidden" name="action" value="tk_login_log_save">
-            <label><input type="checkbox" name="enabled" value="1" <?php checked(1, $enabled); ?>> Enable login logging</label>
-            <p><button class="button button-primary">Save</button></p>
-        </form>
-        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:12px;">
-            <?php tk_nonce_field('tk_login_log_clear'); ?>
-            <input type="hidden" name="action" value="tk_login_log_clear">
-            <button class="button button-secondary">Clear Log</button>
-        </form>
-        <div class="tk-tabs" style="margin-top:20px;">
-            <div class="tk-tabs-nav">
-                <button type="button" class="tk-tabs-nav-button<?php echo $status === 'success' ? ' is-active' : ''; ?>" data-status="success">Success</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $status === 'failed' ? ' is-active' : ''; ?>" data-status="failed">Failed</button>
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero(__('Login Activity Log', 'tool-kits'), __('Track all login activity and detect unauthorized access attempts in real-time.', 'tool-kits'), 'dashicons-lock'); ?>
+        <div class="tk-card" style="margin-bottom:24px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="flex:1;">
+                    <?php tk_render_switch('enabled', 'Enable Login Activity Logging', 'Monitor all successful and failed authentication attempts.', $enabled); ?>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0;">
+                        <?php tk_nonce_field('tk_login_log_save'); ?>
+                        <input type="hidden" name="action" value="tk_login_log_save">
+                        <input type="hidden" name="enabled" value="<?php echo $enabled; ?>">
+                        <button class="button button-primary button-hero" style="height:40px; padding:0 20px;">Save Changes</button>
+                    </form>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0;">
+                        <?php tk_nonce_field('tk_login_log_clear'); ?>
+                        <input type="hidden" name="action" value="tk_login_log_clear">
+                        <button class="button button-secondary button-hero" style="height:40px; padding:0 20px;" onclick="return confirm('Clear all logs?')">Clear Log</button>
+                    </form>
+                </div>
             </div>
         </div>
-        <h2>Recent Entries</h2>
-        <table class="widefat striped">
-            <thead><tr><th>Time</th><th>Username</th><th>User ID</th><th>IP</th><th>Location</th><th>Status</th></tr></thead>
-            <tbody>
-                <?php if ($rows) : ?>
-                    <?php foreach ($rows as $row) : ?>
-                        <tr>
-                            <td><?php echo esc_html($row->time); ?></td>
-                            <td><?php echo esc_html($row->username); ?></td>
-                            <td><?php echo esc_html($row->user_id); ?></td>
-                            <td><?php echo esc_html($row->ip); ?></td>
-                            <td><?php echo esc_html(tk_login_log_row_location($row)); ?></td>
-                            <td><?php echo esc_html(ucfirst($row->status)); ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                <?php else : ?>
-                    <tr><td colspan="6">No log entries yet.</td></tr>
-                <?php endif; ?>
-            </tbody>
-        </table>
+
+        <div class="tk-tabs" style="margin-bottom:20px;">
+            <div class="tk-tabs-nav">
+                <button type="button" class="tk-tabs-nav-button<?php echo $status === 'failed' ? ' is-active' : ''; ?>" data-status="failed">Failed Attempts</button>
+                <button type="button" class="tk-tabs-nav-button<?php echo $status === 'success' ? ' is-active' : ''; ?>" data-status="success">Successful Logins</button>
+            </div>
+        </div>
+        <div class="tk-card no-padding">
+            <div class="tk-table-scroll">
+            <table class="widefat striped tk-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>User & IP</th>
+                        <th>Location</th>
+                        <th>Status</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if ($rows) : ?>
+                        <?php foreach ($rows as $row) : ?>
+                            <tr>
+                                <td style="font-weight:500;">
+                                    <div style="font-size:13px;"><?php echo esc_html(date_i18n('M d, Y', strtotime($row->time))); ?></div>
+                                    <div style="font-size:11px; color:var(--tk-muted);"><?php echo esc_html(date_i18n('H:i:s', strtotime($row->time))); ?></div>
+                                </td>
+                                <td>
+                                    <div style="font-weight:600;"><?php echo esc_html($row->username); ?></div>
+                                    <div style="font-size:11px; opacity:0.7;"><code><?php echo esc_html($row->ip); ?></code></div>
+                                </td>
+                                <td>
+                                    <div style="display:flex; align-items:center; gap:6px;">
+                                        <span class="dashicons dashicons-location" style="font-size:14px; width:14px; height:14px; color:var(--tk-muted);"></span>
+                                        <?php echo esc_html(tk_login_log_row_location($row)); ?>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="tk-badge <?php echo $row->status === 'success' ? 'tk-on' : 'tk-warn'; ?>">
+                                        <?php echo esc_html(ucfirst($row->status)); ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="tk-log-details">
+                                        <table class="tk-mini-table" style="width:100%; border-collapse:collapse; font-size:11px;">
+                                            <tr>
+                                                <td style="font-weight:700; width:80px; padding:4px 0; color:#1e293b;">Agent:</td>
+                                                <td style="padding:4px 0; color:#64748b; font-size:10px;"><?php echo esc_html($row->agent); ?></td>
+                                            </tr>
+                                            <?php if ($row->user_id > 0) : ?>
+                                            <tr>
+                                                <td style="font-weight:700; width:80px; padding:4px 0; color:#1e293b;">User ID:</td>
+                                                <td style="padding:4px 0; color:#64748b;"><?php echo esc_html($row->user_id); ?></td>
+                                            </tr>
+                                            <?php endif; ?>
+                                        </table>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php else : ?>
+                        <tr><td colspan="6" style="text-align:center; padding:40px; color:var(--tk-muted);">No log entries yet.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+            </div>
+        </div>
         <div class="tablenav">
             <div class="tablenav-pages">
                 <?php
@@ -184,6 +235,7 @@ function tk_render_login_log_page() {
         array('id' => 'tk-login-log-tabs')
     );
     ?>
+    </div>
     <?php
 }
 

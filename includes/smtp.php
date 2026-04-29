@@ -221,7 +221,8 @@ function tk_render_smtp_page() {
     $transport_warning = tk_smtp_transport_warning($opts);
     ?>
     <div class="wrap tk-wrap">
-        <h1>SMTP</h1>
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero(__('SMTP Delivery', 'tool-kits'), __('Ensure reliable email delivery for your WordPress site using professional SMTP services.', 'tool-kits'), 'dashicons-email-alt'); ?>
         <?php if ($saved === '1') : ?>
             <?php tk_notice('SMTP settings saved.', 'success'); ?>
         <?php endif; ?>
@@ -239,74 +240,101 @@ function tk_render_smtp_page() {
             </div>
             <div class="tk-tabs-content">
                 <div class="tk-card tk-tab-panel is-active" data-panel-id="settings">
-                    <p>Route WordPress emails through a trusted SMTP provider. Gmail and Microsoft 365 are pre-configured; you can also select "Custom" to enter your own server credentials.</p>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <div style="display:flex; align-items:center; gap:12px; margin-bottom:24px; padding-bottom:16px; border-bottom:1px solid var(--tk-border-soft);">
+                        <div style="background:var(--tk-primary); color:#fff; width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center;">
+                            <span class="dashicons dashicons-email-alt" style="font-size:20px; width:20px; height:20px;"></span>
+                        </div>
+                        <div>
+                            <h2 style="margin:0; font-size:18px;">SMTP Configuration</h2>
+                            <p style="margin:0; color:var(--tk-muted); font-size:13px;">Reliable email delivery for your WordPress site.</p>
+                        </div>
+                    </div>
+
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="tk-modern-form">
                         <?php tk_nonce_field('tk_smtp_save'); ?>
                         <input type="hidden" name="action" value="tk_smtp_save">
-                        <p><label><input type="checkbox" name="smtp_enabled" value="1" <?php checked(1, $opts['smtp_enabled']); ?>> Enable SMTP delivery override</label></p>
-                        <p>
-                            <label for="tk-smtp-provider"><strong>Provider</strong></label><br>
-                            <select name="smtp_provider" id="tk-smtp-provider" class="regular-text">
-                                <?php foreach ($presets as $key => $preset) : ?>
-                                    <?php $note = isset($provider_notes[$key]) ? $provider_notes[$key] : ''; ?>
-                                    <option value="<?php echo esc_attr($key); ?>" data-host="<?php echo esc_attr($preset['host']); ?>" data-port="<?php echo esc_attr($preset['port']); ?>" data-secure="<?php echo esc_attr($preset['secure']); ?>" data-note="<?php echo esc_attr($note); ?>" <?php selected($key, $opts['smtp_provider']); ?>><?php echo esc_html($preset['label']); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </p>
-                        <p>
-                            <label for="tk-smtp-host">SMTP host</label><br>
-                            <input type="text" id="tk-smtp-host" name="smtp_host" class="regular-text" value="<?php echo esc_attr($opts['smtp_host']); ?>" placeholder="smtp.example.com">
-                        </p>
-                        <p>
-                            <label for="tk-smtp-port">Port</label><br>
-                            <input type="number" id="tk-smtp-port" name="smtp_port" class="small-text" value="<?php echo esc_attr($opts['smtp_port']); ?>">
-                        </p>
-                        <p>
-                            <label for="tk-smtp-secure">Encryption</label><br>
-                            <select name="smtp_secure" id="tk-smtp-secure" class="regular-text">
-                                <option value="tls" <?php selected('tls', $opts['smtp_secure']); ?>>TLS</option>
-                                <option value="ssl" <?php selected('ssl', $opts['smtp_secure']); ?>>SSL</option>
-                                <option value="tssl" <?php selected('tssl', $opts['smtp_secure']); ?>>TSSL (TLS/SSL)</option>
-                                <option value="none" <?php selected('none', $opts['smtp_secure']); ?>>None</option>
-                            </select>
-                            <span class="description">TSSL lets PHPMailer negotiate TLS/SSL automatically, which helps with providers that accept either protocol.</span>
-                        </p>
-                        <p>
-                            <label for="tk-smtp-username">Username</label><br>
-                            <input type="text" id="tk-smtp-username" name="smtp_username" class="regular-text" value="<?php echo esc_attr($opts['smtp_username']); ?>">
-                        </p>
-                        <p>
-                            <label for="tk-smtp-password">Password / App password</label><br>
-                            <input type="password" id="tk-smtp-password" name="smtp_password" class="regular-text" autocomplete="new-password" placeholder="Leave blank to keep current password">
-                        </p>
-                        <p>
-                            <label for="tk-smtp-from-email">From email (optional)</label><br>
-                            <input type="email" id="tk-smtp-from-email" name="smtp_from_email" class="regular-text" value="<?php echo esc_attr($opts['smtp_from_email']); ?>">
-                        </p>
-                        <?php if ($opts['smtp_from_email'] !== '' && !$from_username_aligned) : ?>
-                            <p class="description"><strong><?php esc_html_e('Recommendation:', 'tool-kits'); ?></strong> <?php esc_html_e('Use the same domain for the From email and the SMTP login so receivers can verify the sender.', 'tool-kits'); ?></p>
-                        <?php elseif ($opts['smtp_from_email'] === '' && is_email($opts['smtp_username'])) : ?>
-                            <p class="description"><?php esc_html_e('Blank From email will default to the authenticated SMTP account, keeping the domain aligned.', 'tool-kits'); ?></p>
-                        <?php endif; ?>
-                        <p>
-                            <label><input type="checkbox" name="smtp_force_from" value="1" <?php checked(1, $opts['smtp_force_from']); ?>> <?php esc_html_e('Force From email to match SMTP login domain', 'tool-kits'); ?></label><br>
-                            <span class="description"><?php esc_html_e('This helps prevent unverified sender warnings in Outlook and Gmail.', 'tool-kits'); ?></span>
-                        </p>
-                        <p>
-                            <label><input type="checkbox" name="smtp_return_path" value="1" <?php checked(1, $opts['smtp_return_path']); ?>> <?php esc_html_e('Set return-path to From email', 'tool-kits'); ?></label><br>
-                            <span class="description"><?php esc_html_e('Improves SPF alignment by matching the envelope sender to the From address.', 'tool-kits'); ?></span>
-                        </p>
-                        <p>
-                            <label for="tk-smtp-from-name">From name (optional)</label><br>
-                            <input type="text" id="tk-smtp-from-name" name="smtp_from_name" class="regular-text" value="<?php echo esc_attr($opts['smtp_from_name']); ?>">
-                        </p>
-                        <div id="tk-smtp-provider-note" class="description">
-                            <?php
-                            $default_note = isset($provider_notes[$opts['smtp_provider']]) ? $provider_notes[$opts['smtp_provider']] : '';
-                            echo wp_kses_post($default_note);
-                            ?>
+                        
+                        <div class="tk-form-section" style="margin-bottom:30px;">
+                            <h3 style="font-size:14px; margin-bottom:16px; color:var(--tk-primary);">1. Global Override</h3>
+                            <?php tk_render_switch('smtp_enabled', 'Enable SMTP Delivery', 'Route all outgoing emails through the SMTP server configured below.', $opts['smtp_enabled']); ?>
                         </div>
-                        <p><button class="button button-primary">Save SMTP Settings</button></p>
+
+                        <div class="tk-form-section" style="margin-bottom:30px; background:var(--tk-bg-soft); padding:20px; border-radius:12px; border:1px solid var(--tk-border-soft);">
+                            <h3 style="font-size:14px; margin-bottom:16px; color:var(--tk-primary); margin-top:0;">2. Provider Details</h3>
+                            
+                            <div class="tk-form-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                                <div class="tk-form-group">
+                                    <label class="tk-form-label"><strong>SMTP Provider</strong></label>
+                                    <select name="smtp_provider" id="tk-smtp-provider" class="tk-input regular-text" style="width: 100%;">
+                                        <?php foreach ($presets as $key => $preset) : ?>
+                                            <?php $note = isset($provider_notes[$key]) ? $provider_notes[$key] : ''; ?>
+                                            <option value="<?php echo esc_attr($key); ?>" data-host="<?php echo esc_attr($preset['host']); ?>" data-port="<?php echo esc_attr($preset['port']); ?>" data-secure="<?php echo esc_attr($preset['secure']); ?>" data-note="<?php echo esc_attr($note); ?>" <?php selected($key, $opts['smtp_provider']); ?>><?php echo esc_html($preset['label']); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="tk-form-group">
+                                    <label class="tk-form-label">Encryption</label>
+                                    <select name="smtp_secure" id="tk-smtp-secure" class="tk-input regular-text" style="width: 100%;">
+                                        <option value="tls" <?php selected('tls', $opts['smtp_secure']); ?>>TLS (Recommended)</option>
+                                        <option value="ssl" <?php selected('ssl', $opts['smtp_secure']); ?>>SSL</option>
+                                        <option value="tssl" <?php selected('tssl', $opts['smtp_secure']); ?>>TSSL (Auto)</option>
+                                        <option value="none" <?php selected('none', $opts['smtp_secure']); ?>>None</option>
+                                    </select>
+                                </div>
+                                <div class="tk-form-group">
+                                    <label class="tk-form-label">SMTP Host</label>
+                                    <input type="text" id="tk-smtp-host" name="smtp_host" class="tk-input" style="width:100%;" value="<?php echo esc_attr($opts['smtp_host']); ?>" placeholder="smtp.example.com">
+                                </div>
+                                <div class="tk-form-group">
+                                    <label class="tk-form-label">SMTP Port</label>
+                                    <input type="number" id="tk-smtp-port" name="smtp_port" class="tk-input" style="width:100%;" value="<?php echo esc_attr($opts['smtp_port']); ?>">
+                                </div>
+                            </div>
+                            <div id="tk-smtp-provider-note" class="tk-alert tk-alert-info" style="margin-top:20px; font-size:12px;">
+                                <?php echo wp_kses_post($default_note ?? ''); ?>
+                            </div>
+                        </div>
+
+                        <div class="tk-form-section" style="margin-bottom:30px;">
+                            <h3 style="font-size:14px; margin-bottom:16px; color:var(--tk-primary);">3. Authentication</h3>
+                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                                <div class="tk-form-group">
+                                    <label class="tk-form-label">Username</label>
+                                    <input type="text" id="tk-smtp-username" name="smtp_username" class="tk-input" style="width:100%;" value="<?php echo esc_attr($opts['smtp_username']); ?>" placeholder="user@example.com">
+                                    <p class="tk-input-help">Your full email address.</p>
+                                </div>
+                                <div class="tk-form-group">
+                                    <label class="tk-form-label">Password / App Password</label>
+                                    <input type="password" id="tk-smtp-password" name="smtp_password" class="tk-input" style="width:100%;" autocomplete="new-password" placeholder="••••••••••••••••">
+                                    <p class="tk-input-help">Use an App Password for Gmail/O365.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="tk-form-section" style="margin-bottom:30px;">
+                            <h3 style="font-size:14px; margin-bottom:16px; color:var(--tk-primary);">4. Sender Identity</h3>
+                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:16px;">
+                                <div class="tk-form-group">
+                                    <label class="tk-form-label">From Email</label>
+                                    <input type="email" id="tk-smtp-from-email" name="smtp_from_email" class="tk-input" style="width:100%;" value="<?php echo esc_attr($opts['smtp_from_email']); ?>" placeholder="admin@example.com">
+                                </div>
+                                <div class="tk-form-group">
+                                    <label class="tk-form-label">From Name</label>
+                                    <input type="text" id="tk-smtp-from-name" name="smtp_from_name" class="tk-input" style="width:100%;" value="<?php echo esc_attr($opts['smtp_from_name']); ?>" placeholder="<?php echo esc_attr((string)get_option('blogname')); ?>">
+                                </div>
+                            </div>
+
+                            <div style="display:flex; flex-direction:column; gap:16px; background:var(--tk-bg-soft); padding:16px; border-radius:12px; border:1px solid var(--tk-border-soft);">
+                                <?php 
+                                tk_render_switch('smtp_force_from', 'Force From Email', 'Ensure the "From" address matches your SMTP username.', $opts['smtp_force_from']);
+                                tk_render_switch('smtp_return_path', 'Set Return-Path', 'Match return-path to from address for better SPF alignment.', $opts['smtp_return_path']);
+                                ?>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:40px; padding-top:20px; border-top:1px solid var(--tk-border-soft); display:flex; justify-content:flex-end;">
+                            <button class="button button-primary button-hero" style="height:44px; padding:0 30px;">Save SMTP Configuration</button>
+                        </div>
                     </form>
                 </div>
                 <div class="tk-card tk-tab-panel" data-panel-id="test">
@@ -356,12 +384,10 @@ Mail Service</textarea>
                             <thead>
                                 <tr>
                                     <th>Time</th>
-                                    <th>Sender</th>
-                                    <th>Recipient</th>
+                                    <th>Sender & Recipient</th>
                                     <th>Status</th>
-                                    <th>Reason</th>
-                                    <th>Message</th>
-                                    <th>Details</th>
+                                    <th>Reason / Message</th>
+                                    <th>Technical Details</th>
                                     <th>Action</th>
                                 </tr>
                             </thead>
@@ -378,13 +404,38 @@ Mail Service</textarea>
                                     $status_label = ucfirst($entry_status);
                                 ?>
                                     <tr>
-                                        <td><?php echo esc_html(date_i18n('Y-m-d H:i', $entry_time)); ?></td>
-                                        <td><?php echo esc_html($entry_sender); ?></td>
-                                        <td><?php echo esc_html($entry_recipient); ?></td>
+                                        <td>
+                                            <div style="font-weight:500; font-size:13px;"><?php echo esc_html(date_i18n('M d, Y', $entry_time)); ?></div>
+                                            <div style="font-size:11px; color:var(--tk-muted);"><?php echo esc_html(date_i18n('H:i:s', $entry_time)); ?></div>
+                                        </td>
+                                        <td>
+                                            <div style="font-size:12px;"><span style="color:var(--tk-muted);">From:</span> <code><?php echo esc_html($entry_sender); ?></code></div>
+                                            <div style="font-size:12px; margin-top:4px;"><span style="color:var(--tk-muted);">To:</span> <code><?php echo esc_html($entry_recipient); ?></code></div>
+                                        </td>
                                         <td><span class="tk-badge <?php echo esc_attr($status_class); ?>"><?php echo esc_html($status_label); ?></span></td>
-                                        <td><?php echo esc_html($entry_reason !== '' ? wp_trim_words($entry_reason, 20, '...') : '-'); ?></td>
-                                        <td><?php echo esc_html(wp_trim_words($entry_message, 20, '...')); ?></td>
-                                        <td><?php echo esc_html(tk_smtp_test_log_format_details($entry_details)); ?></td>
+                                        <td>
+                                            <?php if ($entry_reason !== '') : ?>
+                                                <div style="color:#e74c3c; font-weight:600; font-size:11px; margin-bottom:4px;"><?php echo esc_html($entry_reason); ?></div>
+                                            <?php endif; ?>
+                                            <div style="font-size:11px; color:var(--tk-muted); font-style:italic;"><?php echo esc_html(wp_trim_words($entry_message, 15, '...')); ?></div>
+                                        </td>
+                                        <td>
+                                            <div class="tk-log-details">
+                                                <table class="tk-mini-table" style="width:100%; border-collapse:collapse; font-size:10px;">
+                                                    <?php 
+                                                    $details_formatted = tk_smtp_test_log_get_details_array($entry_details);
+                                                    if (!empty($details_formatted)) : 
+                                                        foreach ($details_formatted as $label => $val) : ?>
+                                                        <tr>
+                                                            <td style="font-weight:700; width:90px; padding:3px 0; color:#1e293b;"><?php echo esc_html($label); ?>:</td>
+                                                            <td style="padding:3px 0; color:#64748b;"><?php echo esc_html($val); ?></td>
+                                                        </tr>
+                                                    <?php endforeach; else : ?>
+                                                        <tr><td style="color:#94a3b8;">&mdash;</td></tr>
+                                                    <?php endif; ?>
+                                                </table>
+                                            </div>
+                                        </td>
                                         <td>
                                             <?php if ($entry_recipient !== '') : ?>
                                                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0;">
@@ -392,7 +443,7 @@ Mail Service</textarea>
                                                     <input type="hidden" name="action" value="tk_smtp_test">
                                                     <input type="hidden" name="smtp_test_email" value="<?php echo esc_attr($entry_recipient); ?>">
                                                     <input type="hidden" name="smtp_test_message" value="<?php echo esc_attr($entry_message); ?>">
-                                                    <button type="submit" class="button button-secondary button-small">Resend</button>
+                                                    <button type="submit" class="button button-secondary button-small" style="font-size:11px;">Resend</button>
                                                 </form>
                                             <?php else : ?>
                                                 &mdash;
@@ -494,6 +545,7 @@ Mail Service</textarea>
         activate(initialPanel());
     })();
     </script>
+    </div>
     <?php
 }
 
@@ -909,6 +961,31 @@ function tk_smtp_test_log_format_sender(): string {
         return $email;
     }
     return sprintf('%s <%s>', $name, $email);
+}
+
+function tk_smtp_test_log_get_details_array(array $details): array {
+    if (empty($details)) {
+        return array();
+    }
+    $map = array(
+        'from' => 'From',
+        'reply_to' => 'Reply-To',
+        'return_path' => 'Return-Path',
+        'content_type' => 'Content-Type',
+        'smtp_host' => 'SMTP Host',
+        'smtp_port' => 'Port',
+        'smtp_secure' => 'Secure',
+        'smtp_autotls' => 'AutoTLS',
+        'smtp_auth' => 'Auth',
+        'smtp_user' => 'User',
+        'force_from' => 'Force From',
+    );
+    $out = array();
+    foreach ($details as $k => $v) {
+        $label = isset($map[$k]) ? $map[$k] : ucfirst(str_replace('_', ' ', $k));
+        $out[$label] = $v;
+    }
+    return $out;
 }
 
 function tk_smtp_test_log_format_details(array $details): string {

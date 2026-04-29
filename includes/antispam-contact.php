@@ -8,9 +8,11 @@ function tk_antispam_contact_init() {
     // Contact Form 7 integration (optional, only active if CF7 present + enabled)
     add_filter('wpcf7_form_elements', 'tk_cf7_add_honeypot_and_time', 20, 1);
     add_filter('wpcf7_validate', 'tk_cf7_validate_honeypot_and_time', 20, 2);
-    add_filter('wpcf7_validate_text', 'tk_cf7_validate_honeypot_and_time', 20, 2);
-    add_filter('wpcf7_validate_email', 'tk_cf7_validate_honeypot_and_time', 20, 2);
+    add_action('wpcf7_before_send_mail', 'tk_antispam_cf7_before_send_mail', 20, 3);
     add_filter('pre_wp_mail', 'tk_antispam_pre_wp_mail', 20, 2);
+    add_filter('wpcf7_display_message', 'tk_antispam_cf7_display_message', 20, 2);
+    add_filter('wpcf7_ajax_json_echo', 'tk_antispam_cf7_ajax_json_echo', 20, 2);
+    add_filter('wpcf7_feedback_response', 'tk_antispam_cf7_ajax_json_echo', 20, 2);
 }
 
 function tk_antispam_enabled() {
@@ -46,20 +48,70 @@ function tk_antispam_line_list(string $raw): array {
     }));
 }
 
-function tk_antispam_submission_link_count(array $values): int {
+function tk_antispam_current_host(): string {
+    $host = (string) wp_parse_url(home_url('/'), PHP_URL_HOST);
+    return strtolower(preg_replace('/^www\./i', '', $host));
+}
+
+function tk_antispam_link_is_current_domain(string $url): bool {
+    $url = trim($url);
+    if ($url === '') {
+        return false;
+    }
+
+    if (strpos($url, '//') === 0) {
+        $url = 'https:' . $url;
+    } elseif (stripos($url, 'www.') === 0) {
+        $url = 'https://' . $url;
+    }
+
+    $host = (string) wp_parse_url($url, PHP_URL_HOST);
+    if ($host === '') {
+        return true;
+    }
+
+    $host = strtolower(preg_replace('/^www\./i', '', $host));
+    $current_host = tk_antispam_current_host();
+
+    return $current_host !== '' && $host === $current_host;
+}
+
+function tk_antispam_extract_links_from_value(string $value): array {
+    $links = array();
+
+    if (preg_match_all('/\bhref\s*=\s*(["\'])(.*?)\1/i', $value, $matches) && !empty($matches[2])) {
+        foreach ($matches[2] as $url) {
+            $links[] = trim((string) $url);
+        }
+    }
+
+    if (preg_match_all('#https?://[^\s<>"\']+#i', $value, $matches) && !empty($matches[0])) {
+        foreach ($matches[0] as $url) {
+            $links[] = trim((string) $url);
+        }
+    }
+
+    if (preg_match_all('/\bwww\.[^\s<>"\']+/i', $value, $matches) && !empty($matches[0])) {
+        foreach ($matches[0] as $url) {
+            $links[] = trim((string) $url);
+        }
+    }
+
+    return array_values(array_unique(array_filter($links)));
+}
+
+function tk_antispam_submission_link_count(array $values, bool $external_only = true): int {
     $count = 0;
     foreach ($values as $value) {
         if (!is_string($value) || $value === '') {
             continue;
         }
-        if (preg_match_all('#https?://#i', $value, $matches) === 1 && !empty($matches[0])) {
-            $count += count($matches[0]);
-        }
-        if (preg_match_all('/\bwww\./i', $value, $matches) === 1 && !empty($matches[0])) {
-            $count += count($matches[0]);
-        }
-        if (preg_match_all('/\bhref\s*=/i', $value, $matches) === 1 && !empty($matches[0])) {
-            $count += count($matches[0]);
+
+        foreach (tk_antispam_extract_links_from_value($value) as $url) {
+            if ($external_only && tk_antispam_link_is_current_domain($url)) {
+                continue;
+            }
+            $count++;
         }
     }
     return $count;
@@ -281,7 +333,7 @@ function tk_antispam_replay_reason(array $values): string {
         return '';
     }
 
-    $duplicate_window = max(0, (int) tk_get_option('antispam_duplicate_window_minutes', 30));
+    $duplicate_window = max(0, (int) tk_get_option('antispam_duplicate_window_minutes', 5));
     if (
         $duplicate_window > 0 &&
         $signature !== '' &&
@@ -309,7 +361,7 @@ function tk_antispam_replay_reason(array $values): string {
 
 function tk_antispam_register_submission(array $values): void {
     $signature = tk_antispam_submission_signature($values);
-    $duplicate_window = max(0, (int) tk_get_option('antispam_duplicate_window_minutes', 30));
+    $duplicate_window = max(0, (int) tk_get_option('antispam_duplicate_window_minutes', 5));
     if ($duplicate_window > 0 && $signature !== '') {
         set_transient(tk_antispam_duplicate_key($signature), 1, $duplicate_window * MINUTE_IN_SECONDS);
         tk_antispam_submission_request_cache($signature, true);
@@ -340,8 +392,12 @@ function tk_antispam_contains_html(array $values): bool {
     return false;
 }
 
+function tk_antispam_shortener_domains(): array {
+    return array('bit.ly', 'tinyurl.com', 'is.gd', 'cutt.ly', 't.co', 'rb.gy', 'rebrand.ly', 'goo.su');
+}
+
 function tk_antispam_contains_shortener(array $values): bool {
-    $domains = array('bit.ly', 'tinyurl.com', 'is.gd', 'cutt.ly', 't.co', 'rb.gy', 'rebrand.ly', 'goo.su');
+    $domains = tk_antispam_shortener_domains();
     foreach ($values as $value) {
         if (!is_string($value) || $value === '') {
             continue;
@@ -363,15 +419,11 @@ function tk_antispam_log_get(): array {
 
 function tk_antispam_log_record(string $reason, array $values = array()): void {
     $log = tk_antispam_log_get();
-    $sample = array();
     foreach ($values as $key => $value) {
         if (!is_string($value) || $value === '') {
             continue;
         }
-        $sample[$key] = mb_substr($value, 0, 120);
-        if (count($sample) >= 5) {
-            break;
-        }
+        $sample[$key] = $value;
     }
     array_unshift($log, array(
         'time' => current_time('timestamp', 1),
@@ -383,10 +435,140 @@ function tk_antispam_log_record(string $reason, array $values = array()): void {
     tk_update_option('antispam_log', $log);
 }
 
-function tk_antispam_reject($result, string $message, string $reason, array $values = array()) {
+function tk_antispam_current_rejection_key(): string {
+    return 'tk_antispam_reject_' . md5(tk_get_ip() . '|' . tk_user_agent());
+}
+
+function tk_antispam_rejection_message(string $reason, string $fallback = ''): string {
+    $base_reason = strtolower(trim(strtok($reason, ':')));
+    $messages = array(
+        'mail_guard_html_detected' => __('HTML is not allowed in this form submission.', 'tool-kits'),
+        'html_detected' => __('HTML is not allowed in this form submission.', 'tool-kits'),
+        'mail_guard_links_blocked' => __('Links are not allowed in this form submission.', 'tool-kits'),
+        'links_blocked' => __('Links are not allowed in this form submission.', 'tool-kits'),
+        'rate_limit_exceeded' => __('Too many form submissions. Please try again later.', 'tool-kits'),
+        'submitted_too_quickly' => __('Form submitted too quickly. Please try again.', 'tool-kits'),
+        'mail_guard_shortener_link_detected' => __('Shortened links are not allowed in this form submission.', 'tool-kits'),
+        'shortener_link_detected' => __('Shortened links are not allowed in this form submission.', 'tool-kits'),
+    );
+
+    $message = isset($messages[$base_reason]) ? $messages[$base_reason] : $fallback;
+    if ($message === '') {
+        $message = __('Form submission blocked by security policy.', 'tool-kits');
+    }
+
+    return sprintf('%s Reason: %s', $message, $reason);
+}
+
+function tk_antispam_store_rejection(string $reason, string $message): void {
+    $payload = array(
+        'reason' => $reason,
+        'message' => $message,
+        'time' => time(),
+    );
+
+    $GLOBALS['tk_antispam_current_rejection'] = $payload;
+    set_transient(tk_antispam_current_rejection_key(), $payload, MINUTE_IN_SECONDS * 5);
+}
+
+function tk_antispam_get_rejection(): array {
+    if (!empty($GLOBALS['tk_antispam_current_rejection']) && is_array($GLOBALS['tk_antispam_current_rejection'])) {
+        return $GLOBALS['tk_antispam_current_rejection'];
+    }
+
+    $payload = get_transient(tk_antispam_current_rejection_key());
+    return is_array($payload) ? $payload : array();
+}
+
+function tk_antispam_cf7_rejection_field(array $values = array(), $tags = null): string {
+    $preferred = array('your-message', 'message', 'subject', 'your-subject', 'your-email', 'email', 'your-name', 'name');
+    $tag_names = array();
+
+    if ($tags === null && function_exists('wpcf7_scan_form_tags')) {
+        $tags = wpcf7_scan_form_tags();
+    }
+
+    if ($tags instanceof WPCF7_FormTag) {
+        $tags = array($tags);
+    }
+
+    if (is_array($tags)) {
+        foreach ($tags as $tag) {
+            if ($tag instanceof WPCF7_FormTag && !empty($tag->name)) {
+                $tag_names[] = (string) $tag->name;
+            } elseif (is_array($tag) && !empty($tag['name'])) {
+                $tag_names[] = (string) $tag['name'];
+            }
+        }
+    }
+
+    foreach ($preferred as $name) {
+        if (in_array($name, $tag_names, true)) {
+            return $name;
+        }
+    }
+
+    foreach (array_keys($values) as $name) {
+        if (strpos((string) $name, '_wpcf7') === 0 || strpos((string) $name, 'tk_') === 0) {
+            continue;
+        }
+        if (function_exists('wpcf7_is_name') && !wpcf7_is_name((string) $name)) {
+            continue;
+        }
+        if (in_array((string) $name, $tag_names, true)) {
+            return (string) $name;
+        }
+    }
+
+    return !empty($tag_names) ? (string) $tag_names[0] : '';
+}
+
+function tk_antispam_reject($result, string $message, string $reason, array $values = array(), $tags = null) {
     tk_antispam_log_record($reason, $values);
-    $result->invalidate(null, $message);
+    $message = tk_antispam_rejection_message($reason, $message);
+    tk_antispam_store_rejection($reason, $message);
+    $field = tk_antispam_cf7_rejection_field($values, $tags);
+    if ($field !== '') {
+        $result->invalidate($field, $message);
+    }
     return $result;
+}
+
+function tk_antispam_cf7_display_message($message, $status) {
+    if (!tk_antispam_enabled()) {
+        return $message;
+    }
+
+    if (!in_array((string) $status, array('validation_failed', 'spam', 'mail_failed', 'aborted'), true)) {
+        return $message;
+    }
+
+    $rejection = tk_antispam_get_rejection();
+    if (empty($rejection['message'])) {
+        return $message;
+    }
+
+    return (string) $rejection['message'];
+}
+
+function tk_antispam_cf7_ajax_json_echo($response, $result) {
+    if (!tk_antispam_enabled() || !is_array($response)) {
+        return $response;
+    }
+
+    $rejection = tk_antispam_get_rejection();
+    if (empty($rejection['message']) || empty($rejection['reason'])) {
+        return $response;
+    }
+
+    $response['status'] = 'validation_failed';
+    $response['message'] = (string) $rejection['message'];
+    if (empty($response['invalid_fields']) || !is_array($response['invalid_fields'])) {
+        $response['invalid_fields'] = array();
+    }
+    $response['tool_kits_reason'] = (string) $rejection['reason'];
+
+    return $response;
 }
 
 function tk_antispam_rate_limit_key(): string {
@@ -454,23 +636,10 @@ function tk_antispam_is_contact_notification_mail(array $atts): bool {
     return false;
 }
 
-function tk_antispam_pre_wp_mail($return, array $atts) {
-    if (!tk_antispam_enabled()) {
-        return $return;
-    }
-    if (!tk_antispam_is_contact_notification_mail($atts)) {
-        return $return;
-    }
-
-    $message = isset($atts['message']) && is_string($atts['message']) ? $atts['message'] : '';
-    if ($message === '') {
-        return $return;
-    }
-
-    $values = tk_antispam_text_values_from_string(wp_strip_all_tags($message) . "\n" . $message);
+function tk_antispam_mail_guard_reason(array $values): string {
     $reason = '';
 
-    if ((int) tk_get_option('antispam_block_html', 1) === 1 && $message !== wp_strip_all_tags($message)) {
+    if ((int) tk_get_option('antispam_block_html', 1) === 1 && tk_antispam_contains_html($values)) {
         $reason = 'mail_guard_html_detected';
     } elseif ((int) tk_get_option('antispam_block_shorteners', 1) === 1 && tk_antispam_contains_shortener($values)) {
         $reason = 'mail_guard_shortener_link_detected';
@@ -513,18 +682,63 @@ function tk_antispam_pre_wp_mail($return, array $atts) {
         $reason = tk_antispam_detect_random_submission_reason($values);
     }
 
-    if ($reason === '') {
-        $reason = tk_antispam_replay_reason($values);
+    return $reason;
+}
+
+function tk_antispam_cf7_before_send_mail($contact_form, &$abort = false, $submission = null): void {
+    if (!tk_antispam_enabled()) {
+        return;
     }
 
+    $values = tk_antispam_scalar_post_values();
+    if (empty($values)) {
+        return;
+    }
+
+    $reason = tk_antispam_mail_guard_reason($values);
+    if ($reason === '') {
+        return;
+    }
+
+    $message = tk_antispam_rejection_message($reason);
+    tk_antispam_store_rejection($reason, $message);
+    tk_antispam_log_record($reason, $values);
+    tk_log('Blocked suspicious contact form submission before mail: ' . $reason);
+
+    $abort = true;
+    if (is_object($submission) && method_exists($submission, 'set_response')) {
+        $submission->set_response($message);
+    }
+}
+
+function tk_antispam_pre_wp_mail($return, array $atts) {
+    if (!tk_antispam_enabled()) {
+        return $return;
+    }
+    if (!tk_antispam_is_contact_notification_mail($atts)) {
+        return $return;
+    }
+
+    $message = isset($atts['message']) && is_string($atts['message']) ? $atts['message'] : '';
+    if ($message === '') {
+        return $return;
+    }
+
+    $submitted_values = tk_antispam_scalar_post_values();
+    $values = !empty($submitted_values)
+        ? $submitted_values
+        : tk_antispam_text_values_from_string(wp_strip_all_tags($message));
+    $reason = tk_antispam_mail_guard_reason($values);
+
     if ($reason !== '') {
+        $message = tk_antispam_rejection_message($reason);
+        tk_antispam_store_rejection($reason, $message);
         tk_antispam_log_record($reason, $values);
         tk_log('Blocked suspicious contact notification email: ' . $reason);
         return false;
     }
 
     tk_antispam_register_submission($values);
-
     return $return;
 }
 
@@ -535,8 +749,8 @@ function tk_cf7_add_honeypot_and_time($form) {
     $ts = time();
     set_transient(tk_antispam_key(), $ts, 30 * MINUTE_IN_SECONDS);
 
-    $honeypot = '<span class="tk-hp" style="position:absolute;left:-9999px;top:-9999px;height:1px;overflow:hidden;" aria-hidden="true">'
-        . '<label>Leave this field empty<input type="text" name="tk_hp_field" value="" tabindex="-1" autocomplete="off"></label>'
+    $honeypot = '<span class="tk-hp" style="display:none !important; visibility:hidden !important; position:absolute !important; left:-9999px !important; top:-9999px !important; height:1px !important; width:1px !important; overflow:hidden !important;" aria-hidden="true">'
+        . '<label>Leave this field empty<input type="text" name="tk_hp_field" value="" tabindex="-1" autocomplete="off" style="display:none !important;"></label>'
         . '</span>';
 
     $timefield = '<input type="hidden" name="tk_form_ts" value="' . esc_attr($ts) . '">';
@@ -550,7 +764,7 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
 
     $hp = isset($_POST['tk_hp_field']) ? trim(wp_unslash($_POST['tk_hp_field'])) : '';
     if ($hp !== '') {
-        return tk_antispam_reject($result, __('Spam detected.', 'tool-kits'), 'honeypot_filled');
+        return tk_antispam_reject($result, __('Spam detected.', 'tool-kits'), 'honeypot_filled', array(), $tags);
     }
 
     $min = (int) tk_get_option('antispam_min_seconds', 3);
@@ -561,7 +775,7 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
     if ($posted > 0 && $stored > 0) {
         $elapsed = time() - $stored;
         if ($elapsed < $min) {
-            return tk_antispam_reject($result, __('Form submitted too quickly. Please try again.', 'tool-kits'), 'submitted_too_quickly');
+            return tk_antispam_reject($result, __('Form submitted too quickly. Please try again.', 'tool-kits'), 'submitted_too_quickly', array(), $tags);
         }
     }
 
@@ -571,23 +785,23 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
     }
 
     if (tk_antispam_rate_limit_exceeded()) {
-        return tk_antispam_reject($result, __('Too many form submissions. Please try again later.', 'tool-kits'), 'rate_limit_exceeded', $values);
+        return tk_antispam_reject($result, __('Too many form submissions. Please try again later.', 'tool-kits'), 'rate_limit_exceeded', $values, $tags);
     }
 
     $message = tk_antispam_message_value($values);
     $min_chars = max(0, (int) tk_get_option('antispam_message_min_chars', 12));
     if ($min_chars > 0 && $message !== '' && function_exists('mb_strlen') && mb_strlen($message) < $min_chars) {
-        return tk_antispam_reject($result, __('Message is too short.', 'tool-kits'), 'message_too_short', $values);
+        return tk_antispam_reject($result, __('Message is too short.', 'tool-kits'), 'message_too_short', $values, $tags);
     } elseif ($min_chars > 0 && $message !== '' && strlen($message) < $min_chars) {
-        return tk_antispam_reject($result, __('Message is too short.', 'tool-kits'), 'message_too_short', $values);
+        return tk_antispam_reject($result, __('Message is too short.', 'tool-kits'), 'message_too_short', $values, $tags);
     }
 
     if ((int) tk_get_option('antispam_block_html', 1) === 1 && tk_antispam_contains_html($values)) {
-        return tk_antispam_reject($result, __('HTML is not allowed in this form submission.', 'tool-kits'), 'html_detected', $values);
+        return tk_antispam_reject($result, __('HTML is not allowed in this form submission.', 'tool-kits'), 'html_detected', $values, $tags);
     }
 
     if ((int) tk_get_option('antispam_block_shorteners', 1) === 1 && tk_antispam_contains_shortener($values)) {
-        return tk_antispam_reject($result, __('Shortened links are not allowed in this form submission.', 'tool-kits'), 'shortener_link_detected', $values);
+        return tk_antispam_reject($result, __('Shortened links are not allowed in this form submission.', 'tool-kits'), 'shortener_link_detected', $values, $tags);
     }
 
     $generic_phrases = tk_antispam_line_list((string) tk_get_option('antispam_generic_phrases', ''));
@@ -596,7 +810,7 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
         foreach ($generic_phrases as $phrase) {
             $phrase = strtolower(trim($phrase));
             if ($phrase !== '' && strpos($normalized_message, $phrase) !== false) {
-                return tk_antispam_reject($result, __('Spam-like content detected.', 'tool-kits'), 'generic_message_phrase', $values);
+                return tk_antispam_reject($result, __('Spam-like content detected.', 'tool-kits'), 'generic_message_phrase', $values, $tags);
             }
         }
     }
@@ -605,7 +819,7 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
     if ((int) tk_get_option('antispam_block_links', 1) === 1 && $link_count > 0) {
         $max_links = max(0, (int) tk_get_option('antispam_max_links', 0));
         if ($link_count > $max_links) {
-            return tk_antispam_reject($result, __('Links are not allowed in this form submission.', 'tool-kits'), 'links_blocked', $values);
+            return tk_antispam_reject($result, __('Links are not allowed in this form submission.', 'tool-kits'), 'links_blocked', $values, $tags);
         }
     }
 
@@ -614,7 +828,7 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
         $email_domains = tk_antispam_submission_email_domains($values);
         foreach ($email_domains as $domain) {
             if (in_array($domain, $blocked_domains, true)) {
-                return tk_antispam_reject($result, __('Disposable email addresses are not allowed.', 'tool-kits'), 'disposable_email_domain:' . $domain, $values);
+                return tk_antispam_reject($result, __('Disposable email addresses are not allowed.', 'tool-kits'), 'disposable_email_domain:' . $domain, $values, $tags);
             }
         }
     }
@@ -624,19 +838,19 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
         $haystack = strtolower(implode("\n", array_filter($values, 'is_string')));
         foreach ($keywords as $keyword) {
             if ($keyword !== '' && strpos($haystack, strtolower($keyword)) !== false) {
-                return tk_antispam_reject($result, __('Spam-like content detected.', 'tool-kits'), 'blocked_keyword:' . strtolower($keyword), $values);
+                return tk_antispam_reject($result, __('Spam-like content detected.', 'tool-kits'), 'blocked_keyword:' . strtolower($keyword), $values, $tags);
             }
         }
     }
 
     $random_reason = tk_antispam_detect_random_submission_reason($values);
     if ($random_reason !== '') {
-        return tk_antispam_reject($result, __('Spam-like content detected.', 'tool-kits'), $random_reason, $values);
+        return tk_antispam_reject($result, __('Spam-like content detected.', 'tool-kits'), $random_reason, $values, $tags);
     }
 
     $replay_reason = tk_antispam_replay_reason($values);
     if ($replay_reason !== '') {
-        return tk_antispam_reject($result, __('Please wait before sending another message.', 'tool-kits'), $replay_reason, $values);
+        return tk_antispam_reject($result, __('Please wait before sending another message.', 'tool-kits'), $replay_reason, $values, $tags);
     }
 
     tk_antispam_register_submission($values);
@@ -672,7 +886,7 @@ function tk_render_antispam_contact_panel() {
     $generic_phrases = (string) tk_get_option('antispam_generic_phrases', "hi\nhello\ncheck this\nsee it here\nsee here\nclick here\nhave a peek here\ncontact me\nwhatsapp me\ngood day\nhow are you\ni have a question\ntest");
     $block_html = (int) tk_get_option('antispam_block_html', 1);
     $block_shorteners = (int) tk_get_option('antispam_block_shorteners', 1);
-    $duplicate_window = (int) tk_get_option('antispam_duplicate_window_minutes', 30);
+    $duplicate_window = (int) tk_get_option('antispam_duplicate_window_minutes', 5);
     $email_cooldown = (int) tk_get_option('antispam_email_cooldown_minutes', 15);
     $ip_cooldown = (int) tk_get_option('antispam_ip_cooldown_seconds', 60);
     $rate_limit_enabled = (int) tk_get_option('antispam_rate_limit_enabled', 1);
@@ -691,55 +905,198 @@ function tk_render_antispam_contact_panel() {
             <input type="hidden" name="action" value="tk_antispam_save">
             <input type="hidden" name="tk_tab" value="antispam">
 
-            <label><input type="checkbox" name="enabled" value="1" <?php checked(1, $enabled); ?>> Enable for Contact Form 7</label>
+            <div style="margin-bottom:24px;">
+                <?php tk_render_switch('enabled', 'Enable Contact Form 7 Protection', 'Apply honeypot and content rules to all CF7 forms.', $enabled); ?>
+            </div>
 
-            <label><strong>Minimum seconds before submit</strong></label>
-            <input class="small-text" type="number" min="0" name="min_seconds" value="<?php echo esc_attr($min_seconds); ?>"> seconds
+            <div class="tk-grid tk-grid-2" style="gap:24px;">
+                <!-- Timing & Velocity -->
+                <div style="background:var(--tk-bg-soft); padding:20px; border-radius:16px; border:1px solid var(--tk-border-soft);">
+                    <h4 style="margin-top:0; color:var(--tk-primary); font-size:14px; margin-bottom:16px;">Timing & Velocity</h4>
+                    <div style="display:flex; flex-direction:column; gap:16px;">
+                        <div class="tk-control-row">
+                            <div class="tk-control-info">
+                                <label>Min Submit Time</label>
+                                <p class="description">Seconds required to fill the form.</p>
+                            </div>
+                            <input class="small-text" type="number" min="0" name="min_seconds" value="<?php echo esc_attr($min_seconds); ?>">
+                        </div>
+                        <div class="tk-control-row">
+                            <div class="tk-control-info">
+                                <label>Duplicate Window</label>
+                                <p class="description">Minutes to block identical posts.</p>
+                            </div>
+                            <input class="small-text" type="number" min="0" name="duplicate_window_minutes" value="<?php echo esc_attr($duplicate_window); ?>">
+                        </div>
+                        <?php tk_render_switch('rate_limit_enabled', 'IP Rate Limiting', 'Throttle multiple submissions from one IP.', $rate_limit_enabled); ?>
+                        <div class="tk-control-row" style="margin-left:26px;">
+                            <div class="tk-control-info"><label>Max Attempts</label></div>
+                            <input class="small-text" type="number" min="1" name="rate_limit_max_attempts" value="<?php echo esc_attr($rate_limit_max); ?>">
+                        </div>
+                    </div>
+                </div>
 
-            <p><label><input type="checkbox" name="block_links" value="1" <?php checked(1, $block_links); ?>> Block links in submissions</label></p>
+                <!-- Content Rules -->
+                <div style="background:var(--tk-bg-soft); padding:20px; border-radius:16px; border:1px solid var(--tk-border-soft);">
+                    <h4 style="margin-top:0; color:var(--tk-primary); font-size:14px; margin-bottom:16px;">Content Rules</h4>
+                    <div style="display:flex; flex-direction:column; gap:16px;">
+                        <?php 
+                        tk_render_switch('block_links', 'Strict Link Blocking', 'Reject any submission containing URLs.', $block_links);
+                        tk_render_switch('block_html', 'Block HTML Tags', 'Prevent code injection in textareas.', $block_html);
+                        tk_render_switch('block_shorteners', 'Block URL Shorteners', 'Reject bit.ly, tinyurl, and others.', $block_shorteners);
+                        tk_render_switch('block_disposable_email', 'Block Disposable Emails', 'Reject mailinator, trashmail, etc.', $block_disposable);
+                        ?>
+                        <div class="tk-control-row">
+                            <div class="tk-control-info">
+                                <label>Min Message Length</label>
+                                <p class="description">Characters required to submit.</p>
+                            </div>
+                            <input class="small-text" type="number" min="0" name="message_min_chars" value="<?php echo esc_attr($message_min_chars); ?>">
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-            <label><strong>Allowed links per message</strong></label>
-            <input class="small-text" type="number" min="0" name="max_links" value="<?php echo esc_attr($max_links); ?>">
+            <div style="margin-top:24px; display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                <div style="padding:20px; background:var(--tk-bg-soft); border-radius:12px; border:1px solid var(--tk-border-soft);">
+                    <label style="display:block; font-weight:600; margin-bottom:8px;">Blocked Keywords</label>
+                    <textarea class="large-text" rows="5" name="block_keywords" style="width:100%; border-radius:8px;"><?php echo esc_textarea($block_keywords); ?></textarea>
+                </div>
+                <div style="padding:20px; background:var(--tk-bg-soft); border-radius:12px; border:1px solid var(--tk-border-soft);">
+                    <label style="display:block; font-weight:600; margin-bottom:8px;">Generic Spam Phrases</label>
+                    <textarea class="large-text" rows="5" name="generic_phrases" style="width:100%; border-radius:8px;"><?php echo esc_textarea($generic_phrases); ?></textarea>
+                </div>
+            </div>
 
-            <p><label><input type="checkbox" name="block_disposable_email" value="1" <?php checked(1, $block_disposable); ?>> Block disposable email domains</label></p>
-
-            <label><strong>Disposable email domains (one per line)</strong></label>
-            <textarea class="large-text" rows="6" name="disposable_domains"><?php echo esc_textarea($disposable_domains); ?></textarea>
-
-            <label><strong>Blocked keywords/domains (one per line)</strong></label>
-            <textarea class="large-text" rows="6" name="block_keywords"><?php echo esc_textarea($block_keywords); ?></textarea>
-
-            <label><strong>Minimum message length</strong></label>
-            <input class="small-text" type="number" min="0" name="message_min_chars" value="<?php echo esc_attr($message_min_chars); ?>"> characters
-
-            <label><strong>Duplicate submission window</strong></label>
-            <input class="small-text" type="number" min="0" name="duplicate_window_minutes" value="<?php echo esc_attr($duplicate_window); ?>"> minutes
-
-            <label><strong>Email cooldown</strong></label>
-            <input class="small-text" type="number" min="0" name="email_cooldown_minutes" value="<?php echo esc_attr($email_cooldown); ?>"> minutes
-
-            <label><strong>IP cooldown</strong></label>
-            <input class="small-text" type="number" min="0" name="ip_cooldown_seconds" value="<?php echo esc_attr($ip_cooldown); ?>"> seconds
-
-            <label><strong>Generic spam phrases (one per line)</strong></label>
-            <textarea class="large-text" rows="5" name="generic_phrases"><?php echo esc_textarea($generic_phrases); ?></textarea>
-
-            <p><label><input type="checkbox" name="block_html" value="1" <?php checked(1, $block_html); ?>> Block HTML in submissions</label></p>
-
-            <p><label><input type="checkbox" name="block_shorteners" value="1" <?php checked(1, $block_shorteners); ?>> Block shortened links</label></p>
-
-            <p><label><input type="checkbox" name="rate_limit_enabled" value="1" <?php checked(1, $rate_limit_enabled); ?>> Enable per-IP rate limit</label></p>
-
-            <label><strong>Rate limit window</strong></label>
-            <input class="small-text" type="number" min="1" name="rate_limit_window_minutes" value="<?php echo esc_attr($rate_limit_window); ?>"> minutes
-
-            <label><strong>Max attempts per window</strong></label>
-            <input class="small-text" type="number" min="1" name="rate_limit_max_attempts" value="<?php echo esc_attr($rate_limit_max); ?>">
-
-            <p><button class="button button-primary">Save</button></p>
+            <div style="margin-top:24px; padding-top:20px; border-top:1px solid var(--tk-border-soft);">
+                <button class="button button-primary button-hero">Save Anti-spam Settings</button>
+            </div>
         </form>
 
-        <p class="description">If CF7 is not installed, the module stays passive and safe.</p>
+	        <p class="description">If CF7 is not installed, the module stays passive and safe.</p>
+	    </div>
+	    <?php tk_render_antispam_block_notes(); ?>
+	    <?php
+	}
+
+function tk_render_antispam_block_notes(): void {
+    $min_seconds = max(0, (int) tk_get_option('antispam_min_seconds', 5));
+    $min_minutes = $min_seconds > 0 ? round($min_seconds / 60, 2) : 0;
+    $message_min_chars = max(0, (int) tk_get_option('antispam_message_min_chars', 20));
+    $message_min_words = $message_min_chars > 0 ? max(1, (int) ceil($message_min_chars / 5)) : 0;
+    $max_links = max(0, (int) tk_get_option('antispam_max_links', 0));
+    $rate_limit_window = max(1, (int) tk_get_option('antispam_rate_limit_window_minutes', 15));
+    $rate_limit_max = max(1, (int) tk_get_option('antispam_rate_limit_max_attempts', 2));
+    $duplicate_window = max(0, (int) tk_get_option('antispam_duplicate_window_minutes', 5));
+    $email_cooldown = max(0, (int) tk_get_option('antispam_email_cooldown_minutes', 15));
+    $ip_cooldown = max(0, (int) tk_get_option('antispam_ip_cooldown_seconds', 60));
+    $ip_cooldown_minutes = $ip_cooldown > 0 ? round($ip_cooldown / 60, 2) : 0;
+    $current_host = tk_antispam_current_host();
+    $shorteners = implode(', ', tk_antispam_shortener_domains());
+    $notes = array(
+        array(
+            'type' => 'Honeypot',
+            'reasons' => 'honeypot_filled',
+            'cause' => 'Hidden field is filled. Usually bot/autofill touched a field real visitors cannot see.',
+            'response' => 'Spam detected.',
+        ),
+        array(
+            'type' => 'Submit too quickly',
+            'reasons' => 'submitted_too_quickly',
+            'cause' => 'Submission happened before minimum submit time: ' . $min_seconds . ' seconds' . ($min_minutes > 0 ? ' (' . $min_minutes . ' minutes)' : '') . '.',
+            'response' => 'Form submitted too quickly. Please try again.',
+        ),
+        array(
+            'type' => 'Rate limit',
+            'reasons' => 'rate_limit_exceeded',
+            'cause' => 'Same IP submitted more than ' . $rate_limit_max . ' times within ' . $rate_limit_window . ' minutes.',
+            'response' => 'Too many form submissions. Please try again later.',
+        ),
+        array(
+            'type' => 'Message length',
+            'reasons' => 'message_too_short',
+            'cause' => 'Message field is shorter than ' . $message_min_chars . ' characters, roughly ' . $message_min_words . ' words.',
+            'response' => 'Message is too short.',
+        ),
+        array(
+            'type' => 'HTML content',
+            'reasons' => 'html_detected, mail_guard_html_detected',
+            'cause' => 'Submitted fields or generated mail body contain HTML tags, such as anchor/script markup.',
+            'response' => 'HTML is not allowed in this form submission.',
+        ),
+        array(
+            'type' => 'Shortened links',
+            'reasons' => 'shortener_link_detected, mail_guard_shortener_link_detected',
+            'cause' => 'Submission contains known URL shortener domains: ' . $shorteners . '.',
+            'response' => 'Shortened links are not allowed in this form submission.',
+        ),
+        array(
+            'type' => 'Links blocked',
+            'reasons' => 'links_blocked, mail_guard_links_blocked',
+            'cause' => 'Detected external link count is higher than Allowed links per message (' . $max_links . '). Links to the current domain' . ($current_host !== '' ? ' (' . $current_host . ')' : '') . ' are allowed.',
+            'response' => 'Links are not allowed in this form submission.',
+        ),
+        array(
+            'type' => 'Disposable email',
+            'reasons' => 'disposable_email_domain:domain, mail_guard_disposable_email_domain:domain',
+            'cause' => 'Email domain matches the disposable email domains list.',
+            'response' => 'Disposable email addresses are not allowed.',
+        ),
+        array(
+            'type' => 'Blocked keyword/domain',
+            'reasons' => 'blocked_keyword:keyword, mail_guard_blocked_keyword:keyword',
+            'cause' => 'Submitted text or generated mail body contains a configured blocked keyword/domain.',
+            'response' => 'Spam-like content detected.',
+        ),
+        array(
+            'type' => 'Generic spam phrase',
+            'reasons' => 'generic_message_phrase, mail_guard_generic_message_phrase',
+            'cause' => 'Message contains configured generic spam phrases such as short throwaway phrases.',
+            'response' => 'Spam-like content detected.',
+        ),
+        array(
+            'type' => 'Random-looking content',
+            'reasons' => 'randomized_submission_pattern, suspicious_email_local_part',
+            'cause' => 'Name, message, or email local part looks machine-generated.',
+            'response' => 'Spam-like content detected.',
+        ),
+        array(
+            'type' => 'Replay / cooldown',
+            'reasons' => 'duplicate_submission, email_cooldown:email, ip_cooldown_active',
+            'cause' => 'Same submission is blocked for ' . $duplicate_window . ' minutes, same email for ' . $email_cooldown . ' minutes, and same IP for ' . $ip_cooldown . ' seconds' . ($ip_cooldown_minutes > 0 ? ' (' . $ip_cooldown_minutes . ' minutes)' : '') . '.',
+            'response' => 'Please wait before sending another message.',
+        ),
+        array(
+            'type' => 'Mail guard',
+            'reasons' => 'mail_guard_*',
+            'cause' => 'Submission passed CF7 validation but the outgoing notification email body still matched spam rules before wp_mail sent it.',
+            'response' => 'Shown in CF7 response output with the exact mail_guard reason.',
+        ),
+    );
+    ?>
+    <div class="tk-card">
+        <h2>Block Reason Notes</h2>
+        <p class="description">These notes map anti-spam log reasons and Contact Form 7 response messages to the setting that caused the block.</p>
+        <table class="widefat striped tk-table">
+            <thead>
+                <tr>
+                    <th style="width:18%;">Type</th>
+                    <th style="width:26%;">Reason code</th>
+                    <th>What causes it</th>
+                    <th style="width:24%;">Visitor response</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($notes as $note) : ?>
+                    <tr>
+                        <td><strong><?php echo esc_html($note['type']); ?></strong></td>
+                        <td><code><?php echo esc_html($note['reasons']); ?></code></td>
+                        <td><?php echo esc_html($note['cause']); ?></td>
+                        <td><?php echo esc_html($note['response']); ?></td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
     </div>
     <?php
 }
@@ -765,9 +1122,26 @@ function tk_render_antispam_log_panel() {
                     <?php foreach ($antispam_log as $entry) : ?>
                         <tr>
                             <td><?php echo esc_html(date_i18n('Y-m-d H:i', (int) ($entry['time'] ?? 0))); ?></td>
-                            <td><?php echo esc_html((string) ($entry['ip'] ?? '')); ?></td>
-                            <td><?php echo esc_html((string) ($entry['reason'] ?? '')); ?></td>
-                            <td><?php echo esc_html(wp_json_encode($entry['sample'] ?? array())); ?></td>
+                            <td><code><?php echo esc_html((string) ($entry['ip'] ?? '')); ?></code></td>
+                            <td><span class="tk-badge"><?php echo esc_html((string) ($entry['reason'] ?? '')); ?></span></td>
+                            <td>
+                                <div class="tk-log-details">
+                                    <?php 
+                                    $sample = $entry['sample'] ?? array();
+                                    if (!empty($sample) && is_array($sample)) : ?>
+                                        <table class="tk-mini-table" style="width:100%; border-collapse:collapse; font-size:11px;">
+                                            <?php foreach ($sample as $k => $v) : ?>
+                                                <tr>
+                                                    <td style="font-weight:700; width:100px; padding:4px 0; color:#1e293b;"><?php echo esc_html($k); ?>:</td>
+                                                    <td style="padding:4px 0; color:#64748b;"><?php echo nl2br(esc_html($v)); ?></td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </table>
+                                    <?php else : ?>
+                                        &mdash;
+                                    <?php endif; ?>
+                                </div>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -798,7 +1172,7 @@ function tk_antispam_save_settings() {
     $block_keywords = isset($_POST['block_keywords']) ? trim((string) wp_unslash($_POST['block_keywords'])) : '';
     tk_update_option('antispam_block_keywords', $block_keywords);
     tk_update_option('antispam_message_min_chars', max(0, (int) tk_post('message_min_chars', 20)));
-    tk_update_option('antispam_duplicate_window_minutes', max(0, (int) tk_post('duplicate_window_minutes', 30)));
+    tk_update_option('antispam_duplicate_window_minutes', max(0, (int) tk_post('duplicate_window_minutes', 5)));
     tk_update_option('antispam_email_cooldown_minutes', max(0, (int) tk_post('email_cooldown_minutes', 15)));
     tk_update_option('antispam_ip_cooldown_seconds', max(0, (int) tk_post('ip_cooldown_seconds', 60)));
     $generic_phrases = isset($_POST['generic_phrases']) ? trim((string) wp_unslash($_POST['generic_phrases'])) : '';

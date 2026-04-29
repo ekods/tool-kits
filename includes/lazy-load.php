@@ -3,6 +3,7 @@ if (!defined('ABSPATH')) { exit; }
 
 function tk_lazy_load_init() {
     add_action('admin_post_tk_lazy_load_save', 'tk_lazy_load_save');
+    add_action('template_redirect', 'tk_lazy_start_html_buffer', 3);
     add_filter('wp_get_attachment_image_attributes', 'tk_lazy_image_attributes', 10, 3);
     add_filter('embed_oembed_html', 'tk_lazy_oembed_iframe', 10, 4);
     add_filter('wp_video_shortcode', 'tk_lazy_video_shortcode', 10, 5);
@@ -15,6 +16,48 @@ function tk_lazy_load_enabled(): bool {
         return false;
     }
     return (int) tk_get_option('lazy_load_enabled', 0) === 1;
+}
+
+function tk_lazy_start_html_buffer() {
+    if (!tk_lazy_load_enabled() || is_admin() || is_feed() || is_preview()) {
+        return;
+    }
+    if ((int) tk_get_option('lazy_load_html_images', 1) !== 1) {
+        return;
+    }
+    ob_start('tk_lazy_html_buffer');
+}
+
+function tk_lazy_html_buffer($html) {
+    if (!is_string($html) || $html === '' || stripos($html, '<img') === false) {
+        return $html;
+    }
+
+    $count = 0;
+    $eager = max(0, (int) tk_get_option('lazy_load_eager_images', 2));
+    return preg_replace_callback('/<img\b[^>]*>/i', function($m) use (&$count, $eager) {
+        $tag = (string) $m[0];
+        if (stripos($tag, 'data:') !== false || stripos($tag, ' loading=') !== false || stripos($tag, ' loading =') !== false) {
+            return $tag;
+        }
+        $count++;
+        if ($count <= $eager) {
+            $tag = tk_lazy_html_upsert_attr($tag, 'loading', 'eager');
+            $tag = tk_lazy_html_upsert_attr($tag, 'fetchpriority', 'high');
+        } else {
+            $tag = tk_lazy_html_upsert_attr($tag, 'loading', 'lazy');
+            $tag = tk_lazy_html_upsert_attr($tag, 'fetchpriority', 'auto');
+        }
+        return tk_lazy_html_upsert_attr($tag, 'decoding', 'async');
+    }, $html);
+}
+
+function tk_lazy_html_upsert_attr($tag, $attr, $value) {
+    $attr = preg_quote($attr, '/');
+    if (preg_match('/\b' . $attr . '\s*=\s*("|\').*?\1/i', $tag)) {
+        return (string) preg_replace('/\b' . $attr . '\s*=\s*("|\').*?\1/i', $attr . '="' . esc_attr($value) . '"', $tag, 1);
+    }
+    return (string) preg_replace('/<img\b/i', '<img ' . $attr . '="' . esc_attr($value) . '"', $tag, 1);
 }
 
 function tk_lazy_image_attributes($attr, $attachment, $size) {
@@ -174,6 +217,7 @@ function tk_render_lazy_load_panel() {
     if (!tk_is_admin_user()) return;
     $enabled = (int) tk_get_option('lazy_load_enabled', 0);
     $eager = (int) tk_get_option('lazy_load_eager_images', 2);
+    $html_images = (int) tk_get_option('lazy_load_html_images', 1);
     $lazy_media = (int) tk_get_option('lazy_load_iframe_video', 1);
     $defer = (string) tk_get_option('lazy_load_script_defer', '');
     $delay = (string) tk_get_option('lazy_load_script_delay', '');
@@ -195,6 +239,12 @@ function tk_render_lazy_load_panel() {
                 <label>Above-fold eager images</label><br>
                 <input type="number" min="0" name="lazy_load_eager_images" value="<?php echo esc_attr((string) $eager); ?>">
                 <small>Number of first images to load eagerly.</small>
+            </p>
+            <p>
+                <label>
+                    <input type="checkbox" name="lazy_load_html_images" value="1" <?php checked(1, $html_images); ?>>
+                    Optimize normal HTML images from content/theme output
+                </label>
             </p>
             <p>
                 <label>
@@ -220,6 +270,7 @@ function tk_lazy_load_save() {
     tk_require_admin_post('tk_lazy_load_save');
     tk_update_option('lazy_load_enabled', !empty($_POST['lazy_load_enabled']) ? 1 : 0);
     tk_update_option('lazy_load_eager_images', max(0, (int) tk_post('lazy_load_eager_images', 2)));
+    tk_update_option('lazy_load_html_images', !empty($_POST['lazy_load_html_images']) ? 1 : 0);
     tk_update_option('lazy_load_iframe_video', !empty($_POST['lazy_load_iframe_video']) ? 1 : 0);
     tk_update_option('lazy_load_script_defer', sanitize_text_field((string) tk_post('lazy_load_script_defer', '')));
     tk_update_option('lazy_load_script_delay', sanitize_text_field((string) tk_post('lazy_load_script_delay', '')));

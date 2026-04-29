@@ -44,7 +44,7 @@ function tk_ps_diag_fetch_pagespeed(string $url, string $strategy = 'mobile'): a
         if (is_array($data) && isset($data['error']['message']) && is_string($data['error']['message']) && $data['error']['message'] !== '') {
             $message .= ': ' . $data['error']['message'];
         } elseif ($code === 429) {
-            $message = 'Google PageSpeed quota exceeded (HTTP 429). Tambahkan API key atau coba lagi beberapa saat.';
+            $message = 'Google PageSpeed quota exceeded (HTTP 429). Please add an API key or try again later.';
         }
         return array('ok' => false, 'code' => $code, 'message' => $message);
     }
@@ -138,7 +138,7 @@ function tk_ps_diag_run_handler() {
             'page' => 'tool-kits-optimization',
             'tk_tab' => 'diagnostics',
             'tk_ps_status' => 'fail',
-            'tk_ps_msg' => 'URL tidak valid.',
+            'tk_ps_msg' => 'Invalid URL.',
         ), admin_url('admin.php')));
         exit;
     }
@@ -151,21 +151,21 @@ function tk_ps_diag_run_handler() {
             'page' => 'tool-kits-optimization',
             'tk_tab' => 'diagnostics',
             'tk_ps_status' => 'ok',
-            'tk_ps_msg' => 'PageSpeed test loaded from cache (15 menit).',
+            'tk_ps_msg' => 'PageSpeed test loaded from cache (15 minutes).',
         ), admin_url('admin.php')));
         exit;
     }
 
     $result = tk_ps_diag_fetch_pagespeed($url, $strategy);
     if (empty($result['ok'])) {
-        $message = isset($result['message']) ? (string) $result['message'] : 'Gagal mengambil data PageSpeed.';
+        $message = isset($result['message']) ? (string) $result['message'] : 'Failed to fetch PageSpeed data.';
         $code = isset($result['code']) ? (int) $result['code'] : 0;
         if ($code === 429 && !empty(tk_ps_diag_get_last_result())) {
             wp_redirect(add_query_arg(array(
                 'page' => 'tool-kits-optimization',
                 'tk_tab' => 'diagnostics',
                 'tk_ps_status' => 'warn',
-                'tk_ps_msg' => $message . ' Menampilkan hasil terakhir yang tersimpan.',
+                'tk_ps_msg' => $message . ' Showing last saved results.',
             ), admin_url('admin.php')));
             exit;
         }
@@ -184,7 +184,7 @@ function tk_ps_diag_run_handler() {
         'page' => 'tool-kits-optimization',
         'tk_tab' => 'diagnostics',
         'tk_ps_status' => 'ok',
-        'tk_ps_msg' => 'PageSpeed test selesai.',
+        'tk_ps_msg' => 'PageSpeed test completed.',
     ), admin_url('admin.php')));
     exit;
 }
@@ -276,8 +276,8 @@ function tk_ps_diag_build_report(): array {
     if (!empty($assets_preload_css) && !$assets_js_delay_enabled && empty($assets_js_delay_handles) && empty($lazy_script_delay)) {
         $conflicts[] = array(
             'severity' => 'medium',
-            'title' => 'Preload aktif, script berat belum ditunda',
-            'detail' => 'Ada CSS preload tapi tidak ada delay script dari Assets maupun Lazy Load. Main-thread masih bisa berat saat first paint.',
+            'title' => 'Preload active but heavy scripts not delayed',
+            'detail' => 'CSS preload is active but no script delay from Assets or Lazy Load. Main-thread might still be heavy during first paint.',
         );
     }
 
@@ -286,8 +286,8 @@ function tk_ps_diag_build_report(): array {
         if (!empty($same_handles)) {
             $conflicts[] = array(
                 'severity' => 'medium',
-                'title' => 'Handle CSS dipakai di defer + preload sekaligus',
-                'detail' => 'Handle: ' . implode(', ', $same_handles) . '. Gunakan salah satu strategi per handle agar tidak dobel.',
+                'title' => 'CSS Handle used in both defer + preload',
+                'detail' => 'Handles: ' . implode(', ', $same_handles) . '. Use only one strategy per handle to avoid duplication.',
             );
         }
     }
@@ -295,40 +295,40 @@ function tk_ps_diag_build_report(): array {
     if ($minify_html && !$minify_inline_js && (!empty($assets_preload_css) || $assets_lcp_bg_preload)) {
         $conflicts[] = array(
             'severity' => 'medium',
-            'title' => 'Minify HTML aktif tanpa minify inline JS',
-            'detail' => 'Dengan preload aktif, inline script besar masih berpotensi menambah blocking time.',
+            'title' => 'HTML Minify active without inline JS minify',
+            'detail' => 'With preload active, large inline scripts still have the potential to increase blocking time.',
         );
     }
 
     if ($lazy_load && $lazy_eager > 6) {
         $conflicts[] = array(
             'severity' => 'info',
-            'title' => 'Eager images terlalu tinggi',
-            'detail' => 'Nilai eager image saat ini: ' . $lazy_eager . '. Terlalu tinggi dapat menurunkan manfaat lazy load.',
+            'title' => 'Eager images count too high',
+            'detail' => 'Current eager images value: ' . $lazy_eager . '. Setting this too high may reduce the benefits of lazy loading.',
         );
     }
 
     if (!$page_cache && ($minify_html || $lazy_load || $assets_critical || $webp_convert || $image_opt || !empty($assets_preload_css))) {
         $conflicts[] = array(
             'severity' => 'info',
-            'title' => 'Optimasi frontend aktif, page cache OFF',
-            'detail' => 'Banyak optimasi aktif tapi cache halaman belum diaktifkan. Potensi TTFB/CPU tetap tinggi.',
+            'title' => 'Frontend optimization active, Page Cache OFF',
+            'detail' => 'Many optimizations are active but page caching is disabled. TTFB/CPU usage may remain high.',
         );
     }
 
     if ($assets_js_delay_enabled && !empty($lazy_script_delay)) {
         $conflicts[] = array(
             'severity' => 'info',
-            'title' => 'Dua mekanisme delay script aktif',
-            'detail' => 'Assets JS delay dan Lazy Load script delay berjalan bersamaan. Valid, tapi cek agar tidak over-delay script penting.',
+            'title' => 'Two script delay mechanisms active',
+            'detail' => 'Assets JS delay and Lazy Load script delay are running together. This is valid, but check to ensure important scripts are not over-delayed.',
         );
     }
 
     if ($assets_critical && $assets_critical_css === '') {
         $conflicts[] = array(
             'severity' => 'medium',
-            'title' => 'Critical CSS ON tapi konten kosong',
-            'detail' => 'Fitur aktif tanpa isi CSS kritikal. Gunakan Generate Critical CSS atau isi manual.',
+            'title' => 'Critical CSS ON but content is empty',
+            'detail' => 'Feature is active without critical CSS content. Use "Generate Critical CSS" or fill it manually.',
         );
     }
 
@@ -397,17 +397,34 @@ function tk_render_page_speed_diagnostics_panel() {
     $ps_strategy = !empty($ps_result['strategy']) && $ps_result['strategy'] === 'desktop' ? 'desktop' : 'mobile';
     ?>
     <div class="tk-card">
-        <h2>Page Speed Diagnostics</h2>
-        <p>Ringkasan setting performa yang aktif dan potensi konflik konfigurasi.</p>
-        <p>
-            <span class="<?php echo esc_attr($score_badge); ?>">Health Score: <?php echo esc_html((string) $score); ?>/100 (<?php echo esc_html($score_label); ?>)</span>
-            <span class="tk-badge tk-on"><?php echo esc_html((string) count($active)); ?> Active</span>
-            <span class="tk-badge <?php echo !empty($conflicts) ? 'tk-warn' : 'tk-on'; ?>"><?php echo esc_html((string) count($conflicts)); ?> Potential Conflicts</span>
-        </p>
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px;">
+            <div>
+                <h2 style="margin:0 0 4px;">Page Speed Diagnostics</h2>
+                <p class="description">Summary of active performance settings and potential configuration conflicts.</p>
+            </div>
+            <div style="text-align:right;">
+                <span class="<?php echo esc_attr($score_badge); ?>" style="font-size:14px; padding:6px 12px;"><?php echo esc_html((string) $score); ?>/100 (<?php echo esc_html($score_label); ?>)</span>
+            </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:30px;">
+            <div style="background:var(--tk-bg-soft); padding:15px; border-radius:12px; border:1px solid var(--tk-border-soft);">
+                <div style="font-size:11px; color:var(--tk-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:5px;">Health Status</div>
+                <div style="font-size:18px; font-weight:700; color:<?php echo ($score >= 70 ? '#27ae60' : ($score >= 50 ? '#f39c12' : '#e74c3c')); ?>;"><?php echo esc_html($score_label); ?></div>
+            </div>
+            <div style="background:var(--tk-bg-soft); padding:15px; border-radius:12px; border:1px solid var(--tk-border-soft);">
+                <div style="font-size:11px; color:var(--tk-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:5px;">Active Features</div>
+                <div style="font-size:18px; font-weight:700;"><?php echo count($active); ?> <span style="font-size:12px; font-weight:400; color:var(--tk-muted);">Enabled</span></div>
+            </div>
+            <div style="background:var(--tk-bg-soft); padding:15px; border-radius:12px; border:1px solid var(--tk-border-soft);">
+                <div style="font-size:11px; color:var(--tk-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:5px;">Conflicts</div>
+                <div style="font-size:18px; font-weight:700; color:<?php echo !empty($conflicts) ? '#f39c12' : '#27ae60'; ?>;"><?php echo count($conflicts); ?> <span style="font-size:12px; font-weight:400; color:var(--tk-muted);">Issues</span></div>
+            </div>
+        </div>
 
         <h3 style="margin-top:20px;">Active Settings</h3>
         <?php if (empty($active)) : ?>
-            <p class="description">Belum ada setting optimasi performa yang aktif.</p>
+            <p class="description">No performance optimization settings are active yet.</p>
         <?php else : ?>
             <table class="widefat striped">
                 <thead>
@@ -465,7 +482,7 @@ function tk_render_page_speed_diagnostics_panel() {
 
         <hr style="margin:20px 0;">
         <h3>Google PageSpeed Test</h3>
-        <p class="description">Jalankan analisa live seperti Google PageSpeed Insights untuk URL yang dipilih.</p>
+        <p class="description">Run live analysis like Google PageSpeed Insights for the selected URL.</p>
         <?php if ($ps_msg !== '') : ?>
             <?php
             $notice_type = 'error';
@@ -495,12 +512,12 @@ function tk_render_page_speed_diagnostics_panel() {
             <p>
                 <label><strong>Google API Key (optional)</strong></label><br>
                 <input class="large-text" type="text" name="ps_api_key" value="<?php echo esc_attr($ps_api_key); ?>" placeholder="AIza...">
-                <small>Disarankan isi API key agar limit lebih stabil dan mengurangi HTTP 429.</small><br>
+                <small>Recommended to provide an API key for more stable limits and to reduce HTTP 429 errors.</small><br>
                 <small>
-                    Cara buat API key:
-                    buka <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Google Cloud Credentials</a>,
-                    buat project jika belum ada, lalu klik <code>Create credentials</code> > <code>API key</code>.
-                    Dokumentasi resmi PageSpeed Insights API:
+                    How to create an API key:
+                    open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Google Cloud Credentials</a>,
+                    create a project if not already exists, then click <code>Create credentials</code> > <code>API key</code>.
+                    Official PageSpeed Insights API documentation:
                     <a href="https://developers.google.com/speed/docs/insights/v5/get-started" target="_blank" rel="noopener noreferrer">developers.google.com/speed/docs/insights/v5/get-started</a>
                 </small>
             </p>
@@ -553,7 +570,7 @@ function tk_render_page_speed_diagnostics_panel() {
 
 function tk_render_optimization_page($forced_tab = '') {
     if (!tk_is_admin_user()) return;
-    $allowed_tabs = array('diagnostics', 'hide-login', 'minify', 'webp', 'image-opt', 'seo', 'lazy-load', 'assets', 'uploads', 'user-id');
+    $allowed_tabs = array('diagnostics', 'hide-login', 'minify', 'webp', 'image-opt', 'seo', 'lazy-load', 'assets');
     $requested = isset($_GET['tk_tab']) ? sanitize_key($_GET['tk_tab']) : '';
     $active_tab = in_array($requested, $allowed_tabs, true) ? $requested : 'diagnostics';
     if ($forced_tab !== '' && in_array($forced_tab, $allowed_tabs, true)) {
@@ -563,8 +580,38 @@ function tk_render_optimization_page($forced_tab = '') {
     $progress = isset($_GET['tk_webp_progress']) ? sanitize_text_field(wp_unslash($_GET['tk_webp_progress'])) : '';
     $done = isset($_GET['tk_webp_done']) ? sanitize_key($_GET['tk_webp_done']) : '';
     ?>
+    <?php
+    $score_data = tk_optimization_calculate_score();
+    $score = $score_data['score'];
+    $score_color = ($score >= 80) ? '#27ae60' : (($score >= 50) ? '#f39c12' : '#e74c3c');
+    ?>
     <div class="wrap tk-wrap">
-        <h1>Optimization</h1>
+        <?php tk_render_header_branding(); ?>
+        <div class="tk-hero">
+            <div class="tk-hero-bg-1"></div>
+            <div class="tk-hero-bg-2"></div>
+            
+            <div class="tk-hero-content" style="display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 16px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2);">
+                        <span class="dashicons dashicons-admin-settings" style="color: #fff; font-size: 32px; width: 32px; height: 32px;"></span>
+                    </div>
+                    <div>
+                        <h1 class="tk-hero-title"><?php _e('Site Optimization', 'tool-kits'); ?></h1>
+                        <p class="tk-hero-subtitle"><?php _e('Maximize your WordPress performance with advanced caching, image optimization, and asset management.', 'tool-kits'); ?></p>
+                        <div style="margin-top: 15px; display: flex; gap: 10px;">
+                            <span class="tk-badge" style="background: rgba(255,255,255,0.1); color: #fff; border: none; padding: 4px 10px; font-size: 11px;"><?php echo $score_data['active_count']; ?> <?php _e('Features Active', 'tool-kits'); ?></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="text-align: center; background: rgba(255,255,255,0.05); padding: 20px 30px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px);">
+                    <div style="font-size: 32px; font-weight: 800; color: <?php echo $score_color; ?>;"><?php echo $score; ?>%</div>
+                    <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-top: 4px;"><?php _e('Perf Score', 'tool-kits'); ?></div>
+                </div>
+            </div>
+        </div>
+
         <?php if ($saved === '1') : ?>
             <?php tk_notice('Settings saved.', 'success'); ?>
         <?php endif; ?>
@@ -574,18 +621,17 @@ function tk_render_optimization_page($forced_tab = '') {
         <?php if ($done === '1') : ?>
             <?php tk_notice('WebP generation completed.', 'success'); ?>
         <?php endif; ?>
+
         <div class="tk-tabs tk-optimization-tabs">
             <div class="tk-tabs-nav">
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'diagnostics' ? ' is-active' : ''; ?>" data-panel="diagnostics">Diagnostics</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'hide-login' ? ' is-active' : ''; ?>" data-panel="hide-login">Hide Login</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'minify' ? ' is-active' : ''; ?>" data-panel="minify">Minify</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'webp' ? ' is-active' : ''; ?>" data-panel="webp">Auto WebP</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'image-opt' ? ' is-active' : ''; ?>" data-panel="image-opt">Image Optimizer</button>
+                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'image-opt' ? ' is-active' : ''; ?>" data-panel="image-opt">Images</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'seo' ? ' is-active' : ''; ?>" data-panel="seo">SEO</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'lazy-load' ? ' is-active' : ''; ?>" data-panel="lazy-load">Lazy Load</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'assets' ? ' is-active' : ''; ?>" data-panel="assets">Assets</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'uploads' ? ' is-active' : ''; ?>" data-panel="uploads">Uploads</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'user-id' ? ' is-active' : ''; ?>" data-panel="user-id">User ID</button>
             </div>
             <div class="tk-tabs-content">
                 <div class="tk-tab-panel<?php echo $active_tab === 'diagnostics' ? ' is-active' : ''; ?>" data-panel-id="diagnostics">
@@ -611,12 +657,6 @@ function tk_render_optimization_page($forced_tab = '') {
                 </div>
                 <div class="tk-tab-panel<?php echo $active_tab === 'assets' ? ' is-active' : ''; ?>" data-panel-id="assets">
                     <?php tk_render_assets_panel(); ?>
-                </div>
-                <div class="tk-tab-panel<?php echo $active_tab === 'uploads' ? ' is-active' : ''; ?>" data-panel-id="uploads">
-                    <?php tk_render_upload_limits_panel(); ?>
-                </div>
-                <div class="tk-tab-panel<?php echo $active_tab === 'user-id' ? ' is-active' : ''; ?>" data-panel-id="user-id">
-                    <?php tk_render_user_id_change_panel(); ?>
                 </div>
             </div>
         </div>
@@ -654,4 +694,36 @@ function tk_render_optimization_page($forced_tab = '') {
         </script>
     </div>
     <?php
+}
+
+function tk_optimization_calculate_score() {
+    $opts = tk_get_options();
+    $rules = array(
+        'page_cache_enabled' => 20,
+        'minify_html_enabled' => 10,
+        'lazy_load_enabled' => 15,
+        'assets_critical_css_enabled' => 15,
+        'assets_js_delay_enabled' => 15,
+        'webp_convert_enabled' => 10,
+        'image_opt_enabled' => 15,
+    );
+    
+    $score = 0;
+    $total_possible = array_sum($rules);
+    $active_rules = array();
+    
+    foreach ($rules as $opt_key => $weight) {
+        if (!empty($opts[$opt_key])) {
+            $score += $weight;
+            $active_rules[] = $opt_key;
+        }
+    }
+    
+    $final_score = ($total_possible > 0) ? round(($score / $total_possible) * 100) : 0;
+    
+    return array(
+        'score' => (int) $final_score,
+        'active_count' => count($active_rules),
+        'total_count' => count($rules)
+    );
 }

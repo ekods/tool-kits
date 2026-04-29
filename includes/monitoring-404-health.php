@@ -3,6 +3,7 @@ if (!defined('ABSPATH')) { exit; }
 
 function tk_monitoring_404_health_init() {
     add_action('template_redirect', 'tk_monitoring_log_404', 20);
+    add_action('template_redirect', 'tk_monitoring_redirect_404_home', 30);
     add_action('admin_post_tk_404_monitoring_save', 'tk_404_monitoring_save');
     add_action('admin_post_tk_404_monitoring_clear', 'tk_404_monitoring_clear');
     add_action('admin_post_tk_healthcheck_save', 'tk_healthcheck_save');
@@ -22,12 +23,8 @@ function tk_monitoring_log_404() {
     if ($path === '') {
         return;
     }
-    $excludes = (string) tk_get_option('monitoring_404_exclude_paths', "/wp-admin\n/wp-login.php\n/wp-cron.php\n");
-    $list = array_filter(array_map('trim', explode("\n", $excludes)));
-    foreach ($list as $item) {
-        if ($item !== '' && strpos($path, $item) === 0) {
-            return;
-        }
+    if (tk_monitoring_404_path_is_excluded($path)) {
+        return;
     }
     $key = md5($path);
     $log = tk_get_option('monitoring_404_log', array());
@@ -62,6 +59,53 @@ function tk_monitoring_log_404() {
     }
 
     tk_update_option('monitoring_404_log', $log);
+}
+
+function tk_monitoring_404_path_is_excluded($path) {
+    $path = (string) $path;
+    if ($path === '') {
+        return false;
+    }
+
+    $excludes = (string) tk_get_option('monitoring_404_exclude_paths', "/wp-admin\n/wp-login.php\n/wp-cron.php\n");
+    $list = array_filter(array_map('trim', explode("\n", $excludes)));
+    foreach ($list as $item) {
+        if ($item !== '' && strpos($path, $item) === 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function tk_monitoring_redirect_404_home() {
+    if (is_admin() || wp_doing_ajax() || !is_404()) {
+        return;
+    }
+    if (!tk_get_option('monitoring_404_redirect_home', 0)) {
+        return;
+    }
+
+    $path = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+    if ($path !== '' && tk_monitoring_404_path_is_excluded($path)) {
+        return;
+    }
+
+    $home_url = home_url('/');
+    $home_path = (string) wp_parse_url($home_url, PHP_URL_PATH);
+    $request_path = (string) wp_parse_url($path, PHP_URL_PATH);
+    if ($home_path === '') {
+        $home_path = '/';
+    }
+    if ($request_path === '') {
+        $request_path = '/';
+    }
+    if (untrailingslashit($home_path) === untrailingslashit($request_path)) {
+        return;
+    }
+
+    wp_safe_redirect($home_url, 302, 'Tool Kits 404 Redirect');
+    exit;
 }
 
 function tk_404_monitoring_save() {
@@ -137,11 +181,36 @@ function tk_healthcheck_validate($key = null) {
     return hash_equals($saved, (string) $key);
 }
 
-function tk_healthcheck_data() {
-    $load = function_exists('sys_getloadavg') ? sys_getloadavg() : array();
-    $disk_free = @disk_free_space(ABSPATH);
-    $disk_total = @disk_total_space(ABSPATH);
+function tk_healthcheck_load_average(): ?array {
+    if (!function_exists('sys_getloadavg')) {
+        return null;
+    }
+    $load = sys_getloadavg();
+    if (!is_array($load) || count($load) === 0) {
+        return null;
+    }
+    $sanitized = array();
+    foreach ($load as $value) {
+        if (!is_numeric($value)) {
+            return null;
+        }
+        $sanitized[] = (float) $value;
+    }
+    return !empty($sanitized) ? $sanitized : null;
+}
+
+function tk_healthcheck_next_cron_timestamp(): ?int {
     $cron = wp_next_scheduled('wp_cron');
+    if (!is_numeric($cron) || (int) $cron <= 0) {
+        return null;
+    }
+    return (int) $cron;
+}
+
+function tk_healthcheck_data() {
+    $load = tk_healthcheck_load_average();
+    $disk = tk_healthcheck_disk_stats();
+    $cron = tk_healthcheck_next_cron_timestamp();
     return array(
         'ok' => true,
         'time' => time(),
@@ -152,13 +221,47 @@ function tk_healthcheck_data() {
         'server' => array(
             'php' => PHP_VERSION,
             'load' => $load,
-            'disk_free' => is_float($disk_free) ? (int) $disk_free : null,
-            'disk_total' => is_float($disk_total) ? (int) $disk_total : null,
+            'disk_free' => isset($disk['free']) ? $disk['free'] : null,
+            'disk_total' => isset($disk['total']) ? $disk['total'] : null,
         ),
         'cron' => array(
-            'next' => $cron ? (int) $cron : null,
+            'next' => $cron,
             'disabled' => (defined('DISABLE_WP_CRON') && DISABLE_WP_CRON),
         ),
+    );
+}
+
+function tk_healthcheck_disk_stats(): array {
+    if (function_exists('tk_license_env') && tk_license_env() === 'local') {
+        return array('free' => null, 'total' => null);
+    }
+
+    if (!defined('ABSPATH') || !is_string(ABSPATH) || ABSPATH === '') {
+        return array('free' => null, 'total' => null);
+    }
+
+    $path = realpath(ABSPATH);
+    if (!is_string($path) || $path === '' || !is_dir($path)) {
+        return array('free' => null, 'total' => null);
+    }
+
+    $disk_free = @disk_free_space($path);
+    $disk_total = @disk_total_space($path);
+
+    if (!is_numeric($disk_free) || !is_numeric($disk_total)) {
+        return array('free' => null, 'total' => null);
+    }
+
+    $disk_free = (int) $disk_free;
+    $disk_total = (int) $disk_total;
+
+    if ($disk_free <= 0 || $disk_total <= 0 || $disk_total < $disk_free) {
+        return array('free' => null, 'total' => null);
+    }
+
+    return array(
+        'free' => $disk_free,
+        'total' => $disk_total,
     );
 }
 
@@ -172,6 +275,7 @@ function tk_realtime_health_ajax() {
 }
 
 function tk_realtime_health_data(): array {
+    $load = tk_healthcheck_load_average();
     $memory_used = function_exists('memory_get_usage') ? (int) memory_get_usage(true) : 0;
     $memory_peak = function_exists('memory_get_peak_usage') ? (int) memory_get_peak_usage(true) : 0;
     $memory_limit = tk_parse_size(ini_get('memory_limit'));
@@ -179,11 +283,18 @@ function tk_realtime_health_data(): array {
     $errors = tk_error_rate_recent(300);
     $heavy_list = tk_heaviest_active_plugins(4);
     $heavy = !empty($heavy_list) ? $heavy_list[0] : array('name' => '-', 'size' => 0);
-    $object_cache = function_exists('wp_using_ext_object_cache') && wp_using_ext_object_cache();
-    $redis = function_exists('wp_cache_get') && defined('WP_REDIS_VERSION');
+    $object_cache = 'unknown';
+    if (function_exists('wp_using_ext_object_cache')) {
+        $object_cache = wp_using_ext_object_cache() ? 'configured' : 'off';
+    }
+    $redis = 'unknown';
+    if (function_exists('wp_cache_get')) {
+        $redis = (defined('WP_REDIS_VERSION') && WP_REDIS_VERSION) ? 'configured' : 'off';
+    }
 
     return array(
         'time' => time(),
+        'load' => $load,
         'memory' => array(
             'used' => $memory_used,
             'peak' => $memory_peak,

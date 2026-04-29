@@ -13,7 +13,8 @@ function tk_render_spam_protection_page($forced_tab = '') {
     $cleared = isset($_GET['tk_cleared']) ? sanitize_key($_GET['tk_cleared']) : '';
     ?>
     <div class="wrap tk-wrap">
-        <h1>Spam Protection</h1>
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero(__('Spam Protection', 'tool-kits'), __('Intelligent spam filtering for Contact Form 7 and other forms without captchas.', 'tool-kits'), 'dashicons-admin-comments'); ?>
         <?php if ($saved === '1') : ?>
             <?php tk_notice('Settings saved.', 'success'); ?>
         <?php endif; ?>

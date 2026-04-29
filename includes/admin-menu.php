@@ -3,6 +3,8 @@ if (!defined('ABSPATH')) { exit; }
 
 function tk_admin_menu_init() {
     add_action('admin_menu', 'tk_register_admin_menus');
+    add_action('admin_enqueue_scripts', 'tk_monitoring_maybe_enqueue_assets');
+
     add_action('admin_post_tk_toolkits_access_save', 'tk_toolkits_access_save');
     add_action('admin_post_tk_toolkits_license_activate', 'tk_toolkits_license_activate');
     add_action('admin_post_tk_toolkits_license_reset', 'tk_toolkits_license_reset');
@@ -18,10 +20,25 @@ function tk_admin_menu_init() {
     add_action('init', 'tk_monitoring_schedule_cron');
 }
 
+function tk_monitoring_maybe_enqueue_assets($hook_suffix) {
+    if ($hook_suffix !== 'tool-kits_page_tool-kits-monitoring') {
+        return;
+    }
+    $asset_url  = TK_URL . 'assets/monitoring-tabs.js';
+    $asset_path = TK_PATH . 'assets/monitoring-tabs.js';
+    $ver = file_exists($asset_path) ? filemtime($asset_path) : TK_VERSION;
+    wp_enqueue_script('tk-monitoring-tabs', $asset_url, array(), $ver, true);
+    wp_localize_script('tk-monitoring-tabs', 'tkMonitoringData', array(
+        'nonce'   => wp_create_nonce('tk_realtime_health'),
+        'ajaxurl' => admin_url('admin-ajax.php'),
+    ));
+}
+
 function tk_register_admin_menus() {
     if (!tk_toolkits_can_manage()) return;
     $license_key = (string) tk_get_option('license_key', '');
-    if ($license_key !== '') {
+    $license_reset = isset($_GET['tk_reset_license']) ? sanitize_key($_GET['tk_reset_license']) : '';
+    if ($license_key !== '' && $license_reset !== '1' && (int) get_option('tk_license_reset_skip_validate', 0) !== 1) {
         tk_license_validate(true);
     }
     $license_status = (string) tk_get_option('license_status', 'inactive');
@@ -45,6 +62,7 @@ function tk_register_admin_menus() {
 
         if ($allow_full) {
             // DB
+            add_submenu_page('tool-kits', __('General', 'tool-kits'), __('General', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-general', 'tk_render_general_page');
             add_submenu_page('tool-kits', __('Database', 'tool-kits'), __('Database', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
 
             // Security modules now live under the main Tool Kits menu.
@@ -55,15 +73,14 @@ function tk_register_admin_menus() {
             add_submenu_page('tool-kits', __('Hardening', 'tool-kits'), __('Hardening', 'tool-kits'), 'manage_options', tk_hardening_page_slug(), 'tk_render_hardening_page');
             add_submenu_page('tool-kits', __('SMTP', 'tool-kits'), __('SMTP', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-smtp', 'tk_render_smtp_page');
             add_submenu_page('tool-kits', __('Monitoring', 'tool-kits'), __('Monitoring', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-monitoring', 'tk_render_monitoring_page');
-            add_submenu_page('tool-kits', __('Diagnostics', 'tool-kits'), __('Diagnostics', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-diagnostics', 'tk_render_diagnostics_page');
             add_submenu_page('tool-kits', __('Cache', 'tool-kits'), __('Cache', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-cache', 'tk_render_cache_page');
             add_submenu_page('tool-kits', __('Themes Checker', 'tool-kits'), __('Themes Checker', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-theme-checker', 'tk_render_theme_checker_page');
         } else {
+            add_submenu_page('tool-kits', __('General', 'tool-kits'), __('General', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-general', 'tk_render_general_page');
             add_submenu_page('tool-kits', __('Database', 'tool-kits'), __('Database', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
             add_submenu_page('tool-kits', __('Optimization', 'tool-kits'), __('Optimization', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-optimization', 'tk_render_optimization_page');
             add_submenu_page('tool-kits', __('SMTP', 'tool-kits'), __('SMTP', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-smtp', 'tk_render_smtp_page');
             add_submenu_page('tool-kits', __('Monitoring', 'tool-kits'), __('Monitoring', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-monitoring', 'tk_render_monitoring_page');
-            add_submenu_page('tool-kits', __('Diagnostics', 'tool-kits'), __('Diagnostics', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-diagnostics', 'tk_render_diagnostics_page');
             add_submenu_page('tool-kits', __('Cache', 'tool-kits'), __('Cache', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-cache', 'tk_render_cache_page');
         }
     }
@@ -71,7 +88,6 @@ function tk_register_admin_menus() {
     add_submenu_page('tools.php', __('Tool Kits Access', 'tool-kits'), __('Tool Kits Access', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-access', 'tk_render_toolkits_access_page');
     if (!$license_valid) {
         add_submenu_page('tools.php', __('Database', 'tool-kits'), __('Database', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
-        add_submenu_page('tools.php', __('Diagnostics', 'tool-kits'), __('Diagnostics', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-diagnostics', 'tk_render_diagnostics_page');
     }
     // Hidden legacy pages for direct links.
     if ($allow_full) {
@@ -94,20 +110,22 @@ function tk_register_admin_menus() {
 
 function tk_render_monitoring_page() {
     if (!tk_is_admin_user()) return;
+    
     $checks = tk_hardening_config_checks();
     $server = tk_hardening_detect_server();
     $server_rules = tk_hardening_server_rules();
     $server_snippet = tk_hardening_server_rule_snippet();
     $server_status = tk_hardening_server_rule_status();
     $noncore_root = tk_hardening_noncore_root_entries();
+    
     tk_monitoring_maybe_send_alert($noncore_root);
     tk_tamper_maybe_alert();
-    $monitor_email = tk_get_option('monitoring_alert_email', '');
+
+    $monitor_email = (string) tk_get_option('monitoring_alert_email', '');
     $log = tk_get_option('monitoring_404_log', array());
-    if (!is_array($log)) {
-        $log = array();
-    }
+    if (!is_array($log)) { $log = array(); }
     $log_values = array_values($log);
+    
     usort($log_values, function($a, $b) {
         $a_count = isset($a['count']) ? (int) $a['count'] : 0;
         $b_count = isset($b['count']) ? (int) $b['count'] : 0;
@@ -118,628 +136,56 @@ function tk_render_monitoring_page() {
         }
         return $b_count <=> $a_count;
     });
+
     $health_url = add_query_arg('tk-health', '1', home_url('/'));
     $health_key = (string) tk_get_option('monitoring_healthcheck_key', '');
     if ($health_key !== '') {
         $health_url = add_query_arg('key', $health_key, $health_url);
     }
+
     $healthcheck = tk_healthcheck_data();
-    ?>
-    <div class="wrap tk-wrap">
-        <h1>Monitoring</h1>
-        <?php
-        $wpconfig_status = isset($_GET['tk_wpconfig']) ? sanitize_key($_GET['tk_wpconfig']) : '';
-        if ($wpconfig_status === 'ok') {
-            tk_notice('wp-config.php permissions updated.', 'success');
-        } elseif ($wpconfig_status === 'writable') {
-            tk_notice('wp-config.php set to writable.', 'success');
-        } elseif ($wpconfig_status === 'fail') {
-            tk_notice('Failed to update wp-config.php permissions. Please adjust manually.', 'error');
-        } elseif ($wpconfig_status === 'missing') {
-            tk_notice('wp-config.php not found.', 'warning');
-        }
-        $heartbeat_status = isset($_GET['tk_heartbeat']) ? sanitize_key($_GET['tk_heartbeat']) : '';
-        if ($heartbeat_status === 'ok') {
-            tk_notice('Heartbeat sent.', 'success');
-        } elseif ($heartbeat_status === 'fail') {
-            $detail = get_transient('tk_heartbeat_last_error');
-            $message = 'Heartbeat failed to send.';
-            if (is_string($detail) && $detail !== '') {
-                $message .= ' ' . $detail;
-            }
-            tk_notice($message, 'error');
-        }
-        $cache_status = isset($_GET['tk_cache']) ? sanitize_key($_GET['tk_cache']) : '';
-        if ($cache_status === 'ok') {
-            $detail = get_transient('tk_cache_last_notice');
-            $message = 'Cache cleared.';
-            if (is_string($detail) && $detail !== '') {
-                $message .= ' ' . $detail;
-            }
-            tk_notice($message, 'success');
-        } elseif ($cache_status === 'fail') {
-            $detail = get_transient('tk_cache_last_notice');
-            $message = 'Cache clear failed.';
-            if (is_string($detail) && $detail !== '') {
-                $message .= ' ' . $detail;
-            }
-            tk_notice($message, 'error');
-        }
-        $ds_store_status = isset($_GET['tk_ds_store']) ? sanitize_key($_GET['tk_ds_store']) : '';
-        if ($ds_store_status === 'ok') {
-            $detail = get_transient('tk_ds_store_last_notice');
-            $message = '.DS_Store/__MACOSX cleanup completed.';
-            if (is_string($detail) && $detail !== '') {
-                $message .= ' ' . $detail;
-            }
-            tk_notice($message, 'success');
-        } elseif ($ds_store_status === 'fail') {
-            $detail = get_transient('tk_ds_store_last_notice');
-            $message = '.DS_Store/__MACOSX cleanup failed.';
-            if (is_string($detail) && $detail !== '') {
-                $message .= ' ' . $detail;
-            }
-            tk_notice($message, 'error');
-        }
-        $log_updated = isset($_GET['tk_404_updated']) ? sanitize_key($_GET['tk_404_updated']) : '';
-        if ($log_updated === '1') {
-            tk_notice('404 monitor settings saved.', 'success');
-        }
-        $log_cleared = isset($_GET['tk_404_cleared']) ? sanitize_key($_GET['tk_404_cleared']) : '';
-        if ($log_cleared === '1') {
-            tk_notice('404 log cleared.', 'success');
-        }
-        $health_updated = isset($_GET['tk_health_updated']) ? sanitize_key($_GET['tk_health_updated']) : '';
-        if ($health_updated === '1') {
-            tk_notice('Healthcheck settings saved.', 'success');
-        }
-        ?>
-        <?php
-        $core_auto = tk_get_option('hardening_core_auto_updates', 1) ? true : (defined('WP_AUTO_UPDATE_CORE') && WP_AUTO_UPDATE_CORE === true);
-        $wp_config_path = tk_hardening_wp_config_path();
-        $unwanted_files_status = 'unknown';
-        $unwanted_files_detail = 'Check unavailable.';
-        $wp_json_file_status = 'unknown';
-        $wp_json_file_detail = 'Check unavailable.';
-        foreach ($checks as $check_item) {
-            $label = isset($check_item['label']) ? strtolower((string) $check_item['label']) : '';
-            if ($label === 'unwanted files detected') {
-                $unwanted_files_status = isset($check_item['status']) ? (string) $check_item['status'] : 'unknown';
-                $unwanted_files_detail = isset($check_item['detail']) ? (string) $check_item['detail'] : $unwanted_files_detail;
-            }
-            if ($label === 'wp-json file detected') {
-                $wp_json_file_status = isset($check_item['status']) ? (string) $check_item['status'] : 'unknown';
-                $wp_json_file_detail = isset($check_item['detail']) ? (string) $check_item['detail'] : $wp_json_file_detail;
-            }
-        }
-        ?>
-        <div class="tk-tabs">
-            <div class="tk-tabs-nav">
-                <button type="button" class="tk-tabs-nav-button is-active" data-panel="checks">Checks</button>
-                <button type="button" class="tk-tabs-nav-button" data-panel="actions">Actions</button>
-                <button type="button" class="tk-tabs-nav-button" data-panel="server">Server</button>
-                <button type="button" class="tk-tabs-nav-button" data-panel="filesystem">Filesystem</button>
-                <button type="button" class="tk-tabs-nav-button" data-panel="realtime">Realtime</button>
-                <button type="button" class="tk-tabs-nav-button" data-panel="missing">404 Monitor</button>
-                <button type="button" class="tk-tabs-nav-button" data-panel="health">Healthcheck</button>
-            </div>
-            <div class="tk-tabs-content">
-                <div class="tk-card tk-tab-panel is-active" data-panel-id="checks">
-                    <h2>Configuration Checks</h2>
-                    <p>Quick scan for common misconfigurations that can expose sensitive files or data.</p>
-                    <p><strong>Checklist</strong></p>
-                    <ul class="tk-list">
-                        <li><?php echo $core_auto ? '&#10003;' : '&#9888;'; ?> Core auto-updates <?php echo $core_auto ? 'enabled' : 'not enabled'; ?></li>
-                        <li><?php echo $unwanted_files_status === 'ok' ? '&#10003;' : '&#9888;'; ?> Unwanted files detected <?php echo $unwanted_files_status === 'ok' ? 'not found' : 'found'; ?></li>
-                        <li><?php echo $wp_json_file_status === 'ok' ? '&#10003;' : '&#9888;'; ?> WP-JSON file detected <?php echo $wp_json_file_status === 'ok' ? 'not found' : 'found'; ?></li>
-                    </ul>
-                    <?php if ($unwanted_files_status === 'warn') : ?>
-                        <p class="description"><strong>Fix:</strong> Remove detected files from WordPress root/<code>wp-content</code> if not needed, then keep <em>Block direct access to unwanted filenames</em> enabled in Hardening &gt; General.</p>
-                        <p class="description"><?php echo esc_html($unwanted_files_detail); ?></p>
-                    <?php endif; ?>
-                    <?php if ($wp_json_file_status === 'warn') : ?>
-                        <p class="description"><strong>Fix:</strong> Verify each detected <code>wp-json</code> file, delete if unauthorized, then run malware scan and rotate admin passwords.</p>
-                        <p class="description"><?php echo esc_html($wp_json_file_detail); ?></p>
-                    <?php endif; ?>
-                    <table class="tk-table">
-                        <tbody>
-                        <?php foreach ($checks as $check) :
-                            $status = isset($check['status']) ? $check['status'] : 'unknown';
-                            $badge_class = $status === 'ok' ? 'tk-on' : ($status === 'warn' ? 'tk-warn' : '');
-                            $badge_label = $status === 'ok' ? 'OK' : ($status === 'warn' ? 'Warning' : 'Unknown');
-                            $action_label = isset($check['action_label']) ? (string) $check['action_label'] : '';
-                            $action_url = isset($check['action_url']) ? (string) $check['action_url'] : '';
-                        ?>
-                            <tr>
-                                <th><?php echo esc_html($check['label']); ?></th>
-                                <td><span class="tk-badge <?php echo esc_attr($badge_class); ?>"><?php echo esc_html($badge_label); ?></span></td>
-                                <td><?php echo esc_html($check['detail']); ?></td>
-                                <td>
-                                    <?php if ($action_label !== '' && $action_url !== '') : ?>
-                                        <a href="<?php echo esc_url($action_url); ?>"><?php echo esc_html($action_label); ?></a>
-                                    <?php else : ?>
-                                        -
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="tk-card tk-tab-panel" data-panel-id="actions">
-                    <h2>Quick Actions</h2>
-                    <p>Apply common maintenance actions quickly.</p>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:12px;">
-                        <?php tk_nonce_field('tk_toggle_core_updates'); ?>
-                        <input type="hidden" name="action" value="tk_toggle_core_updates">
-                        <p><strong>Core auto-updates</strong></p>
-                        <button class="button" name="core_updates" value="<?php echo $core_auto ? '0' : '1'; ?>">
-                            <?php echo $core_auto ? 'Disable core auto-updates' : 'Enable core auto-updates'; ?>
-                        </button>
-                    </form>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:12px;">
-                        <?php tk_nonce_field('tk_clear_cache'); ?>
-                        <input type="hidden" name="action" value="tk_clear_cache">
-                        <p><strong>Cache cleanup</strong></p>
-                        <button class="button button-secondary">Clear All Caches</button>
-                    </form>
-                    <?php if ($wp_config_path !== '' && is_writable($wp_config_path)) : ?>
-                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:12px;">
-                            <?php tk_nonce_field('tk_set_wpconfig_readonly'); ?>
-                            <input type="hidden" name="action" value="tk_set_wpconfig_readonly">
-                            <p><strong>wp-config.php permissions</strong></p>
-                            <button class="button button-secondary">Set wp-config.php read-only</button>
-                        </form>
-                    <?php elseif ($wp_config_path !== '') : ?>
-                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:12px;">
-                            <?php tk_nonce_field('tk_set_wpconfig_writable'); ?>
-                            <input type="hidden" name="action" value="tk_set_wpconfig_writable">
-                            <p><strong>wp-config.php permissions</strong></p>
-                            <button class="button">Make wp-config.php writable</button>
-                        </form>
-                    <?php endif; ?>
-                </div>
-                <div class="tk-card tk-tab-panel" data-panel-id="server">
-                    <h2>Server Rules</h2>
-                    <p><strong>Server detected:</strong> <?php echo esc_html(strtoupper($server)); ?></p>
-                    <p><strong>Recommended snippet status:</strong>
-                        <?php
-                        $badge_class = $server_status['status'] === 'ok' ? 'tk-on' : ($server_status['status'] === 'warn' ? 'tk-warn' : '');
-                        $badge_label = $server_status['status'] === 'ok' ? 'Applied' : ($server_status['status'] === 'warn' ? 'Not detected' : 'Unknown');
-                        ?>
-                        <span class="tk-badge <?php echo esc_attr($badge_class); ?>"><?php echo esc_html($badge_label); ?></span>
-                        <span class="description"><?php echo esc_html($server_status['detail']); ?></span>
-                    </p>
-                    <?php if (tk_get_option('hardening_server_aware_enabled', 1) && !empty($server_rules)) : ?>
-                        <p><strong>Server-aware rules</strong></p>
-                        <ul class="tk-list">
-                            <?php foreach ($server_rules as $rule) : ?>
-                                <li>&#10003; <?php echo esc_html($rule); ?></li>
-                            <?php endforeach; ?>
-                        </ul>
-                    <?php endif; ?>
-                    <?php if (tk_get_option('hardening_server_aware_enabled', 1) && $server_snippet !== '') : ?>
-                        <p><strong>Recommended snippet</strong></p>
-                        <pre><?php echo esc_html($server_snippet); ?></pre>
-                    <?php endif; ?>
-                </div>
-                <div class="tk-card tk-tab-panel" data-panel-id="filesystem">
-                    <h2>Filesystem</h2>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:16px;">
-                        <?php tk_nonce_field('tk_monitoring_save'); ?>
-                        <input type="hidden" name="action" value="tk_monitoring_save">
-                        <p>
-                            <label for="tk-monitor-email">Alert email</label><br>
-                            <input class="regular-text" type="email" id="tk-monitor-email" name="monitoring_email" value="<?php echo esc_attr((string) $monitor_email); ?>" placeholder="admin@example.com">
-                        </p>
-                        <p>
-                            <button class="button button-primary" name="monitoring_action" value="save">Save email</button>
-                            <button class="button button-secondary" name="monitoring_action" value="reset">Reset baseline</button>
-                        </p>
-                    </form>
-                    <p><small>Alert email will receive tamper warnings if plugin files change or critical security settings are turned off.</small></p>
-                    <p><strong>Non-core entries in WordPress root</strong></p>
-                    <?php if (!empty($noncore_root)) : ?>
-                        <ul class="tk-list">
-                            <?php foreach (array_slice($noncore_root, 0, 50) as $entry) : ?>
-                                <li>&#10003; <?php echo esc_html($entry); ?></li>
-                            <?php endforeach; ?>
-                        </ul>
-                        <?php if (count($noncore_root) > 50) : ?>
-                            <p><small>Showing first 50 items.</small></p>
-                        <?php endif; ?>
-                    <?php else : ?>
-                        <p><small>No non-core entries detected.</small></p>
-                    <?php endif; ?>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:12px;">
-                        <?php tk_nonce_field('tk_remove_ds_store'); ?>
-                        <input type="hidden" name="action" value="tk_remove_ds_store">
-                        <p><strong>.DS_Store cleanup</strong></p>
-                        <button class="button button-secondary">Remove .DS_Store and __MACOSX in root</button>
-                    </form>
-                    <p><small>Deletes macOS .DS_Store files and __MACOSX folders under the WordPress root.</small></p>
-                    <hr style="margin:16px 0;">
-                    <h3>Heartbeat</h3>
-                    <p><small>Send a manual heartbeat to the collector endpoint.</small></p>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-                        <?php tk_nonce_field('tk_heartbeat_manual'); ?>
-                        <input type="hidden" name="action" value="tk_heartbeat_manual">
-                        <button class="button button-secondary">Send Heartbeat Now</button>
-                    </form>
-                </div>
-                <div class="tk-card tk-tab-panel" data-panel-id="realtime">
-                    <h2>Health Monitor Real-Time</h2>
-                    <p>Refreshes every 5 seconds.</p>
-                    <table class="widefat striped tk-table">
-                        <tbody>
-                            <tr>
-                                <th>Page load time</th>
-                                <td><span id="tk-rt-load">-</span></td>
-                            </tr>
-                            <tr>
-                                <th>AJAX response time</th>
-                                <td><span id="tk-rt-rtt">-</span></td>
-                            </tr>
-                            <tr>
-                                <th>Memory usage</th>
-                                <td><span id="tk-rt-mem">-</span></td>
-                            </tr>
-                            <tr>
-                                <th>Error rate</th>
-                                <td><span id="tk-rt-errors">-</span></td>
-                            </tr>
-                            <tr>
-                                <th>Object cache</th>
-                                <td><span id="tk-rt-object-cache">-</span></td>
-                            </tr>
-                            <tr>
-                                <th>Redis</th>
-                                <td><span id="tk-rt-redis">-</span></td>
-                            </tr>
-                            <tr>
-                                <th>Heaviest plugins</th>
-                                <td>
-                                    <ul id="tk-rt-plugins" class="tk-list" style="margin:0;"></ul>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="tk-card tk-tab-panel" data-panel-id="missing">
-                    <h2>404 Monitor</h2>
-                    <p>Track missing URLs to fix broken links and spot suspicious scanning activity.</p>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:16px;">
-                        <?php tk_nonce_field('tk_404_monitoring_save'); ?>
-                        <input type="hidden" name="action" value="tk_404_monitoring_save">
-                        <p>
-                            <label>
-                                <input type="checkbox" name="monitoring_404_enabled" value="1" <?php checked(1, tk_get_option('monitoring_404_enabled', 1)); ?>>
-                                Enable 404 monitoring
-                            </label>
-                        </p>
-                        <p>
-                            <label>Exclude paths (one per line)</label><br>
-                            <textarea name="monitoring_404_exclude_paths" rows="4" class="large-text"><?php echo esc_textarea((string) tk_get_option('monitoring_404_exclude_paths', "/wp-admin\n/wp-login.php\n/wp-cron.php\n")); ?></textarea>
-                        </p>
-                        <p><button class="button button-primary">Save settings</button></p>
-                    </form>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:16px;">
-                        <?php tk_nonce_field('tk_404_monitoring_clear'); ?>
-                        <input type="hidden" name="action" value="tk_404_monitoring_clear">
-                        <button class="button button-secondary">Clear log</button>
-                    </form>
-                    <h3>Top missing URLs</h3>
-                    <?php if (!empty($log_values)) : ?>
-                        <table class="widefat striped tk-table">
-                            <thead><tr><th>URL</th><th>Count</th><th>Last seen</th><th>Referrer</th></tr></thead>
-                            <tbody>
-                            <?php foreach (array_slice($log_values, 0, 50) as $entry) : ?>
-                                <tr>
-                                    <td><code><?php echo esc_html($entry['path']); ?></code></td>
-                                    <td><?php echo esc_html((string) $entry['count']); ?></td>
-                                    <td><?php echo esc_html($entry['last'] ? date_i18n('Y-m-d H:i', (int) $entry['last']) : '-'); ?></td>
-                                    <td><?php echo esc_html($entry['ref'] !== '' ? $entry['ref'] : '-'); ?></td>
-                                </tr>
-                            <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    <?php else : ?>
-                        <p><small>No 404 logs yet.</small></p>
-                    <?php endif; ?>
-                </div>
-                <div class="tk-card tk-tab-panel" data-panel-id="health">
-                    <h2>Healthcheck</h2>
-                    <p>Health endpoint returns JSON for uptime checks and monitoring.</p>
-                    <?php if (tk_get_option('monitoring_healthcheck_enabled', 0) && $health_key === '') : ?>
-                        <?php tk_notice('Healthcheck is enabled but no key is set. Add a key to activate the endpoint.', 'warning'); ?>
-                    <?php endif; ?>
-                    <p>
-                        <strong>Endpoint</strong><br>
-                        <input type="text" class="regular-text" readonly value="<?php echo esc_attr($health_url); ?>" placeholder="<?php echo esc_attr(home_url('/?tk-health=1&key=YOURKEY')); ?>">
-                    </p>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:16px;">
-                        <?php tk_nonce_field('tk_healthcheck_save'); ?>
-                        <input type="hidden" name="action" value="tk_healthcheck_save">
-                        <p>
-                            <label>
-                                <input type="checkbox" name="monitoring_healthcheck_enabled" value="1" <?php checked(1, tk_get_option('monitoring_healthcheck_enabled', 1)); ?>>
-                                Enable healthcheck endpoint
-                            </label>
-                        </p>
-                        <p>
-                            <label>Healthcheck key (optional)</label><br>
-                            <input type="text" name="monitoring_healthcheck_key" value="<?php echo esc_attr($health_key); ?>" class="regular-text">
-                            <span class="description">Set a key to require ?key=... on the endpoint.</span>
-                        </p>
-                        <p><button class="button button-primary">Save settings</button></p>
-                    </form>
-                    <h3>Current status</h3>
-                    <table class="widefat striped tk-table">
-                        <tbody>
-                            <tr>
-                                <th>WP Cron</th>
-                                <td><?php echo $healthcheck['cron']['disabled'] ? 'Disabled' : 'Enabled'; ?></td>
-                            </tr>
-                            <tr>
-                                <th>Next cron</th>
-                                <td><?php echo $healthcheck['cron']['next'] ? date_i18n('Y-m-d H:i', (int) $healthcheck['cron']['next']) : '-'; ?></td>
-                            </tr>
-                            <tr>
-                                <th>PHP</th>
-                                <td><?php echo esc_html($healthcheck['server']['php']); ?></td>
-                            </tr>
-                            <tr>
-                                <th>Load avg</th>
-                                <td><?php echo !empty($healthcheck['server']['load']) ? esc_html(implode(', ', $healthcheck['server']['load'])) : '-'; ?></td>
-                            </tr>
-                            <tr>
-                                <th>Disk free</th>
-                                <td><?php echo $healthcheck['server']['disk_free'] ? size_format($healthcheck['server']['disk_free']) : '-'; ?></td>
-                            </tr>
-                            <tr>
-                                <th>Disk total</th>
-                                <td><?php echo $healthcheck['server']['disk_total'] ? size_format($healthcheck['server']['disk_total']) : '-'; ?></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-        <?php
-        tk_csp_print_inline_script(
-            "(function(){
-            function activateTab(panelId) {
-                document.querySelectorAll('.tk-tab-panel').forEach(function(panel){
-                    panel.classList.toggle('is-active', panel.getAttribute('data-panel-id') === panelId);
-                });
-                document.querySelectorAll('.tk-tabs-nav-button').forEach(function(btn){
-                    btn.classList.toggle('is-active', btn.getAttribute('data-panel') === panelId);
-                });
-            }
-            function getPanelFromHash() {
-                var hash = window.location.hash || '';
-                if (!hash) { return ''; }
-                return hash.replace('#', '');
-            }
-            document.querySelectorAll('.tk-tabs-nav-button').forEach(function(button){
-                button.addEventListener('click', function(){
-                    var panelId = button.getAttribute('data-panel');
-                    if (panelId) {
-                        window.location.hash = panelId;
-                        activateTab(panelId);
-                    }
-                });
-            });
-            var initial = getPanelFromHash();
-            if (initial) {
-                activateTab(initial);
-            }
-        })();",
-            array('id' => 'tk-monitoring-tabs')
-        );
-        tk_csp_print_inline_script(
-            "(function(){
-            var loadEl = document.getElementById('tk-rt-load');
-            var rttEl = document.getElementById('tk-rt-rtt');
-            var memEl = document.getElementById('tk-rt-mem');
-            var errEl = document.getElementById('tk-rt-errors');
-            var objectEl = document.getElementById('tk-rt-object-cache');
-            var redisEl = document.getElementById('tk-rt-redis');
-            var pluginsEl = document.getElementById('tk-rt-plugins');
-            if (!loadEl || !rttEl || !memEl || !errEl || !objectEl || !redisEl || !pluginsEl) {
-                return;
-            }
-            var intervalId = null;
-            function isRealtimeActive() {
-                var panel = document.querySelector('.tk-tab-panel[data-panel-id=\"realtime\"]');
-                return panel && panel.classList.contains('is-active');
-            }
-            function formatBytes(bytes) {
-                if (!bytes || bytes <= 0) { return '-'; }
-                var units = ['B','KB','MB','GB'];
-                var i = 0;
-                var val = bytes;
-                while (val >= 1024 && i < units.length - 1) {
-                    val /= 1024;
-                    i++;
-                }
-                return val.toFixed(1) + ' ' + units[i];
-            }
-            function setLoadTime() {
-                if (!('performance' in window)) { return; }
-                var nav = performance.getEntriesByType('navigation');
-                if (nav && nav.length) {
-                    loadEl.textContent = Math.round(nav[0].duration) + ' ms';
-                    return;
-                }
-                if (performance.timing) {
-                    var t = performance.timing;
-                    var duration = t.loadEventEnd - t.navigationStart;
-                    if (duration > 0) {
-                        loadEl.textContent = Math.round(duration) + ' ms';
-                    }
-                }
-            }
-            function fetchHealth() {
-                if (!isRealtimeActive()) {
-                    return;
-                }
-                var start = Date.now();
-                var data = new URLSearchParams();
-                data.append('action', 'tk_realtime_health');
-                data.append('nonce', '" . esc_js(wp_create_nonce('tk_realtime_health')) . "');
-                fetch(ajaxurl, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body: data.toString()
-                }).then(function(resp){ return resp.json(); }).then(function(res){
-                    var rtt = Date.now() - start;
-                    rttEl.textContent = rtt + ' ms';
-                    if (!res || !res.success || !res.data) {
-                        return;
-                    }
-                    var mem = res.data.memory || {};
-                    var memText = formatBytes(mem.used);
-                    if (mem.percent !== null && mem.percent !== undefined) {
-                        memText += ' (' + mem.percent + '%)';
-                    }
-                    memEl.textContent = memText;
-                    var err = res.data.errors || {};
-                    if (err.available === false) {
-                        errEl.textContent = 'Unavailable (debug.log off)';
-                    } else {
-                        errEl.textContent = (err.per_min || 0) + '/min (last 5m)';
-                    }
-                    var cache = res.data.cache || {};
-                    objectEl.textContent = cache.object ? 'Enabled' : 'Default';
-                    redisEl.textContent = cache.redis ? 'Enabled' : 'Off';
-                    pluginsEl.innerHTML = '';
-                    var list = res.data.heavy_plugins || [];
-                    if (!Array.isArray(list) || list.length === 0) {
-                        var fallback = res.data.heavy_plugin || {};
-                        if (fallback.name) {
-                            var li = document.createElement('li');
-                            li.textContent = fallback.name + ' (' + formatBytes(fallback.size) + ')';
-                            pluginsEl.appendChild(li);
-                        }
-                        return;
-                    }
-                    list.forEach(function(item){
-                        if (!item || !item.name) {
-                            return;
-                        }
-                        var li = document.createElement('li');
-                        li.textContent = item.name + ' (' + formatBytes(item.size) + ')';
-                        pluginsEl.appendChild(li);
-                    });
-                }).catch(function(){
-                    rttEl.textContent = 'Failed';
-                });
-            }
-            function startPolling() {
-                if (intervalId !== null) {
-                    return;
-                }
-                setLoadTime();
-                fetchHealth();
-                intervalId = setInterval(fetchHealth, 5000);
-            }
-            function stopPolling() {
-                if (intervalId === null) {
-                    return;
-                }
-                clearInterval(intervalId);
-                intervalId = null;
-            }
-            document.addEventListener('click', function(e){
-                var button = e.target.closest('.tk-tabs-nav-button');
-                if (!button) {
-                    return;
-                }
-                var panelId = button.getAttribute('data-panel');
-                if (panelId === 'realtime') {
-                    startPolling();
-                } else {
-                    stopPolling();
-                }
-            });
-            if (isRealtimeActive()) {
-                startPolling();
-            }
-        })();",
-            array('id' => 'tk-monitoring-realtime')
-        );
-        ?>
-    </div>
-    <?php
+    $connection_summary = tk_toolkits_connection_summary();
+    $core_auto = tk_get_option('hardening_core_auto_updates', 1) ? true : (defined('WP_AUTO_UPDATE_CORE') && WP_AUTO_UPDATE_CORE === true);
+    $wp_config_path = tk_hardening_wp_config_path();
+
+    tk_get_template('monitoring', array(
+        'checks' => $checks,
+        'server' => $server,
+        'server_rules' => $server_rules,
+        'server_snippet' => $server_snippet,
+        'server_status' => $server_status,
+        'noncore_root' => $noncore_root,
+        'monitor_email' => $monitor_email,
+        'log_values' => $log_values,
+        'health_url' => $health_url,
+        'health_key' => $health_key,
+        'healthcheck' => $healthcheck,
+        'connection_summary' => $connection_summary,
+        'core_auto' => $core_auto,
+        'wp_config_path' => $wp_config_path
+    ));
 }
 
 function tk_render_overview_page() {
     if (!tk_is_admin_user()) return;
-    ?>
-    <div class="wrap tk-wrap">
-        <h1>Tool Kits</h1>
-        <?php if (isset($_GET['tk_waf_reset']) && sanitize_key((string) $_GET['tk_waf_reset']) === '1') : ?>
-            <?php tk_notice('WAF settings reset to safe defaults.', 'success'); ?>
-        <?php endif; ?>
-        <div class="tk-card" style="margin-top:24px;">
-            <h2>Security Modules</h2>
-            <p class="description">Control each module directly from this page.</p>
-            <?php tk_render_security_table(); ?>
-        </div>
-        <div class="tk-card" style="margin-top:24px;">
-            <h2>Recommendation Confidence Level</h2>
-            <p class="description">General guidance for enabling common performance and security options. Use the shortcuts to review settings.</p>
-            <table class="widefat striped tk-table">
-                <thead><tr><th>Recommendation</th><th>Level</th><th>Shortcut</th></tr></thead>
-                <tbody>
-                    <tr>
-                        <td>Enable page cache for anonymous visitors</td>
-                        <td><span class="tk-badge tk-on">Safe</span></td>
-                        <td><a href="<?php echo esc_url(tk_admin_url('tool-kits-cache') . '#page'); ?>">Cache settings</a></td>
-                    </tr>
-                    <tr>
-                        <td>Enable lazy load for images/iframes below the fold</td>
-                        <td><span class="tk-badge tk-on">Safe</span></td>
-                        <td><a href="<?php echo esc_url(tk_admin_url('tool-kits-optimization') . '#lazy-load'); ?>">Lazy Load settings</a></td>
-                    </tr>
-                    <tr>
-                        <td>Enable Critical CSS and defer non-critical CSS</td>
-                        <td><span class="tk-badge tk-warn">Medium risk</span></td>
-                        <td><a href="<?php echo esc_url(tk_admin_url('tool-kits-optimization') . '#assets'); ?>">Assets settings</a></td>
-                    </tr>
-                    <tr>
-                        <td>Enable HTML minify (frontend)</td>
-                        <td><span class="tk-badge tk-warn">Medium risk</span></td>
-                        <td><a href="<?php echo esc_url(tk_admin_url('tool-kits-optimization') . '#minify'); ?>">Minify settings</a></td>
-                    </tr>
-                    <tr>
-                        <td>Enable Hide Login (custom login slug)</td>
-                        <td><span class="tk-badge tk-warn">Medium risk</span></td>
-                        <td><a href="<?php echo esc_url(tk_admin_url('tool-kits-optimization') . '#hide-login'); ?>">Hide Login settings</a></td>
-                    </tr>
-                    <tr>
-                        <td>Enable WAF or HTTP Auth protections</td>
-                        <td><span class="tk-badge tk-adv">Advanced / expert only</span></td>
-                        <td><a href="<?php echo esc_url(tk_admin_url(tk_hardening_page_slug()) . '#waf'); ?>">Hardening settings</a></td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-        <div class="tk-card" style="margin-top:24px;">
-            <h2>Diagnostics</h2>
-            <p class="description">Review updater status, GitHub release cache, and package details before troubleshooting update failures.</p>
-            <p><a class="button button-secondary" href="<?php echo esc_url(tk_admin_url('tool-kits-diagnostics')); ?>">Open Diagnostics</a></p>
-        </div>
-    </div>
-    <?php
+    $opts = tk_get_options();
+    $score_data = tk_hardening_calculate_score();
+    $score = $score_data['score'];
+    $score_color = ($score >= 80) ? '#27ae60' : (($score >= 50) ? '#f39c12' : '#e74c3c');
+
+    tk_get_template('overview', array(
+        'score' => $score,
+        'score_color' => $score_color,
+        'score_data' => $score_data,
+        'opts' => $opts
+    ));
 }
 
 function tk_render_diagnostics_page() {
     if (!tk_is_admin_user()) return;
 
     $diagnostics = function_exists('tk_github_get_diagnostics') ? tk_github_get_diagnostics() : array();
+    $connection_summary = tk_toolkits_connection_summary();
     $status = isset($diagnostics['status']) && is_array($diagnostics['status']) ? $diagnostics['status'] : array();
     $status_label = isset($status['status']) ? (string) $status['status'] : 'idle';
     $status_message = isset($status['message']) ? (string) $status['message'] : 'No updater status recorded yet.';
@@ -748,10 +194,66 @@ function tk_render_diagnostics_page() {
     $checks = isset($diagnostics['checks']) && is_array($diagnostics['checks']) ? $diagnostics['checks'] : array();
     ?>
     <div class="wrap tk-wrap">
-        <h1>Diagnostics</h1>
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('System Diagnostics', 'Detailed health reports, connection summaries, and updater logs for advanced troubleshooting.', 'dashicons-analytics'); ?>
         <?php if (isset($_GET['tk_github_status_cleared']) && sanitize_key((string) $_GET['tk_github_status_cleared']) === '1') : ?>
             <?php tk_notice('GitHub updater status cleared.', 'success'); ?>
         <?php endif; ?>
+
+        <div class="tk-card" style="margin-top:24px;">
+            <h2>Connection Status</h2>
+            <p class="description">Review collector, heartbeat, and license configuration before troubleshooting access or monitoring issues.</p>
+            <table class="widefat striped tk-table">
+                <tbody>
+                    <tr>
+                        <th>Collector URL</th>
+                        <td><?php echo tk_toolkits_status_badge($connection_summary['collector_status']); ?></td>
+                        <td><code><?php echo esc_html($connection_summary['collector_url'] !== '' ? $connection_summary['collector_url'] : 'Missing'); ?></code></td>
+                    </tr>
+                    <tr>
+                        <th>Heartbeat URL</th>
+                        <td><?php echo tk_toolkits_status_badge($connection_summary['heartbeat_status']); ?></td>
+                        <td><code><?php echo esc_html($connection_summary['heartbeat_url'] !== '' ? $connection_summary['heartbeat_url'] : 'Missing'); ?></code></td>
+                    </tr>
+                    <tr>
+                        <th>License URL</th>
+                        <td><?php echo tk_toolkits_status_badge($connection_summary['license_url_status']); ?></td>
+                        <td><code><?php echo esc_html($connection_summary['license_url'] !== '' ? $connection_summary['license_url'] : 'Missing'); ?></code></td>
+                    </tr>
+                    <tr>
+                        <th>Token status</th>
+                        <td><?php echo tk_toolkits_status_badge($connection_summary['token_status']); ?></td>
+                        <td><?php echo $connection_summary['token_status'] === 'configured' ? 'Collector token is set.' : 'Collector token is missing.'; ?></td>
+                    </tr>
+                    <tr>
+                        <th>Last heartbeat</th>
+                        <td><?php echo tk_toolkits_status_badge($connection_summary['heartbeat_last_success'] > 0 ? 'configured' : 'missing'); ?></td>
+                        <td><?php echo esc_html(tk_toolkits_format_timestamp($connection_summary['heartbeat_last_success'])); ?></td>
+                    </tr>
+                    <tr>
+                        <th>Last heartbeat failure</th>
+                        <td><?php echo tk_toolkits_status_badge($connection_summary['heartbeat_last_failure'] > 0 ? 'error' : 'missing'); ?></td>
+                        <td><?php echo esc_html(tk_toolkits_format_timestamp($connection_summary['heartbeat_last_failure'])); ?></td>
+                    </tr>
+                    <tr>
+                        <th>Last license check</th>
+                        <td><?php echo tk_toolkits_status_badge($connection_summary['license_last_checked'] > 0 ? 'configured' : 'missing'); ?></td>
+                        <td><?php echo esc_html(tk_toolkits_format_timestamp($connection_summary['license_last_checked'])); ?></td>
+                    </tr>
+                    <tr>
+                        <th>Last license failure</th>
+                        <td><?php echo tk_toolkits_status_badge($connection_summary['license_last_failure'] > 0 ? 'error' : 'missing'); ?></td>
+                        <td><?php echo esc_html(tk_toolkits_format_timestamp($connection_summary['license_last_failure'])); ?></td>
+                    </tr>
+                </tbody>
+            </table>
+            <?php if ($connection_summary['heartbeat_last_error'] !== '') : ?>
+                <p><strong>Last heartbeat error:</strong> <?php echo esc_html($connection_summary['heartbeat_last_error']); ?></p>
+            <?php endif; ?>
+            <?php if ($connection_summary['license_last_error'] !== '') : ?>
+                <p><strong>Last license error:</strong> <?php echo esc_html($connection_summary['license_last_error']); ?></p>
+            <?php endif; ?>
+        </div>
 
         <div class="tk-card" style="margin-top:24px;">
             <h2>GitHub Updater</h2>
@@ -915,131 +417,223 @@ function tk_render_diagnostics_page() {
 
 function tk_render_security_table() {
     ?>
-    <table class="widefat striped tk-table">
-        <thead><tr><th>Module</th><th>Status</th><th>Active Items</th><th>Shortcut</th></tr></thead>
-        <tbody>
-            <tr>
-                <td>Hide Login</td>
-                <td><?php echo tk_get_option('hide_login_enabled',0) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?></td>
-                <td>
-                    <?php if (tk_get_option('hide_login_enabled',0)) : ?>
-                        <ul class="tk-list">
-                            <li>&#10003; /<?php echo esc_html((string) tk_get_option('hide_login_slug', 'secure-login')); ?></li>
-                        </ul>
-                    <?php else : ?>
-                        <small>-</small>
-                    <?php endif; ?>
-                </td>
-                <td><a href="<?php echo esc_url(tk_admin_url('tool-kits-optimization') . '#hide-login'); ?>">Settings</a></td>
-            </tr>
-            <tr>
-                <td>Captcha</td>
-                <td><?php echo tk_get_option('captcha_enabled',0) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?></td>
-                <td>
-                    <?php if (tk_get_option('captcha_enabled',0)) : ?>
-                        <ul class="tk-list">
-                            <?php if (tk_get_option('captcha_on_login',1)) : ?>
-                                <li>&#10003; Login</li>
-                            <?php endif; ?>
-                            <?php if (tk_get_option('captcha_on_comments',0)) : ?>
-                                <li>&#10003; Comments</li>
-                            <?php endif; ?>
-                            <?php if (!tk_get_option('captcha_on_login',1) && !tk_get_option('captcha_on_comments',0)) : ?>
-                                <li>&#10003; Enabled</li>
-                            <?php endif; ?>
-                        </ul>
-                    <?php else : ?>
-                        <small>-</small>
-                    <?php endif; ?>
-                </td>
-                <td><a href="<?php echo esc_url(tk_admin_url('tool-kits-security-spam') . '#captcha'); ?>">Settings</a></td>
-            </tr>
-            <tr>
-                <td>Anti-spam Contact</td>
-                <td><?php echo tk_get_option('antispam_cf7_enabled',0) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?></td>
-                <td>
-                    <?php if (tk_get_option('antispam_cf7_enabled',0)) : ?>
-                        <ul class="tk-list">
-                            <li>&#10003; Min seconds: <?php echo esc_html((string) tk_get_option('antispam_min_seconds', 3)); ?></li>
-                        </ul>
-                    <?php else : ?>
-                        <small>-</small>
-                    <?php endif; ?>
-                </td>
-                <td><a href="<?php echo esc_url(tk_admin_url('tool-kits-security-spam') . '#antispam'); ?>">Settings</a></td>
-            </tr>
-            <tr>
-                <td>Rate Limit</td>
-                <td><?php echo tk_get_option('rate_limit_enabled',0) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?></td>
-                <td>
-                    <?php if (tk_get_option('rate_limit_enabled',0)) :
-                        $window = (int) tk_get_option('rate_limit_window_minutes', 10);
-                        $max = (int) tk_get_option('rate_limit_max_attempts', 5);
-                        $lock = (int) tk_get_option('rate_limit_lockout_minutes', 30);
-                    ?>
-                        <ul class="tk-list">
-                            <li>&#10003; Window: <?php echo esc_html((string) $window); ?>m</li>
-                            <li>&#10003; Max: <?php echo esc_html((string) $max); ?></li>
-                            <li>&#10003; Lock: <?php echo esc_html((string) $lock); ?>m</li>
-                        </ul>
-                    <?php else : ?>
-                        <small>-</small>
-                    <?php endif; ?>
-                </td>
-                <td><a href="<?php echo esc_url(tk_admin_url('tool-kits-security-rate-limit')); ?>">Settings</a></td>
-            </tr>
-            <tr>
-                <td>Login Log</td>
-                <td><?php echo tk_get_option('login_log_enabled',1) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?></td>
-                <td>
-                    <?php if (tk_get_option('login_log_enabled',1)) : ?>
-                        <ul class="tk-list">
-                            <li>&#10003; Keep days: <?php echo esc_html((string) tk_get_option('login_log_keep_days', 30)); ?></li>
-                        </ul>
-                    <?php else : ?>
-                        <small>-</small>
-                    <?php endif; ?>
-                </td>
-                <td><a href="<?php echo esc_url(tk_admin_url('tool-kits-security-login-log')); ?>">View</a></td>
-            </tr>
-            <tr>
-                <td>Hardening</td>
-                <td><?php echo tk_hardening_active_items() ? '<span class="tk-badge tk-on">ACTIVE</span>' : '<span class="tk-badge">OFF</span>'; ?></td>
-                <td>
-                    <?php
-                    $hardening_items = tk_hardening_active_items();
-                    if (!empty($hardening_items)) : ?>
-                        <ul class="tk-list">
-                            <?php foreach ($hardening_items as $item) : ?>
-                                <li>&#10003; <?php echo esc_html($item); ?></li>
-                            <?php endforeach; ?>
-                        </ul>
-                    <?php else : ?>
-                        <small>-</small>
-                    <?php endif; ?>
-                </td>
-                <td>
-                    <a href="<?php echo esc_url(tk_admin_url(tk_hardening_page_slug())); ?>">Settings</a>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:8px;">
-                        <?php tk_nonce_field('tk_hardening_waf_reset'); ?>
-                        <input type="hidden" name="action" value="tk_hardening_waf_reset">
-                        <button class="button button-secondary" data-confirm="Reset WAF settings to safe defaults and disable WAF?">Reset WAF</button>
-                    </form>
-                </td>
-            </tr>
-        </tbody>
-    </table>
+    <div class="tk-module-grid">
+        <!-- Hide Login -->
+        <div class="tk-module-card">
+            <div class="tk-module-header">
+                <div class="tk-module-title">
+                    <span class="dashicons dashicons-lock"></span>
+                    <h3>Hide Login</h3>
+                </div>
+                <?php echo tk_get_option('hide_login_enabled',0) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?>
+            </div>
+            <div class="tk-module-body">
+                <?php if (tk_get_option('hide_login_enabled',0)) : ?>
+                    <ul class="tk-list">
+                        <li>/<?php echo esc_html((string) tk_get_option('hide_login_slug', 'secure-login')); ?></li>
+                    </ul>
+                <?php else : ?>
+                    <p class="tk-empty">Slug protection inactive.</p>
+                <?php endif; ?>
+            </div>
+            <div class="tk-module-footer">
+                <a href="<?php echo esc_url(tk_admin_url('tool-kits-optimization') . '#hide-login'); ?>" class="button button-small">Configure</a>
+            </div>
+        </div>
+
+        <!-- Captcha -->
+        <div class="tk-module-card">
+            <div class="tk-module-header">
+                <div class="tk-module-title">
+                    <span class="dashicons dashicons-shield"></span>
+                    <h3>Captcha</h3>
+                </div>
+                <?php echo tk_get_option('captcha_enabled',0) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?>
+            </div>
+            <div class="tk-module-body">
+                <?php if (tk_get_option('captcha_enabled',0)) : ?>
+                    <ul class="tk-list">
+                        <?php if (tk_get_option('captcha_on_login',1)) : ?><li>Login Protection</li><?php endif; ?>
+                        <?php if (tk_get_option('captcha_on_comments',0)) : ?><li>Comment Protection</li><?php endif; ?>
+                    </ul>
+                <?php else : ?>
+                    <p class="tk-empty">Bot protection inactive.</p>
+                <?php endif; ?>
+            </div>
+            <div class="tk-module-footer">
+                <a href="<?php echo esc_url(tk_admin_url('tool-kits-security-spam') . '#captcha'); ?>" class="button button-small">Configure</a>
+            </div>
+        </div>
+
+        <!-- Anti-spam -->
+        <div class="tk-module-card">
+            <div class="tk-module-header">
+                <div class="tk-module-title">
+                    <span class="dashicons dashicons-no-alt"></span>
+                    <h3>Anti-spam</h3>
+                </div>
+                <?php echo tk_get_option('antispam_cf7_enabled',0) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?>
+            </div>
+            <div class="tk-module-body">
+                <?php if (tk_get_option('antispam_cf7_enabled',0)) : ?>
+                    <ul class="tk-list">
+                        <li>Min delay: <?php echo esc_html((string) tk_get_option('antispam_min_seconds', 3)); ?>s</li>
+                        <li>CF7 Integration Active</li>
+                    </ul>
+                <?php else : ?>
+                    <p class="tk-empty">Form spam protection inactive.</p>
+                <?php endif; ?>
+            </div>
+            <div class="tk-module-footer">
+                <a href="<?php echo esc_url(tk_admin_url('tool-kits-security-spam') . '#antispam'); ?>" class="button button-small">Configure</a>
+            </div>
+        </div>
+
+        <!-- Rate Limit -->
+        <div class="tk-module-card">
+            <div class="tk-module-header">
+                <div class="tk-module-title">
+                    <span class="dashicons dashicons-clock"></span>
+                    <h3>Rate Limit</h3>
+                </div>
+                <?php echo tk_get_option('rate_limit_enabled',0) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?>
+            </div>
+            <div class="tk-module-body">
+                <?php if (tk_get_option('rate_limit_enabled',0)) : 
+                    $max = (int) tk_get_option('rate_limit_max_attempts', 5);
+                ?>
+                    <ul class="tk-list">
+                        <li>Max attempts: <?php echo $max; ?></li>
+                        <li>Brute-force protection active</li>
+                    </ul>
+                <?php else : ?>
+                    <p class="tk-empty">Traffic throttling inactive.</p>
+                <?php endif; ?>
+            </div>
+            <div class="tk-module-footer">
+                <a href="<?php echo esc_url(tk_admin_url('tool-kits-security-rate-limit')); ?>" class="button button-small">Configure</a>
+            </div>
+        </div>
+
+        <!-- Login Log -->
+        <div class="tk-module-card">
+            <div class="tk-module-header">
+                <div class="tk-module-title">
+                    <span class="dashicons dashicons-list-view"></span>
+                    <h3>Login Log</h3>
+                </div>
+                <?php echo tk_get_option('login_log_enabled',1) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?>
+            </div>
+            <div class="tk-module-body">
+                <?php if (tk_get_option('login_log_enabled',1)) : ?>
+                    <ul class="tk-list">
+                        <li>Retention: <?php echo esc_html((string) tk_get_option('login_log_keep_days', 30)); ?> days</li>
+                        <li>Audit trail active</li>
+                    </ul>
+                <?php else : ?>
+                    <p class="tk-empty">Audit logging inactive.</p>
+                <?php endif; ?>
+            </div>
+            <div class="tk-module-footer">
+                <a href="<?php echo esc_url(tk_admin_url('tool-kits-security-login-log')); ?>" class="button button-small">View Logs</a>
+            </div>
+        </div>
+
+        <!-- Hardening -->
+        <div class="tk-module-card">
+            <div class="tk-module-header">
+                <div class="tk-module-title">
+                    <span class="dashicons dashicons-hammer"></span>
+                    <h3>Hardening</h3>
+                </div>
+                <?php 
+                $hardening_items = tk_hardening_active_items();
+                echo !empty($hardening_items) ? '<span class="tk-badge tk-on">ACTIVE</span>' : '<span class="tk-badge">OFF</span>'; 
+                ?>
+            </div>
+            <div class="tk-module-body">
+                <?php if (!empty($hardening_items)) : ?>
+                    <ul class="tk-list">
+                        <li><?php echo count($hardening_items); ?> security rules applied</li>
+                        <li>WAF & Server hardening</li>
+                    </ul>
+                <?php else : ?>
+                    <p class="tk-empty">System hardening inactive.</p>
+                <?php endif; ?>
+            </div>
+            <div class="tk-module-footer">
+                <a href="<?php echo esc_url(tk_admin_url(tk_hardening_page_slug())); ?>" class="button button-small">Configure</a>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;">
+                    <?php tk_nonce_field('tk_hardening_waf_reset'); ?>
+                    <input type="hidden" name="action" value="tk_hardening_waf_reset">
+                    <button class="button button-link-delete button-small" style="font-size:11px;" data-confirm="Reset WAF settings?">Reset</button>
+                </form>
+            </div>
+        </div>
+    </div>
     <?php
 }
 
 function tk_toolkits_default_license_server_url($collector_url) {
-    if (!is_string($collector_url) || $collector_url === '') {
-        return '';
+    return tk_toolkits_license_server_url_for_collector((string) $collector_url);
+}
+
+function tk_toolkits_prepare_license_server_url(): string {
+    $license_server_url = tk_license_server_url();
+    if ($license_server_url !== '') {
+        tk_update_option('license_server_url', $license_server_url);
     }
-    if (substr($collector_url, -13) === 'heartbeat.php') {
-        return substr($collector_url, 0, -13) . 'license.php';
+    return $license_server_url;
+}
+
+function tk_toolkits_status_badge(string $status): string {
+    $status = strtolower(trim($status));
+    $class = 'tk-badge';
+    $label = $status === '' ? 'Unknown' : ucfirst($status);
+    if (in_array($status, array('configured', 'valid', 'ok', 'enabled'), true)) {
+        $class .= ' tk-on';
+    } elseif (in_array($status, array('reachable', 'warning', 'degraded'), true)) {
+        $class .= ' tk-warn';
+        $label = $status === 'reachable' ? 'Reachable' : ucfirst($status);
+    } elseif (in_array($status, array('missing', 'error', 'invalid', 'fail', 'expired', 'revoked', 'not_found'), true)) {
+        $class .= ' tk-warn';
     }
-    return rtrim($collector_url, '/') . '/license.php';
+    return '<span class="' . esc_attr($class) . '">' . esc_html($label) . '</span>';
+}
+
+function tk_toolkits_format_timestamp(int $timestamp): string {
+    if ($timestamp <= 0) {
+        return 'Never';
+    }
+    return date_i18n('Y-m-d H:i:s', $timestamp);
+}
+
+function tk_toolkits_connection_summary(): array {
+    $collector_url = tk_toolkits_collector_url();
+    $heartbeat_url = tk_heartbeat_collector_url();
+    $license_url = tk_license_server_url();
+    $collector_token = tk_heartbeat_auth_key();
+    $license_key = trim((string) tk_get_option('license_key', ''));
+    return array(
+        'collector_url' => $collector_url,
+        'heartbeat_url' => $heartbeat_url,
+        'license_url' => $license_url,
+        'collector_status' => $collector_url !== '' ? 'configured' : 'missing',
+        'heartbeat_status' => $heartbeat_url !== '' ? 'configured' : 'missing',
+        'license_url_status' => $license_url !== '' ? 'configured' : 'missing',
+        'token_status' => $collector_token !== '' ? 'configured' : 'missing',
+        'license_key_status' => $license_key !== '' ? 'configured' : 'missing',
+        'heartbeat_last_checked' => (int) tk_get_option('heartbeat_last_checked', 0),
+        'heartbeat_last_success' => (int) tk_get_option('heartbeat_last_success', 0),
+        'heartbeat_last_failure' => (int) tk_get_option('heartbeat_last_failure', 0),
+        'heartbeat_last_error' => (string) tk_get_option('heartbeat_last_error_message', ''),
+        'heartbeat_last_endpoint' => (string) tk_get_option('heartbeat_last_endpoint', ''),
+        'license_last_checked' => (int) tk_get_option('license_last_checked', 0),
+        'license_last_success' => (int) tk_get_option('license_last_success', 0),
+        'license_last_failure' => (int) tk_get_option('license_last_failure', 0),
+        'license_last_error' => (string) tk_get_option('license_last_error_message', ''),
+        'license_last_endpoint' => (string) tk_get_option('license_last_endpoint', ''),
+    );
 }
 
 function tk_render_toolkits_access_page() {
@@ -1049,15 +643,17 @@ function tk_render_toolkits_access_page() {
     $lock = (int) tk_get_option('toolkits_lock_enabled', 0);
     $mask = (int) tk_get_option('toolkits_mask_sensitive_fields', 0);
     $roles = tk_toolkits_allowed_roles();
+    $connection_summary = tk_toolkits_connection_summary();
     $allowlist = (string) tk_get_option('toolkits_ip_allowlist', '');
     $alert_enabled = (int) tk_get_option('toolkits_alert_enabled', 1);
     $alert_email = (string) tk_get_option('toolkits_alert_email', '');
+    $alert_webhook = (string) tk_get_option('toolkits_alert_webhook', '');
     $alert_admin_created = (int) tk_get_option('toolkits_alert_admin_created', 1);
     $alert_role_change = (int) tk_get_option('toolkits_alert_role_change', 1);
     $alert_admin_ip = (int) tk_get_option('toolkits_alert_admin_login_new_ip', 1);
-    $collector_url = (string) tk_get_option('heartbeat_collector_url', '');
-    $collector_key = (string) tk_get_option('heartbeat_auth_key', '');
-    $license_server_url = (string) tk_get_option('license_server_url', '');
+    $collector_url = tk_toolkits_collector_url();
+    $collector_key = tk_heartbeat_auth_key();
+    $license_server_url = tk_license_server_url();
     $license_key = (string) tk_get_option('license_key', '');
     $license_status = (string) tk_get_option('license_status', 'inactive');
     $license_message = (string) tk_get_option('license_message', '');
@@ -1086,16 +682,26 @@ function tk_render_toolkits_access_page() {
     $cleared = isset($_GET['tk_cleared']) ? sanitize_key($_GET['tk_cleared']) : '';
     $license_reset = isset($_GET['tk_reset_license']) ? sanitize_key($_GET['tk_reset_license']) : '';
     $license_required = isset($_GET['tk_license']) ? sanitize_key($_GET['tk_license']) : '';
-    $collector_url_value = $collector_url !== '' ? $collector_url : (defined('TK_HEARTBEAT_URL') ? (string) TK_HEARTBEAT_URL : '');
-    $license_server_value = defined('TK_LICENSE_SERVER_URL') && TK_LICENSE_SERVER_URL !== '' ? TK_LICENSE_SERVER_URL : '';
-    if ($license_server_value !== '') {
+    $collector_url_value = $collector_url;
+    $license_server_fixed = defined('TK_LICENSE_SERVER_URL') && TK_LICENSE_SERVER_URL !== '';
+    $license_server_value = $license_server_fixed ? (string) TK_LICENSE_SERVER_URL : $license_server_url;
+    if ($license_server_value === '') {
+        $license_server_value = tk_toolkits_default_license_server_url($collector_url_value);
+    }
+    $connection_test = isset($_GET['tk_test']) ? sanitize_key($_GET['tk_test']) : '';
+    $connection_test_status = isset($_GET['tk_test_status']) ? sanitize_key($_GET['tk_test_status']) : '';
+    $connection_summary = tk_toolkits_connection_summary();
+    if ($license_server_fixed) {
         $license_server_note = sprintf(__('License server URL is fixed to %s.', 'tool-kits'), $license_server_value);
+    } elseif ($license_server_value !== '') {
+        $license_server_note = sprintf(__('License server URL is detected automatically as %s.', 'tool-kits'), $license_server_value);
     } else {
-        $license_server_note = __('License server URL will be configured automatically once the Collector URL is saved.', 'tool-kits');
+        $license_server_note = __('License server URL will be generated automatically from the Collector URL.', 'tool-kits');
     }
     ?>
     <div class="wrap tk-wrap">
-        <h1>Tool Kits Access</h1>
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('Access & Licenses', 'Configure plugin access permissions, audit logs, and manage your Pro license settings.', 'dashicons-admin-network'); ?>
         <?php if ($saved === '1') : ?>
             <?php tk_notice('Access settings saved.', 'success'); ?>
         <?php endif; ?>
@@ -1108,20 +714,52 @@ function tk_render_toolkits_access_page() {
         <?php if ($license_required === '1') : ?>
             <?php
             $license_notice = $license_missing
-                ? 'License key is required. Please set your license key and license server URL.'
-                : ($license_message !== '' ? $license_message : 'License invalid.');
+                ? tk_toolkits_missing_config_message('license_key')
+                : ($license_message !== '' ? $license_message : tk_toolkits_license_validation_message());
             tk_notice($license_notice, 'warning');
             ?>
         <?php endif; ?>
         <?php if ($collector_key === '' && (!defined('TK_HEARTBEAT_AUTH_KEY') || TK_HEARTBEAT_AUTH_KEY === '')) : ?>
-            <?php tk_notice('Collector token is required to access Tool Kits. Please set it below.', 'warning'); ?>
+            <?php tk_notice(tk_toolkits_missing_config_message('collector_token') . ' Please set it below.', 'warning'); ?>
+        <?php endif; ?>
+        <?php if ($connection_test !== '') : ?>
+            <?php
+            $test_message = '';
+            if ($connection_test === 'heartbeat') {
+                $test_message = $connection_test_status === 'ok'
+                    ? 'Heartbeat test succeeded.'
+                    : ((string) tk_get_option('heartbeat_last_error_message', '') !== '' ? (string) tk_get_option('heartbeat_last_error_message', '') : 'Heartbeat test failed.');
+            } elseif ($connection_test === 'license') {
+                if ($connection_test_status === 'ok') {
+                    $test_message = 'License reachability test succeeded.';
+                } elseif ($connection_test_status === 'warn') {
+                    $test_message = (string) tk_get_option('license_last_error_message', '') !== ''
+                        ? (string) tk_get_option('license_last_error_message', '')
+                        : 'License server is reachable but returned a non-success HTTP response.';
+                } else {
+                    $test_message = (string) tk_get_option('license_last_error_message', '') !== ''
+                        ? (string) tk_get_option('license_last_error_message', '')
+                        : 'License reachability test failed.';
+                }
+            }
+            if ($test_message !== '') {
+                $notice_type = 'error';
+                if ($connection_test_status === 'ok') {
+                    $notice_type = 'success';
+                } elseif ($connection_test_status === 'warn') {
+                    $notice_type = 'warning';
+                }
+                tk_notice($test_message, $notice_type);
+            }
+            ?>
         <?php endif; ?>
         <div class="tk-tabs">
             <div class="tk-tabs-nav">
                 <?php if (!$license_invalid) : ?>
                     <button type="button" class="tk-tabs-nav-button is-active" data-panel="access">Access</button>
                 <?php endif; ?>
-                <button type="button" class="tk-tabs-nav-button <?php echo $license_missing ? 'is-active' : ''; ?>" data-panel="license">License</button>
+                <button type="button" class="tk-tabs-nav-button <?php echo $license_invalid ? 'is-active' : ''; ?>" data-panel="license-status">License Status</button>
+                <button type="button" class="tk-tabs-nav-button" data-panel="license">Connection</button>
                 <?php if ($show_full_tabs) : ?>
                     <button type="button" class="tk-tabs-nav-button" data-panel="owner">Owner</button>
                     <button type="button" class="tk-tabs-nav-button" data-panel="alerts">Alerts</button>
@@ -1131,43 +769,56 @@ function tk_render_toolkits_access_page() {
             <div class="tk-tabs-content">
                 <?php if (!$license_invalid) : ?>
                 <div class="tk-card tk-tab-panel is-active" data-panel-id="access">
-                    <p>Control who can access Tool Kits and lock settings on production.</p>
+                    <h2 style="margin-bottom:8px;">Access Control</h2>
+                    <p class="description" style="margin-bottom:24px;">Manage who can access Tool Kits and prevent accidental changes on production.</p>
+                    
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php tk_nonce_field('tk_toolkits_access_save'); ?>
                         <input type="hidden" name="action" value="tk_toolkits_access_save">
                         <input type="hidden" name="tk_tab" value="access">
-                        <p><label><input type="checkbox" name="hide_menu" value="1" <?php checked(1, $hidden); ?>> Hide Tool Kits menu</label></p>
-                        <?php if ($cff_installed) : ?>
-                            <p><label><input type="checkbox" name="hide_cff_menu" value="1" <?php checked(1, $hide_cff); ?>> Hide CFF menu</label></p>
-                        <?php endif; ?>
-                        <p><label><input type="checkbox" name="toolkits_lock_enabled" value="1" <?php checked(1, $lock); ?>> Lock Tool Kits settings</label></p>
-                        <p><label><input type="checkbox" name="toolkits_mask_sensitive_fields" value="1" <?php checked(1, $mask); ?>> Mask sensitive fields in UI</label></p>
-                        <p>
-                            <strong>Allowed roles</strong><br>
-                            <?php foreach (get_editable_roles() as $role_key => $role) : ?>
-                                <label style="display:inline-block;margin-right:12px;">
-                                    <input type="checkbox" name="toolkits_allowed_roles[]" value="<?php echo esc_attr($role_key); ?>" <?php checked(in_array($role_key, $roles, true)); ?>>
-                                    <?php echo esc_html($role['name']); ?>
-                                </label>
-                            <?php endforeach; ?>
-                        </p>
-                        <p>
-                            <label>IP allowlist (one per line)</label><br>
-                            <textarea name="toolkits_ip_allowlist" rows="3" class="large-text" placeholder="203.0.113.10"><?php echo esc_textarea($allowlist); ?></textarea>
-                        </p>
-                        <p><button class="button button-primary">Save</button></p>
+
+                        <?php 
+                        tk_render_switch('toolkits_lock_enabled', 'Lock Settings', 'Prevent any modifications to Tool Kits configuration.', $lock);
+                        
+                        tk_render_switch('toolkits_mask_sensitive_fields', 'Mask Sensitive Data', 'Hide license keys and tokens in the admin UI.', $mask);
+                        
+                        tk_render_switch('toolkits_owner_only_enabled', 'Owner-Only Mode', 'Restrict access to the primary site owner (UID: ' . $owner_id . ') only.', $owner_only);
+                        ?>
+
+                        <div style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px;">
+                            <h3 style="margin:0 0 12px; font-size:14px;">Allowed Administrator Roles</h3>
+                            <div style="display:flex; flex-wrap:wrap; gap:12px;">
+                                <?php foreach (get_editable_roles() as $role_key => $role) : ?>
+                                    <label style="background:#fff; border:1px solid var(--tk-border-soft); padding:8px 12px; border-radius:8px; display:flex; align-items:center; gap:8px; font-size:12px; cursor:pointer;">
+                                        <input type="checkbox" name="toolkits_allowed_roles[]" value="<?php echo esc_attr($role_key); ?>" <?php checked(in_array($role_key, $roles, true)); ?>>
+                                        <?php echo esc_html($role['name']); ?>
+                                    </label>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:24px;">
+                            <label style="display:block; font-weight:600; margin-bottom:8px;">IP Allowlist (One per line)</label>
+                            <textarea name="toolkits_ip_allowlist" rows="3" class="large-text" placeholder="203.0.113.10" style="border-radius:10px;"><?php echo esc_textarea($allowlist); ?></textarea>
+                        </div>
+
+                        <div style="margin-top:24px; padding-top:20px; border-top:1px solid var(--tk-border-soft);">
+                            <button class="button button-primary button-hero">Save Access Rules</button>
+                        </div>
                     </form>
                 </div>
                 <?php endif; ?>
-                <div class="tk-card tk-tab-panel <?php echo $license_invalid ? 'is-active' : ''; ?>" data-panel-id="license">
-                    <p>Set license server URL and key to unlock all Tool Kits features.</p>
+
+                <div class="tk-card tk-tab-panel <?php echo $license_invalid ? 'is-active' : ''; ?>" data-panel-id="license-status">
                     <?php
                     $expires_label = 'Unlimited';
                     $expires_remaining = '';
+                    $is_expired = false;
                     if ($license_expires !== '' && strtotime($license_expires) !== false) {
                         $expires_ts = strtotime($license_expires);
                         $now = time();
                         if ($expires_ts <= $now) {
+                            $is_expired = true;
                             $expires_label = 'Expired';
                             $expires_remaining = '0 days';
                         } else {
@@ -1176,172 +827,213 @@ function tk_render_toolkits_access_page() {
                             $expires_remaining = $days . ' days left';
                         }
                     }
+                    $status_color = ($license_status === 'valid') ? '#27ae60' : ($is_expired ? '#e74c3c' : '#f39c12');
                     ?>
-                    <div class="tk-card" style="margin:12px 0;">
-                        <div style="display: flex;align-items: center;justify-content: space-between;">
-                            <h3 style="margin-top:0;">License Status</h3>
-                            <div style="display: flex;gap:8px;">
-                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0;">
-                                    <?php tk_nonce_field('tk_license_activate'); ?>
-                                    <input type="hidden" name="action" value="tk_toolkits_license_activate">
-                                    <button type="submit" class="button button-secondary">Activator</button>
-                                </form>
-                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0;" onsubmit="return window.confirm('Reset license data?');">
-                                    <?php tk_nonce_field('tk_license_reset'); ?>
-                                    <input type="hidden" name="action" value="tk_toolkits_license_reset">
-                                    <button type="submit" class="button">Reset License</button>
-                                </form>
+
+                    <div style="background:var(--tk-bg-soft); border-radius:20px; padding:32px; border:1px solid var(--tk-border-soft); text-align:center;">
+                        <div style="width:80px; height:80px; border-radius:40px; background:<?php echo $status_color; ?>; display:flex; align-items:center; justify-content:center; margin:0 auto 20px; box-shadow: 0 10px 15px -3px <?php echo $status_color; ?>44;">
+                            <span class="dashicons <?php echo $license_status === 'valid' ? 'dashicons-yes-alt' : 'dashicons-warning'; ?>" style="font-size:40px; width:40px; height:40px; color:#fff;"></span>
+                        </div>
+                        <h2 style="margin:0; font-size:24px;"><?php echo $license_status === 'valid' ? 'License Active' : 'Activation Required'; ?></h2>
+                        <p style="color:var(--tk-muted); margin-top:8px;">Current Status: <strong style="color:<?php echo $status_color; ?>; text-transform:uppercase;"><?php echo esc_html($license_status); ?></strong></p>
+                        
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:16px; margin-top:32px;">
+                            <div class="tk-card" style="padding:15px; background:#fff;">
+                                <div style="font-size:10px; text-transform:uppercase; color:var(--tk-muted);">Type</div>
+                                <div style="font-size:16px; font-weight:700; margin-top:4px;"><?php echo ucfirst(esc_html($license_type ?: 'Unknown')); ?></div>
+                            </div>
+                            <div class="tk-card" style="padding:15px; background:#fff;">
+                                <div style="font-size:10px; text-transform:uppercase; color:var(--tk-muted);">Expires</div>
+                                <div style="font-size:16px; font-weight:700; margin-top:4px;"><?php echo esc_html($expires_label); ?></div>
+                                <div style="font-size:10px; color:var(--tk-muted);"><?php echo esc_html($expires_remaining); ?></div>
+                            </div>
+                            <div class="tk-card" style="padding:15px; background:#fff;">
+                                <div style="font-size:10px; text-transform:uppercase; color:var(--tk-muted);">Environment</div>
+                                <div style="font-size:16px; font-weight:700; margin-top:4px;"><?php echo ucfirst(esc_html($license_env ?: 'Production')); ?></div>
                             </div>
                         </div>
-                        <?php
-                        $status_class = 'tk-badge';
-                        if ($license_status === 'valid') {
-                            $status_class = 'tk-badge tk-on';
-                        } elseif (in_array($license_status, array('expired','revoked','not_found'), true)) {
-                            $status_class = 'tk-badge tk-warn';
-                        }
-                        ?>
-                        <p><strong>Status:</strong> <span class="<?php echo esc_attr($status_class); ?>"><?php echo esc_html($license_status); ?></span></p>
-                        <?php if ($license_message !== '') : ?>
-                            <p><strong>Message:</strong> <?php echo esc_html($license_message); ?></p>
-                        <?php endif; ?>
-                        <?php if ($license_type !== '') : ?>
-                            <p><strong>License type:</strong> <?php echo esc_html($license_type); ?></p>
-                        <?php endif; ?>
-                        <?php if ($license_env !== '') : ?>
-                            <p><strong>Environment:</strong> <?php echo esc_html($license_env); ?></p>
-                        <?php endif; ?>
-                        <?php if ($license_site !== '') : ?>
-                            <p><strong>Bound site:</strong> <?php echo esc_html($license_site); ?></p>
-                        <?php endif; ?>
-                        <p><strong>Expires:</strong> <?php echo esc_html($expires_label); ?>
-                            <?php if ($expires_remaining !== '') : ?>
-                                <span>(<?php echo esc_html($expires_remaining); ?>)</span>
-                            <?php endif; ?>
-                        </p>
                     </div>
+
+                    <div style="margin-top:24px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                            <?php tk_nonce_field('tk_license_activate'); ?>
+                            <input type="hidden" name="action" value="tk_toolkits_license_activate">
+                            <input type="hidden" name="license_key" value="<?php echo esc_attr($license_key); ?>">
+                            <button type="submit" class="button button-primary button-hero">Re-activate License</button>
+                        </form>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return window.confirm('Reset license data?');">
+                            <?php tk_nonce_field('tk_license_reset'); ?>
+                            <input type="hidden" name="action" value="tk_toolkits_license_reset">
+                            <button type="submit" class="button button-hero">Reset Key</button>
+                        </form>
+                        <button type="button" class="button button-hero tk-copy-debug" data-debug="<?php echo esc_attr(tk_get_debug_info()); ?>">Copy Debug Info</button>
+                    </div>
+                </div>
+                <div class="tk-card tk-tab-panel" data-panel-id="license">
+                    <h2 style="margin-bottom:8px;">Connection Settings</h2>
+                    <p class="description" style="margin-bottom:24px;">Configure your collector and heartbeat endpoints to unlock cloud features.</p>
+                    
+                    <div class="tk-rt-grid" style="margin-bottom:24px;">
+                        <div class="tk-rt-card" style="padding:15px;">
+                            <h4 style="font-size:10px;">Heartbeat</h4>
+                            <div class="tk-rt-value" style="font-size:14px;"><?php echo tk_toolkits_status_badge($connection_summary['heartbeat_status']); ?></div>
+                            <code style="display:block; font-size:9px; margin-top:8px; overflow:hidden; text-overflow:ellipsis;"><?php echo esc_html($connection_summary['heartbeat_url'] ?: 'Missing'); ?></code>
+                        </div>
+                        <div class="tk-rt-card" style="padding:15px;">
+                            <h4 style="font-size:10px;">License Server</h4>
+                            <div class="tk-rt-value" style="font-size:14px;"><?php echo tk_toolkits_status_badge($connection_summary['license_url_status']); ?></div>
+                            <code style="display:block; font-size:9px; margin-top:8px; overflow:hidden; text-overflow:ellipsis;"><?php echo esc_html($license_server_value ?: 'Missing'); ?></code>
+                        </div>
+                        <div class="tk-rt-card" style="padding:15px;">
+                            <h4 style="font-size:10px;">Token</h4>
+                            <div class="tk-rt-value" style="font-size:14px;"><?php echo tk_toolkits_status_badge($connection_summary['token_status']); ?></div>
+                        </div>
+                    </div>
+
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php tk_nonce_field('tk_toolkits_access_save'); ?>
                         <input type="hidden" name="action" value="tk_toolkits_access_save">
-                        <input type="hidden" name="tk_tab" value="license">
-                        <input type="hidden" name="heartbeat_collector_url" value="<?php echo esc_attr($collector_url_value); ?>">
-                        <?php if ($collector_url_value !== '') : ?>
-                            <p><small>Collector URL is configured automatically.</small></p>
-                        <?php endif; ?>
-                        <?php if ($license_status !== 'valid') : ?>
-                            <input type="hidden" name="heartbeat_auth_key" value="<?php echo esc_attr($collector_key); ?>">
-                            <?php
-                            $collector_mask = '';
-                            if ($collector_key !== '') {
-                                $collector_mask = str_repeat('*', max(0, strlen($collector_key) - 4)) . substr($collector_key, -4);
-                            }
-                            ?>
-                            <p>
-                                <label>Collector token</label><br>
-                                <input class="regular-text" type="text" name="heartbeat_auth_key_display" value="<?php echo esc_attr($collector_mask); ?>" autocomplete="off">
-                            </p>
-                        <?php else : ?>
-                            <input type="hidden" name="heartbeat_auth_key" value="<?php echo esc_attr($collector_key); ?>">
-                            <p><small>Collector token is set.</small></p>
-                        <?php endif; ?>
-                        <p>
-                            <input type="hidden" name="license_server_url" value="<?php echo esc_attr($license_server_value); ?>">
-                            <?php if ($license_server_note !== '') : ?>
-                                <small class="description"><?php echo esc_html($license_server_note); ?></small>
-                            <?php endif; ?>
-                        </p>
-                        <p>
-                            <label>License key</label><br>
-                            <input type="hidden" name="license_key" value="<?php echo esc_attr($license_key); ?>">
-                            <?php
-                            $license_mask = '';
-                            if ($license_key !== '') {
-                                $license_mask = str_repeat('*', max(0, strlen($license_key) - 4)) . substr($license_key, -4);
-                            }
-                            ?>
-                            <input class="regular-text" type="text" name="license_key_display" value="<?php echo esc_attr($license_mask); ?>" autocomplete="off">
-                        </p>
-                        <p><button class="button button-primary">Save</button></p>
+                        <input type="hidden" name="tk_tab" value="license-status">
+
+                        <div class="tk-card" style="margin-bottom:20px;">
+                            <label style="display:block; font-weight:600; margin-bottom:8px;">Collector URL</label>
+                            <input class="large-text" type="url" name="heartbeat_collector_url" value="<?php echo esc_attr($collector_url_value); ?>" placeholder="https://collector.example.com/heartbeat.php" style="border-radius:8px;">
+                            <p class="description">Main endpoint for health data collection.</p>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:20px;">
+                            <div>
+                                <label style="display:block; font-weight:600; margin-bottom:8px;">Collector Token</label>
+                                <?php 
+                                $collector_mask = $collector_key ? str_repeat('*', max(0, strlen($collector_key) - 4)) . substr($collector_key, -4) : '';
+                                ?>
+                                <input class="regular-text" type="text" name="heartbeat_auth_key_display" value="<?php echo esc_attr($collector_mask); ?>" placeholder="Enter token..." style="width:100%; border-radius:8px;">
+                                <input type="hidden" name="heartbeat_auth_key" value="<?php echo esc_attr($collector_key); ?>">
+                            </div>
+                            <div>
+                                <label style="display:block; font-weight:600; margin-bottom:8px;">License Key</label>
+                                <?php 
+                                $license_mask = $license_key ? str_repeat('*', max(0, strlen($license_key) - 4)) . substr($license_key, -4) : '';
+                                ?>
+                                <input class="regular-text" type="text" name="license_key_display" value="<?php echo esc_attr($license_mask); ?>" placeholder="Enter key..." style="width:100%; border-radius:8px;">
+                                <input type="hidden" name="license_key" value="<?php echo esc_attr($license_key); ?>">
+                            </div>
+                        </div>
+
+                        <div style="margin-bottom:20px;">
+                            <label style="display:block; font-weight:600; margin-bottom:8px;">Notification Email</label>
+                            <input class="regular-text" type="email" name="license_notify_email" value="<?php echo esc_attr(tk_get_option('license_notify_email', '')); ?>" placeholder="<?php echo esc_attr(get_option('admin_email')); ?>" style="width:100%; border-radius:8px;">
+                        </div>
+
+                        <div style="display:flex; gap:12px; margin-top:24px; padding-top:20px; border-top:1px solid var(--tk-border-soft);">
+                            <button class="button button-primary button-hero" type="submit" name="tk_activate_after_save" value="1">Save & Activate</button>
+                            <button class="button button-hero" type="submit" name="tk_connection_test" value="heartbeat">Test Heartbeat</button>
+                            <button class="button button-hero" type="submit" name="tk_connection_test" value="license">Test License</button>
+                        </div>
                     </form>
                 </div>
+
                 <?php if ($show_full_tabs) : ?>
                 <div class="tk-card tk-tab-panel" data-panel-id="owner">
+                    <h2 style="margin-bottom:8px;">Site Ownership</h2>
+                    <p class="description" style="margin-bottom:24px;">Designate the primary administrator for this site.</p>
+                    
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php tk_nonce_field('tk_toolkits_access_save'); ?>
                         <input type="hidden" name="action" value="tk_toolkits_access_save">
                         <input type="hidden" name="tk_tab" value="owner">
-                        <h3>Owner-Only Access</h3>
-                        <p>
-                            <label>
-                                <input type="checkbox" name="toolkits_owner_only_enabled" value="1" <?php checked(1, $owner_only); ?>>
-                                Restrict Tool Kits access to a single admin
-                            </label>
-                        </p>
-                        <p>
-                            <label>Owner admin user</label><br>
-                            <select name="toolkits_owner_user_id">
+
+                        <?php 
+                        tk_render_switch('toolkits_owner_only_enabled', 'Owner-Only Mode', 'Restrict Tool Kits access to a single admin.', $owner_only);
+                        ?>
+
+                        <div style="margin-top:20px;">
+                            <label style="display:block; font-weight:600; margin-bottom:8px;">Primary Owner</label>
+                            <select name="toolkits_owner_user_id" style="width:100%; max-width:400px; border-radius:8px;">
                                 <?php foreach ($admins as $admin) : ?>
-                                    <option value="<?php echo esc_attr((string) $admin->ID); ?>" <?php selected($admin->ID, $owner_id); ?>>
-                                        <?php echo esc_html($admin->user_login . ' (ID ' . $admin->ID . ')'); ?>
+                                    <option value="<?php echo (int) $admin->ID; ?>" <?php selected($admin->ID, $owner_id); ?>>
+                                        <?php echo esc_html($admin->user_login); ?> (<?php echo esc_html($admin->user_email); ?>)
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                        </p>
-                        <p><button class="button button-primary">Save</button></p>
+                        </div>
+
+                        <div style="margin-top:24px; padding-top:20px; border-top:1px solid var(--tk-border-soft);">
+                            <button class="button button-primary button-hero">Save Owner Settings</button>
+                        </div>
                     </form>
                 </div>
+
                 <div class="tk-card tk-tab-panel" data-panel-id="alerts">
+                    <h2 style="margin-bottom:8px;">Alert Notifications</h2>
+                    <p class="description" style="margin-bottom:24px;">Configure automated alerts for security events and system changes.</p>
+                    
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php tk_nonce_field('tk_toolkits_access_save'); ?>
                         <input type="hidden" name="action" value="tk_toolkits_access_save">
                         <input type="hidden" name="tk_tab" value="alerts">
-                        <h3>Security Alerts</h3>
-                        <p>
-                            <label>
-                                <input type="checkbox" name="toolkits_alert_enabled" value="1" <?php checked(1, $alert_enabled); ?>>
-                                Enable security alerts
-                            </label>
-                        </p>
-                        <p>
-                            <label>Alert email (optional)</label><br>
-                            <input class="regular-text" type="email" name="toolkits_alert_email" value="<?php echo esc_attr($alert_email); ?>" placeholder="<?php echo esc_attr((string) get_option('admin_email')); ?>">
-                        </p>
-                        <p>
-                            <label><input type="checkbox" name="toolkits_alert_admin_created" value="1" <?php checked(1, $alert_admin_created); ?>> Alert on new admin user</label>
-                        </p>
-                        <p>
-                            <label><input type="checkbox" name="toolkits_alert_role_change" value="1" <?php checked(1, $alert_role_change); ?>> Alert on role change to admin</label>
-                        </p>
-                        <p>
-                            <label><input type="checkbox" name="toolkits_alert_admin_login_new_ip" value="1" <?php checked(1, $alert_admin_ip); ?>> Alert on admin login from new IP</label>
-                        </p>
-                        <p><button class="button button-primary">Save</button></p>
+
+                        <?php 
+                        tk_render_switch('toolkits_alert_enabled', 'Master Alert Toggle', 'Global switch to enable or disable all local email notifications.', $alert_enabled);
+                        
+                        tk_render_switch('toolkits_alert_admin_created', 'New Administrator Created', 'Receive an alert whenever a new user with admin privileges is added.', $alert_admin_created);
+                        
+                        tk_render_switch('toolkits_alert_role_change', 'User Role Escalation', 'Get notified when a user is promoted to a higher capability role.', $alert_role_change);
+                        
+                        tk_render_switch('toolkits_alert_admin_login_new_ip', 'Admin Login from New IP', 'Detect and alert on administrator logins from unrecognized IP addresses.', $alert_admin_ip);
+                        ?>
+
+                        <div style="margin-top:24px;">
+                            <label style="display:block; font-weight:600; margin-bottom:8px;">Alert Email Destination</label>
+                            <input class="regular-text" type="email" name="toolkits_alert_email" value="<?php echo esc_attr($alert_email); ?>" placeholder="<?php echo esc_attr(get_option('admin_email')); ?>" style="width:100%; border-radius:8px;">
+                        </div>
+
+                        <div style="margin-top:24px; padding-top:20px; border-top:1px solid var(--tk-border-soft);">
+                            <button class="button button-primary button-hero">Save Alert Settings</button>
+                        </div>
                     </form>
                 </div>
+
                 <div class="tk-card tk-tab-panel" data-panel-id="audit">
-                    <h2>Audit Log</h2>
-                    <?php if (empty($audit_log)) : ?>
-                        <p><small>No audit log entries yet.</small></p>
-                    <?php else : ?>
-                        <table class="widefat striped tk-table">
-                            <thead><tr><th>Time</th><th>User</th><th>IP</th><th>Action</th><th>Detail</th></tr></thead>
-                            <tbody>
-                                <?php foreach (array_slice($audit_log, 0, 50) as $entry) : ?>
-                                    <tr>
-                                        <td><?php echo esc_html(date_i18n('Y-m-d H:i', (int) $entry['time'])); ?></td>
-                                        <td><?php echo esc_html((string) $entry['user']); ?></td>
-                                        <td><?php echo esc_html((string) $entry['ip']); ?></td>
-                                        <td><?php echo esc_html((string) $entry['action']); ?></td>
-                                        <td><?php echo esc_html(wp_json_encode($entry['detail'])); ?></td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:12px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:24px;">
+                        <h2 style="margin:0;">Audit Log</h2>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return window.confirm('Clear all audit logs?');">
                             <?php tk_nonce_field('tk_toolkits_audit_clear'); ?>
                             <input type="hidden" name="action" value="tk_toolkits_audit_clear">
-                            <button class="button button-secondary">Clear audit log</button>
+                            <button class="button button-link-delete">Clear Log</button>
                         </form>
+                    </div>
+
+                    <?php if (empty($audit_log)) : ?>
+                        <p class="tk-empty">No activity recorded yet.</p>
+                    <?php else : ?>
+                        <div class="tk-table-scroll">
+                            <table class="widefat striped tk-table">
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Action</th>
+                                        <th>User</th>
+                                        <th>IP Address</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach (array_slice($audit_log, 0, 50) as $log) : ?>
+                                        <tr>
+                                            <td style="white-space:nowrap;"><?php echo esc_html(human_time_diff($log['time'], time())); ?> ago</td>
+                                            <td><?php echo esc_html($log['action']); ?></td>
+                                            <td>
+                                                <div style="display:flex; align-items:center; gap:8px;">
+                                                    <span class="dashicons dashicons-admin-users" style="color:var(--tk-muted);"></span>
+                                                    <?php echo esc_html($log['user']); ?>
+                                                </div>
+                                            </td>
+                                            <td><code><?php echo esc_html($log['ip']); ?></code></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
                     <?php endif; ?>
                 </div>
                 <?php endif; ?>
@@ -1390,6 +1082,63 @@ function tk_render_toolkits_access_page() {
                     licenseHidden.value = licenseDisplay.value;
                 });
             }
+            document.querySelectorAll('.tk-copy-debug').forEach(function(btn){
+                btn.addEventListener('click', function(){
+                    var text = btn.getAttribute('data-debug');
+                    navigator.clipboard.writeText(text).then(function(){
+                        var original = btn.textContent;
+                        btn.textContent = 'Copied!';
+                        btn.classList.add('button-primary');
+                        setTimeout(function(){
+                            btn.textContent = original;
+                            btn.classList.remove('button-primary');
+                        }, 2000);
+                    });
+                });
+            });
+
+            // Preflight check
+            function initPreflight() {
+                var collectorInput = document.querySelector('input[name=\"heartbeat_collector_url\"]');
+                if (!collectorInput) return;
+                
+                var preflightStatus = document.createElement('div');
+                preflightStatus.style.marginTop = '5px';
+                preflightStatus.style.fontSize = '12px';
+                if (!collectorInput.parentNode.querySelector('.tk-preflight-status')) {
+                    preflightStatus.className = 'tk-preflight-status';
+                    collectorInput.parentNode.appendChild(preflightStatus);
+                } else {
+                    preflightStatus = collectorInput.parentNode.querySelector('.tk-preflight-status');
+                }
+                
+                var preflightTimer;
+                collectorInput.addEventListener('input', function(){
+                    clearTimeout(preflightTimer);
+                    preflightTimer = setTimeout(function(){
+                        var url = collectorInput.value.trim();
+                        if (url === '') {
+                            preflightStatus.innerHTML = '';
+                            return;
+                        }
+                        preflightStatus.innerHTML = '<span style=\"color:#7f8c8d\">Checking reachability...</span>';
+                        var apiTarget = (typeof ajaxurl !== \"undefined\") ? ajaxurl : \"/wp-admin/admin-ajax.php\";
+                        fetch(apiTarget + '?action=tk_preflight_check&url=' + encodeURIComponent(url) + '&_wpnonce=' + '" . esc_js(wp_create_nonce('tk_preflight_nonce')) . "')
+                            .then(function(r){ return r.json(); })
+                            .then(function(data) {
+                                if (data.success) {
+                                    preflightStatus.innerHTML = '<span style=\"color:#27ae60\">&#10003; ' + data.data.message + '</span>';
+                                } else {
+                                    preflightStatus.innerHTML = '<span style=\"color:#e74c3c\">&#10007; ' + data.data.message + '</span>';
+                                }
+                            })
+                            .catch(function(){
+                                preflightStatus.innerHTML = '<span style=\"color:#e74c3c\">&#10007; Connection test failed.</span>';
+                            });
+                    }, 800);
+                });
+            }
+            initPreflight();
         })();",
             array('id' => 'tk-access-tabs')
         );
@@ -1402,10 +1151,10 @@ function tk_toolkits_access_save() {
     if (!tk_toolkits_can_manage()) wp_die('Forbidden');
     tk_check_nonce('tk_toolkits_access_save');
     $tab = isset($_POST['tk_tab']) ? sanitize_key($_POST['tk_tab']) : 'access';
-    if (!in_array($tab, array('access', 'owner', 'alerts', 'audit', 'license'), true)) {
+    $connection_test = isset($_POST['tk_connection_test']) ? sanitize_key((string) $_POST['tk_connection_test']) : '';
+    if (!in_array($tab, array('access', 'owner', 'alerts', 'audit', 'license', 'license-status'), true)) {
         $tab = 'access';
     }
-    $license_override_url = defined('TK_LICENSE_SERVER_URL') && TK_LICENSE_SERVER_URL !== '' ? TK_LICENSE_SERVER_URL : '';
     $posted_license_key = isset($_POST['license_key']) ? trim(wp_unslash($_POST['license_key'])) : null;
     if ($posted_license_key !== null) {
         tk_update_option('license_key', $posted_license_key);
@@ -1414,8 +1163,6 @@ function tk_toolkits_access_save() {
         tk_update_option('license_last_checked', 0);
     }
     if ($tab === 'access') {
-        tk_update_option('hide_toolkits_menu', !empty($_POST['hide_menu']) ? 1 : 0);
-        tk_update_option('hide_cff_menu', !empty($_POST['hide_cff_menu']) ? 1 : 0);
         $collector_url = isset($_POST['heartbeat_collector_url']) ? esc_url_raw(wp_unslash($_POST['heartbeat_collector_url'])) : '';
         tk_update_option('heartbeat_collector_url', $collector_url);
         $collector_key = isset($_POST['heartbeat_auth_key']) ? trim(wp_unslash($_POST['heartbeat_auth_key'])) : '';
@@ -1429,19 +1176,54 @@ function tk_toolkits_access_save() {
         tk_update_option('toolkits_ip_allowlist', (string) tk_post('toolkits_ip_allowlist', ''));
         tk_update_option('toolkits_lock_enabled', !empty($_POST['toolkits_lock_enabled']) ? 1 : 0);
         tk_update_option('toolkits_mask_sensitive_fields', !empty($_POST['toolkits_mask_sensitive_fields']) ? 1 : 0);
-    } elseif ($tab === 'license') {
+    } elseif ($tab === 'license' || $tab === 'license-status') {
         $collector_url = isset($_POST['heartbeat_collector_url']) ? esc_url_raw(wp_unslash($_POST['heartbeat_collector_url'])) : '';
         tk_update_option('heartbeat_collector_url', $collector_url);
-        $collector_key = isset($_POST['heartbeat_auth_key']) ? trim(wp_unslash($_POST['heartbeat_auth_key'])) : '';
-        tk_update_option('heartbeat_auth_key', $collector_key);
-        $license_server_url = isset($_POST['license_server_url']) ? esc_url_raw(wp_unslash($_POST['license_server_url'])) : '';
-        if ($license_override_url !== '') {
-            $license_server_url = $license_override_url;
-        } elseif ($license_server_url === '') {
-            $base_url = $collector_url !== '' ? $collector_url : (string) tk_get_option('heartbeat_collector_url', '');
-            $license_server_url = tk_toolkits_default_license_server_url($base_url);
+        
+        $collector_key = '';
+        if (isset($_POST['heartbeat_auth_key_display'])) {
+            $raw = trim(wp_unslash($_POST['heartbeat_auth_key_display']));
+            if ($raw !== '' && strpos($raw, '****') === false) {
+                $collector_key = $raw;
+                tk_update_option('heartbeat_auth_key', $collector_key);
+            } else {
+                $collector_key = tk_get_option('heartbeat_auth_key', '');
+            }
+        } else {
+            $collector_key = isset($_POST['heartbeat_auth_key']) ? trim(wp_unslash($_POST['heartbeat_auth_key'])) : '';
+            tk_update_option('heartbeat_auth_key', $collector_key);
         }
+
+        if (isset($_POST['license_key_display'])) {
+            $raw = trim(wp_unslash($_POST['license_key_display']));
+            if ($raw !== '' && strpos($raw, '****') === false) {
+                tk_update_option('license_key', $raw);
+            }
+        }
+        
+        tk_update_option('license_ssl_verify', isset($_POST['license_ssl_verify']) ? 0 : 1);
+        tk_update_option('license_notify_email', isset($_POST['license_notify_email']) ? sanitize_email(wp_unslash($_POST['license_notify_email'])) : '');
+        
+        $license_server_url = tk_toolkits_license_server_url_for_collector($collector_url);
         tk_update_option('license_server_url', $license_server_url);
+        
+        if ($connection_test === 'heartbeat') {
+            $result = tk_heartbeat_send();
+            tk_heartbeat_record_result($result);
+            wp_redirect(admin_url('tools.php?page=tool-kits-access&tk_saved=1&tk_test=heartbeat&tk_test_status=' . (!empty($result['ok']) ? 'ok' : 'fail') . '#' . $tab));
+            exit;
+        }
+        if ($connection_test === 'license') {
+            $result = tk_license_test_connection();
+            $test_status = 'fail';
+            if (isset($result['status']) && (string) $result['status'] === 'valid') {
+                $test_status = 'ok';
+            } elseif (isset($result['status']) && (string) $result['status'] === 'reachable') {
+                $test_status = 'warn';
+            }
+            wp_redirect(admin_url('tools.php?page=tool-kits-access&tk_saved=1&tk_test=license&tk_test_status=' . $test_status . '#' . $tab));
+            exit;
+        }
         tk_license_validate(true);
     } elseif ($tab === 'owner') {
         tk_update_option('toolkits_owner_only_enabled', !empty($_POST['toolkits_owner_only_enabled']) ? 1 : 0);
@@ -1457,7 +1239,9 @@ function tk_toolkits_access_save() {
     } elseif ($tab === 'alerts') {
         tk_update_option('toolkits_alert_enabled', !empty($_POST['toolkits_alert_enabled']) ? 1 : 0);
         $alert_email = isset($_POST['toolkits_alert_email']) ? sanitize_email(wp_unslash($_POST['toolkits_alert_email'])) : '';
+        $alert_webhook = isset($_POST['toolkits_alert_webhook']) ? esc_url_raw(wp_unslash($_POST['toolkits_alert_webhook'])) : '';
         tk_update_option('toolkits_alert_email', $alert_email);
+        tk_update_option('toolkits_alert_webhook', $alert_webhook);
         tk_update_option('toolkits_alert_admin_created', !empty($_POST['toolkits_alert_admin_created']) ? 1 : 0);
         tk_update_option('toolkits_alert_role_change', !empty($_POST['toolkits_alert_role_change']) ? 1 : 0);
         tk_update_option('toolkits_alert_admin_login_new_ip', !empty($_POST['toolkits_alert_admin_login_new_ip']) ? 1 : 0);
@@ -1472,6 +1256,16 @@ function tk_toolkits_license_activate() {
         wp_die('Forbidden');
     }
     tk_check_nonce('tk_license_activate');
+    if (isset($_POST['heartbeat_collector_url'])) {
+        tk_update_option('heartbeat_collector_url', esc_url_raw(wp_unslash($_POST['heartbeat_collector_url'])));
+    }
+    if (isset($_POST['heartbeat_auth_key'])) {
+        tk_update_option('heartbeat_auth_key', trim(wp_unslash($_POST['heartbeat_auth_key'])));
+    }
+    if (isset($_POST['license_key'])) {
+        tk_update_option('license_key', trim(wp_unslash($_POST['license_key'])));
+    }
+    tk_toolkits_prepare_license_server_url();
     tk_license_validate(true);
     wp_redirect(admin_url('tools.php?page=tool-kits-access&tk_license=1'));
     exit;
@@ -1618,3 +1412,47 @@ function tk_is_cff_installed(): bool {
     $dir = trailingslashit(WP_PLUGIN_DIR) . 'custom-fields-framework-pro';
     return is_dir($dir);
 }
+function tk_preflight_check() {
+    if (!tk_toolkits_can_manage()) {
+        wp_send_json_error(array('message' => 'Forbidden'));
+    }
+    check_ajax_referer('tk_preflight_nonce');
+    $url = isset($_GET['url']) ? esc_url_raw(wp_unslash($_GET['url'])) : '';
+    if ($url === '') {
+        wp_send_json_error(array('message' => 'Invalid URL'));
+    }
+
+    $scheme = parse_url($url, PHP_URL_SCHEME);
+    if (!in_array($scheme, array('http', 'https'), true)) {
+        wp_send_json_error(array('message' => 'Only HTTP and HTTPS protocols are allowed.'));
+    }
+
+    $host = parse_url($url, PHP_URL_HOST);
+    if ($host) {
+        $ip = gethostbyname($host);
+        // Basic check for private/local IP ranges
+        if (preg_match('/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/', $ip)) {
+             // Allow if explicitly allowed via constant for development
+             if (!defined('TK_ALLOW_LOCAL_PREFLIGHT') || !TK_ALLOW_LOCAL_PREFLIGHT) {
+                 wp_send_json_error(array('message' => 'Internal or Local IP addresses are not allowed.'));
+             }
+        }
+    }
+
+    $response = wp_remote_get($url, array(
+        'timeout' => 10,
+        'sslverify' => (bool) tk_get_option('license_ssl_verify', 1),
+    ));
+    if (is_wp_error($response)) {
+        wp_send_json_error(array('message' => $response->get_error_message()));
+    }
+    $code = wp_remote_retrieve_response_code($response);
+    if ($code >= 200 && $code < 400) {
+        wp_send_json_success(array('message' => 'Reachable (HTTP ' . $code . ')'));
+    } else {
+        wp_send_json_error(array('message' => 'HTTP ' . $code));
+    }
+}
+add_action('wp_ajax_tk_preflight_check', 'tk_preflight_check');
+
+

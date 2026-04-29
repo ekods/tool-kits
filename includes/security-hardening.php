@@ -99,6 +99,13 @@ function tk_hardening_init() {
         add_action('init', 'tk_define_disallow_file_edit');
         add_filter('user_has_cap', 'tk_disable_file_editor_caps', 10, 4);
     }
+    if (tk_get_option('hardening_hide_wp_version', 1)) {
+        add_filter('the_generator', '__return_empty_string');
+        add_action('init', 'tk_hardening_remove_version_strings');
+    }
+    if (tk_get_option('hardening_clean_wp_head', 0)) {
+        add_action('init', 'tk_hardening_clean_wp_head');
+    }
     if (tk_get_option('hardening_waf_enabled', 0)) {
         add_action('init', 'tk_hardening_waf', 1);
     }
@@ -108,6 +115,29 @@ function tk_hardening_init() {
     if (tk_get_option('hardening_waf_log_to_file', 0)) {
         tk_hardening_waf_schedule_cleanup();
     }
+}
+
+function tk_hardening_remove_version_strings() {
+    add_filter('script_loader_src', 'tk_remove_wp_ver_css_js', 9999);
+    add_filter('style_loader_src', 'tk_remove_wp_ver_css_js', 9999);
+}
+
+function tk_remove_wp_ver_css_js($src) {
+    if (strpos($src, 'ver=' . get_bloginfo('version'))) {
+        $src = remove_query_arg('ver', $src);
+    }
+    return $src;
+}
+
+function tk_hardening_clean_wp_head() {
+    remove_action('wp_head', 'rsd_link');
+    remove_action('wp_head', 'wlwmanifest_link');
+    remove_action('wp_head', 'wp_generator');
+    remove_action('wp_head', 'wp_shortlink_wp_head');
+    remove_action('wp_head', 'rest_output_link_wp_head', 10);
+    remove_action('wp_head', 'wp_oembed_add_discovery_links', 10);
+    remove_action('wp_head', 'wp_oembed_add_host_js');
+    remove_action('template_redirect', 'rest_output_link_header', 11);
 }
 
 function tk_disable_user_enum($endpoints) {
@@ -133,6 +163,7 @@ function tk_security_headers() {
             "style-src-attr 'unsafe-inline'",
             "connect-src 'self' https:" . tk_hardening_csp_google_sources('connect') . tk_hardening_csp_custom_sources('connect'),
             "frame-src 'self' https:" . tk_hardening_csp_google_sources('frame') . tk_hardening_csp_custom_sources('frame'),
+            "child-src 'self' https:" . tk_hardening_csp_google_sources('frame') . tk_hardening_csp_custom_sources('frame'),
             "object-src 'none'",
             "frame-ancestors 'self'",
             "base-uri 'self'",
@@ -150,6 +181,7 @@ function tk_security_headers() {
             "connect-src 'self' https:" . tk_hardening_csp_google_sources('connect') . tk_hardening_csp_custom_sources('connect'),
             "worker-src 'self' blob:",
             "frame-src 'self' https:" . tk_hardening_csp_google_sources('frame') . tk_hardening_csp_custom_sources('frame'),
+            "child-src 'self' https:" . tk_hardening_csp_google_sources('frame') . tk_hardening_csp_custom_sources('frame'),
             "object-src 'none'",
             "frame-ancestors 'self'",
             "base-uri 'self'",
@@ -166,6 +198,7 @@ function tk_security_headers() {
             "connect-src 'self' https:" . tk_hardening_csp_google_sources('connect') . tk_hardening_csp_custom_sources('connect'),
             "worker-src 'self' blob:",
             "frame-src 'self' https:" . tk_hardening_csp_google_sources('frame') . tk_hardening_csp_custom_sources('frame'),
+            "child-src 'self' https:" . tk_hardening_csp_google_sources('frame') . tk_hardening_csp_custom_sources('frame'),
             "object-src 'none'",
             "frame-ancestors 'self'",
             "base-uri 'self'",
@@ -182,6 +215,7 @@ function tk_security_headers() {
             "connect-src 'self' https:" . tk_hardening_csp_google_sources('connect') . tk_hardening_csp_custom_sources('connect'),
             "worker-src 'self' blob:",
             "frame-src 'self' https:" . tk_hardening_csp_google_sources('frame') . tk_hardening_csp_custom_sources('frame'),
+            "child-src 'self' https:" . tk_hardening_csp_google_sources('frame') . tk_hardening_csp_custom_sources('frame'),
             "object-src 'none'",
             "frame-ancestors 'self'",
             "base-uri 'self'",
@@ -206,6 +240,7 @@ function tk_hardening_csp_google_sources($directive = '') {
             'https://www.gstatic.com',
             'https://www.google.com',
             'https://recaptcha.google.com',
+            'https://*.google.com',
         ),
         'connect' => array(
             'https://www.google-analytics.com',
@@ -214,10 +249,20 @@ function tk_hardening_csp_google_sources($directive = '') {
             'https://www.googletagmanager.com',
             'https://www.google.com',
             'https://recaptcha.google.com',
+            'https://*.google.com',
         ),
         'frame' => array(
             'https://www.google.com',
             'https://recaptcha.google.com',
+            'https://*.google.com',
+            'https://*.google.co.id',
+        ),
+        'img' => array(
+            'https://www.google-analytics.com',
+            'https://www.googletagmanager.com',
+            'https://*.google.com',
+            'https://*.gstatic.com',
+            'data:',
         ),
     );
 
@@ -1067,42 +1112,95 @@ function tk_hardening_disable_comments(): void {
     add_filter('comments_open', '__return_false', 20, 2);
     add_filter('pings_open', '__return_false', 20, 2);
     add_filter('comments_array', '__return_empty_array', 10, 2);
-    add_action('admin_init', function() {
-        $post_types = get_post_types(array(), 'names');
-        if (!is_array($post_types)) {
-            return;
+    add_filter('preprocess_comment', 'tk_hardening_block_comment_submission', 1);
+    add_filter('rest_endpoints', 'tk_hardening_disable_comment_rest_endpoints');
+    add_filter('xmlrpc_methods', 'tk_hardening_disable_comment_xmlrpc_methods');
+    add_action('template_redirect', 'tk_hardening_block_comment_feed', 0);
+    add_action('admin_init', 'tk_hardening_disable_comment_post_type_support');
+    add_action('admin_menu', 'tk_hardening_remove_comment_admin_menus', 999);
+    add_action('admin_init', 'tk_hardening_block_comment_admin_pages');
+    add_action('admin_bar_menu', 'tk_hardening_remove_comment_admin_bar_nodes', 999);
+    add_action('wp_dashboard_setup', 'tk_hardening_remove_comment_dashboard_widgets', 999);
+}
+
+function tk_hardening_block_comment_submission(array $commentdata): array {
+    wp_die(__('Comments are disabled.', 'tool-kits'), __('Comments disabled', 'tool-kits'), array('response' => 403));
+}
+
+function tk_hardening_disable_comment_rest_endpoints($endpoints) {
+    if (!is_array($endpoints)) {
+        return $endpoints;
+    }
+    unset($endpoints['/wp/v2/comments']);
+    unset($endpoints['/wp/v2/comments/(?P<id>[\d]+)']);
+    return $endpoints;
+}
+
+function tk_hardening_disable_comment_xmlrpc_methods($methods) {
+    if (!is_array($methods)) {
+        return $methods;
+    }
+    $blocked = array(
+        'wp.getComment',
+        'wp.getComments',
+        'wp.deleteComment',
+        'wp.editComment',
+        'wp.newComment',
+        'wp.getCommentStatusList',
+    );
+    foreach ($blocked as $method) {
+        unset($methods[$method]);
+    }
+    return $methods;
+}
+
+function tk_hardening_block_comment_feed(): void {
+    if (is_comment_feed()) {
+        wp_die(__('Comment feeds are disabled.', 'tool-kits'), __('Comments disabled', 'tool-kits'), array('response' => 410));
+    }
+}
+
+function tk_hardening_disable_comment_post_type_support(): void {
+    update_option('default_comment_status', 'closed', false);
+    update_option('default_ping_status', 'closed', false);
+
+    $post_types = get_post_types(array(), 'names');
+    if (!is_array($post_types)) {
+        return;
+    }
+    foreach ($post_types as $type) {
+        if (post_type_supports($type, 'comments')) {
+            remove_post_type_support($type, 'comments');
         }
-        foreach ($post_types as $type) {
-            if (post_type_supports($type, 'comments')) {
-                remove_post_type_support($type, 'comments');
-            }
-            if (post_type_supports($type, 'trackbacks')) {
-                remove_post_type_support($type, 'trackbacks');
-            }
+        if (post_type_supports($type, 'trackbacks')) {
+            remove_post_type_support($type, 'trackbacks');
         }
-    });
-    add_action('admin_menu', function() {
-        remove_menu_page('edit-comments.php');
-        remove_submenu_page('options-general.php', 'options-discussion.php');
-    });
-    add_action('admin_init', function() {
-        global $pagenow;
-        if ($pagenow === 'edit-comments.php' || $pagenow === 'comment.php') {
-            wp_die('Comments are disabled.', 'Comments disabled', array('response' => 403));
-        }
-        if ($pagenow === 'options-discussion.php') {
-            wp_die('Discussion settings are disabled.', 'Comments disabled', array('response' => 403));
-        }
-    });
-    add_action('admin_bar_menu', function($wp_admin_bar) {
+    }
+}
+
+function tk_hardening_remove_comment_admin_menus(): void {
+    remove_menu_page('edit-comments.php');
+    remove_submenu_page('options-general.php', 'options-discussion.php');
+}
+
+function tk_hardening_block_comment_admin_pages(): void {
+    global $pagenow;
+    if ($pagenow === 'edit-comments.php' || $pagenow === 'comment.php') {
+        wp_die(__('Comments are disabled.', 'tool-kits'), __('Comments disabled', 'tool-kits'), array('response' => 403));
+    }
+    if ($pagenow === 'options-discussion.php') {
+        wp_die(__('Discussion settings are disabled.', 'tool-kits'), __('Comments disabled', 'tool-kits'), array('response' => 403));
+    }
+}
+
+function tk_hardening_remove_comment_admin_bar_nodes($wp_admin_bar): void {
+    if (is_object($wp_admin_bar) && method_exists($wp_admin_bar, 'remove_node')) {
         $wp_admin_bar->remove_node('comments');
-    }, 999);
-    add_action('wp_before_admin_bar_render', function() {
-        global $wp_admin_bar;
-        if (is_object($wp_admin_bar)) {
-            $wp_admin_bar->remove_menu('comments');
-        }
-    });
+    }
+}
+
+function tk_hardening_remove_comment_dashboard_widgets(): void {
+    remove_meta_box('dashboard_recent_comments', 'dashboard', 'normal');
 }
 
 function tk_hardening_core_root_entries(): array {
@@ -1809,6 +1907,13 @@ function tk_hardening_waf(): void {
         '/\bbenchmark\(\d+,\s*.+\)/',
         '/\bload_file\(/',
         '/\binformation_schema\b/',
+        '/\bgroup_concat\b/',
+        '/\btable_name\b/',
+        '/\bcolumn_name\b/',
+        '/\bdatabase\(\)/',
+        '/\bschema\(\)/',
+        '/\bdrop\s+table\b/',
+        '/\btruncate\s+table\b/',
         '/\.\.\//',
         '/%2e%2e%2f/',
         '/<script\b/',
@@ -1976,6 +2081,99 @@ function tk_disable_file_editor_caps($allcaps, $caps, $args, $user) {
     return $allcaps;
 }
 
+function tk_hardening_calculate_score() {
+    $opts = tk_get_options();
+    $rules = array(
+        'hardening_disable_file_editor' => 10,
+        'hardening_disable_rest_user_enum' => 8,
+        'hardening_disable_pingbacks' => 5,
+        'hardening_hide_wp_version' => 5,
+        'hardening_block_uploads_php' => 15,
+        'hardening_block_unwanted_files_enabled' => 7,
+        'hardening_block_plugin_installs' => 10,
+        'hardening_security_headers' => 10,
+        'hardening_waf_enabled' => 15,
+        'hardening_disable_xmlrpc' => 10,
+        'hardening_httpauth_enabled' => 5,
+    );
+    
+    $score = 0;
+    $total_possible = array_sum($rules);
+    $active_rules = array();
+    
+    foreach ($rules as $opt_key => $weight) {
+        if (!empty($opts[$opt_key])) {
+            $score += $weight;
+            $active_rules[] = $opt_key;
+        }
+    }
+    
+    // Normalize to 100
+    $final_score = ($total_possible > 0) ? round(($score / $total_possible) * 100) : 0;
+    
+    $labels = array(
+        'hardening_disable_file_editor' => __('File Editor Protection', 'tool-kits'),
+        'hardening_disable_rest_user_enum' => __('REST API Hardening', 'tool-kits'),
+        'hardening_disable_pingbacks' => __('Pingback Protection', 'tool-kits'),
+        'hardening_hide_wp_version' => __('WP Version Masking', 'tool-kits'),
+        'hardening_block_uploads_php' => __('Uploads Folder Security', 'tool-kits'),
+        'hardening_block_unwanted_files_enabled' => __('System Files Protection', 'tool-kits'),
+        'hardening_block_plugin_installs' => __('Plugin Lock Down', 'tool-kits'),
+        'hardening_security_headers' => __('Security Headers', 'tool-kits'),
+        'hardening_waf_enabled' => __('Web Application Firewall', 'tool-kits'),
+        'hardening_disable_xmlrpc' => __('XML-RPC Protection', 'tool-kits'),
+        'hardening_httpauth_enabled' => __('HTTP Authentication', 'tool-kits'),
+    );
+
+    return array(
+        'score' => (int) $final_score,
+        'active_count' => count($active_rules),
+        'total_count' => count($rules),
+        'active_rules' => $active_rules,
+        'all_rules' => $rules,
+        'labels' => $labels
+    );
+}
+
+function tk_hardening_get_recommendations() {
+    $opts = tk_get_options();
+    $rules = array(
+        'hardening_disable_file_editor' => array('weight' => 10, 'label' => 'Disable File Editor'),
+        'hardening_disable_rest_user_enum' => array('weight' => 8, 'label' => 'Block REST User Enum'),
+        'hardening_disable_pingbacks' => array('weight' => 5, 'label' => 'Disable XML-RPC Pingbacks'),
+        'hardening_hide_wp_version' => array('weight' => 5, 'label' => 'Hide WP Version'),
+        'hardening_block_uploads_php' => array('weight' => 15, 'label' => 'Block PHP in Uploads'),
+        'hardening_block_unwanted_files_enabled' => array('weight' => 7, 'label' => 'Block Direct System Files'),
+        'hardening_block_plugin_installs' => array('weight' => 10, 'label' => 'Block Plugin Installs'),
+        'hardening_security_headers' => array('weight' => 10, 'label' => 'Enable Security Headers'),
+        'hardening_waf_enabled' => array('weight' => 15, 'label' => 'Enable Web App Firewall'),
+        'hardening_disable_xmlrpc' => array('weight' => 10, 'label' => 'Disable XML-RPC'),
+        'hardening_httpauth_enabled' => array('weight' => 5, 'label' => 'Enable HTTP Auth'),
+    );
+    
+    $total_possible = 0;
+    foreach ($rules as $rule) {
+        $total_possible += $rule['weight'];
+    }
+    
+    $recommendations = array();
+    foreach ($rules as $opt_key => $data) {
+        if (empty($opts[$opt_key])) {
+            $recommendations[] = array(
+                'label' => $data['label'],
+                'weight' => round(($data['weight'] / $total_possible) * 100)
+            );
+        }
+    }
+    
+    // Sort by weight descending so the most impactful recommendations are at the top
+    usort($recommendations, function($a, $b) {
+        return $b['weight'] <=> $a['weight'];
+    });
+    
+    return $recommendations;
+}
+
 function tk_render_hardening_page() {
     if (!tk_is_admin_user()) return;
 
@@ -2042,6 +2240,8 @@ function tk_render_hardening_page() {
         'hardening_mysql_exposure_check_enabled' => tk_get_option('hardening_mysql_exposure_check_enabled', 1),
         'hardening_mysql_allow_public_host' => tk_get_option('hardening_mysql_allow_public_host', 0),
         'hardening_block_plugin_installs' => tk_get_option('hardening_block_plugin_installs', 1),
+        'hardening_hide_wp_version' => tk_get_option('hardening_hide_wp_version', 1),
+        'hardening_clean_wp_head' => tk_get_option('hardening_clean_wp_head', 0),
     );
     $csp_mode = 'off';
     if (!empty($opts['hardening_csp_strict_enabled'])) {
@@ -2055,10 +2255,11 @@ function tk_render_hardening_page() {
     }
     ?>
     <div class="wrap tk-wrap">
-        <h1>Hardening</h1>
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero(__('Security Hardening', 'tool-kits'), __('Strengthen your WordPress installation with industry-standard security protocols and rules.', 'tool-kits'), 'dashicons-shield-alt'); ?>
         <div class="tk-tabs">
             <div class="tk-tabs-nav">
-                <button type="button" class="tk-tabs-nav-button is-active" data-panel="active">Active Items</button>
+                <button type="button" class="tk-tabs-nav-button is-active" data-panel="active">Security Score</button>
                 <button type="button" class="tk-tabs-nav-button" data-panel="general">General</button>
                 <button type="button" class="tk-tabs-nav-button" data-panel="xmlrpc">XML-RPC</button>
                 <button type="button" class="tk-tabs-nav-button" data-panel="waf">WAF</button>
@@ -2067,237 +2268,207 @@ function tk_render_hardening_page() {
             </div>
             <div class="tk-tabs-content">
                 <div class="tk-card tk-tab-panel is-active" data-panel-id="active">
-                    <h2>Active Items</h2>
                     <?php
+                    $score_data = tk_hardening_calculate_score();
+                    $score = $score_data['score'];
                     $active_items = tk_hardening_active_items();
-                    if (!empty($active_items)) :
+                    $recommendations = tk_hardening_get_recommendations();
+                    $dash = round(2 * pi() * 60); // Circumference for r=60
+                    $offset = $dash - ($dash * ($score / 100));
+                    
+                    $score_color = ($score >= 80) ? '#27ae60' : (($score >= 50) ? '#f39c12' : '#e74c3c');
                     ?>
-                        <ul class="tk-list">
-                            <?php foreach ($active_items as $item) : ?>
-                                <li>&#10003; <?php echo esc_html($item); ?></li>
-                            <?php endforeach; ?>
-                        </ul>
-                    <?php else : ?>
-                        <p><small>No active items.</small></p>
-                    <?php endif; ?>
+                    
+                    <div class="tk-score-wrap">
+                        <div class="tk-score-circle">
+                            <svg width="140" height="140">
+                                <circle class="bg" cx="70" cy="70" r="60"></circle>
+                                <circle class="fg" cx="70" cy="70" r="60" style="stroke-dasharray: <?php echo $dash; ?>; stroke-dashoffset: <?php echo $offset; ?>;"></circle>
+                            </svg>
+                            <div class="tk-score-text" style="color: <?php echo $score_color; ?>;">
+                                <div class="tk-score-value"><?php echo $score; ?>%</div>
+                                <div class="tk-score-label">Secure</div>
+                            </div>
+                        </div>
+                        <h3>Security Hardening Score</h3>
+                        <p class="description">Your score is based on <?php echo count($active_items); ?> active security rules.</p>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px; margin-top:24px;">
+                        <div>
+                            <h3 style="margin-top:0;">Active Protections</h3>
+                            <?php if (!empty($active_items)) : ?>
+                                <div style="display:flex; flex-direction:column; gap:8px; margin-top:16px;">
+                                    <?php foreach ($active_items as $item) : ?>
+                                        <div style="background:rgba(39, 174, 96, 0.05); border:1px solid rgba(39, 174, 96, 0.2); padding:10px 15px; border-radius:8px; display:flex; align-items:center; gap:10px; font-size:13px; color:#27ae60; font-weight:500;">
+                                            <span class="dashicons dashicons-yes-alt" style="font-size:16px; width:16px; height:16px;"></span>
+                                            <?php echo esc_html($item); ?>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php else : ?>
+                                <p class="tk-empty">No hardening rules active.</p>
+                            <?php endif; ?>
+                        </div>
+                        
+                        <div>
+                            <h3 style="margin-top:0;">Recommendations</h3>
+                            <?php if (!empty($recommendations)) : ?>
+                                <p class="description">Enable these features to improve your score:</p>
+                                <div style="display:flex; flex-direction:column; gap:8px; margin-top:12px;">
+                                    <?php foreach ($recommendations as $rec) : ?>
+                                        <div style="background:rgba(231, 76, 60, 0.05); border:1px solid rgba(231, 76, 60, 0.2); padding:10px 15px; border-radius:8px; display:flex; align-items:center; gap:10px; font-size:13px; color:#c0392b; font-weight:500;">
+                                            <span class="dashicons dashicons-warning" style="font-size:16px; width:16px; height:16px;"></span>
+                                            <?php echo esc_html($rec['label']); ?>
+                                            <span style="margin-left:auto; font-size:11px; background:rgba(231, 76, 60, 0.1); padding:2px 6px; border-radius:12px;">+<?php echo $rec['weight']; ?>%</span>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php else : ?>
+                                <div style="background:rgba(39, 174, 96, 0.1); border:1px solid rgba(39, 174, 96, 0.3); padding:15px; border-radius:8px; text-align:center; color:#27ae60;">
+                                    <span class="dashicons dashicons-shield" style="font-size:24px; width:24px; height:24px; margin-bottom:8px;"></span>
+                                    <p style="margin:0; font-weight:600;">Excellent! All recommended security rules are active.</p>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
                 </div>
+
                 <div class="tk-card tk-tab-panel" data-panel-id="general">
-                    <p>Toggle the most effective WordPress hardening toggles that can be flipped without touching core files.</p>
-                    <p><strong>Active CSP mode:</strong> <?php echo esc_html(strtoupper($csp_mode)); ?></p>
+                    <h2 style="margin-bottom:8px;">General Hardening</h2>
+                    <p class="description" style="margin-bottom:24px;">Essential security toggles that protect your WordPress site from common attacks.</p>
+                    
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php tk_nonce_field('tk_hardening_save'); ?>
                         <input type="hidden" name="action" value="tk_hardening_save">
                         <input type="hidden" name="tk_tab" value="general">
 
-                        <p><label><input type="checkbox" name="file_editor" value="1" data-confirm="Disables the built-in theme/plugin editor. You will need FTP or file access to edit files." <?php checked(1, $opts['hardening_disable_file_editor']); ?>> Disable theme/plugin file editor</label></p>
-                        <p class="description">Requires FTP or file access to edit theme/plugin files.</p>
-                        <p><label><input type="checkbox" name="disable_comments" value="1" <?php checked(1, $opts['hardening_disable_comments']); ?>> Disable comments site-wide</label></p>
-                        <p><label><input type="checkbox" name="rest_user_enum" value="1" <?php checked(1, $opts['hardening_disable_rest_user_enum']); ?>> Disable REST user enumeration</label></p>
-                        <p><label><input type="checkbox" name="headers" value="1" <?php checked(1, $opts['hardening_security_headers']); ?>> Send security headers</label></p>
-                        <p>
-                            <label for="tk-csp-mode"><strong>CSP mode</strong></label><br>
-                            <select id="tk-csp-mode" name="csp_mode">
-                                <option value="off" <?php selected('off', $csp_mode); ?>>Off</option>
-                                <option value="lite" <?php selected('lite', $csp_mode); ?>>Lite</option>
-                                <option value="balanced" <?php selected('balanced', $csp_mode); ?>>Balanced</option>
-                                <option value="hardened" <?php selected('hardened', $csp_mode); ?>>Hardened</option>
-                                <option value="strict" <?php selected('strict', $csp_mode); ?>>Strict</option>
-                            </select>
-                        </p>
-                        <p class="description">Lite: compatibility-first. Balanced: safe default for most WordPress sites. Hardened: stronger middle ground for modern themes/builders. Strict: only for CSP-ready themes/plugins.</p>
-                        <p><strong>Custom CSP allowlist</strong></p>
-                        <p class="description">Add one source per line. Use full origins like <code>https://www.tradingview-widget.com</code>. These values are appended to the matching CSP directive.</p>
-                        <p>
-                            Additional <code>script-src</code> sources<br>
-                            <textarea class="large-text" rows="3" name="csp_script_sources" placeholder="https://s3.tradingview.com"><?php echo esc_textarea((string) $opts['hardening_csp_script_sources']); ?></textarea>
-                        </p>
-                        <p>
-                            Additional <code>connect-src</code> sources<br>
-                            <textarea class="large-text" rows="3" name="csp_connect_sources" placeholder="https://s3.tradingview.com"><?php echo esc_textarea((string) $opts['hardening_csp_connect_sources']); ?></textarea>
-                        </p>
-                        <p>
-                            Additional <code>frame-src</code> sources<br>
-                            <textarea class="large-text" rows="3" name="csp_frame_sources" placeholder="https://www.tradingview-widget.com"><?php echo esc_textarea((string) $opts['hardening_csp_frame_sources']); ?></textarea>
-                        </p>
-                        <p>
-                            Additional <code>img-src</code> sources<br>
-                            <textarea class="large-text" rows="2" name="csp_img_sources" placeholder="https://s3.tradingview.com"><?php echo esc_textarea((string) $opts['hardening_csp_img_sources']); ?></textarea>
-                        </p>
-                        <p>
-                            Additional <code>style-src</code> sources<br>
-                            <textarea class="large-text" rows="2" name="csp_style_sources" placeholder="https://s3.tradingview.com"><?php echo esc_textarea((string) $opts['hardening_csp_style_sources']); ?></textarea>
-                        </p>
-                        <p class="description">TradingView biasanya butuh minimal <code>https://www.tradingview-widget.com</code> di <code>frame-src</code> dan <code>https://s3.tradingview.com</code> di <code>script-src</code>/<code>connect-src</code>.</p>
-                        <p><label><input type="checkbox" name="hsts" value="1" <?php checked(1, $opts['hardening_hsts_enabled']); ?>> Enable HSTS header (HTTPS only)</label></p>
-                        <p><label><input type="checkbox" name="hsts_preload" value="1" data-confirm="Enable this only if the entire site and all subdomains are HTTPS-only and ready for HSTS preload." <?php checked(1, $opts['hardening_hsts_preload']); ?>> Add preload to HSTS header</label></p>
-                        <p class="description">Sends <code>Strict-Transport-Security: max-age=31536000; includeSubDomains; preload</code> when enabled.</p>
-                        <p><label><input type="checkbox" name="server_signature_hide" value="1" <?php checked(1, $opts['hardening_server_signature_hide']); ?>> Hide PHP signature headers (X-Powered-By/expose_php)</label></p>
-                        <p><label><input type="checkbox" name="cookie_httponly_force" value="1" data-confirm="Forcing HttpOnly on all Set-Cookie headers may affect integrations that require script-readable cookies." <?php checked(1, $opts['hardening_cookie_httponly_force']); ?>> Force HttpOnly/Secure on response cookies</label></p>
-                        <p><label><input type="checkbox" name="disable_wp_cron" value="1" data-confirm="Disabling WP-Cron requires server cron replacement (e.g. call wp-cron.php every 5 minutes)." <?php checked(1, $opts['hardening_disable_wp_cron']); ?>> Disable WP-Cron (set DISABLE_WP_CRON)</label></p>
-                        <p><label><input type="checkbox" name="url_param_guard" value="1" data-confirm="URL parameter guard may block unusual query patterns. Review logs after enabling." <?php checked(1, $opts['hardening_url_param_guard_enabled']); ?>> Enable URL parameter guard</label></p>
-                        <p><label><input type="checkbox" name="http_methods_filter" value="1" data-confirm="Blocking HTTP methods may break APIs and preflight requests if configuration is too strict." <?php checked(1, $opts['hardening_http_methods_filter_enabled']); ?>> Enable HTTP methods filtering</label></p>
-                        <p>
-                            Allowed HTTP methods (comma-separated)<br>
-                            <input class="regular-text" type="text" name="http_methods_allowed" value="<?php echo esc_attr((string)$opts['hardening_http_methods_allowed']); ?>" placeholder="GET, POST">
-                        </p>
-                        <p>
-                            HTTP methods allow paths (one per line)<br>
-                            <textarea class="large-text" rows="2" name="http_methods_allow_paths" placeholder="/wp-json/"><?php echo esc_textarea((string)$opts['hardening_http_methods_allow_paths']); ?></textarea>
-                        </p>
-                        <p><label><input type="checkbox" name="block_dangerous_methods" value="1" <?php checked(1, $opts['hardening_block_dangerous_methods_enabled']); ?>> Block dangerous HTTP methods (PUT/DELETE/TRACE/CONNECT)</label></p>
-                        <p>
-                            Dangerous methods list (comma-separated)<br>
-                            <input class="regular-text" type="text" name="dangerous_http_methods" value="<?php echo esc_attr((string)$opts['hardening_dangerous_http_methods']); ?>" placeholder="PUT, DELETE, TRACE, CONNECT">
-                        </p>
-                        <p>
-                            Dangerous methods allow paths (one per line)<br>
-                            <textarea class="large-text" rows="2" name="dangerous_methods_allow_paths" placeholder="/wp-json/"><?php echo esc_textarea((string)$opts['hardening_dangerous_methods_allow_paths']); ?></textarea>
-                        </p>
-                        <p><label><input type="checkbox" name="robots_txt_hardened" value="1" <?php checked(1, $opts['hardening_robots_txt_hardened']); ?>> Harden robots.txt (minimal policy)</label></p>
-                        <p><label><input type="checkbox" name="block_unwanted_files" value="1" <?php checked(1, $opts['hardening_block_unwanted_files_enabled']); ?>> Block direct access to unwanted filenames</label></p>
-                        <p>
-                            Unwanted filenames (comma-separated)<br>
-                            <input class="large-text" type="text" name="unwanted_file_names" value="<?php echo esc_attr((string)$opts['hardening_unwanted_file_names']); ?>" placeholder=".ds_store, thumbs.db, phpinfo.php, error_log, debug.log">
-                        </p>
-                        <p><label><input type="checkbox" name="mysql_exposure_check" value="1" <?php checked(1, $opts['hardening_mysql_exposure_check_enabled']); ?>> Enable MySQL public exposure risk check</label></p>
-                        <p><label><input type="checkbox" name="mysql_allow_public_host" value="1" <?php checked(1, $opts['hardening_mysql_allow_public_host']); ?>> Allow public/managed DB host (suppress warning)</label></p>
-                        <p class="description">Note: plugin cannot close port 3306 directly. Restrict MySQL access using firewall/security group (internal IP/VPN only).</p>
-                        <p><label><input type="checkbox" name="server_aware" value="1" <?php checked(1, $opts['hardening_server_aware_enabled']); ?>> Enable server-aware rules</label></p>
-                        <p><label><input type="checkbox" name="block_uploads_php" value="1" <?php checked(1, $opts['hardening_block_uploads_php']); ?>> Block PHP execution in uploads/ (Apache/LiteSpeed/IIS)</label></p>
-                        <p><label><input type="checkbox" name="block_plugin_installs" value="1" <?php checked(1, $opts['hardening_block_plugin_installs']); ?>> Block plugin/theme install/update for non-admins</label></p>
-                        <p><label><input type="checkbox" name="pingbacks" value="1" <?php checked(1, $opts['hardening_disable_pingbacks']); ?>> Disable XML-RPC pingbacks</label></p>
+                        <?php 
+                        tk_render_switch('file_editor', 'Disable theme/plugin file editor', 'Prevents hackers from editing your files via the WP dashboard.', $opts['hardening_disable_file_editor'], 'Disables the built-in theme/plugin editor. You will need FTP access.');
+                        
+                        tk_render_switch('rest_user_enum', 'Block REST API user enumeration', 'Prevents bots from scanning your site to find valid usernames.', $opts['hardening_disable_rest_user_enum']);
+                        
+                        tk_render_switch('pingbacks', 'Disable XML-RPC pingbacks', 'Prevents your site from being used in DDoS attacks against others.', $opts['hardening_disable_pingbacks']);
+                        
+                        tk_render_switch('hide_wp_version', 'Hide WordPress version', 'Removes the version number from your source code to slow down targeted attacks.', $opts['hardening_hide_wp_version']);
+                        
+                        tk_render_switch('block_uploads_php', 'Block PHP execution in uploads', 'Crucial! Prevents uploaded malicious files from being executed.', $opts['hardening_block_uploads_php']);
+                        
+                        tk_render_switch('block_unwanted_files', 'Block direct access to system files', 'Blocks access to .ds_store, error_log, and other sensitive filenames.', $opts['hardening_block_unwanted_files_enabled']);
+                        
+                        tk_render_switch('block_plugin_installs', 'Block plugin/theme installations', 'A hardcore lock that prevents any new plugin/theme installs until disabled.', $opts['hardening_block_plugin_installs']);
+                        
+                        tk_render_switch('headers', 'Send security headers', 'Adds X-Frame-Options, X-XSS-Protection, and X-Content-Type-Options.', $opts['hardening_security_headers']);
+                        ?>
 
-                        <p><button class="button button-primary">Save Hardening Settings</button></p>
+                        <div style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px;">
+                            <h3 style="margin:0 0 16px; font-size:16px;">Content Security Policy (CSP)</h3>
+                            <div style="display:grid; grid-template-columns: 200px 1fr; gap:20px; align-items:center;">
+                                <label style="font-weight:600;">CSP Protection Level</label>
+                                <select name="csp_mode" style="width:100%; max-width:300px;">
+                                    <option value="off" <?php selected('off', $csp_mode); ?>>Off</option>
+                                    <option value="lite" <?php selected('lite', $csp_mode); ?>>Lite (Safe)</option>
+                                    <option value="balanced" <?php selected('balanced', $csp_mode); ?>>Balanced</option>
+                                    <option value="hardened" <?php selected('hardened', $csp_mode); ?>>Hardened</option>
+                                    <option value="strict" <?php selected('strict', $csp_mode); ?>>Strict (Theme-dependent)</option>
+                                </select>
+                            </div>
+                            <p class="description" style="margin-top:8px;">Balanced is recommended for most sites. Strict may break some plugins.</p>
+                        </div>
+
+                        <div style="margin-top:24px; padding-top:20px; border-top:1px solid var(--tk-border-soft);">
+                            <button class="button button-primary button-hero">Save Security Settings</button>
+                        </div>
                     </form>
                 </div>
+
                 <div class="tk-card tk-tab-panel" data-panel-id="xmlrpc">
+                    <h2 style="margin-bottom:8px;">XML-RPC Security</h2>
+                    <p class="description" style="margin-bottom:24px;">XML-RPC is often exploited for brute-force attacks and DDoS reflection.</p>
+                    
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php tk_nonce_field('tk_hardening_save'); ?>
                         <input type="hidden" name="action" value="tk_hardening_save">
                         <input type="hidden" name="tk_tab" value="xmlrpc">
-                        <p><label><input type="checkbox" name="xmlrpc" value="1" <?php checked(1, $opts['hardening_disable_xmlrpc']); ?>> Disable XML-RPC</label></p>
-                        <p><label><input type="checkbox" name="xmlrpc_block_methods" value="1" <?php checked(1, $opts['hardening_xmlrpc_block_methods']); ?>> Block dangerous XML-RPC methods</label></p>
-                        <p>
-                            <label for="tk-xmlrpc-methods">Blocked XML-RPC methods (one per line)</label><br>
-                            <textarea class="large-text" rows="3" id="tk-xmlrpc-methods" name="xmlrpc_blocked_methods" placeholder="system.multicall"><?php echo esc_textarea((string)$opts['hardening_xmlrpc_blocked_methods']); ?></textarea>
-                        </p>
-                        <p><label><input type="checkbox" name="xmlrpc_rate_limit" value="1" <?php checked(1, $opts['hardening_xmlrpc_rate_limit_enabled']); ?>> Rate-limit XML-RPC</label></p>
-                        <p>
-                            Window (minutes)<br>
-                            <input type="number" name="xmlrpc_rate_limit_window" value="<?php echo esc_attr((string)$opts['hardening_xmlrpc_rate_limit_window_minutes']); ?>">
-                        </p>
-                        <p>
-                            Max requests per window<br>
-                            <input type="number" name="xmlrpc_rate_limit_max" value="<?php echo esc_attr((string)$opts['hardening_xmlrpc_rate_limit_max_attempts']); ?>">
-                        </p>
-                        <p>
-                            Lockout duration (minutes)<br>
-                            <input type="number" name="xmlrpc_rate_limit_lock" value="<?php echo esc_attr((string)$opts['hardening_xmlrpc_rate_limit_lockout_minutes']); ?>">
-                        </p>
-                        <p><button class="button button-primary">Save Hardening Settings</button></p>
+
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            <?php 
+                            tk_render_switch('xmlrpc', 'Completely Disable XML-RPC', 'The safest option if you do not use Jetpack or the WP Mobile App.', $opts['hardening_disable_xmlrpc']);
+                            
+                            tk_render_switch('xmlrpc_block_methods', 'Block Dangerous Methods Only', 'Blocks system.multicall and system.listMethods which are used in brute-force.', $opts['hardening_xmlrpc_block_methods']);
+                            
+                            tk_render_switch('xmlrpc_rate_limit_enabled', 'Enable XML-RPC Rate Limiting', 'Throttles repeated requests to prevent automated attacks.', $opts['hardening_xmlrpc_rate_limit_enabled']);
+                            ?>
+                        </div>
+
+                        <div style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px;">
+                            <label style="display:block; font-weight:600; margin-bottom:8px;">Blocked XML-RPC methods (one per line)</label>
+                            <textarea class="large-text" rows="3" name="xmlrpc_blocked_methods" placeholder="system.multicall" style="width:100%; border-radius:8px;"><?php echo esc_textarea((string)$opts['hardening_xmlrpc_blocked_methods']); ?></textarea>
+                            
+                            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:16px; margin-top:20px;">
+                                <div>
+                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Window (minutes)</label>
+                                    <input type="number" name="xmlrpc_rate_limit_window" value="<?php echo esc_attr((string)$opts['hardening_xmlrpc_rate_limit_window_minutes']); ?>" style="width:100%; border-radius:8px;">
+                                </div>
+                                <div>
+                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Max Requests</label>
+                                    <input type="number" name="xmlrpc_rate_limit_max" value="<?php echo esc_attr((string)$opts['hardening_xmlrpc_rate_limit_max_attempts']); ?>" style="width:100%; border-radius:8px;">
+                                </div>
+                                <div>
+                                    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Lockout (minutes)</label>
+                                    <input type="number" name="xmlrpc_rate_limit_lock" value="<?php echo esc_attr((string)$opts['hardening_xmlrpc_rate_limit_lockout_minutes']); ?>" style="width:100%; border-radius:8px;">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:24px; padding-top:20px; border-top:1px solid var(--tk-border-soft);">
+                            <button class="button button-primary button-hero">Save XML-RPC Settings</button>
+                        </div>
                     </form>
                 </div>
+
                 <div class="tk-card tk-tab-panel" data-panel-id="waf">
+                    <h2 style="margin-bottom:8px;">Web Application Firewall (WAF)</h2>
+                    <p class="description" style="margin-bottom:24px;">Our lightweight WAF filters incoming requests for SQL injection, XSS, and local file inclusion.</p>
+                    
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php tk_nonce_field('tk_hardening_save'); ?>
                         <input type="hidden" name="action" value="tk_hardening_save">
                         <input type="hidden" name="tk_tab" value="waf">
-                        <p><label><input type="checkbox" name="waf_enabled" value="1" data-confirm="Enabling WAF can block legitimate traffic if rules are too strict." <?php checked(1, $opts['hardening_waf_enabled']); ?>> Enable simple WAF</label></p>
-                        <p class="description">Review allowlist and logs after enabling.</p>
-                        <p>
-                            <label for="tk-waf-check-methods">WAF check methods (comma-separated)</label><br>
-                            <input class="regular-text" type="text" id="tk-waf-check-methods" name="waf_check_methods" value="<?php echo esc_attr((string)$opts['hardening_waf_check_methods']); ?>" placeholder="GET, POST">
-                        </p>
-                        <p>
-                            <label for="tk-waf-allow-paths">WAF allow paths (one per line)</label><br>
-                            <textarea class="large-text" rows="2" id="tk-waf-allow-paths" name="waf_allow_paths" placeholder="/wp-admin/admin-ajax.php"><?php echo esc_textarea((string)$opts['hardening_waf_allow_paths']); ?></textarea>
-                        </p>
-                        <p>
-                            <label for="tk-waf-allow-regex">WAF allow regex (one per line)</label><br>
-                            <textarea class="large-text" rows="2" id="tk-waf-allow-regex" name="waf_allow_regex" placeholder="#^/wp-json/#"><?php echo esc_textarea((string)$opts['hardening_waf_allow_regex']); ?></textarea>
-                        </p>
-                        <p><label><input type="checkbox" name="waf_log_to_file" value="1" <?php checked(1, $opts['hardening_waf_log_to_file']); ?>> Log WAF blocks to file</label></p>
-                        <p>
-                            Max log size (KB)<br>
-                            <input type="number" name="waf_log_max_kb" value="<?php echo esc_attr((string)$opts['hardening_waf_log_max_kb']); ?>">
-                        </p>
-                        <p>
-                            Max rotated files<br>
-                            <input type="number" name="waf_log_max_files" value="<?php echo esc_attr((string)$opts['hardening_waf_log_max_files']); ?>">
-                        </p>
-                        <p><label><input type="checkbox" name="waf_log_compress" value="1" <?php checked(1, $opts['hardening_waf_log_compress']); ?>> Compress rotated logs (.gz)</label></p>
-                        <p>
-                            Compress if >= (KB)<br>
-                            <input type="number" name="waf_log_compress_min_kb" value="<?php echo esc_attr((string)$opts['hardening_waf_log_compress_min_kb']); ?>">
-                        </p>
-                        <p>
-                            Delete logs older than (days)<br>
-                            <input type="number" name="waf_log_keep_days" value="<?php echo esc_attr((string)$opts['hardening_waf_log_keep_days']); ?>">
-                        </p>
-                        <p>
-                            Log cleanup schedule<br>
-                            <select name="waf_log_schedule">
-                                <option value="hourly" <?php selected('hourly', $opts['hardening_waf_log_schedule']); ?>>Hourly</option>
-                                <option value="twice_daily" <?php selected('twice_daily', $opts['hardening_waf_log_schedule']); ?>>Twice daily</option>
-                                <option value="daily" <?php selected('daily', $opts['hardening_waf_log_schedule']); ?>>Daily</option>
-                            </select>
-                        </p>
-                        <p><button class="button button-primary">Save Hardening Settings</button></p>
-                    </form>
-                </div>
-                <div class="tk-card tk-tab-panel" data-panel-id="httpauth">
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-                        <?php tk_nonce_field('tk_hardening_save'); ?>
-                        <input type="hidden" name="action" value="tk_hardening_save">
-                        <input type="hidden" name="tk_tab" value="httpauth">
-                        <p><label><input type="checkbox" name="httpauth_enabled" value="1" <?php checked(1, $opts['hardening_httpauth_enabled']); ?>> Enable HTTP Basic Auth (site-wide)</label></p>
-                        <p>
-                            Scope<br>
-                            <select name="httpauth_scope">
-                                <option value="both" <?php selected('both', $opts['hardening_httpauth_scope']); ?>>Frontend + Admin</option>
-                                <option value="frontend" <?php selected('frontend', $opts['hardening_httpauth_scope']); ?>>Frontend only</option>
-                                <option value="admin" <?php selected('admin', $opts['hardening_httpauth_scope']); ?>>Admin only</option>
-                            </select>
-                        </p>
-                        <p>
-                            Username<br>
-                            <input type="text" name="httpauth_user" value="<?php echo esc_attr((string)$opts['hardening_httpauth_user']); ?>">
-                        </p>
-                        <p>
-                            Password (leave blank to keep current)<br>
-                            <input type="password" name="httpauth_pass" value="">
-                        </p>
-                        <p>
-                            Allow paths (one per line)<br>
-                            <textarea class="large-text" rows="2" name="httpauth_allow_paths" placeholder="/wp-json/"><?php echo esc_textarea((string)$opts['hardening_httpauth_allow_paths']); ?></textarea>
-                        </p>
-                        <p>
-                            Allow regex (one per line)<br>
-                            <textarea class="large-text" rows="2" name="httpauth_allow_regex" placeholder="#^/wp-json/#"><?php echo esc_textarea((string)$opts['hardening_httpauth_allow_regex']); ?></textarea>
-                        </p>
-                        <p><button class="button button-primary">Save Hardening Settings</button></p>
-                    </form>
-                </div>
-                <div class="tk-card tk-tab-panel" data-panel-id="cors">
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-                        <?php tk_nonce_field('tk_hardening_save'); ?>
-                        <input type="hidden" name="action" value="tk_hardening_save">
-                        <input type="hidden" name="tk_tab" value="cors">
-                        <p><label><input type="checkbox" name="cors_custom_origins_enabled" value="1" <?php checked(1, $opts['hardening_cors_custom_origins_enabled']); ?>> Enable custom allowed origins</label></p>
-                        <p>
-                            <label for="tk-cors-origins">Allowed origins (one per line)</label><br>
-                            <textarea class="large-text" rows="3" id="tk-cors-origins" name="cors_allowed_origins" placeholder="<?php echo esc_attr(home_url('/')); ?>"><?php echo esc_textarea((string)$opts['hardening_cors_allowed_origins']); ?></textarea>
-                        </p>
-                        <p>
-                            <label for="tk-cors-methods">Allowed methods (comma-separated)</label><br>
-                            <input class="regular-text" type="text" id="tk-cors-methods" name="cors_allowed_methods" value="<?php echo esc_attr((string)$opts['hardening_cors_allowed_methods']); ?>" placeholder="GET, POST, OPTIONS">
-                        </p>
-                        <p>
-                            <label for="tk-cors-headers">Allowed headers (comma-separated)</label><br>
-                            <input class="regular-text" type="text" id="tk-cors-headers" name="cors_allowed_headers" value="<?php echo esc_attr((string)$opts['hardening_cors_allowed_headers']); ?>" placeholder="Authorization, X-WP-Nonce, Content-Type">
-                        </p>
-                        <p><label><input type="checkbox" name="cors_allow_credentials" value="1" <?php checked(1, $opts['hardening_cors_allow_credentials']); ?>> Allow credentialed CORS (only if required)</label></p>
-                        <p><button class="button button-primary">Save Hardening Settings</button></p>
+
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            <?php 
+                            tk_render_switch('waf_enabled', 'Enable Firewall Protection', 'Actively monitor and block malicious GET/POST requests.', $opts['hardening_waf_enabled']);
+                            
+                            tk_render_switch('waf_log_to_file', 'Log WAF Detections', 'Saves blocked attempts to a log file for review.', $opts['hardening_waf_log_to_file']);
+
+                            tk_render_switch('waf_log_compress', 'Compress Log Files', 'Automatically gzip rotated logs to save disk space.', $opts['hardening_waf_log_compress']);
+                            ?>
+                        </div>
+
+                        <div style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px; display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                            <div>
+                                <label style="display:block; font-weight:600; margin-bottom:8px;">Allowlisted Paths</label>
+                                <textarea class="large-text" rows="4" name="waf_allow_paths" placeholder="/wp-json/
+/wp-admin/admin-ajax.php" style="width:100%; border-radius:8px;"><?php echo esc_textarea((string)$opts['hardening_waf_allow_paths']); ?></textarea>
+                            </div>
+                            <div>
+                                <label style="display:block; font-weight:600; margin-bottom:8px;">Check Methods</label>
+                                <input type="text" class="regular-text" name="waf_check_methods" value="<?php echo esc_attr((string)$opts['hardening_waf_check_methods']); ?>" placeholder="GET, POST" style="width:100%; border-radius:8px;">
+                                <div style="margin-top:16px;">
+                                    <label style="display:block; font-weight:600; margin-bottom:8px;">Cleanup Schedule</label>
+                                    <select name="waf_log_schedule" style="width:100%; border-radius:8px;">
+                                        <option value="hourly" <?php selected('hourly', $opts['hardening_waf_log_schedule']); ?>>Hourly</option>
+                                        <option value="twice_daily" <?php selected('twice_daily', $opts['hardening_waf_log_schedule']); ?>>Twice Daily</option>
+                                        <option value="daily" <?php selected('daily', $opts['hardening_waf_log_schedule']); ?>>Daily</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:24px; padding-top:20px; border-top:1px solid var(--tk-border-soft);">
+                            <button class="button button-primary button-hero">Save WAF Settings</button>
+                        </div>
                     </form>
                 </div>
             </div>
@@ -2327,31 +2498,13 @@ function tk_render_hardening_page() {
                 }
             });
         });
-        document.querySelectorAll('form').forEach(function(form){
-            var action = form.querySelector('input[name="action"][value="tk_hardening_save"]');
-            if (!action) { return; }
-            form.addEventListener('submit', function(e){
-                var messages = [];
-                form.querySelectorAll('input[type="checkbox"][data-confirm]').forEach(function(cb){
-                    if (cb.checked) {
-                        messages.push(cb.getAttribute('data-confirm'));
-                    }
-                });
-                if (!messages.length) {
-                    return;
-                }
-                var message = 'Please confirm:\n- ' + messages.join('\n- ');
-                if (!window.confirm(message)) {
-                    e.preventDefault();
-                }
-            });
-        });
         var initial = getPanelFromHash();
         if (initial) {
             activateTab(initial);
         }
     })();
     </script>
+    </div>
     <?php
 }
 
@@ -2362,8 +2515,15 @@ function tk_hardening_save() {
     $tab = isset($_POST['tk_tab']) ? sanitize_key($_POST['tk_tab']) : '';
     if ($tab === 'general') {
         tk_update_option('hardening_disable_file_editor', !empty($_POST['file_editor']) ? 1 : 0);
-        tk_update_option('hardening_disable_comments', !empty($_POST['disable_comments']) ? 1 : 0);
+        $disable_comments = !empty($_POST['disable_comments']) ? 1 : 0;
+        tk_update_option('hardening_disable_comments', $disable_comments);
+        if ($disable_comments) {
+            update_option('default_comment_status', 'closed', false);
+            update_option('default_ping_status', 'closed', false);
+        }
         tk_update_option('hardening_disable_rest_user_enum', !empty($_POST['rest_user_enum']) ? 1 : 0);
+        tk_update_option('hardening_hide_wp_version', !empty($_POST['hide_wp_version']) ? 1 : 0);
+        tk_update_option('hardening_clean_wp_head', !empty($_POST['clean_wp_head']) ? 1 : 0);
         tk_update_option('hardening_security_headers', !empty($_POST['headers']) ? 1 : 0);
         $posted_csp_mode = isset($_POST['csp_mode']) ? sanitize_key($_POST['csp_mode']) : '';
         if (!in_array($posted_csp_mode, array('off', 'lite', 'balanced', 'hardened', 'strict'), true)) {

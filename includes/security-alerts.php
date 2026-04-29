@@ -24,10 +24,20 @@ function tk_security_alert_send(string $subject, string $message): void {
         return;
     }
     $email = tk_security_alert_email();
-    if ($email === '') {
-        return;
+    if ($email !== '') {
+        wp_mail($email, $subject, $message);
     }
-    wp_mail($email, $subject, $message);
+
+    $webhook = (string) tk_get_option('toolkits_alert_webhook', '');
+    if ($webhook !== '') {
+        wp_remote_post($webhook, array(
+            'headers' => array('Content-Type' => 'application/json'),
+            'body'    => wp_json_encode(array(
+                'text' => "*" . $subject . "*\n" . $message
+            )),
+        ));
+    }
+
     tk_toolkits_audit_log('security_alert', array('subject' => $subject));
 }
 

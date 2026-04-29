@@ -25,6 +25,8 @@ function tk_db_cleanup_status_message(): string {
         'trash_comments'   => 'trash comments deleted',
         'trash_commentmeta'=> 'orphaned trash commentmeta deleted',
         'transients'       => 'transients deleted',
+        'auto_drafts'      => 'auto-drafts deleted',
+        'orphaned_postmeta'=> 'orphaned postmeta deleted',
     );
 
     foreach ($map as $key => $label) {
@@ -58,7 +60,13 @@ function tk_render_db_cleanup_panel() {
         'spam_comments' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->comments} WHERE comment_approved = 'spam'"),
         'trash_comments' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->comments} WHERE comment_approved = 'trash'"),
         'transients' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE '_transient_%' OR option_name LIKE '_site_transient_%'"),
+        'auto_drafts' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'auto-draft'"),
+        'orphaned_postmeta' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->postmeta} pm LEFT JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE p.ID IS NULL"),
     );
+
+    // Calculate DB Size
+    $db_size = $wpdb->get_results("SELECT SUM(data_length + index_length) AS size FROM information_schema.TABLES WHERE table_schema = (SELECT DATABASE())");
+    $total_size = isset($db_size[0]->size) ? $db_size[0]->size : 0;
 
     ?>
     <?php
@@ -71,30 +79,61 @@ function tk_render_db_cleanup_panel() {
     }
     ?>
 
-    <div class="tk-card">
-        <h2>Cleanup Actions</h2>
-        <p>Berikut count saat ini (real-time):</p>
-        <ul class="tk-list">
-            <li>Revisions: <strong><?php echo esc_html($counts['revisions']); ?></strong></li>
-            <li>Trash Posts: <strong><?php echo esc_html($counts['trash_posts']); ?></strong></li>
-            <li>Spam Comments: <strong><?php echo esc_html($counts['spam_comments']); ?></strong></li>
-            <li>Trash Comments: <strong><?php echo esc_html($counts['trash_comments']); ?></strong></li>
-            <li>Transients: <strong><?php echo esc_html($counts['transients']); ?></strong></li>
-        </ul>
+    <div class="tk-grid tk-grid-2" style="gap:24px;">
+        <div class="tk-card">
+            <h3 style="margin-top:0; font-size:16px;">Statistics Overview</h3>
+            <p class="description">Current status of redundant data in your database.</p>
+            <div style="display:flex; flex-direction:column; gap:12px; margin-top:20px;">
+                <div class="tk-stat-row" style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--tk-border-soft);">
+                    <span>Revisions</span>
+                    <strong><?php echo number_format($counts['revisions']); ?></strong>
+                </div>
+                <div class="tk-stat-row" style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--tk-border-soft);">
+                    <span>Trash Items</span>
+                    <strong><?php echo number_format($counts['trash_posts'] + $counts['trash_comments']); ?></strong>
+                </div>
+                <div class="tk-stat-row" style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--tk-border-soft);">
+                    <span>Spam Comments</span>
+                    <strong><?php echo number_format($counts['spam_comments']); ?></strong>
+                </div>
+                <div class="tk-stat-row" style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--tk-border-soft);">
+                    <span>Transients</span>
+                    <strong><?php echo number_format($counts['transients']); ?></strong>
+                </div>
+                <div class="tk-stat-row" style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--tk-border-soft);">
+                    <span>Orphaned Meta</span>
+                    <strong><?php echo number_format($counts['orphaned_postmeta']); ?></strong>
+                </div>
+                <div class="tk-stat-row" style="display:flex; justify-content:space-between; padding:15px 0 0; color:var(--tk-primary); font-weight:700;">
+                    <span>Total Database Size</span>
+                    <span><?php echo size_format($total_size); ?></span>
+                </div>
+            </div>
+        </div>
 
-        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" data-confirm="Jalankan cleanup? Pastikan backup dulu jika perlu.">
-            <?php tk_nonce_field('tk_db_cleanup_run'); ?>
-            <input type="hidden" name="action" value="tk_db_cleanup_run">
+        <div class="tk-card">
+            <h3 style="margin-top:0; font-size:16px;">Cleanup Actions</h3>
+            <p class="description">Select the items you wish to prune from your database.</p>
+            
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:20px;">
+                <?php tk_nonce_field('tk_db_cleanup_run'); ?>
+                <input type="hidden" name="action" value="tk_db_cleanup_run">
 
-            <label><input type="checkbox" name="do_revisions" value="1" checked> Delete revisions</label><br>
-            <label><input type="checkbox" name="do_trash_posts" value="1" checked> Delete trash posts</label><br>
-            <label><input type="checkbox" name="do_spam_comments" value="1" checked> Delete spam comments</label><br>
-            <label><input type="checkbox" name="do_trash_comments" value="1" checked> Delete trash comments</label><br>
-            <label><input type="checkbox" name="do_transients" value="1" checked> Delete transients</label><br>
-            <label><input type="checkbox" name="do_optimize" value="1" checked> Optimize tables</label>
+                <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:24px;">
+                    <?php 
+                    tk_render_switch('do_revisions', 'Delete Revisions', 'Remove all post and page revisions.', true);
+                    tk_render_switch('do_trash_posts', 'Prune Trash', 'Permanently delete items in trash.', true);
+                    tk_render_switch('do_spam_comments', 'Clear Spam', 'Delete all comments marked as spam.', true);
+                    tk_render_switch('do_transients', 'Clear Transients', 'Remove expired and temporary options.', true);
+                    tk_render_switch('do_auto_drafts', 'Delete Auto-drafts', 'Prune system-generated empty drafts.', true);
+                    tk_render_switch('do_orphaned_postmeta', 'Orphaned Meta', 'Delete meta data with no parent post.', true);
+                    tk_render_switch('do_optimize', 'Optimize Tables', 'Run OPTIMIZE TABLE on all database tables.', true);
+                    ?>
+                </div>
 
-            <p><button class="button button-primary">Run Cleanup</button></p>
-        </form>
+                <button class="button button-primary button-hero" style="width:100%;" onclick="return confirm('Pruning your database is permanent. Are you sure you have a backup?')">Run Database Pruning</button>
+            </form>
+        </div>
     </div>
     <?php
 }
@@ -109,6 +148,8 @@ function tk_db_cleanup_run_handler() {
     $do_spam_comments = !empty($_POST['do_spam_comments']);
     $do_trash_comments = !empty($_POST['do_trash_comments']);
     $do_transients = !empty($_POST['do_transients']);
+    $do_auto_drafts = !empty($_POST['do_auto_drafts']);
+    $do_orphaned_postmeta = !empty($_POST['do_orphaned_postmeta']);
     $do_optimize = !empty($_POST['do_optimize']);
     $summary = array(
         'revisions'         => 0,
@@ -118,6 +159,8 @@ function tk_db_cleanup_run_handler() {
         'trash_comments'    => 0,
         'trash_commentmeta' => 0,
         'transients'        => 0,
+        'auto_drafts'       => 0,
+        'orphaned_postmeta' => 0,
         'optimized_tables'  => 0,
     );
 
@@ -146,6 +189,14 @@ function tk_db_cleanup_run_handler() {
     if ($do_transients) {
         $result = $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_%' OR option_name LIKE '_site_transient_%'");
         $summary['transients'] = $result !== false ? (int) $result : 0;
+    }
+    if ($do_auto_drafts) {
+        $result = $wpdb->query("DELETE FROM {$wpdb->posts} WHERE post_status = 'auto-draft'");
+        $summary['auto_drafts'] = $result !== false ? (int) $result : 0;
+    }
+    if ($do_orphaned_postmeta) {
+        $result = $wpdb->query("DELETE pm FROM {$wpdb->postmeta} pm LEFT JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE p.ID IS NULL");
+        $summary['orphaned_postmeta'] = $result !== false ? (int) $result : 0;
     }
 
     if ($do_optimize) {

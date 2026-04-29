@@ -31,6 +31,21 @@ if ! grep -qx 'tool-kits/tool-kits.php' <<<"$LISTING"; then
   exit 1
 fi
 
+if ! grep -qx 'tool-kits/includes/classic-editor.php' <<<"$LISTING"; then
+  echo "Missing required include: tool-kits/includes/classic-editor.php" >&2
+  exit 1
+fi
+
+if ! grep -qx 'tool-kits/includes/classic-widgets.php' <<<"$LISTING"; then
+  echo "Missing required include: tool-kits/includes/classic-widgets.php" >&2
+  exit 1
+fi
+
+if ! grep -qx 'tool-kits/includes/general.php' <<<"$LISTING"; then
+  echo "Missing required include: tool-kits/includes/general.php" >&2
+  exit 1
+fi
+
 if grep -q '^__MACOSX/' <<<"$LISTING"; then
   echo "Archive contains unexpected __MACOSX metadata." >&2
   exit 1

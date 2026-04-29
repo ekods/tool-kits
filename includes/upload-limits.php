@@ -90,7 +90,6 @@ function tk_render_upload_limits_panel() {
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
             <?php tk_nonce_field('tk_upload_limits_save'); ?>
             <input type="hidden" name="action" value="tk_upload_limits_save">
-            <input type="hidden" name="tk_tab" value="uploads">
             <p>
                 <label>
                     <input type="checkbox" name="upload_images_limit_enabled" value="1" <?php checked(1, $enabled); ?>>
@@ -120,6 +119,6 @@ function tk_upload_limits_save() {
     tk_update_option('upload_images_limit_enabled', !empty($_POST['upload_images_limit_enabled']) ? 1 : 0);
     tk_update_option('upload_images_default_mb', $default_mb);
     tk_update_option('upload_images_max_mb', $max_mb);
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'uploads', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_safe_redirect(admin_url('admin.php?page=tool-kits-general&tk_saved=1#uploads'));
     exit;
 }

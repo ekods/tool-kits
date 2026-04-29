@@ -7,6 +7,8 @@ function tk_seo_opt_init() {
     add_action('admin_post_tk_seo_redirect_delete', 'tk_seo_redirect_delete');
     add_action('admin_post_tk_seo_links_scan', 'tk_seo_links_scan');
     add_action('admin_post_tk_seo_links_clear', 'tk_seo_links_clear');
+    add_action('admin_post_tk_seo_canonical_scan', 'tk_seo_canonical_scan');
+    add_action('admin_post_tk_seo_canonical_clear', 'tk_seo_canonical_clear');
     add_action('admin_post_tk_seo_index_add', 'tk_seo_index_add');
     add_action('admin_post_tk_seo_index_delete', 'tk_seo_index_delete');
     add_action('admin_post_tk_seo_content_audit_scan', 'tk_seo_content_audit_scan');
@@ -427,7 +429,7 @@ function tk_seo_sitemap_maybe_render() {
     if (is_admin()) {
         return;
     }
-    if (!tk_seo_tools_enabled()) {
+    if (!tk_license_features_enabled()) {
         return;
     }
     if ((int) tk_get_option('seo_sitemap_enabled', 1) !== 1) {
@@ -444,30 +446,85 @@ function tk_seo_sitemap_maybe_render() {
 
     nocache_headers();
     header('Content-Type: application/xml; charset=' . get_bloginfo('charset'));
-    echo '<?xml version="1.0" encoding="' . esc_attr(get_bloginfo('charset')) . '"?>' . "\n";
-    echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">' . "\n";
-    foreach ($rows as $row) {
-        echo "<url>";
-        echo '<loc>' . esc_url($row['loc']) . '</loc>';
-        if (!empty($row['lastmod'])) {
-            echo '<lastmod>' . esc_html($row['lastmod']) . '</lastmod>';
-        }
-        if (!empty($row['image'])) {
-            echo '<image:image><image:loc>' . esc_url($row['image']) . '</image:loc></image:image>';
-        }
-        echo "</url>\n";
-    }
-    echo '</urlset>';
+    echo tk_seo_build_sitemap_xml($rows);
     exit;
 }
 
+function tk_seo_build_sitemap_xml(array $rows): string {
+    $xml = '<?xml version="1.0" encoding="' . esc_attr(get_bloginfo('charset')) . '"?>' . "\n";
+    $xml .= '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">' . "\n";
+    foreach ($rows as $row) {
+        $xml .= "<url>";
+        $xml .= '<loc>' . esc_url($row['loc']) . '</loc>';
+        if (!empty($row['lastmod'])) {
+            $xml .= '<lastmod>' . esc_html($row['lastmod']) . '</lastmod>';
+        }
+        if (!empty($row['changefreq'])) {
+            $xml .= '<changefreq>' . esc_html($row['changefreq']) . '</changefreq>';
+        }
+        if (!empty($row['priority'])) {
+            $xml .= '<priority>' . esc_html($row['priority']) . '</priority>';
+        }
+        if (!empty($row['image'])) {
+            $xml .= '<image:image><image:loc>' . esc_url($row['image']) . '</image:loc></image:image>';
+        }
+        $xml .= "</url>\n";
+    }
+    $xml .= '</urlset>';
+
+    return $xml;
+}
+
+function tk_seo_generate_sitemap_file() {
+    if (!defined('ABSPATH') || ABSPATH === '') {
+        return new WP_Error('tk_sitemap_missing_root', 'WordPress root path is unavailable.');
+    }
+
+    $sitemap_path = ltrim((string) tk_get_option('seo_sitemap_path', 'sitemap.xml'), '/');
+    $sitemap_path = trim($sitemap_path);
+    if ($sitemap_path === '') {
+        $sitemap_path = 'sitemap.xml';
+    }
+    if (strpos($sitemap_path, '..') !== false || preg_match('#^[a-z]+:#i', $sitemap_path)) {
+        return new WP_Error('tk_sitemap_invalid_path', 'Sitemap path is invalid.');
+    }
+
+    $target = trailingslashit(ABSPATH) . $sitemap_path;
+    $target_dir = dirname($target);
+    if (!wp_mkdir_p($target_dir)) {
+        return new WP_Error('tk_sitemap_mkdir_failed', 'Could not create sitemap directory.');
+    }
+
+    $xml = tk_seo_build_sitemap_xml(tk_seo_collect_sitemap_rows());
+    $written = file_put_contents($target, $xml);
+    if ($written === false) {
+        return new WP_Error('tk_sitemap_write_failed', 'Could not write sitemap file.');
+    }
+
+    return array(
+        'path' => $target,
+        'url'  => home_url('/' . ltrim($sitemap_path, '/')),
+        'size' => (int) $written,
+    );
+}
+
 function tk_seo_collect_sitemap_rows() {
+    $changefreq = sanitize_key((string) tk_get_option('seo_sitemap_changefreq', 'weekly'));
+    $allowed_changefreq = array('always', 'hourly', 'daily', 'weekly', 'monthly', 'yearly', 'never');
+    if (!in_array($changefreq, $allowed_changefreq, true)) {
+        $changefreq = 'weekly';
+    }
+    $priority = (float) tk_get_option('seo_sitemap_priority', 0.8);
+    $priority = max(0.0, min(1.0, $priority));
+    $exclude_paths = tk_seo_sitemap_exclude_paths();
     $rows = array();
-    $rows[] = array(
+    tk_seo_sitemap_add_row($rows, array(
         'loc' => home_url('/'),
         'lastmod' => gmdate('c'),
+        'changefreq' => $changefreq,
+        'priority' => '1.0',
         'image' => '',
-    );
+    ), $exclude_paths);
 
     $include_images = (int) tk_get_option('seo_sitemap_include_images', 1) === 1;
     $post_types = get_post_types(array('public' => true), 'names');
@@ -496,11 +553,13 @@ function tk_seo_collect_sitemap_rows() {
                             $image = '';
                         }
                     }
-                    $rows[] = array(
+                    tk_seo_sitemap_add_row($rows, array(
                         'loc' => $loc,
                         'lastmod' => get_post_modified_time('c', true, (int) $post_id),
+                        'changefreq' => $changefreq,
+                        'priority' => number_format($priority, 1, '.', ''),
                         'image' => $image,
-                    );
+                    ), $exclude_paths);
                 }
             }
             if ((int) $query->max_num_pages <= (int) $query->get('paged')) {
@@ -540,16 +599,44 @@ function tk_seo_collect_sitemap_rows() {
                 if (is_wp_error($loc) || !is_string($loc)) {
                     continue;
                 }
-                $rows[] = array(
+                tk_seo_sitemap_add_row($rows, array(
                     'loc' => $loc,
                     'lastmod' => '',
+                    'changefreq' => $changefreq,
+                    'priority' => number_format(max(0.1, $priority - 0.2), 1, '.', ''),
                     'image' => '',
-                );
+                ), $exclude_paths);
             }
         }
     }
 
     return $rows;
+}
+
+function tk_seo_sitemap_exclude_paths(): array {
+    $raw = (string) tk_get_option('seo_sitemap_exclude_paths', '');
+    $paths = array();
+    foreach (preg_split('/\r\n|\r|\n/', $raw) ?: array() as $line) {
+        $path = tk_seo_normalize_path((string) $line);
+        if ($path !== '') {
+            $paths[$path] = true;
+        }
+    }
+    return array_keys($paths);
+}
+
+function tk_seo_sitemap_add_row(array &$rows, array $row, array $exclude_paths): void {
+    $loc = isset($row['loc']) ? (string) $row['loc'] : '';
+    if ($loc === '') {
+        return;
+    }
+    $path = tk_seo_normalize_path((string) wp_parse_url($loc, PHP_URL_PATH));
+    foreach ($exclude_paths as $exclude) {
+        if ($exclude !== '' && strpos($path, $exclude) === 0) {
+            return;
+        }
+    }
+    $rows[] = $row;
 }
 
 function tk_seo_links_scan() {
@@ -573,6 +660,92 @@ function tk_seo_links_clear() {
     tk_update_option('seo_broken_links_report', array());
     wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_links_cleared' => 1), admin_url('admin.php')));
     exit;
+}
+
+function tk_seo_canonical_scan() {
+    if (!tk_is_admin_user()) {
+        wp_die('Forbidden');
+    }
+    tk_check_nonce('tk_seo_canonical_scan');
+    $report = tk_seo_run_canonical_audit();
+    tk_update_option('seo_canonical_audit_report', $report);
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_canonical_scanned' => 1), admin_url('admin.php')));
+    exit;
+}
+
+function tk_seo_canonical_clear() {
+    if (!tk_is_admin_user()) {
+        wp_die('Forbidden');
+    }
+    tk_check_nonce('tk_seo_canonical_clear');
+    tk_update_option('seo_canonical_audit_report', array());
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_canonical_cleared' => 1), admin_url('admin.php')));
+    exit;
+}
+
+function tk_seo_run_canonical_audit(): array {
+    $urls = array(home_url('/'));
+    $ids = get_posts(array(
+        'post_type' => array_values(array_diff(get_post_types(array('public' => true), 'names'), array('attachment'))),
+        'post_status' => 'publish',
+        'numberposts' => 5,
+        'fields' => 'ids',
+        'orderby' => 'modified',
+        'order' => 'DESC',
+    ));
+    foreach ($ids as $post_id) {
+        $url = get_permalink((int) $post_id);
+        if (is_string($url) && $url !== '') {
+            $urls[] = $url;
+        }
+    }
+
+    $items = array();
+    foreach (array_slice(array_values(array_unique($urls)), 0, 6) as $url) {
+        $response = wp_remote_get($url, array(
+            'timeout' => 8,
+            'redirection' => 3,
+            'sslverify' => false,
+            'headers' => array('User-Agent' => 'Tool Kits Canonical Audit'),
+        ));
+        if (is_wp_error($response)) {
+            $items[] = array(
+                'url' => $url,
+                'status' => 0,
+                'canonicals' => array(),
+                'issue' => $response->get_error_message(),
+            );
+            continue;
+        }
+        $body = (string) wp_remote_retrieve_body($response);
+        $canonicals = array();
+        if (preg_match_all('/<link\b[^>]*rel=("|\')canonical\1[^>]*>/i', $body, $tags)) {
+            foreach ($tags[0] as $tag) {
+                if (preg_match('/\bhref=("|\')(.*?)\1/i', (string) $tag, $m)) {
+                    $canonicals[] = esc_url_raw((string) $m[2]);
+                }
+            }
+        }
+        $issue = '';
+        if (count($canonicals) === 0) {
+            $issue = 'Missing canonical tag.';
+        } elseif (count(array_unique($canonicals)) > 1 || count($canonicals) > 1) {
+            $issue = 'Multiple canonical tags detected.';
+        }
+        $items[] = array(
+            'url' => $url,
+            'status' => (int) wp_remote_retrieve_response_code($response),
+            'canonicals' => array_values(array_unique($canonicals)),
+            'issue' => $issue,
+        );
+    }
+
+    return array(
+        'scanned_at' => time(),
+        'third_party_detected' => tk_seo_has_third_party_plugin(),
+        'toolkits_canonical_enabled' => (int) tk_get_option('seo_canonical_enabled', 1) === 1,
+        'items' => $items,
+    );
 }
 
 function tk_seo_scan_internal_links() {
@@ -601,7 +774,7 @@ function tk_seo_scan_internal_links() {
         if (!preg_match_all('/<a\\b[^>]*href=("|\')(.*?)\\1/i', $content, $matches)) {
             continue;
         }
-        foreach ($matches[2] as $href) {
+        foreach ($matches[2] as $idx => $href) {
             $url = trim((string) $href);
             if ($url === '' || strpos($url, '#') === 0 || stripos($url, 'mailto:') === 0 || stripos($url, 'tel:') === 0 || stripos($url, 'javascript:') === 0) {
                 continue;
@@ -629,6 +802,8 @@ function tk_seo_scan_internal_links() {
                     'url' => $url,
                     'post_id' => (int) $post_id,
                     'post_title' => get_the_title((int) $post_id),
+                    'source_url' => get_permalink((int) $post_id),
+                    'anchor' => isset($matches[0][$idx]) ? wp_strip_all_tags((string) $matches[0][$idx]) : '',
                     'status' => $status,
                 );
                 if (count($broken) >= 200) {
@@ -969,19 +1144,18 @@ function tk_render_seo_opt_panel() {
     $noindex_404 = (int) tk_get_option('seo_noindex_404', 1);
     $noindex_paged = (int) tk_get_option('seo_noindex_paged_archives', 1);
 
-    $sitemap_enabled = (int) tk_get_option('seo_sitemap_enabled', 1);
-    $sitemap_path = (string) tk_get_option('seo_sitemap_path', 'sitemap.xml');
-    $sitemap_tax = (int) tk_get_option('seo_sitemap_include_taxonomies', 1);
-    $sitemap_images = (int) tk_get_option('seo_sitemap_include_images', 1);
-
     $has_third_party = tk_seo_has_third_party_plugin();
     $rules = tk_seo_get_redirect_rules();
     $suggestions = tk_seo_redirect_suggestions();
     $report = tk_get_option('seo_broken_links_report', array());
+    $canonical_report = tk_get_option('seo_canonical_audit_report', array());
     $index_items = tk_seo_get_index_monitor_items();
     $audit_report = tk_get_option('seo_content_audit_report', array());
     if (!is_array($report)) {
         $report = array();
+    }
+    if (!is_array($canonical_report)) {
+        $canonical_report = array();
     }
     if (!is_array($audit_report)) {
         $audit_report = array();
@@ -1002,6 +1176,12 @@ function tk_render_seo_opt_panel() {
     if (isset($_GET['tk_seo_links_cleared']) && sanitize_key((string) $_GET['tk_seo_links_cleared']) === '1') {
         tk_notice('Broken link report cleared.', 'success');
     }
+    if (isset($_GET['tk_seo_canonical_scanned']) && sanitize_key((string) $_GET['tk_seo_canonical_scanned']) === '1') {
+        tk_notice('Canonical audit completed.', 'success');
+    }
+    if (isset($_GET['tk_seo_canonical_cleared']) && sanitize_key((string) $_GET['tk_seo_canonical_cleared']) === '1') {
+        tk_notice('Canonical audit cleared.', 'success');
+    }
     if (isset($_GET['tk_seo_index_error']) && sanitize_key((string) $_GET['tk_seo_index_error']) === '1') {
         tk_notice('Failed to save indexing item. URL is required.', 'error');
     }
@@ -1018,7 +1198,6 @@ function tk_render_seo_opt_panel() {
         tk_notice('Content SEO audit report cleared.', 'success');
     }
 
-    $sitemap_url = home_url('/' . ltrim($sitemap_path, '/'));
     ?>
     <div class="tk-card">
         <h2>SEO Optimization</h2>
@@ -1031,29 +1210,39 @@ function tk_render_seo_opt_panel() {
             <?php tk_nonce_field('tk_seo_opt_save'); ?>
             <input type="hidden" name="action" value="tk_seo_opt_save">
             <input type="hidden" name="tk_tab" value="seo">
-            <p><label><input type="checkbox" name="seo_enabled" value="1" <?php checked(1, $enabled); ?>> Enable SEO optimization tools</label></p>
-            <hr style="margin:16px 0;">
-            <p><strong>Meta & Markup</strong></p>
-            <p><label><input type="checkbox" name="seo_meta_desc_enabled" value="1" <?php checked(1, $meta_desc); ?>> Auto meta description</label></p>
-            <p><label><input type="checkbox" name="seo_canonical_enabled" value="1" <?php checked(1, $canonical); ?>> Canonical tag for non-singular pages</label></p>
-            <p><label><input type="checkbox" name="seo_og_enabled" value="1" <?php checked(1, $og); ?>> Open Graph tags</label></p>
-            <p><label><input type="checkbox" name="seo_schema_enabled" value="1" <?php checked(1, $schema); ?>> JSON-LD WebSite/WebPage/Article schema</label></p>
-            <hr style="margin:16px 0;">
-            <p><strong>Robots Rules</strong></p>
-            <p><label><input type="checkbox" name="seo_noindex_search" value="1" <?php checked(1, $noindex_search); ?>> Noindex search pages</label></p>
-            <p><label><input type="checkbox" name="seo_noindex_404" value="1" <?php checked(1, $noindex_404); ?>> Noindex 404 pages</label></p>
-            <p><label><input type="checkbox" name="seo_noindex_paged_archives" value="1" <?php checked(1, $noindex_paged); ?>> Noindex paged archives</label></p>
-            <hr style="margin:16px 0;">
-            <p><strong>XML Sitemap</strong></p>
-            <p><label><input type="checkbox" name="seo_sitemap_enabled" value="1" <?php checked(1, $sitemap_enabled); ?>> Enable sitemap endpoint</label></p>
-            <p>
-                <label>Sitemap path</label><br>
-                <input type="text" name="seo_sitemap_path" value="<?php echo esc_attr($sitemap_path); ?>" class="regular-text" placeholder="sitemap.xml">
-                <small>Example URL: <a href="<?php echo esc_url($sitemap_url); ?>" target="_blank" rel="noopener"><?php echo esc_html($sitemap_url); ?></a></small>
-            </p>
-            <p><label><input type="checkbox" name="seo_sitemap_include_taxonomies" value="1" <?php checked(1, $sitemap_tax); ?>> Include public taxonomy archives</label></p>
-            <p><label><input type="checkbox" name="seo_sitemap_include_images" value="1" <?php checked(1, $sitemap_images); ?>> Include featured image in sitemap</label></p>
-            <p><button class="button button-primary">Save Settings</button></p>
+            
+            <div style="margin-bottom:24px;">
+                <?php tk_render_switch('seo_enabled', 'Enable SEO Toolkit', 'Unlock metadata management, redirects, and content auditing.', $enabled); ?>
+            </div>
+
+            <div class="tk-grid tk-grid-2" style="gap:24px;">
+                <div style="background:var(--tk-bg-soft); padding:20px; border-radius:16px; border:1px solid var(--tk-border-soft);">
+                    <h4 style="margin-top:0; color:var(--tk-primary); font-size:14px; margin-bottom:16px;">Meta & Schema Markup</h4>
+                    <div style="display:flex; flex-direction:column; gap:16px;">
+                        <?php 
+                        tk_render_switch('seo_meta_desc_enabled', 'Auto Meta Description', 'Generate meta tags from content excerpts.', $meta_desc);
+                        tk_render_switch('seo_canonical_enabled', 'Canonical Tags', 'Prevent duplicate content issues.', $canonical);
+                        tk_render_switch('seo_og_enabled', 'Open Graph (Social)', 'Enable rich previews for Facebook/Twitter.', $og);
+                        tk_render_switch('seo_schema_enabled', 'JSON-LD Schema', 'Improve search results with structured data.', $schema);
+                        ?>
+                    </div>
+                </div>
+
+                <div style="background:var(--tk-bg-soft); padding:20px; border-radius:16px; border:1px solid var(--tk-border-soft);">
+                    <h4 style="margin-top:0; color:var(--tk-primary); font-size:14px; margin-bottom:16px;">Robots & Indexing Control</h4>
+                    <div style="display:flex; flex-direction:column; gap:16px;">
+                        <?php 
+                        tk_render_switch('seo_noindex_search', 'Noindex Search', 'Prevent search results from being indexed.', $noindex_search);
+                        tk_render_switch('seo_noindex_404', 'Noindex 404 Pages', 'Prevent error pages from appearing in search.', $noindex_404);
+                        tk_render_switch('seo_noindex_paged_archives', 'Noindex Paged Archives', 'Noindex /page/2/ and subsequent pages.', $noindex_paged);
+                        ?>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top:24px; padding-top:20px; border-top:1px solid var(--tk-border-soft);">
+                <button class="button button-primary button-hero">Save SEO Settings</button>
+            </div>
         </form>
     </div>
 
@@ -1127,6 +1316,56 @@ function tk_render_seo_opt_panel() {
                 <?php endforeach; ?>
                 </tbody>
             </table>
+        <?php endif; ?>
+    </div>
+
+    <div class="tk-card" style="margin-top:16px;">
+        <h3>Canonical Conflict Checker</h3>
+        <p>Scan homepage and recent content for missing or duplicate canonical tags.</p>
+        <p>
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-block; margin-right:8px;">
+                <?php tk_nonce_field('tk_seo_canonical_scan'); ?>
+                <input type="hidden" name="action" value="tk_seo_canonical_scan">
+                <button class="button">Run Canonical Audit</button>
+            </form>
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-block;">
+                <?php tk_nonce_field('tk_seo_canonical_clear'); ?>
+                <input type="hidden" name="action" value="tk_seo_canonical_clear">
+                <button class="button">Clear Audit</button>
+            </form>
+        </p>
+        <?php if (!empty($canonical_report)) : ?>
+            <p class="description">
+                Last scan: <?php echo !empty($canonical_report['scanned_at']) ? esc_html(wp_date('Y-m-d H:i:s', (int) $canonical_report['scanned_at'])) : '-'; ?> |
+                Third-party SEO plugin: <?php echo !empty($canonical_report['third_party_detected']) ? 'Detected' : 'Not detected'; ?>
+            </p>
+            <?php $canonical_items = isset($canonical_report['items']) && is_array($canonical_report['items']) ? $canonical_report['items'] : array(); ?>
+            <?php if (!empty($canonical_items)) : ?>
+                <table class="widefat striped">
+                    <thead><tr><th>URL</th><th>Status</th><th>Canonical</th><th>Issue</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($canonical_items as $item) : ?>
+                        <?php $canonicals = isset($item['canonicals']) && is_array($item['canonicals']) ? $item['canonicals'] : array(); ?>
+                        <tr>
+                            <td><a href="<?php echo esc_url((string) ($item['url'] ?? '')); ?>" target="_blank" rel="noopener"><?php echo esc_html((string) ($item['url'] ?? '')); ?></a></td>
+                            <td><?php echo esc_html((string) ((int) ($item['status'] ?? 0))); ?></td>
+                            <td>
+                                <?php if (!empty($canonicals)) : ?>
+                                    <?php foreach ($canonicals as $canonical_url) : ?>
+                                        <code><?php echo esc_html((string) $canonical_url); ?></code><br>
+                                    <?php endforeach; ?>
+                                <?php else : ?>
+                                    -
+                                <?php endif; ?>
+                            </td>
+                            <td><?php echo !empty($item['issue']) ? esc_html((string) $item['issue']) : '<span class="tk-badge tk-on">OK</span>'; ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        <?php else : ?>
+            <p class="description">No canonical audit yet.</p>
         <?php endif; ?>
     </div>
 
@@ -1222,7 +1461,12 @@ function tk_render_seo_opt_panel() {
                             <td><a href="<?php echo esc_url((string) ($item['url'] ?? '')); ?>" target="_blank" rel="noopener"><?php echo esc_html((string) ($item['url'] ?? '')); ?></a></td>
                             <td>
                                 <?php $pid = (int) ($item['post_id'] ?? 0); ?>
-                                <?php if ($pid > 0) : ?>
+                                <?php if (!empty($item['source_url'])) : ?>
+                                    <a href="<?php echo esc_url((string) $item['source_url']); ?>" target="_blank" rel="noopener"><?php echo esc_html((string) ($item['post_title'] ?? 'Post')); ?></a>
+                                    <?php if ($pid > 0) : ?>
+                                        <br><a class="description" href="<?php echo esc_url(get_edit_post_link($pid)); ?>">Edit source</a>
+                                    <?php endif; ?>
+                                <?php elseif ($pid > 0) : ?>
                                     <a href="<?php echo esc_url(get_edit_post_link($pid)); ?>"><?php echo esc_html((string) ($item['post_title'] ?? 'Post')); ?></a>
                                 <?php else : ?>
                                     -
@@ -1344,16 +1588,6 @@ function tk_seo_opt_save() {
     tk_update_option('seo_noindex_search', !empty($_POST['seo_noindex_search']) ? 1 : 0);
     tk_update_option('seo_noindex_404', !empty($_POST['seo_noindex_404']) ? 1 : 0);
     tk_update_option('seo_noindex_paged_archives', !empty($_POST['seo_noindex_paged_archives']) ? 1 : 0);
-
-    $sitemap_path = sanitize_text_field((string) tk_post('seo_sitemap_path', 'sitemap.xml'));
-    $sitemap_path = trim($sitemap_path);
-    if ($sitemap_path === '') {
-        $sitemap_path = 'sitemap.xml';
-    }
-    tk_update_option('seo_sitemap_enabled', !empty($_POST['seo_sitemap_enabled']) ? 1 : 0);
-    tk_update_option('seo_sitemap_path', ltrim($sitemap_path, '/'));
-    tk_update_option('seo_sitemap_include_taxonomies', !empty($_POST['seo_sitemap_include_taxonomies']) ? 1 : 0);
-    tk_update_option('seo_sitemap_include_images', !empty($_POST['seo_sitemap_include_images']) ? 1 : 0);
 
     wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_saved' => 1), admin_url('admin.php')));
     exit;

@@ -346,6 +346,12 @@ function tk_assets_style_loader_tag($tag, $handle, $href, $media) {
     if (!tk_assets_opt_enabled()) {
         return $tag;
     }
+    if ((int) tk_get_option('assets_disable_google_fonts', 0) === 1) {
+        $host = strtolower((string) wp_parse_url((string) $href, PHP_URL_HOST));
+        if ($host === 'fonts.googleapis.com' || $host === 'fonts.gstatic.com') {
+            return '';
+        }
+    }
     $defer = tk_assets_parse_handles((string) tk_get_option('assets_defer_css_handles', ''));
     $preload = tk_assets_parse_handles((string) tk_get_option('assets_preload_css_handles', ''));
     $href = esc_url($href);
@@ -542,7 +548,9 @@ function tk_assets_opt_generate_critical() {
         $css .= "\n" . $block;
     }
 
-    $file_count = 0;
+    $newest_path = '';
+    $newest_time = 0;
+
     foreach ($stylesheet_urls as $url) {
         $path = tk_assets_map_url_to_path($url);
         if ($path === '' || !is_readable($path)) {
@@ -554,17 +562,30 @@ function tk_assets_opt_generate_critical() {
         if (@filesize($path) > 1024 * 1024) {
             continue;
         }
-        $contents = @file_get_contents($path);
-        if (!is_string($contents) || $contents === '') {
-            continue;
+        
+        $mtime = @filemtime($path);
+        if ($mtime > $newest_time) {
+            $newest_time = $mtime;
+            $newest_path = $path;
         }
-        $file_count++;
-        $css .= "\n" . $contents;
+    }
+
+    $file_count = 0;
+    if ($newest_path !== '') {
+        $contents = @file_get_contents($newest_path);
+        if (is_string($contents) && $contents !== '') {
+            $file_count = 1;
+            $css .= "\n" . $contents;
+        }
     }
 
     $css = preg_replace('!/\*.*?\*/!s', '', (string) $css);
     $css = trim($css);
-    $max_bytes = 25000;
+
+    // Smart filtering: only keep CSS rules that match classes/IDs/tags in the HTML
+    $css = tk_assets_filter_critical_css($css, $html);
+    
+    $max_bytes = 30000;
     if (strlen($css) > $max_bytes) {
         $css = substr($css, 0, $max_bytes);
     }
@@ -579,6 +600,140 @@ function tk_assets_opt_generate_critical() {
         'tk_critical_files' => $file_count,
     ), admin_url('admin.php')));
     exit;
+}
+
+/**
+ * Filter CSS to only include rules that might match the given HTML.
+ */
+function tk_assets_filter_critical_css(string $css, string $html): string {
+    if ($css === '' || $html === '') {
+        return '';
+    }
+
+    // 1. Extract used classes, IDs, and tags from HTML
+    $used = array();
+    
+    // Always keep these global/base selectors
+    $always_keep = array('html', 'body', '*', ':root', '::before', '::after', '::placeholder', 'input', 'button', 'select', 'textarea');
+    foreach ($always_keep as $k) {
+        $used[$k] = true;
+    }
+
+    // Classes
+    if (preg_match_all('/class=["\']([^"\']+)["\']/i', $html, $m)) {
+        foreach ($m[1] as $c_str) {
+            foreach (explode(' ', $c_str) as $class) {
+                $class = trim($class);
+                if ($class !== '') {
+                    $used['.' . $class] = true;
+                }
+            }
+        }
+    }
+    
+    // IDs
+    if (preg_match_all('/id=["\']([^"\']+)["\']/i', $html, $m)) {
+        foreach ($m[1] as $id) {
+            $id = trim($id);
+            if ($id !== '') {
+                $used['#' . $id] = true;
+            }
+        }
+    }
+    
+    // Tags
+    if (preg_match_all('/<([a-z1-6]+)\b/i', $html, $m)) {
+        foreach ($m[1] as $tag) {
+            $used[strtolower($tag)] = true;
+        }
+    }
+
+    // 2. Process CSS Blocks
+    $filtered = '';
+    $blocks = array();
+    $current = '';
+    $depth = 0;
+    $len = strlen($css);
+
+    for ($i = 0; $i < $len; $i++) {
+        $char = $css[$i];
+        $current .= $char;
+        if ($char === '{') {
+            $depth++;
+        } elseif ($char === '}') {
+            $depth--;
+            if ($depth === 0) {
+                $blocks[] = trim($current);
+                $current = '';
+            }
+        }
+    }
+
+    foreach ($blocks as $block) {
+        if (strpos($block, '@') === 0) {
+            // Font-face and Animations are usually important
+            if (stripos($block, '@font-face') === 0 || stripos($block, '@keyframes') === 0) {
+                $filtered .= $block . "\n";
+                continue;
+            }
+
+            // Recursively filter @media content
+            if (stripos($block, '@media') === 0) {
+                if (preg_match('/^(@media[^{]+)\{(.*)\}$/is', $block, $m)) {
+                    $header = trim($m[1]);
+                    $content = trim($m[2]);
+                    $inner = tk_assets_filter_critical_css($content, $html);
+                    if ($inner !== '') {
+                        $filtered .= $header . "{\n" . $inner . "}\n";
+                    }
+                }
+                continue;
+            }
+            continue;
+        }
+
+        // Standard Rule Set
+        if (preg_match('/^([^{]+)\{(.*)\}$/is', $block, $m)) {
+            $selector_str = trim($m[1]);
+            $rules = trim($m[2]);
+            $selectors = explode(',', $selector_str);
+            $keep_block = false;
+
+            foreach ($selectors as $sel) {
+                $sel = trim($sel);
+                if ($sel === '') {
+                    continue;
+                }
+
+                if (isset($used[$sel])) {
+                    $keep_block = true;
+                    break;
+                }
+
+                // Check complex selectors by splitting into basic parts
+                $parts = preg_split('/[\s>+~:]+/', $sel);
+                foreach ($parts as $p) {
+                    $p = trim($p);
+                    if ($p === '') {
+                        continue;
+                    }
+                    // Clean pseudo-classes and attributes for matching
+                    $p = preg_replace('/\[.*?\]/', '', $p);
+                    $p = preg_replace('/::?.*$/', '', $p);
+                    if ($p !== '' && isset($used[$p])) {
+                        $keep_block = true;
+                        break 2;
+                    }
+                }
+            }
+
+            if ($keep_block) {
+                $filtered .= $selector_str . "{" . $rules . "}\n";
+            }
+        }
+    }
+
+    return $filtered;
 }
 
 function tk_assets_normalize_path($path) {
@@ -736,6 +891,7 @@ function tk_render_assets_panel() {
     $preload_css = (string) tk_get_option('assets_preload_css_handles', '');
     $preload_fonts = (string) tk_get_option('assets_preload_fonts', '');
     $font_swap = (int) tk_get_option('assets_font_display_swap', 1);
+    $disable_google_fonts = (int) tk_get_option('assets_disable_google_fonts', 0);
     $dimensions = (int) tk_get_option('assets_dimensions_enabled', 1);
     $js_delay_enabled = (int) tk_get_option('assets_js_delay_enabled', 0);
     $js_delay_handles = (string) tk_get_option('assets_js_delay_handles', '');
@@ -776,7 +932,7 @@ function tk_render_assets_panel() {
             </p>
             <p>
                 <button class="button" form="tk-assets-critical-form" type="submit">Generate Critical CSS (Homepage)</button>
-                <small>Collects CSS from the homepage head and theme stylesheets (limit 25KB).</small>
+                <small>Collects inline CSS from head and the newest loaded theme stylesheet (limit 25KB).</small>
             </p>
             <p>
                 <label>Defer CSS handles (comma/space separated)</label><br>
@@ -799,6 +955,13 @@ function tk_render_assets_panel() {
                     <input type="checkbox" name="assets_font_display_swap" value="1" <?php checked(1, $font_swap); ?>>
                     Force font-display: swap for Google/Bunny Fonts
                 </label>
+            </p>
+            <p>
+                <label>
+                    <input type="checkbox" name="assets_disable_google_fonts" value="1" <?php checked(1, $disable_google_fonts); ?>>
+                    Disable Google Fonts stylesheets
+                </label>
+                <br><small class="description">Use only when your theme has local/system font fallback configured.</small>
             </p>
             <p>
                 <label>
@@ -853,6 +1016,7 @@ function tk_assets_opt_save() {
     tk_update_option('assets_preload_css_handles', sanitize_text_field((string) tk_post('assets_preload_css_handles', '')));
     tk_update_option('assets_preload_fonts', (string) tk_post('assets_preload_fonts', ''));
     tk_update_option('assets_font_display_swap', !empty($_POST['assets_font_display_swap']) ? 1 : 0);
+    tk_update_option('assets_disable_google_fonts', !empty($_POST['assets_disable_google_fonts']) ? 1 : 0);
     tk_update_option('assets_dimensions_enabled', !empty($_POST['assets_dimensions_enabled']) ? 1 : 0);
     tk_update_option('assets_lcp_bg_preload_enabled', !empty($_POST['assets_lcp_bg_preload_enabled']) ? 1 : 0);
     tk_update_option('assets_preconnect_auto_enabled', !empty($_POST['assets_preconnect_auto_enabled']) ? 1 : 0);

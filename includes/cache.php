@@ -4,6 +4,7 @@ if (!defined('ABSPATH')) { exit; }
 function tk_cache_init() {
     add_action('admin_post_tk_cache_save', 'tk_cache_save');
     add_action('admin_post_tk_cache_purge', 'tk_cache_purge');
+    add_action('admin_post_tk_cache_preload', 'tk_cache_preload');
     add_action('admin_post_tk_cache_object_flush', 'tk_cache_object_flush');
     add_action('admin_post_tk_cache_opcache_reset', 'tk_cache_opcache_reset');
     add_action('admin_post_tk_fragment_cache_flush', 'tk_fragment_cache_flush');
@@ -207,8 +208,98 @@ function tk_cache_save() {
     tk_update_option('page_cache_enabled', !empty($_POST['page_cache_enabled']) ? 1 : 0);
     tk_update_option('page_cache_ttl', max(0, (int) tk_post('page_cache_ttl', 3600)));
     tk_update_option('page_cache_exclude_paths', (string) tk_post('page_cache_exclude_paths', "/wp-login.php\n/wp-admin\n"));
+    tk_update_option('page_cache_preload_urls', (string) tk_post('page_cache_preload_urls', ''));
 
     wp_redirect(admin_url('admin.php?page=tool-kits-cache&tk_updated=1'));
+    exit;
+}
+
+function tk_cache_preload_urls(): array {
+    $urls = array(home_url('/'));
+
+    $post_types = get_post_types(array('public' => true), 'names');
+    unset($post_types['attachment']);
+    if (!empty($post_types)) {
+        $ids = get_posts(array(
+            'post_type' => array_values($post_types),
+            'post_status' => 'publish',
+            'numberposts' => 20,
+            'fields' => 'ids',
+            'orderby' => 'modified',
+            'order' => 'DESC',
+        ));
+        foreach ($ids as $post_id) {
+            $url = get_permalink((int) $post_id);
+            if (is_string($url) && $url !== '') {
+                $urls[] = $url;
+            }
+        }
+    }
+
+    $custom = (string) tk_get_option('page_cache_preload_urls', '');
+    foreach (preg_split('/\r\n|\r|\n/', $custom) ?: array() as $line) {
+        $line = trim((string) $line);
+        if ($line === '') {
+            continue;
+        }
+        if (!preg_match('#^https?://#i', $line)) {
+            $line = home_url('/' . ltrim($line, '/'));
+        }
+        $urls[] = $line;
+    }
+
+    $home_host = (string) wp_parse_url(home_url('/'), PHP_URL_HOST);
+    $filtered = array();
+    foreach ($urls as $url) {
+        $url = esc_url_raw((string) $url);
+        $host = (string) wp_parse_url($url, PHP_URL_HOST);
+        if ($url === '' || ($home_host !== '' && $host !== '' && strcasecmp($home_host, $host) !== 0)) {
+            continue;
+        }
+        $filtered[$url] = true;
+    }
+
+    return array_slice(array_keys($filtered), 0, 50);
+}
+
+function tk_cache_preload() {
+    if (!tk_is_admin_user()) {
+        wp_die('Forbidden');
+    }
+    tk_check_nonce('tk_cache_preload');
+
+    if (!tk_get_option('page_cache_enabled', 0)) {
+        set_transient('tk_cache_preload_notice', 'Page cache is disabled. Enable it before preloading.', 30);
+        wp_redirect(admin_url('admin.php?page=tool-kits-cache&tk_preload=fail#page'));
+        exit;
+    }
+
+    $urls = tk_cache_preload_urls();
+    $ok = 0;
+    $failed = 0;
+    foreach ($urls as $url) {
+        $response = wp_remote_get($url, array(
+            'timeout' => 8,
+            'redirection' => 3,
+            'sslverify' => false,
+            'headers' => array(
+                'User-Agent' => 'Tool Kits Cache Preloader',
+            ),
+        ));
+        if (is_wp_error($response)) {
+            $failed++;
+            continue;
+        }
+        $code = (int) wp_remote_retrieve_response_code($response);
+        if ($code >= 200 && $code < 400) {
+            $ok++;
+        } else {
+            $failed++;
+        }
+    }
+
+    set_transient('tk_cache_preload_notice', 'Preload completed. Warmed ' . $ok . ' URL(s), failed ' . $failed . '.', 30);
+    wp_redirect(admin_url('admin.php?page=tool-kits-cache&tk_preload=ok#page'));
     exit;
 }
 
@@ -413,10 +504,16 @@ function tk_render_cache_page() {
     $object = isset($_GET['tk_object']) ? sanitize_key($_GET['tk_object']) : '';
     $opcache = isset($_GET['tk_opcache']) ? sanitize_key($_GET['tk_opcache']) : '';
     $fragment = isset($_GET['tk_fragment']) ? sanitize_key($_GET['tk_fragment']) : '';
+    $preload = isset($_GET['tk_preload']) ? sanitize_key($_GET['tk_preload']) : '';
+    $preload_notice = get_transient('tk_cache_preload_notice');
+    if ($preload_notice !== false) {
+        delete_transient('tk_cache_preload_notice');
+    }
     $page_stats = tk_page_cache_stats();
     ?>
     <div class="wrap tk-wrap">
-        <h1>Cache</h1>
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero(__('Performance Cache', 'tool-kits'), __('Boost your site speed with advanced page, object, and opcode caching.', 'tool-kits'), 'dashicons-performance'); ?>
         <?php if ($updated === '1') : ?>
             <?php tk_notice('Cache settings saved.', 'success'); ?>
         <?php endif; ?>
@@ -436,6 +533,9 @@ function tk_render_cache_page() {
         <?php if ($fragment === 'ok') : ?>
             <?php tk_notice('Fragment cache cleared.', 'success'); ?>
         <?php endif; ?>
+        <?php if ($preload !== '' && is_string($preload_notice) && $preload_notice !== '') : ?>
+            <?php tk_notice($preload_notice, $preload === 'ok' ? 'success' : 'warning'); ?>
+        <?php endif; ?>
 
         <div class="tk-tabs">
             <div class="tk-tabs-nav">
@@ -451,33 +551,51 @@ function tk_render_cache_page() {
                     <?php tk_cache_render_status_rows(); ?>
                 </div>
                 <div class="tk-card tk-tab-panel" data-panel-id="page">
-                    <h2>Page Cache (HTML statis)</h2>
-                    <p><strong>Current cache size:</strong> <?php echo esc_html(tk_page_cache_summary_text($page_stats)); ?></p>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                        <div>
+                            <h2 style="margin:0;">Page Cache</h2>
+                            <p class="description">Static HTML caching for near-instant page loads.</p>
+                        </div>
+                        <div style="text-align:right;">
+                            <span class="tk-badge tk-on" style="font-size:12px; padding:6px 12px;"><?php echo esc_html(tk_page_cache_summary_text($page_stats)); ?></span>
+                        </div>
+                    </div>
+
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php tk_nonce_field('tk_cache_save'); ?>
                         <input type="hidden" name="action" value="tk_cache_save">
-                        <p>
-                            <label>
-                                <input type="checkbox" name="page_cache_enabled" value="1" <?php checked(1, tk_get_option('page_cache_enabled', 0)); ?>>
-                                Enable page cache for anonymous visitors
-                            </label>
-                        </p>
-                        <p>
-                            <label>TTL (seconds)</label><br>
-                            <input type="number" name="page_cache_ttl" value="<?php echo esc_attr((string) tk_get_option('page_cache_ttl', 3600)); ?>" min="0">
-                            <small>Use 0 for no expiry.</small>
-                        </p>
-                        <p>
-                            <label>Exclude paths (one per line)</label><br>
-                            <textarea name="page_cache_exclude_paths" rows="4" class="large-text"><?php echo esc_textarea((string) tk_get_option('page_cache_exclude_paths', "/wp-login.php\n/wp-admin\n")); ?></textarea>
-                        </p>
-                        <p><button class="button button-primary">Save</button></p>
+                        
+                        <div style="display:flex; flex-direction:column; gap:20px;">
+                            <?php tk_render_switch('page_cache_enabled', 'Enable Page Caching', 'Serve pre-rendered HTML files to anonymous visitors.', tk_get_option('page_cache_enabled', 0)); ?>
+                            
+                            <div class="tk-control-row">
+                                <div class="tk-control-info">
+                                    <label>Cache TTL (Seconds)</label>
+                                    <p class="description">How long to keep static files before regenerating. 3600 = 1 hour.</p>
+                                </div>
+                                <input type="number" name="page_cache_ttl" value="<?php echo esc_attr((string) tk_get_option('page_cache_ttl', 3600)); ?>" min="0" style="width:120px;">
+                            </div>
+
+                            <div style="padding:20px; background:var(--tk-bg-soft); border-radius:12px; border:1px solid var(--tk-border-soft);">
+                                <label style="display:block; font-weight:600; margin-bottom:8px;">Exclude Paths</label>
+                                <textarea name="page_cache_exclude_paths" rows="3" class="large-text" style="width:100%; border-radius:8px;"><?php echo esc_textarea((string) tk_get_option('page_cache_exclude_paths', "/wp-login.php\n/wp-admin\n")); ?></textarea>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:24px; padding-top:20px; border-top:1px solid var(--tk-border-soft); display:flex; gap:10px;">
+                            <button class="button button-primary button-hero">Save Cache Settings</button>
+                        </div>
                     </form>
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:12px;">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-block; margin-top:12px; margin-right:8px;">
                         <?php tk_nonce_field('tk_cache_purge'); ?>
                         <input type="hidden" name="action" value="tk_cache_purge">
                         <input type="hidden" name="redirect_to" value="<?php echo esc_url(tk_admin_url('tool-kits-cache') . '#page'); ?>">
                         <button class="button button-secondary">Purge page cache</button>
+                    </form>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-block; margin-top:12px;">
+                        <?php tk_nonce_field('tk_cache_preload'); ?>
+                        <input type="hidden" name="action" value="tk_cache_preload">
+                        <button class="button button-secondary">Preload critical pages</button>
                     </form>
                 </div>
                 <div class="tk-card tk-tab-panel" data-panel-id="object">
