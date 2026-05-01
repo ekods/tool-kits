@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) { exit; }
     $heartbeat_action = '
     <div style="background:rgba(255,255,255,0.1); padding:8px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.2); backdrop-filter: blur(10px);">
         <form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="margin:0;">
-            ' . wp_nonce_field('tk_heartbeat_manual', '_wpnonce', true, false) . '
+            ' . wp_nonce_field('tk_heartbeat_manual', '_tk_nonce', true, false) . '
             <input type="hidden" name="action" value="tk_heartbeat_manual">
             <button class="button" style="background:#fff; color:var(--tk-primary); border:none; padding:6px 16px; font-weight:600; border-radius:6px; cursor:pointer;">' . __('Send Heartbeat Now', 'tool-kits') . '</button>
         </form>
@@ -66,19 +66,19 @@ if (!defined('ABSPATH')) { exit; }
 
     <div class="tk-tabs" id="tk-monitoring-tabs">
         <div class="tk-tabs-nav">
-            <button type="button" class="tk-tabs-nav-button is-active" data-panel="overview"><?php _e('Security Overview', 'tool-kits'); ?></button>
+            <button type="button" class="tk-tabs-nav-button is-active" data-panel="realtime"><?php _e('Realtime', 'tool-kits'); ?></button>
+            <button type="button" class="tk-tabs-nav-button" data-panel="overview"><?php _e('Security Overview', 'tool-kits'); ?></button>
             <button type="button" class="tk-tabs-nav-button" data-panel="checks"><?php _e('Checks', 'tool-kits'); ?></button>
             <button type="button" class="tk-tabs-nav-button" data-panel="actions"><?php _e('Actions', 'tool-kits'); ?></button>
             <button type="button" class="tk-tabs-nav-button" data-panel="server"><?php _e('Server', 'tool-kits'); ?></button>
             <button type="button" class="tk-tabs-nav-button" data-panel="filesystem"><?php _e('Filesystem', 'tool-kits'); ?></button>
-            <button type="button" class="tk-tabs-nav-button" data-panel="realtime"><?php _e('Realtime', 'tool-kits'); ?></button>
             <button type="button" class="tk-tabs-nav-button" data-panel="missing"><?php _e('404 Monitor', 'tool-kits'); ?></button>
             <button type="button" class="tk-tabs-nav-button" data-panel="health"><?php _e('Healthcheck', 'tool-kits'); ?></button>
             <button type="button" class="tk-tabs-nav-button" data-panel="integrity"><?php _e('Integrity', 'tool-kits'); ?></button>
         </div>
         <div class="tk-tabs-content" id="tk-monitoring-tabs-content">
             <!-- Panel: Overview -->
-            <div class="tk-card tk-tab-panel is-active" data-panel-id="overview">
+            <div class="tk-card tk-tab-panel" data-panel-id="overview">
                 <div class="tk-grid tk-grid-3" style="gap:24px;">
                     <div class="tk-card" style="text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:30px 20px;">
                         <?php 
@@ -343,7 +343,7 @@ if (!defined('ABSPATH')) { exit; }
             </div>
 
             <!-- Panel: Realtime -->
-            <div class="tk-card tk-tab-panel" data-panel-id="realtime">
+            <div class="tk-card tk-tab-panel is-active" data-panel-id="realtime">
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
                     <h2 style="margin:0;"><?php _e('Health Monitor Real-Time', 'tool-kits'); ?></h2>
                     <div id="tk-rt-pulse" class="tk-pulse" title="Live Heartbeat"></div>
@@ -380,50 +380,87 @@ if (!defined('ABSPATH')) { exit; }
                     </div>
                 </div>
                 
-                <div class="tk-card" style="margin-top:20px; border-radius:12px;">
-                    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
-                        <h3 style="display:flex; align-items:center; gap:8px; margin:0;">
-                            <span class="dashicons dashicons-chart-line"></span>
-                            <?php _e('CPU Load History (Live)', 'tool-kits'); ?>
-                        </h3>
-                        <div style="display:flex; align-items:center; gap:16px; font-size:12px; flex-wrap:wrap;">
-                            <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:#27ae60;"></span><?php _e('Normal (&lt; 2.0)', 'tool-kits'); ?></span>
-                            <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:#f39c12;"></span><?php _e('Moderate (2–4)', 'tool-kits'); ?></span>
-                            <span style="display:flex;align-items:center;gap:5px;"><span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:#e74c3c;"></span><?php _e('High (&gt; 4.0)', 'tool-kits'); ?></span>
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:22px; margin-top:20px;">
+                    <div class="tk-card" style="border-radius:14px; padding:28px;">
+                        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:26px;">
+                            <h3 style="margin:0; font-size:22px; display:flex; align-items:center; gap:8px;"><?php _e('CPU', 'tool-kits'); ?> <span class="dashicons dashicons-info-outline" title="<?php esc_attr_e('CPU percentage is shown only when CPU capacity can be detected.', 'tool-kits'); ?>"></span></h3>
+                            <div style="display:flex; gap:18px; align-items:flex-start;">
+                                <div>
+                                    <div id="tk-rt-cpu-avg" style="font-size:24px; font-weight:800; color:#6d4aff;">-</div>
+                                    <div style="font-size:13px; color:var(--tk-muted);"><?php _e('Rata-rata', 'tool-kits'); ?></div>
+                                </div>
+                                <div style="width:1px; height:44px; background:var(--tk-border-soft);"></div>
+                                <div>
+                                    <div id="tk-rt-cpu-limit" style="font-size:24px; font-weight:800;">-</div>
+                                    <div style="font-size:13px; color:var(--tk-muted);"><?php _e('Tersedia', 'tool-kits'); ?></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:14px;">
+                            <div style="display:flex; flex-direction:column; justify-content:space-between; align-items:flex-end; font-size:12px; color:var(--tk-muted); width:50px; padding-bottom:20px;">
+                                <span id="tk-rt-cpu-chart-max">100%</span>
+                                <span id="tk-rt-cpu-chart-mid">50%</span>
+                                <span id="tk-rt-cpu-chart-zero">0%</span>
+                            </div>
+                            <div style="flex:1; min-width:0;">
+                                <div style="height:210px; position:relative;">
+                                    <div id="tk-rt-cpu-limit-line" style="position:absolute; left:0; right:0; top:0; border-top:1px dashed #ef4444;"></div>
+                                    <div style="position:absolute; left:0; right:0; top:50%; border-top:1px solid var(--tk-border-soft);"></div>
+                                    <div style="position:absolute; left:0; right:0; bottom:0; border-top:1px solid var(--tk-border-soft);"></div>
+                                    <svg id="tk-rt-cpu-chart" width="100%" height="100%" preserveAspectRatio="none" style="position:relative; z-index:1; overflow:hidden;">
+                                        <polyline id="tk-rt-cpu-line" fill="none" stroke="#6d4aff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points=""></polyline>
+                                    </svg>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--tk-muted); margin-top:8px;">
+                                    <span id="tk-rt-cpu-x-old">&mdash;</span>
+                                    <span id="tk-rt-cpu-x-now">&mdash;</span>
+                                </div>
+                                <div style="display:flex; align-items:center; justify-content:center; gap:28px; margin-top:22px; font-weight:700;">
+                                    <span style="display:flex; align-items:center; gap:8px;"><span style="display:inline-block;width:18px;height:2px;background:#6d4aff;"></span><?php _e('Penggunaan', 'tool-kits'); ?></span>
+                                    <span id="tk-rt-cpu-limit-legend" style="display:flex; align-items:center; gap:8px;"><span style="display:inline-block;width:18px;height:0;border-top:1px dashed #ef4444;"></span><?php _e('Limit', 'tool-kits'); ?></span>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div style="display:flex; gap:10px; align-items:stretch;">
-                        <!-- Y-Axis Labels -->
-                        <div id="tk-rt-cpu-yaxis" style="display:flex; flex-direction:column; justify-content:space-between; align-items:flex-end; font-size:10px; line-height:1; color:var(--tk-muted); width:34px; flex-shrink:0; padding:2px 0 22px;">
-                            <span id="tk-rt-cpu-y-max">4.0</span>
-                            <span id="tk-rt-cpu-y-mid">2.0</span>
-                            <span id="tk-rt-cpu-y-zero">0.0</span>
-                        </div>
-                        <!-- Chart Area -->
-                        <div style="flex:1; min-width:0; position:relative;">
-                            <div style="height:150px; width:100%; position:relative; overflow:hidden; border-bottom:1px solid var(--tk-border-soft); border-left:1px solid var(--tk-border-soft);">
-                                <!-- Zone bands -->
-                                <div id="tk-rt-cpu-zone-red" style="position:absolute; bottom:0; left:0; right:0; background:rgba(231,76,60,0.06); border-top:1px dashed rgba(231,76,60,0.3);"></div>
-                                <div id="tk-rt-cpu-zone-yellow" style="position:absolute; bottom:0; left:0; right:0; background:rgba(243,156,18,0.06); border-top:1px dashed rgba(243,156,18,0.3);"></div>
-                                <div id="tk-rt-cpu-zone-green" style="position:absolute; bottom:0; left:0; right:0; background:rgba(39,174,96,0.06);"></div>
-                                <svg id="tk-rt-cpu-chart" width="100%" height="100%" preserveAspectRatio="none" style="overflow:hidden; position:relative; z-index:1;">
-                                    <defs>
-                                        <linearGradient id="tk-cpu-area-grad" x1="0" y1="0" x2="0" y2="1">
-                                            <stop id="tk-cpu-grad-top" offset="0%" stop-color="#3498db" stop-opacity="0.25"/>
-                                            <stop offset="100%" stop-color="#3498db" stop-opacity="0.02"/>
-                                        </linearGradient>
-                                    </defs>
-                                    <polygon id="tk-rt-cpu-area" fill="url(#tk-cpu-area-grad)" points=""></polygon>
-                                    <polyline id="tk-rt-cpu-line" fill="none" stroke="#27ae60" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points=""></polyline>
-                                </svg>
-                                <!-- CSS dot overlay: not inside SVG to avoid aspect ratio distortion -->
-                                <div id="tk-rt-cpu-dot" style="position:absolute; width:10px; height:10px; border-radius:50%; background:#27ae60; border:2px solid #fff; transform:translate(-50%,-50%); pointer-events:none; z-index:2; transition:left 0.4s ease, top 0.4s ease, background 0.4s ease; left:-20px; top:-20px;"></div>
+
+                    <div class="tk-card" style="border-radius:14px; padding:28px;">
+                        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:26px;">
+                            <h3 style="margin:0; font-size:22px; display:flex; align-items:center; gap:8px;"><?php _e('Memori', 'tool-kits'); ?> <span class="dashicons dashicons-info-outline" title="<?php esc_attr_e('Memory limit follows the PHP memory_limit value available to WordPress.', 'tool-kits'); ?>"></span></h3>
+                            <div style="display:flex; gap:18px; align-items:flex-start;">
+                                <div>
+                                    <div id="tk-rt-mem-avg" style="font-size:24px; font-weight:800; color:#6d4aff;">-</div>
+                                    <div style="font-size:13px; color:var(--tk-muted);"><?php _e('Rata-rata', 'tool-kits'); ?></div>
+                                </div>
+                                <div style="width:1px; height:44px; background:var(--tk-border-soft);"></div>
+                                <div>
+                                    <div id="tk-rt-mem-limit" style="font-size:24px; font-weight:800;">-</div>
+                                    <div style="font-size:13px; color:var(--tk-muted);"><?php _e('Tersedia', 'tool-kits'); ?></div>
+                                </div>
                             </div>
-                            <!-- X-Axis time labels -->
-                            <div style="display:flex; justify-content:space-between; gap:8px; font-size:10px; line-height:1.2; color:var(--tk-muted); margin-top:6px; padding:0 2px;">
-                                <span id="tk-rt-cpu-x-old">&mdash;</span>
-                                <span id="tk-rt-cpu-x-mid">&mdash;</span>
-                                <span id="tk-rt-cpu-x-now">&mdash;</span>
+                        </div>
+                        <div style="display:flex; gap:14px;">
+                            <div style="display:flex; flex-direction:column; justify-content:space-between; align-items:flex-end; font-size:12px; color:var(--tk-muted); width:62px; padding-bottom:20px;">
+                                <span id="tk-rt-mem-chart-max">-</span>
+                                <span id="tk-rt-mem-chart-mid">-</span>
+                                <span id="tk-rt-mem-chart-zero">0 MB</span>
+                            </div>
+                            <div style="flex:1; min-width:0;">
+                                <div style="height:210px; position:relative;">
+                                    <div id="tk-rt-mem-limit-line" style="position:absolute; left:0; right:0; top:0; border-top:1px dashed #ef4444;"></div>
+                                    <div style="position:absolute; left:0; right:0; top:50%; border-top:1px solid var(--tk-border-soft);"></div>
+                                    <div style="position:absolute; left:0; right:0; bottom:0; border-top:1px solid var(--tk-border-soft);"></div>
+                                    <svg id="tk-rt-mem-chart" width="100%" height="100%" preserveAspectRatio="none" style="position:relative; z-index:1; overflow:hidden;">
+                                        <polyline id="tk-rt-mem-line" fill="none" stroke="#6d4aff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points=""></polyline>
+                                    </svg>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--tk-muted); margin-top:8px;">
+                                    <span id="tk-rt-mem-x-old">&mdash;</span>
+                                    <span id="tk-rt-mem-x-now">&mdash;</span>
+                                </div>
+                                <div style="display:flex; align-items:center; justify-content:center; gap:28px; margin-top:22px; font-weight:700;">
+                                    <span style="display:flex; align-items:center; gap:8px;"><span style="display:inline-block;width:18px;height:2px;background:#6d4aff;"></span><?php _e('Penggunaan', 'tool-kits'); ?></span>
+                                    <span style="display:flex; align-items:center; gap:8px;"><span style="display:inline-block;width:18px;height:0;border-top:1px dashed #ef4444;"></span><?php _e('Limit', 'tool-kits'); ?></span>
+                                </div>
                             </div>
                         </div>
                     </div>

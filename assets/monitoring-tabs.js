@@ -6,8 +6,10 @@
     var intervalId     = null;
     var container      = null;
     var content        = null;
-    var cpuHistory     = [];   // load values
+    var cpuHistory     = [];   // CPU chart values: percent when capacity is known, load otherwise
+    var memHistory     = [];   // memory used in MB
     var cpuTimestamps  = [];   // matching timestamps (ms)
+    var memTimestamps  = [];   // matching timestamps (ms)
     var maxHistoryPoints = 30;
 
     // Fixed slot width across the retained history window.
@@ -73,78 +75,47 @@
         return h + ':' + m + ':' + s;
     }
 
-    function drawCpuChart(cpuColor, maxLoad) {
-        var n = cpuHistory.length;
+    function formatMb(value) {
+        if (!value || value <= 0) return '0 MB';
+        return Math.round(value).toLocaleString() + ' MB';
+    }
+
+    function average(values) {
+        if (!values.length) return 0;
+        var total = 0;
+        values.forEach(function(value){ total += value; });
+        return total / values.length;
+    }
+
+    function drawLineChart(config) {
+        var history = config.history || [];
+        var timestamps = config.timestamps || [];
+        var maxValue = config.maxValue || 100;
+        var n = history.length;
         if (n === 0) return;
 
-        var chartLine = document.getElementById('tk-rt-cpu-line');
-        var chartArea = document.getElementById('tk-rt-cpu-area');
-        if (!chartLine || !chartArea) return;
+        var chartLine = document.getElementById(config.lineId);
+        if (!chartLine) return;
 
-        var svgEl = document.getElementById('tk-rt-cpu-chart');
+        var svgEl = document.getElementById(config.svgId);
         if (svgEl) { svgEl.setAttribute('viewBox', '0 0 100 100'); }
 
         var points = [];
         for (var i = 0; i < n; i++) {
             var px = i * STEP_X;
-            var py = 100 - (cpuHistory[i] / maxLoad) * 100;
+            var py = 100 - (history[i] / maxValue) * 100;
             py = Math.max(0, Math.min(100, py));
             points.push(px.toFixed(3) + ',' + py.toFixed(3));
         }
 
-        var leftX  = 0;
-        var rightX = (n - 1) * STEP_X;
-        var ptsStr = points.join(' ');
+        chartLine.setAttribute('points', points.join(' '));
+        chartLine.setAttribute('stroke', config.color || '#6d4aff');
 
-        chartLine.setAttribute('points', ptsStr);
-        chartLine.setAttribute('stroke', cpuColor);
-
-        // Area polygon: close under the actual drawn data, not the full chart.
-        chartArea.setAttribute('points', ptsStr + ' ' + rightX.toFixed(3) + ',100 ' + leftX.toFixed(3) + ',100');
-
-        // Gradient top color
-        var gradTop = document.getElementById('tk-cpu-grad-top');
-        if (gradTop) { gradTop.setAttribute('stop-color', cpuColor); }
-
-        var dotTopPct = 100 - (cpuHistory[n - 1] / maxLoad) * 100;
-        dotTopPct = Math.max(2, Math.min(98, dotTopPct));
-        var dotLeftPct = Math.max(2, Math.min(98, rightX));
-        var chartDot  = document.getElementById('tk-rt-cpu-dot');
-        if (chartDot) {
-            chartDot.style.left       = dotLeftPct.toFixed(2) + '%';
-            chartDot.style.top        = dotTopPct.toFixed(2) + '%';
-            chartDot.style.background = cpuColor;
-        }
-
-        // Zone bands (% height from bottom)
-        var pctGreenH  = (2 / maxLoad) * 100;
-        var pctYellowH = (4 / maxLoad) * 100;
-        var zG = document.getElementById('tk-rt-cpu-zone-green');
-        var zY = document.getElementById('tk-rt-cpu-zone-yellow');
-        var zR = document.getElementById('tk-rt-cpu-zone-red');
-        pctGreenH = Math.max(0, Math.min(100, pctGreenH));
-        pctYellowH = Math.max(pctGreenH, Math.min(100, pctYellowH));
-        if (zG) { zG.style.height = pctGreenH + '%'; zG.style.bottom = '0'; }
-        if (zY) { zY.style.height = (pctYellowH - pctGreenH) + '%'; zY.style.bottom = pctGreenH + '%'; }
-        if (zR) { zR.style.height = (100 - pctYellowH) + '%'; zR.style.bottom = pctYellowH + '%'; }
-
-        // Y-axis labels
-        var yMax = document.getElementById('tk-rt-cpu-y-max');
-        var yMid = document.getElementById('tk-rt-cpu-y-mid');
-        if (yMax) { yMax.textContent = maxLoad.toFixed(1); }
-        if (yMid) { yMid.textContent = (maxLoad / 2).toFixed(1); }
-
-        // X-axis time labels: oldest / middle / newest
-        var xOld = document.getElementById('tk-rt-cpu-x-old');
-        var xMid = document.getElementById('tk-rt-cpu-x-mid');
-        var xNow = document.getElementById('tk-rt-cpu-x-now');
-        if (cpuTimestamps.length > 0) {
-            if (xOld) { xOld.textContent = formatTime(cpuTimestamps[0]); }
-            if (xMid) {
-                var midIdx = Math.floor((cpuTimestamps.length - 1) / 2);
-                xMid.textContent = formatTime(cpuTimestamps[midIdx]);
-            }
-            if (xNow) { xNow.textContent = formatTime(cpuTimestamps[cpuTimestamps.length - 1]); }
+        if (timestamps.length > 0) {
+            var xOld = document.getElementById(config.xOldId);
+            var xNow = document.getElementById(config.xNowId);
+            if (xOld) { xOld.textContent = formatTime(timestamps[0]); }
+            if (xNow) { xNow.textContent = formatTime(timestamps[timestamps.length - 1]); }
         }
     }
 
@@ -167,8 +138,9 @@
 
         if (pulseEl) {
             pulseEl.style.animation = 'none';
-            void pulseEl.offsetHeight;
-            pulseEl.style.animation = null;
+            requestAnimationFrame(function() {
+                pulseEl.style.animation = '';
+            });
         }
 
         fetch(window.ajaxurl || '/wp-admin/admin-ajax.php', {
@@ -191,28 +163,71 @@
             if (cpuEl) {
                 if (d.load && d.load.length > 0) {
                     var load1m   = d.load[0];
-                    var cpuColor = load1m > 4 ? '#e74c3c' : (load1m > 2 ? '#f39c12' : '#27ae60');
+                    var cpuCores = d.cpu_cores && d.cpu_cores > 0 ? parseInt(d.cpu_cores, 10) : 0;
+                    var hasCpuCapacity = cpuCores > 0;
+                    var capacityLoad = hasCpuCapacity ? Math.max(1, cpuCores) : 0;
+                    var midLoad = hasCpuCapacity ? capacityLoad * 0.5 : 0;
+                    var cpuChartValue = hasCpuCapacity ? Math.min(100, Math.round((load1m / capacityLoad) * 100)) : load1m;
+                    var chartMax = hasCpuCapacity ? 100 : Math.max(4, Math.ceil(load1m));
+                    var cpuColor = hasCpuCapacity
+                        ? (load1m >= capacityLoad ? '#e74c3c' : (load1m >= midLoad ? '#f39c12' : '#27ae60'))
+                        : '#6d4aff';
 
-                    cpuEl.textContent = load1m.toFixed(2);
+                    cpuEl.textContent = hasCpuCapacity ? (load1m.toFixed(2) + ' / ' + capacityLoad.toFixed(1)) : load1m.toFixed(2);
                     cpuEl.style.color = cpuColor;
+                    cpuEl.title = hasCpuCapacity
+                        ? (cpuCores + ' CPU core(s). Load ' + capacityLoad.toFixed(1) + ' is the capacity line.')
+                        : 'CPU core count is not available from this hosting environment.';
 
                     if (cpuBarEl) {
-                        var pct = Math.min(100, Math.round((load1m / 4) * 100));
+                        var barMax = hasCpuCapacity ? capacityLoad : chartMax;
+                        var pct = Math.min(100, Math.round((load1m / barMax) * 100));
                         cpuBarEl.style.width = pct + '%';
-                        cpuBarEl.style.background = load1m > 4 ? '#e74c3c' : (load1m > 2 ? '#f39c12' : 'linear-gradient(90deg, #27ae60, #2ecc71)');
+                        cpuBarEl.style.background = hasCpuCapacity && load1m >= capacityLoad ? '#e74c3c' : (hasCpuCapacity && load1m >= midLoad ? '#f39c12' : 'linear-gradient(90deg, #27ae60, #2ecc71)');
                     }
 
-                    // Push to circular history buffer
-                    cpuHistory.push(load1m);
+                    cpuHistory.push(cpuChartValue);
                     cpuTimestamps.push(Date.now());
                     if (cpuHistory.length > maxHistoryPoints) { cpuHistory.shift(); cpuTimestamps.shift(); }
 
-                    var maxLoad = 4;
-                    for (var hi = 0; hi < cpuHistory.length; hi++) {
-                        if (cpuHistory[hi] > maxLoad) maxLoad = Math.ceil(cpuHistory[hi]);
+                    var cpuAvgEl = document.getElementById('tk-rt-cpu-avg');
+                    var cpuLimitEl = document.getElementById('tk-rt-cpu-limit');
+                    var cpuLimitLine = document.getElementById('tk-rt-cpu-limit-line');
+                    var cpuLimitLegend = document.getElementById('tk-rt-cpu-limit-legend');
+                    var cpuChartMaxEl = document.getElementById('tk-rt-cpu-chart-max');
+                    var cpuChartMidEl = document.getElementById('tk-rt-cpu-chart-mid');
+                    var cpuChartZeroEl = document.getElementById('tk-rt-cpu-chart-zero');
+                    if (hasCpuCapacity) {
+                        if (cpuAvgEl) { cpuAvgEl.textContent = Math.round(average(cpuHistory)) + '%'; }
+                        if (cpuLimitEl) { cpuLimitEl.textContent = '100%'; }
+                        if (cpuLimitLine) { cpuLimitLine.style.display = 'block'; }
+                        if (cpuLimitLegend) { cpuLimitLegend.style.display = 'flex'; }
+                        if (cpuChartMaxEl) { cpuChartMaxEl.textContent = '100%'; }
+                        if (cpuChartMidEl) { cpuChartMidEl.textContent = '50%'; }
+                        if (cpuChartZeroEl) { cpuChartZeroEl.textContent = '0%'; }
+                    } else {
+                        for (var chi = 0; chi < cpuHistory.length; chi++) {
+                            if (cpuHistory[chi] > chartMax) chartMax = Math.ceil(cpuHistory[chi]);
+                        }
+                        if (cpuAvgEl) { cpuAvgEl.textContent = average(cpuHistory).toFixed(2); }
+                        if (cpuLimitEl) { cpuLimitEl.textContent = '-'; }
+                        if (cpuLimitLine) { cpuLimitLine.style.display = 'none'; }
+                        if (cpuLimitLegend) { cpuLimitLegend.style.display = 'none'; }
+                        if (cpuChartMaxEl) { cpuChartMaxEl.textContent = chartMax.toFixed(1); }
+                        if (cpuChartMidEl) { cpuChartMidEl.textContent = (chartMax / 2).toFixed(1); }
+                        if (cpuChartZeroEl) { cpuChartZeroEl.textContent = '0'; }
                     }
 
-                    drawCpuChart(cpuColor, maxLoad);
+                    drawLineChart({
+                        history: cpuHistory,
+                        timestamps: cpuTimestamps,
+                        maxValue: chartMax,
+                        svgId: 'tk-rt-cpu-chart',
+                        lineId: 'tk-rt-cpu-line',
+                        xOldId: 'tk-rt-cpu-x-old',
+                        xNowId: 'tk-rt-cpu-x-now',
+                        color: '#6d4aff'
+                    });
                 } else {
                     cpuEl.textContent = 'N/A';
                     cpuEl.style.color = '#94a3b8';
@@ -226,6 +241,46 @@
             if (memBarEl && d.memory && d.memory.percent !== undefined) {
                 memBarEl.style.width = d.memory.percent + '%';
                 memBarEl.style.background = d.memory.percent > 80 ? '#e74c3c' : (d.memory.percent > 50 ? '#f39c12' : 'linear-gradient(90deg, #1d4ed8, #60a5fa)');
+            }
+            if (d.memory) {
+                var memUsedMb = d.memory.used ? d.memory.used / 1048576 : 0;
+                var memLimitMb = d.memory.limit ? d.memory.limit / 1048576 : 0;
+                var memChartMax = memLimitMb > 0 ? Math.ceil(memLimitMb / 1000) * 1000 : Math.max(128, Math.ceil(memUsedMb / 128) * 128);
+                if (memChartMax <= 0) memChartMax = 128;
+
+                memHistory.push(memUsedMb);
+                memTimestamps.push(Date.now());
+                if (memHistory.length > maxHistoryPoints) { memHistory.shift(); memTimestamps.shift(); }
+                for (var mhi = 0; mhi < memHistory.length; mhi++) {
+                    if (memHistory[mhi] > memChartMax) memChartMax = Math.ceil(memHistory[mhi] / 128) * 128;
+                }
+
+                var memAvgEl = document.getElementById('tk-rt-mem-avg');
+                var memLimitEl = document.getElementById('tk-rt-mem-limit');
+                var memMaxEl = document.getElementById('tk-rt-mem-chart-max');
+                var memMidEl = document.getElementById('tk-rt-mem-chart-mid');
+                var memLimitLine = document.getElementById('tk-rt-mem-limit-line');
+                if (memAvgEl) { memAvgEl.textContent = formatMb(average(memHistory)); }
+                if (memLimitEl) { memLimitEl.textContent = memLimitMb > 0 ? formatMb(memLimitMb) : '-'; }
+                if (memMaxEl) { memMaxEl.textContent = formatMb(memChartMax); }
+                if (memMidEl) { memMidEl.textContent = formatMb(memChartMax / 2); }
+                if (memLimitLine && memLimitMb > 0) {
+                    memLimitLine.style.display = 'block';
+                    memLimitLine.style.top = Math.max(0, Math.min(100, 100 - (memLimitMb / memChartMax * 100))).toFixed(2) + '%';
+                } else if (memLimitLine) {
+                    memLimitLine.style.display = 'none';
+                }
+
+                drawLineChart({
+                    history: memHistory,
+                    timestamps: memTimestamps,
+                    maxValue: memChartMax,
+                    svgId: 'tk-rt-mem-chart',
+                    lineId: 'tk-rt-mem-line',
+                    xOldId: 'tk-rt-mem-x-old',
+                    xNowId: 'tk-rt-mem-x-now',
+                    color: '#6d4aff'
+                });
             }
 
             // ── Error Rate ────────────────────────────────────────────────────

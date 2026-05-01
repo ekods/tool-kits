@@ -199,6 +199,26 @@ function tk_healthcheck_load_average(): ?array {
     return !empty($sanitized) ? $sanitized : null;
 }
 
+function tk_healthcheck_cpu_cores(): ?int {
+    if (function_exists('shell_exec')) {
+        $commands = array(
+            'getconf _NPROCESSORS_ONLN',
+            'nproc',
+            'sysctl -n hw.ncpu',
+        );
+
+        foreach ($commands as $command) {
+            $output = @shell_exec($command . ' 2>/dev/null');
+            $cores = is_string($output) ? (int) trim($output) : 0;
+            if ($cores > 0) {
+                return $cores;
+            }
+        }
+    }
+
+    return null;
+}
+
 function tk_healthcheck_next_cron_timestamp(): ?int {
     $cron = wp_next_scheduled('wp_cron');
     if (!is_numeric($cron) || (int) $cron <= 0) {
@@ -209,6 +229,7 @@ function tk_healthcheck_next_cron_timestamp(): ?int {
 
 function tk_healthcheck_data() {
     $load = tk_healthcheck_load_average();
+    $cpu_cores = tk_healthcheck_cpu_cores();
     $disk = tk_healthcheck_disk_stats();
     $cron = tk_healthcheck_next_cron_timestamp();
     return array(
@@ -221,6 +242,7 @@ function tk_healthcheck_data() {
         'server' => array(
             'php' => PHP_VERSION,
             'load' => $load,
+            'cpu_cores' => $cpu_cores,
             'disk_free' => isset($disk['free']) ? $disk['free'] : null,
             'disk_total' => isset($disk['total']) ? $disk['total'] : null,
         ),
@@ -276,6 +298,7 @@ function tk_realtime_health_ajax() {
 
 function tk_realtime_health_data(): array {
     $load = tk_healthcheck_load_average();
+    $cpu_cores = tk_healthcheck_cpu_cores();
     $memory_used = function_exists('memory_get_usage') ? (int) memory_get_usage(true) : 0;
     $memory_peak = function_exists('memory_get_peak_usage') ? (int) memory_get_peak_usage(true) : 0;
     $memory_limit = tk_parse_size(ini_get('memory_limit'));
@@ -295,6 +318,7 @@ function tk_realtime_health_data(): array {
     return array(
         'time' => time(),
         'load' => $load,
+        'cpu_cores' => $cpu_cores,
         'memory' => array(
             'used' => $memory_used,
             'peak' => $memory_peak,

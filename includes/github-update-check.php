@@ -128,12 +128,19 @@ function tk_github_fetch_latest_release() {
         return new WP_Error('tk_github_repo_missing', 'GitHub repository constant is not defined.');
     }
 
+    $headers = array(
+        'User-Agent' => 'Tool Kits Updater',
+        'Accept'     => 'application/vnd.github+json',
+    );
+
+    $token = tk_github_auth_token();
+    if ($token !== '') {
+        $headers['Authorization'] = 'Bearer ' . $token;
+    }
+
     $args = array(
         'timeout' => 20,
-        'headers' => array(
-            'User-Agent' => 'Tool Kits Updater',
-            'Accept'     => 'application/vnd.github+json',
-        ),
+        'headers' => $headers,
     );
 
     $url = 'https://api.github.com/repos/' . TK_GITHUB_REPO . '/releases/latest';
@@ -203,6 +210,14 @@ function tk_github_fetch_latest_release() {
     set_transient($cache_key, $release, HOUR_IN_SECONDS);
 
     return $release;
+}
+
+function tk_github_auth_token(): string {
+    if (defined('TK_GITHUB_TOKEN')) {
+        return trim((string) TK_GITHUB_TOKEN);
+    }
+
+    return '';
 }
 
 function tk_github_normalize_version($tag) {
@@ -276,22 +291,17 @@ function tk_github_response_body_excerpt($body): string {
 function tk_github_download_package(string $package) {
     $host = parse_url($package, PHP_URL_HOST);
     $host = is_string($host) ? strtolower($host) : '';
-    $allowed_hosts = array('github.com', 'api.github.com', 'release-assets.githubusercontent.com');
+    $allowed_hosts = array('github.com', 'release-assets.githubusercontent.com');
 
     if ($package === '' || !in_array($host, $allowed_hosts, true)) {
         return new WP_Error('tk_github_invalid_package_url', 'Invalid GitHub update package URL.');
     }
 
-    $download_url = tk_github_asset_api_url_for_package($package);
     $headers = array(
         'User-Agent' => 'Tool Kits Updater',
     );
 
-    if ($download_url !== '') {
-        $headers['Accept'] = 'application/octet-stream';
-    } else {
-        $download_url = $package;
-    }
+    $download_url = $package;
 
     $tmp_file = wp_tempnam('tool-kits.zip');
     if (!$tmp_file) {

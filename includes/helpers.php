@@ -667,95 +667,98 @@ function tk_tamper_maybe_alert(): void {
 
 function tk_hardening_active_items(): array {
     $items = array();
+    $base_url = tk_admin_url(tk_hardening_page_slug());
+
     if (tk_get_option('hardening_disable_file_editor', 1)) {
-        $items[] = 'File editor disabled';
+        $items[] = array('label' => 'File editor disabled', 'link' => $base_url . '#section-file_editor');
     }
     if (tk_get_option('hardening_disable_xmlrpc', 1)) {
-        $items[] = 'XML-RPC disabled';
+        $items[] = array('label' => 'XML-RPC disabled', 'link' => $base_url . '#section-xmlrpc');
     }
     if (tk_get_option('hardening_xmlrpc_block_methods', 1)) {
-        $items[] = 'XML-RPC dangerous methods blocked';
+        $items[] = array('label' => 'XML-RPC dangerous methods blocked', 'link' => $base_url . '#section-xmlrpc_block_methods');
     }
     if (tk_get_option('hardening_xmlrpc_rate_limit_enabled', 0)) {
-        $items[] = 'XML-RPC rate limit';
+        $items[] = array('label' => 'XML-RPC rate limit', 'link' => $base_url . '#section-xmlrpc_rate_limit_enabled');
     }
     if (tk_get_option('hardening_disable_rest_user_enum', 1)) {
-        $items[] = 'REST user enumeration disabled';
+        $items[] = array('label' => 'REST user enumeration disabled', 'link' => $base_url . '#section-rest_user_enum');
     }
     if (tk_get_option('hardening_disable_comments', 0)) {
-        $items[] = 'Comments disabled';
+        $items[] = array('label' => 'Comments disabled', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_server_aware_enabled', 1)) {
-        $items[] = 'Server-aware rules';
+        $items[] = array('label' => 'Server-aware rules', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_auto_toggle', 1)) {
-        $items[] = 'Auto hardening';
+        $items[] = array('label' => 'Auto hardening', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_security_headers', 1)) {
-        $items[] = 'Security headers';
+        $items[] = array('label' => 'Security headers', 'link' => $base_url . '#section-headers');
     }
     if (tk_get_option('hardening_csp_lite_enabled', 0)) {
-        $items[] = 'CSP lite';
+        $items[] = array('label' => 'CSP lite', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_csp_balanced_enabled', 0)) {
-        $items[] = 'CSP balanced';
+        $items[] = array('label' => 'CSP balanced', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_csp_hardened_enabled', 0)) {
-        $items[] = 'CSP hardened';
+        $items[] = array('label' => 'CSP hardened', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_csp_strict_enabled', 0)) {
-        $items[] = 'CSP strict';
+        $items[] = array('label' => 'CSP strict', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_hsts_enabled', 0)) {
-        $items[] = tk_get_option('hardening_hsts_preload', 0) ? 'HSTS preload' : 'HSTS';
+        $label = tk_get_option('hardening_hsts_preload', 0) ? 'HSTS preload' : 'HSTS';
+        $items[] = array('label' => $label, 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_server_signature_hide', 1)) {
-        $items[] = 'Server signature hidden';
+        $items[] = array('label' => 'Server signature hidden', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_cookie_httponly_force', 0)) {
-        $items[] = 'Cookie HttpOnly forced';
+        $items[] = array('label' => 'Cookie HttpOnly forced', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_disable_wp_cron', 0)) {
-        $items[] = 'WP-Cron disabled';
+        $items[] = array('label' => 'WP-Cron disabled', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_url_param_guard_enabled', 0)) {
-        $items[] = 'URL parameter guard';
+        $items[] = array('label' => 'URL parameter guard', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_http_methods_filter_enabled', 0)) {
-        $items[] = 'HTTP methods filter';
+        $items[] = array('label' => 'HTTP methods filter', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_block_dangerous_methods_enabled', 1)) {
-        $items[] = 'Dangerous HTTP methods blocked';
+        $items[] = array('label' => 'Dangerous HTTP methods blocked', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_robots_txt_hardened', 0)) {
-        $items[] = 'Robots.txt hardened';
+        $items[] = array('label' => 'Robots.txt hardened', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_block_unwanted_files_enabled', 1)) {
-        $items[] = 'Unwanted file block';
+        $items[] = array('label' => 'Unwanted file block', 'link' => $base_url . '#section-block_unwanted_files');
     }
     if (tk_get_option('hardening_block_uploads_php', 1)) {
-        $items[] = 'Block uploads PHP';
+        $items[] = array('label' => 'Block uploads PHP', 'link' => $base_url . '#section-block_uploads_php');
     }
     if (tk_get_option('hardening_block_plugin_installs', 1)) {
-        $items[] = 'Block plugin installs (non-admin)';
+        $items[] = array('label' => 'Block plugin installs (non-admin)', 'link' => $base_url . '#section-block_plugin_installs');
     }
     if (tk_get_option('hardening_disable_pingbacks', 1)) {
-        $items[] = 'XML-RPC pingbacks disabled';
+        $items[] = array('label' => 'XML-RPC pingbacks disabled', 'link' => $base_url . '#section-pingbacks');
     }
     if (tk_get_option('hardening_hide_wp_version', 1)) {
-        $items[] = 'Hide WP version';
+        $items[] = array('label' => 'Hide WP version', 'link' => $base_url . '#section-hide_wp_version');
     }
     if (tk_get_option('hardening_clean_wp_head', 0)) {
-        $items[] = 'Clean WP head';
+        $items[] = array('label' => 'Clean WP head', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_waf_enabled', 0)) {
-        $items[] = 'WAF enabled';
+        $items[] = array('label' => 'WAF enabled', 'link' => $base_url . '#section-waf_enabled');
     }
     if (tk_get_option('hardening_httpauth_enabled', 0)) {
-        $items[] = 'HTTP Basic Auth';
+        $items[] = array('label' => 'HTTP Basic Auth', 'link' => $base_url . '#section-httpauth_enabled');
     }
     if (tk_get_option('hardening_cors_custom_origins_enabled', 0)) {
-        $items[] = 'Custom CORS origins';
+        $items[] = array('label' => 'Custom CORS origins', 'link' => $base_url . '#cors');
     }
     return $items;
 }
@@ -804,6 +807,7 @@ function tk_option_init_defaults() {
         'antispam_rate_limit_window_minutes' => 15,
         'antispam_rate_limit_max_attempts' => 2,
         'antispam_log' => array(),
+        'hardening_browser_cache_enabled' => 1,
         // Rate limit
         'rate_limit_enabled' => 0,
         'rate_limit_window_minutes' => 10,
@@ -2270,7 +2274,7 @@ function tk_get_template($template_name, $args = array()) {
  */
 function tk_render_switch($name, $label, $description, $checked, $confirm = '') {
     ?>
-    <div class="tk-control-row">
+    <div class="tk-control-row" id="section-<?php echo esc_attr($name); ?>">
         <div class="tk-control-info">
             <label for="tk-sw-<?php echo esc_attr($name); ?>"><?php echo esc_html($label); ?></label>
             <p class="description"><?php echo esc_html($description); ?></p>

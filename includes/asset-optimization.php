@@ -13,6 +13,8 @@ function tk_assets_opt_init() {
     add_action('wp_head', 'tk_assets_preload_fonts', 4);
     add_action('wp_footer', 'tk_assets_delay_js_bootstrap', 99);
     add_action('template_redirect', 'tk_assets_start_perf_buffer', 2);
+    add_action('wp_enqueue_scripts', 'tk_assets_cleanup_bloat', 99);
+    add_action('wp_footer', 'tk_assets_instant_page', 99);
 }
 
 function tk_assets_opt_enabled(): bool {
@@ -299,32 +301,82 @@ function tk_assets_delay_js_bootstrap() {
     if (empty($targets)) {
         return;
     }
-    $script = <<<'JS'
-(function(){
-        var nodes = Array.prototype.slice.call(document.querySelectorAll('script[data-tk-assets-delay="1"]'));
-        if (!nodes.length) { return; }
-        var done = false;
-        function activate() {
-            if (done) { return; }
-            done = true;
-            nodes.forEach(function(node){
-                var src = node.getAttribute('data-tk-assets-src');
-                if (!src) { return; }
-                var s = document.createElement('script');
-                s.src = src;
-                s.defer = true;
-                s.setAttribute('data-tk-assets-loaded', '1');
-                document.head.appendChild(s);
+    $script = "(function(){
+        var delayEvents = ['keydown', 'mousedown', 'mousemove', 'touchmove', 'touchstart', 'touchend', 'scroll'];
+        var triggered = false;
+        function trigger() {
+            if (triggered) return;
+            triggered = true;
+            delayEvents.forEach(function(e){ window.removeEventListener(e, trigger); });
+            document.querySelectorAll('script[data-tk-assets-delay]').forEach(function(s){
+                var n = document.createElement('script');
+                n.async = true;
+                if (s.src) n.src = s.src;
+                if (s.getAttribute('data-tk-assets-src')) n.src = s.getAttribute('data-tk-assets-src');
+                if (s.textContent) n.textContent = s.textContent;
+                document.head.appendChild(n);
+                s.parentNode.removeChild(s);
             });
         }
-        ['scroll','mousemove','keydown','touchstart','click'].forEach(function(evt){
-            window.addEventListener(evt, activate, { once: true, passive: true });
-        });
-        setTimeout(activate, 3000);
-        window.addEventListener('load', activate, { once: true });
-    })();
-JS;
+        delayEvents.forEach(function(e){ window.addEventListener(e, trigger, {passive:true}); });
+    })();";
     tk_csp_print_inline_script($script, array('id' => 'tk-assets-delay-js'));
+}
+
+function tk_assets_cleanup_bloat() {
+    if (!tk_assets_opt_enabled()) return;
+
+    if ((int) tk_get_option('assets_disable_emojis', 0) === 1) {
+        remove_action('wp_head', 'print_emoji_detection_script', 7);
+        remove_action('admin_print_scripts', 'print_emoji_detection_script');
+        remove_action('wp_print_styles', 'print_emoji_styles');
+        remove_action('admin_print_styles', 'print_emoji_styles');
+        remove_filter('the_content_feed', 'wp_staticize_emoji');
+        remove_filter('comment_text_rss', 'wp_staticize_emoji');
+        remove_filter('wp_mail', 'wp_staticize_emoji_for_email');
+    }
+
+    if ((int) tk_get_option('assets_disable_dashicons', 0) === 1 && !is_user_logged_in()) {
+        wp_deregister_style('dashicons');
+    }
+
+    if ((int) tk_get_option('assets_disable_embeds', 0) === 1) {
+        wp_deregister_script('wp-embed');
+    }
+}
+
+function tk_assets_instant_page() {
+    if (!tk_assets_opt_enabled()) return;
+    if ((int) tk_get_option('assets_instant_page_enabled', 0) !== 1) return;
+    $script = "(function(){
+        var preload = function(url) {
+            if (!url) return;
+            var l = document.createElement('link');
+            l.rel = 'prefetch';
+            l.href = url;
+            document.head.appendChild(l);
+        };
+        var handled = new Set();
+        var observer = new IntersectionObserver(function(entries){
+            entries.forEach(function(entry){
+                if (entry.isIntersecting) {
+                    var a = entry.target;
+                    var url = a.href;
+                    if (url && !handled.has(url) && url.origin === window.location.origin) {
+                        handled.add(url);
+                        preload(url);
+                    }
+                    observer.unobserve(a);
+                }
+            });
+        });
+        document.querySelectorAll('a').forEach(function(a){
+            if (a.hostname === window.location.hostname && !a.hash && !a.href.includes('wp-login') && !a.href.includes('wp-admin')) {
+                observer.observe(a);
+            }
+        });
+    })();";
+    tk_csp_print_inline_script($script, array('id' => 'tk-assets-instant-page'));
 }
 
 function tk_assets_render_critical_css() {
@@ -982,16 +1034,30 @@ function tk_render_assets_panel() {
                 </label>
             </p>
             <hr style="margin:16px 0;">
+            <p><strong>Bloat Removal & Instant Page</strong></p>
             <p>
                 <label>
-                    <input type="checkbox" name="assets_js_delay_enabled" value="1" <?php checked(1, $js_delay_enabled); ?>>
-                    Delay non-critical JS (safe mode, by handle list)
+                    <input type="checkbox" name="assets_disable_emojis" value="1" <?php checked(1, (int) tk_get_option('assets_disable_emojis', 0)); ?>>
+                    Disable WordPress Emojis (saves ~10KB and 1 JS execution)
                 </label>
             </p>
             <p>
-                <label>Delay JS handles (comma/space separated)</label><br>
-                <input type="text" name="assets_js_delay_handles" value="<?php echo esc_attr($js_delay_handles); ?>" class="large-text" placeholder="e.g. contact-form-7, recaptcha, analytics-js">
-                <small>Core handles like jquery/wp-element are auto-protected and will not be delayed.</small>
+                <label>
+                    <input type="checkbox" name="assets_disable_dashicons" value="1" <?php checked(1, (int) tk_get_option('assets_disable_dashicons', 0)); ?>>
+                    Disable Dashicons on Frontend (saves ~30KB, only for logged-out users)
+                </label>
+            </p>
+            <p>
+                <label>
+                    <input type="checkbox" name="assets_disable_embeds" value="1" <?php checked(1, (int) tk_get_option('assets_disable_embeds', 0)); ?>>
+                    Disable WP Embed JS (legacy embeds support)
+                </label>
+            </p>
+            <p>
+                <label>
+                    <input type="checkbox" name="assets_instant_page_enabled" value="1" <?php checked(1, (int) tk_get_option('assets_instant_page_enabled', 0)); ?>>
+                    Enable Instant Page (Preload links when they enter viewport)
+                </label>
             </p>
             <p class="description">Auto mode: CLS Guard and LCP Boost are always enabled on frontend output.</p>
             <p><button class="button button-primary">Save Settings</button></p>
@@ -1022,6 +1088,10 @@ function tk_assets_opt_save() {
     tk_update_option('assets_preconnect_auto_enabled', !empty($_POST['assets_preconnect_auto_enabled']) ? 1 : 0);
     tk_update_option('assets_js_delay_enabled', !empty($_POST['assets_js_delay_enabled']) ? 1 : 0);
     tk_update_option('assets_js_delay_handles', sanitize_text_field((string) tk_post('assets_js_delay_handles', '')));
+    tk_update_option('assets_disable_emojis', !empty($_POST['assets_disable_emojis']) ? 1 : 0);
+    tk_update_option('assets_disable_dashicons', !empty($_POST['assets_disable_dashicons']) ? 1 : 0);
+    tk_update_option('assets_disable_embeds', !empty($_POST['assets_disable_embeds']) ? 1 : 0);
+    tk_update_option('assets_instant_page_enabled', !empty($_POST['assets_instant_page_enabled']) ? 1 : 0);
     tk_update_option('assets_cls_guard_enabled', 1);
     tk_update_option('assets_lcp_boost_enabled', 1);
     wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'assets', 'tk_saved' => 1), admin_url('admin.php')));

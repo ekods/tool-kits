@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) { exit; }
             <p class="tk-overview-hero-subtitle"><?php _e('Your ultimate suite for WordPress security, optimization, and real-time monitoring.', 'tool-kits'); ?></p>
             
             <div class="tk-overview-hero-actions">
-                <a href="<?php echo esc_url(tk_admin_url('tool-kits-monitoring')); ?>" class="button button-primary button-hero">
+                <a href="<?php echo esc_url(tk_admin_url('tool-kits-monitoring') . '#realtime'); ?>" class="button button-primary button-hero">
                     <?php _e('View Live Monitor', 'tool-kits'); ?>
                 </a>
                 <a href="<?php echo esc_url(tk_admin_url(tk_hardening_page_slug())); ?>" class="button button-hero" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff;">
@@ -167,11 +167,13 @@ if (!defined('ABSPATH')) { exit; }
                     $labels = isset($score_data['labels']) ? $score_data['labels'] : array();
                     $active = isset($score_data['active_rules']) ? $score_data['active_rules'] : array();
                     $all_rules = isset($score_data['all_rules']) ? $score_data['all_rules'] : array();
+                    $links = isset($score_data['links']) ? $score_data['links'] : array();
                     foreach ($all_rules as $key => $weight) : 
                         $is_active = in_array($key, $active);
                         $label = isset($labels[$key]) ? $labels[$key] : $key;
+                        $link = isset($links[$key]) ? $links[$key] : '#';
                     ?>
-                        <div class="tk-stat-row" style="border-bottom: 1px solid #f1f5f9; padding: 8px 0; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                        <a href="<?php echo esc_url($link); ?>" class="tk-stat-row" style="border-bottom: 1px solid #f1f5f9; padding: 8px 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; text-decoration: none; transition: all 0.2s ease;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='transparent';">
                             <span style="font-size: 12px; color: <?php echo $is_active ? '#1e293b' : '#94a3b8'; ?>; display: flex; align-items: center;">
                                 <?php if ($is_active) : ?>
                                     <span class="dashicons dashicons-yes" style="color: #22c55e; font-size: 16px; width: 16px; height: 16px; margin-right: 5px;"></span>
@@ -183,7 +185,7 @@ if (!defined('ABSPATH')) { exit; }
                             <span style="font-size: 10px; font-weight: 700; color: <?php echo $is_active ? '#22c55e' : '#cbd5e1'; ?>;">
                                 <?php echo $is_active ? '+' . $weight . '%' : '0%'; ?>
                             </span>
-                        </div>
+                        </a>
                     <?php endforeach; ?>
                 </div>
             </div>

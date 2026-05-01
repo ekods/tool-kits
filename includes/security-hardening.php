@@ -887,6 +887,12 @@ function tk_hardening_http_auth(): void {
     if (function_exists('wp_doing_cron') && wp_doing_cron()) {
         return;
     }
+    if (function_exists('wp_doing_ajax') && wp_doing_ajax()) {
+        return;
+    }
+    if (defined('REST_REQUEST') && REST_REQUEST) {
+        return;
+    }
 
     $server_aware = tk_get_option('hardening_server_aware_enabled', 1) ? true : false;
     $user = (string) tk_get_option('hardening_httpauth_user', '');
@@ -1033,17 +1039,33 @@ function tk_hardening_server_rules(): array {
 
 function tk_hardening_server_rule_snippet(): string {
     $server = tk_hardening_detect_server();
+    $browser_cache = (int) tk_get_option('hardening_browser_cache_enabled', 1) === 1;
+
     if ($server === 'apache' || $server === 'litespeed' || $server === 'openlitespeed') {
-        return "<IfModule mod_autoindex.c>\n  Options -Indexes\n</IfModule>\n<FilesMatch \"^\\.env|debug\\.log$\">\n  Require all denied\n</FilesMatch>\n<IfModule mod_rewrite.c>\n  RewriteEngine On\n  RewriteRule ^wp-content/uploads/.*\\.php$ - [F]\n</IfModule>";
+        $out = "<IfModule mod_autoindex.c>\n  Options -Indexes\n</IfModule>\n<FilesMatch \"^\\.env|debug\\.log$\">\n  Require all denied\n</FilesMatch>\n<IfModule mod_rewrite.c>\n  RewriteEngine On\n  RewriteRule ^wp-content/uploads/.*\\.php$ - [F]\n</IfModule>";
+        if ($browser_cache) {
+            $out .= "\n<IfModule mod_expires.c>\n  ExpiresActive On\n  ExpiresDefault \"access plus 1 month\"\n  ExpiresByType image/jpg \"access plus 1 year\"\n  ExpiresByType image/jpeg \"access plus 1 year\"\n  ExpiresByType image/gif \"access plus 1 year\"\n  ExpiresByType image/png \"access plus 1 year\"\n  ExpiresByType image/webp \"access plus 1 year\"\n  ExpiresByType image/x-icon \"access plus 1 year\"\n  ExpiresByType image/svg+xml \"access plus 1 year\"\n  ExpiresByType text/css \"access plus 1 year\"\n  ExpiresByType application/javascript \"access plus 1 year\"\n  ExpiresByType application/x-javascript \"access plus 1 year\"\n  ExpiresByType font/woff2 \"access plus 1 year\"\n  ExpiresByType font/woff \"access plus 1 year\"\n  ExpiresByType font/ttf \"access plus 1 year\"\n  ExpiresByType font/otf \"access plus 1 year\"\n</IfModule>\n<IfModule mod_headers.c>\n  <FilesMatch \"\\.(ico|pdf|jpg|jpeg|png|gif|webp|svg|js|css|woff2|woff|ttf|otf)$\">\n    Header set Cache-Control \"max-age=31536000, public\"\n  </FilesMatch>\n</IfModule>";
+        }
+        return $out;
     }
     if ($server === 'nginx') {
-        return "autoindex off;\nlocation = /.env { deny all; }\nlocation = /wp-content/debug.log { deny all; }\nlocation ~* ^/wp-content/uploads/.*\\.php$ { deny all; }\nfastcgi_param HTTP_AUTHORIZATION $http_authorization;";
+        $out = "autoindex off;\nlocation = /.env { deny all; }\nlocation = /wp-content/debug.log { deny all; }\nlocation ~* ^/wp-content/uploads/.*\\.php$ { deny all; }\nfastcgi_param HTTP_AUTHORIZATION \$http_authorization;";
+        if ($browser_cache) {
+            $out .= "\nlocation ~* \\.(jpg|jpeg|gif|png|webp|svg|woff|woff2|ttf|css|js|ico|pdf|zip|gz|mp4|m4v|ogg|ogv|webm)$ {\n  expires 1y;\n  add_header Cache-Control \"public, no-transform\";\n}";
+        }
+        return $out;
     }
     if ($server === 'caddy') {
-        return "file_server {\n  browse off\n}\n@blocked path /.env /wp-content/debug.log\nrespond @blocked 403\n@uploadsPhp path_regexp uploadsPhp ^/wp-content/uploads/.*\\.php$\nrespond @uploadsPhp 403";
+        $out = "file_server {\n  browse off\n}\n@blocked path /.env /wp-content/debug.log\nrespond @blocked 403\n@uploadsPhp path_regexp uploadsPhp ^/wp-content/uploads/.*\\.php$\nrespond @uploadsPhp 403";
+        return $out;
     }
     if ($server === 'iis') {
-        return "<system.webServer>\n  <directoryBrowse enabled=\"false\" />\n  <security>\n    <requestFiltering>\n      <fileExtensions>\n        <add fileExtension=\".env\" allowed=\"false\" />\n        <add fileExtension=\".log\" allowed=\"false\" />\n        <add fileExtension=\".php\" allowed=\"false\" />\n      </fileExtensions>\n    </requestFiltering>\n  </security>\n</system.webServer>";
+        $out = "<system.webServer>\n  <directoryBrowse enabled=\"false\" />\n  <security>\n    <requestFiltering>\n      <fileExtensions>\n        <add fileExtension=\".env\" allowed=\"false\" />\n        <add fileExtension=\".log\" allowed=\"false\" />\n        <add fileExtension=\".php\" allowed=\"false\" />\n      </fileExtensions>\n    </requestFiltering>\n  </security>";
+        if ($browser_cache) {
+            $out .= "\n  <staticContent>\n    <clientCache cacheControlMode=\"UseMaxAge\" cacheControlMaxAge=\"365.00:00:00\" />\n  </staticContent>";
+        }
+        $out .= "\n</system.webServer>";
+        return $out;
     }
     return '';
 }
@@ -1055,32 +1077,16 @@ function tk_hardening_apply_root_server_rules(): void {
     }
 
     $path = rtrim(ABSPATH, '/') . '/.htaccess';
-    $marker = '# Tool Kits: root hardening';
-    $snippet = $marker . "\n" . tk_hardening_server_rule_snippet() . "\n";
-    if (trim($snippet) === $marker) {
-        return;
-    }
+    $snippet = tk_hardening_server_rule_snippet();
+    $lines = explode("\n", $snippet);
 
-    if (file_exists($path)) {
-        if (!is_writable($path)) {
-            return;
-        }
-        $contents = @file_get_contents($path);
-        if (!is_string($contents)) {
-            return;
-        }
-        if (strpos($contents, $marker) !== false) {
-            return;
-        }
-        @file_put_contents($path, rtrim($contents, "\r\n") . "\n\n" . $snippet);
-        return;
+    if (!function_exists('insert_with_markers')) {
+        require_once ABSPATH . 'wp-admin/includes/file.php';
     }
-
-    $dir = dirname($path);
-    if (!is_dir($dir) || !is_writable($dir)) {
-        return;
+    
+    if (function_exists('insert_with_markers')) {
+        insert_with_markers($path, 'Tool Kits Root', $lines);
     }
-    @file_put_contents($path, $snippet);
 }
 
 function tk_hardening_server_rule_status(): array {
@@ -1100,7 +1106,16 @@ function tk_hardening_server_rule_status(): array {
         $has_env = preg_match('/\.env/i', $contents) === 1;
         $has_debug = preg_match('/debug\.log/i', $contents) === 1;
         $has_uploads = preg_match('/wp-content\/uploads\/.*\.php/i', $contents) === 1;
-        if ($has_indexes && $has_env && $has_debug && $has_uploads) {
+        
+        $browser_cache_enabled = (int) tk_get_option('hardening_browser_cache_enabled', 1) === 1;
+        $has_cache = preg_match('/mod_expires\.c/i', $contents) === 1 || preg_match('/expires\s+1y/i', $contents) === 1;
+        
+        $ok = $has_indexes && $has_env && $has_debug && $has_uploads;
+        if ($browser_cache_enabled) {
+            $ok = $ok && $has_cache;
+        }
+
+        if ($ok) {
             return array('status' => 'ok', 'detail' => 'Server rules detected in .htaccess.');
         }
         return array('status' => 'warn', 'detail' => 'Server rules not fully detected in .htaccess.');
@@ -2082,28 +2097,29 @@ function tk_disable_file_editor_caps($allcaps, $caps, $args, $user) {
 }
 
 function tk_hardening_calculate_score() {
-    $opts = tk_get_options();
     $rules = array(
-        'hardening_disable_file_editor' => 10,
-        'hardening_disable_rest_user_enum' => 8,
-        'hardening_disable_pingbacks' => 5,
-        'hardening_hide_wp_version' => 5,
-        'hardening_block_uploads_php' => 15,
-        'hardening_block_unwanted_files_enabled' => 7,
-        'hardening_block_plugin_installs' => 10,
-        'hardening_security_headers' => 10,
-        'hardening_waf_enabled' => 15,
-        'hardening_disable_xmlrpc' => 10,
-        'hardening_httpauth_enabled' => 5,
+        'hardening_disable_file_editor' => array('weight' => 10, 'default' => 1),
+        'hardening_disable_rest_user_enum' => array('weight' => 8, 'default' => 1),
+        'hardening_disable_pingbacks' => array('weight' => 5, 'default' => 1),
+        'hardening_hide_wp_version' => array('weight' => 5, 'default' => 1),
+        'hardening_block_uploads_php' => array('weight' => 15, 'default' => 1),
+        'hardening_block_unwanted_files_enabled' => array('weight' => 7, 'default' => 1),
+        'hardening_block_plugin_installs' => array('weight' => 10, 'default' => 1),
+        'hardening_security_headers' => array('weight' => 10, 'default' => 1),
+        'hardening_waf_enabled' => array('weight' => 15, 'default' => 0),
+        'hardening_disable_xmlrpc' => array('weight' => 10, 'default' => 1),
+        'hardening_browser_cache_enabled' => array('weight' => 10, 'default' => 1),
+        'hardening_httpauth_enabled' => array('weight' => 5, 'default' => 0),
     );
     
     $score = 0;
-    $total_possible = array_sum($rules);
-    $active_rules = array();
+    $total_possible = 0;
+    foreach ($rules as $rule) { $total_possible += $rule['weight']; }
     
-    foreach ($rules as $opt_key => $weight) {
-        if (!empty($opts[$opt_key])) {
-            $score += $weight;
+    $active_rules = array();
+    foreach ($rules as $opt_key => $data) {
+        if (tk_get_option($opt_key, $data['default'])) {
+            $score += $data['weight'];
             $active_rules[] = $opt_key;
         }
     }
@@ -2122,7 +2138,23 @@ function tk_hardening_calculate_score() {
         'hardening_security_headers' => __('Security Headers', 'tool-kits'),
         'hardening_waf_enabled' => __('Web Application Firewall', 'tool-kits'),
         'hardening_disable_xmlrpc' => __('XML-RPC Protection', 'tool-kits'),
+        'hardening_browser_cache_enabled' => __('Browser Caching Rules', 'tool-kits'),
         'hardening_httpauth_enabled' => __('HTTP Authentication', 'tool-kits'),
+    );
+
+    $base_url = tk_admin_url(tk_hardening_page_slug());
+    $links = array(
+        'hardening_disable_file_editor' => $base_url . '#section-file_editor',
+        'hardening_disable_rest_user_enum' => $base_url . '#section-rest_user_enum',
+        'hardening_disable_pingbacks' => $base_url . '#section-pingbacks',
+        'hardening_hide_wp_version' => $base_url . '#section-hide_wp_version',
+        'hardening_block_uploads_php' => $base_url . '#section-block_uploads_php',
+        'hardening_block_unwanted_files_enabled' => $base_url . '#section-block_unwanted_files',
+        'hardening_block_plugin_installs' => $base_url . '#section-block_plugin_installs',
+        'hardening_security_headers' => $base_url . '#section-headers',
+        'hardening_waf_enabled' => $base_url . '#section-waf_enabled',
+        'hardening_disable_xmlrpc' => $base_url . '#section-xmlrpc',
+        'hardening_httpauth_enabled' => $base_url . '#section-httpauth_enabled',
     );
 
     return array(
@@ -2130,25 +2162,27 @@ function tk_hardening_calculate_score() {
         'active_count' => count($active_rules),
         'total_count' => count($rules),
         'active_rules' => $active_rules,
-        'all_rules' => $rules,
-        'labels' => $labels
+        'all_rules' => array_map(function($r){ return $r['weight']; }, $rules),
+        'labels' => $labels,
+        'links' => $links
     );
 }
 
 function tk_hardening_get_recommendations() {
-    $opts = tk_get_options();
+    $base_url = tk_admin_url(tk_hardening_page_slug());
     $rules = array(
-        'hardening_disable_file_editor' => array('weight' => 10, 'label' => 'Disable File Editor'),
-        'hardening_disable_rest_user_enum' => array('weight' => 8, 'label' => 'Block REST User Enum'),
-        'hardening_disable_pingbacks' => array('weight' => 5, 'label' => 'Disable XML-RPC Pingbacks'),
-        'hardening_hide_wp_version' => array('weight' => 5, 'label' => 'Hide WP Version'),
-        'hardening_block_uploads_php' => array('weight' => 15, 'label' => 'Block PHP in Uploads'),
-        'hardening_block_unwanted_files_enabled' => array('weight' => 7, 'label' => 'Block Direct System Files'),
-        'hardening_block_plugin_installs' => array('weight' => 10, 'label' => 'Block Plugin Installs'),
-        'hardening_security_headers' => array('weight' => 10, 'label' => 'Enable Security Headers'),
-        'hardening_waf_enabled' => array('weight' => 15, 'label' => 'Enable Web App Firewall'),
-        'hardening_disable_xmlrpc' => array('weight' => 10, 'label' => 'Disable XML-RPC'),
-        'hardening_httpauth_enabled' => array('weight' => 5, 'label' => 'Enable HTTP Auth'),
+        'hardening_disable_file_editor' => array('weight' => 10, 'default' => 1, 'label' => 'Disable File Editor', 'link' => $base_url . '#section-file_editor'),
+        'hardening_disable_rest_user_enum' => array('weight' => 8, 'default' => 1, 'label' => 'Block REST User Enumeration', 'link' => $base_url . '#section-rest_user_enum'),
+        'hardening_disable_pingbacks' => array('weight' => 5, 'default' => 1, 'label' => 'Disable Pingbacks', 'link' => $base_url . '#section-pingbacks'),
+        'hardening_hide_wp_version' => array('weight' => 5, 'default' => 1, 'label' => 'Hide WP Version', 'link' => $base_url . '#section-hide_wp_version'),
+        'hardening_block_uploads_php' => array('weight' => 15, 'default' => 1, 'label' => 'Block PHP in Uploads', 'link' => $base_url . '#section-block_uploads_php'),
+        'hardening_block_unwanted_files_enabled' => array('weight' => 7, 'default' => 1, 'label' => 'Block System Files', 'link' => $base_url . '#section-block_unwanted_files'),
+        'hardening_block_plugin_installs' => array('weight' => 10, 'default' => 1, 'label' => 'Block Plugin Installations', 'link' => $base_url . '#section-block_plugin_installs'),
+        'hardening_security_headers' => array('weight' => 10, 'default' => 1, 'label' => 'Enable Security Headers', 'link' => $base_url . '#section-headers'),
+        'hardening_waf_enabled' => array('weight' => 15, 'default' => 0, 'label' => 'Enable WAF', 'link' => $base_url . '#section-waf_enabled'),
+        'hardening_disable_xmlrpc' => array('weight' => 10, 'default' => 1, 'label' => 'Disable XML-RPC', 'link' => $base_url . '#section-xmlrpc'),
+        'hardening_browser_cache_enabled' => array('weight' => 10, 'default' => 1, 'label' => 'Enable Browser Caching', 'link' => $base_url . '#section-browser_cache'),
+        'hardening_httpauth_enabled' => array('weight' => 5, 'default' => 0, 'label' => 'Enable HTTP Auth', 'link' => $base_url . '#section-httpauth_enabled'),
     );
     
     $total_possible = 0;
@@ -2158,15 +2192,15 @@ function tk_hardening_get_recommendations() {
     
     $recommendations = array();
     foreach ($rules as $opt_key => $data) {
-        if (empty($opts[$opt_key])) {
+        if (!tk_get_option($opt_key, $data['default'])) {
             $recommendations[] = array(
                 'label' => $data['label'],
-                'weight' => round(($data['weight'] / $total_possible) * 100)
+                'weight' => round(($data['weight'] / $total_possible) * 100),
+                'link' => $data['link']
             );
         }
     }
     
-    // Sort by weight descending so the most impactful recommendations are at the top
     usort($recommendations, function($a, $b) {
         return $b['weight'] <=> $a['weight'];
     });
@@ -2240,6 +2274,7 @@ function tk_render_hardening_page() {
         'hardening_mysql_exposure_check_enabled' => tk_get_option('hardening_mysql_exposure_check_enabled', 1),
         'hardening_mysql_allow_public_host' => tk_get_option('hardening_mysql_allow_public_host', 0),
         'hardening_block_plugin_installs' => tk_get_option('hardening_block_plugin_installs', 1),
+        'hardening_browser_cache_enabled' => tk_get_option('hardening_browser_cache_enabled', 1),
         'hardening_hide_wp_version' => tk_get_option('hardening_hide_wp_version', 1),
         'hardening_clean_wp_head' => tk_get_option('hardening_clean_wp_head', 0),
     );
@@ -2291,44 +2326,71 @@ function tk_render_hardening_page() {
                             </div>
                         </div>
                         <h3>Security Hardening Score</h3>
-                        <p class="description">Your score is based on <?php echo count($active_items); ?> active security rules.</p>
+                        <p class="description">
+                            <?php printf(__('Your score is based on %d active security rules.', 'tool-kits'), count($active_items)); ?>
+                            <?php if (empty($recommendations)) : ?>
+                                <span style="color:#27ae60; font-weight:600; margin-left:8px; display:inline-flex; align-items:center; gap:4px;">
+                                    <span class="dashicons dashicons-shield" style="font-size:16px; width:16px; height:16px;"></span>
+                                    <?php _e('All recommended rules are active.', 'tool-kits'); ?>
+                                </span>
+                            <?php endif; ?>
+                        </p>
                     </div>
 
-                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:24px; margin-top:24px;">
-                        <div>
-                            <h3 style="margin-top:0;">Active Protections</h3>
+                    <div class="tk-score-sections" style="margin-top:30px;">
+                        <div class="tk-score-tabs-nav" style="display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid var(--tk-border-soft); padding-bottom:0;">
                             <?php if (!empty($active_items)) : ?>
-                                <div style="display:flex; flex-direction:column; gap:8px; margin-top:16px;">
-                                    <?php foreach ($active_items as $item) : ?>
-                                        <div style="background:rgba(39, 174, 96, 0.05); border:1px solid rgba(39, 174, 96, 0.2); padding:10px 15px; border-radius:8px; display:flex; align-items:center; gap:10px; font-size:13px; color:#27ae60; font-weight:500;">
-                                            <span class="dashicons dashicons-yes-alt" style="font-size:16px; width:16px; height:16px;"></span>
-                                            <?php echo esc_html($item); ?>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            <?php else : ?>
-                                <p class="tk-empty">No hardening rules active.</p>
+                            <button type="button" class="tk-score-tab-btn is-active" data-score-tab="active" style="padding:12px 20px; border:none; background:none; font-weight:600; cursor:pointer; color:var(--tk-primary); border-bottom:2px solid var(--tk-primary); transition:all 0.2s;">
+                                <?php _e('Active Protections', 'tool-kits'); ?> <span style="margin-left:6px; opacity:0.6; font-weight:400; font-size:12px;">(<?php echo count($active_items); ?>)</span>
+                            </button>
+                            <?php endif; ?>
+                            <?php if (!empty($recommendations)) : ?>
+                            <button type="button" class="tk-score-tab-btn <?php echo empty($active_items) ? 'is-active' : ''; ?>" data-score-tab="recommendations" style="padding:12px 20px; border:none; background:none; font-weight:600; cursor:pointer; color:var(--tk-muted); border-bottom:2px solid transparent; transition:all 0.2s;">
+                                <?php _e('Recommendations', 'tool-kits'); ?> <span style="margin-left:6px; opacity:0.6; font-weight:400; font-size:12px;">(<?php echo count($recommendations); ?>)</span>
+                            </button>
                             <?php endif; ?>
                         </div>
-                        
-                        <div>
-                            <h3 style="margin-top:0;">Recommendations</h3>
-                            <?php if (!empty($recommendations)) : ?>
-                                <p class="description">Enable these features to improve your score:</p>
-                                <div style="display:flex; flex-direction:column; gap:8px; margin-top:12px;">
-                                    <?php foreach ($recommendations as $rec) : ?>
-                                        <div style="background:rgba(231, 76, 60, 0.05); border:1px solid rgba(231, 76, 60, 0.2); padding:10px 15px; border-radius:8px; display:flex; align-items:center; gap:10px; font-size:13px; color:#c0392b; font-weight:500;">
-                                            <span class="dashicons dashicons-warning" style="font-size:16px; width:16px; height:16px;"></span>
-                                            <?php echo esc_html($rec['label']); ?>
-                                            <span style="margin-left:auto; font-size:11px; background:rgba(231, 76, 60, 0.1); padding:2px 6px; border-radius:12px;">+<?php echo $rec['weight']; ?>%</span>
-                                        </div>
+
+                        <div class="tk-score-tabs-content">
+                            <?php if (!empty($active_items)) : ?>
+                            <div class="tk-score-tab-panel is-active" data-score-panel="active" style="animation: tk-fade-in 0.3s ease;">
+                                <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:12px;">
+                                    <?php foreach ($active_items as $item) : 
+                                        $link = $item['link'];
+                                        if (strpos($link, '#') !== false) {
+                                            $parts = explode('#', $link);
+                                            $link = '#' . end($parts);
+                                        }
+                                    ?>
+                                        <a href="<?php echo esc_attr($link); ?>" class="tk-score-item-link" style="background:rgba(39, 174, 96, 0.05); border:1px solid rgba(39, 174, 96, 0.2); padding:14px 18px; border-radius:12px; display:flex; align-items:center; gap:12px; font-size:13px; color:#27ae60; font-weight:500; text-decoration:none; transition:all 0.2s ease;">
+                                            <span class="dashicons dashicons-yes-alt" style="font-size:18px; width:18px; height:18px;"></span>
+                                            <?php echo esc_html($item['label']); ?>
+                                            <span class="dashicons dashicons-arrow-right-alt2" style="margin-left:auto; font-size:16px; width:16px; height:16px; opacity:0.5;"></span>
+                                        </a>
                                     <?php endforeach; ?>
                                 </div>
-                            <?php else : ?>
-                                <div style="background:rgba(39, 174, 96, 0.1); border:1px solid rgba(39, 174, 96, 0.3); padding:15px; border-radius:8px; text-align:center; color:#27ae60;">
-                                    <span class="dashicons dashicons-shield" style="font-size:24px; width:24px; height:24px; margin-bottom:8px;"></span>
-                                    <p style="margin:0; font-weight:600;">Excellent! All recommended security rules are active.</p>
+                            </div>
+                            <?php endif; ?>
+
+                            <?php if (!empty($recommendations)) : ?>
+                            <div class="tk-score-tab-panel <?php echo empty($active_items) ? 'is-active' : ''; ?>" data-score-panel="recommendations" style="display:<?php echo !empty($active_items) ? 'none' : 'block'; ?>; animation: tk-fade-in 0.3s ease;">
+                                <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:12px;">
+                                    <?php foreach ($recommendations as $rec) : 
+                                        $link = $rec['link'];
+                                        if (strpos($link, '#') !== false) {
+                                            $parts = explode('#', $link);
+                                            $link = '#' . end($parts);
+                                        }
+                                    ?>
+                                        <a href="<?php echo esc_attr($link); ?>" class="tk-score-item-link" style="background:rgba(231, 76, 60, 0.05); border:1px solid rgba(231, 76, 60, 0.2); padding:14px 18px; border-radius:12px; display:flex; align-items:center; gap:12px; font-size:13px; color:#c0392b; font-weight:500; text-decoration:none; transition:all 0.2s ease;">
+                                             <span class="dashicons dashicons-warning" style="font-size:18px; width:18px; height:18px;"></span>
+                                             <?php echo esc_html($rec['label']); ?>
+                                             <span style="margin-left:auto; font-size:11px; background:rgba(231, 76, 60, 0.1); padding:3px 8px; border-radius:12px; margin-right:4px;">+<?php echo $rec['weight']; ?>%</span>
+                                             <span class="dashicons dashicons-arrow-right-alt2" style="font-size:16px; width:16px; height:16px; opacity:0.5;"></span>
+                                         </a>
+                                     <?php endforeach; ?>
                                 </div>
+                            </div>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -2358,6 +2420,18 @@ function tk_render_hardening_page() {
                         
                         tk_render_switch('block_plugin_installs', 'Block plugin/theme installations', 'A hardcore lock that prevents any new plugin/theme installs until disabled.', $opts['hardening_block_plugin_installs']);
                         
+                        tk_render_switch('browser_cache', 'Leverage browser caching', 'Adds expires and cache-control headers for static assets in .htaccess.', $opts['hardening_browser_cache_enabled'], 'Optimizes loading speed by telling browsers to keep CSS, JS, and images cached for 1 year.');
+                        
+                        if ($opts['hardening_browser_cache_enabled'] && tk_hardening_detect_server() === 'nginx') : ?>
+                            <div style="margin: -10px 0 20px 60px; padding: 12px; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; font-size: 12px; color: #92400e;">
+                                <strong>Nginx detected:</strong> Please add the following to your server block configuration and restart Nginx:<br>
+                                <pre style="margin-top:8px; background:rgba(0,0,0,0.05); padding:8px; border-radius:4px; overflow:auto; font-family:monospace;">location ~* \.(jpg|jpeg|gif|png|webp|svg|woff|woff2|ttf|css|js|ico|pdf|zip|gz)$ {
+    expires 1y;
+    add_header Cache-Control "public, no-transform";
+}</pre>
+                            </div>
+                        <?php endif; ?>
+
                         tk_render_switch('headers', 'Send security headers', 'Adds X-Frame-Options, X-XSS-Protection, and X-Content-Type-Options.', $opts['hardening_security_headers']);
                         ?>
 
@@ -2471,41 +2545,196 @@ function tk_render_hardening_page() {
                         </div>
                     </form>
                 </div>
+
+                <div class="tk-card tk-tab-panel" data-panel-id="httpauth">
+                    <h2 style="margin-bottom:8px;">HTTP Authentication</h2>
+                    <p class="description" style="margin-bottom:24px;">Add a Basic Auth password prompt before visitors can access the site.</p>
+
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                        <?php tk_nonce_field('tk_hardening_save'); ?>
+                        <input type="hidden" name="action" value="tk_hardening_save">
+                        <input type="hidden" name="tk_tab" value="httpauth">
+
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            <?php
+                            tk_render_switch('httpauth_enabled', 'Enable HTTP password protection', 'Turn this off to disable the browser username/password prompt.', $opts['hardening_httpauth_enabled']);
+                            ?>
+                        </div>
+
+                        <div style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px; display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                            <div>
+                                <label style="display:block; font-weight:600; margin-bottom:8px;">Username</label>
+                                <input type="text" class="regular-text" name="httpauth_user" value="<?php echo esc_attr((string)$opts['hardening_httpauth_user']); ?>" style="width:100%; border-radius:8px;" autocomplete="username">
+                            </div>
+                            <div>
+                                <label style="display:block; font-weight:600; margin-bottom:8px;">Password</label>
+                                <input type="password" class="regular-text" name="httpauth_pass" value="" placeholder="<?php echo esc_attr($opts['hardening_httpauth_enabled'] ? 'Leave blank to keep current password' : 'Set a password'); ?>" style="width:100%; border-radius:8px;" autocomplete="new-password">
+                            </div>
+                            <div>
+                                <label style="display:block; font-weight:600; margin-bottom:8px;">Protection Scope</label>
+                                <select name="httpauth_scope" style="width:100%; border-radius:8px;">
+                                    <option value="both" <?php selected('both', $opts['hardening_httpauth_scope']); ?>>Frontend and admin</option>
+                                    <option value="frontend" <?php selected('frontend', $opts['hardening_httpauth_scope']); ?>>Frontend only</option>
+                                    <option value="admin" <?php selected('admin', $opts['hardening_httpauth_scope']); ?>>Admin and login only</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display:block; font-weight:600; margin-bottom:8px;">Allowlisted Paths</label>
+                                <textarea class="large-text" rows="4" name="httpauth_allow_paths" placeholder="/wp-cron.php
+/wp-json/
+/wp-admin/admin-ajax.php" style="width:100%; border-radius:8px;"><?php echo esc_textarea((string)$opts['hardening_httpauth_allow_paths']); ?></textarea>
+                            </div>
+                            <div style="grid-column:1 / -1;">
+                                <label style="display:block; font-weight:600; margin-bottom:8px;">Allowlisted Regex</label>
+                                <textarea class="large-text" rows="3" name="httpauth_allow_regex" placeholder="#^/custom-path/#" style="width:100%; border-radius:8px;"><?php echo esc_textarea((string)$opts['hardening_httpauth_allow_regex']); ?></textarea>
+                                <p class="description" style="margin-top:8px;">One regular expression per line. Matching requests bypass HTTP authentication.</p>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:24px; padding-top:20px; border-top:1px solid var(--tk-border-soft);">
+                            <button class="button button-primary button-hero">Save HTTP Auth Settings</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="tk-card tk-tab-panel" data-panel-id="cors">
+                    <h2 style="margin-bottom:8px;">CORS</h2>
+                    <p class="description" style="margin-bottom:24px;">Control which browser origins can access your WordPress responses with CORS headers.</p>
+
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                        <?php tk_nonce_field('tk_hardening_save'); ?>
+                        <input type="hidden" name="action" value="tk_hardening_save">
+                        <input type="hidden" name="tk_tab" value="cors">
+
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            <?php
+                            tk_render_switch('cors_custom_origins_enabled', 'Enable custom origin allowlist', 'Allow additional trusted origins beyond this site URL.', $opts['hardening_cors_custom_origins_enabled']);
+                            tk_render_switch('cors_allow_credentials', 'Allow credentialed requests', 'Send Access-Control-Allow-Credentials for allowed origins.', $opts['hardening_cors_allow_credentials']);
+                            ?>
+                        </div>
+
+                        <div style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px; display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                            <div style="grid-column:1 / -1;">
+                                <label style="display:block; font-weight:600; margin-bottom:8px;">Allowed Origins</label>
+                                <textarea class="large-text" rows="4" name="cors_allowed_origins" placeholder="https://app.example.com
+https://staging.example.com" style="width:100%; border-radius:8px;"><?php echo esc_textarea((string)$opts['hardening_cors_allowed_origins']); ?></textarea>
+                                <p class="description" style="margin-top:8px;">One origin per line. Include scheme and host, for example https://app.example.com.</p>
+                            </div>
+                            <div>
+                                <label style="display:block; font-weight:600; margin-bottom:8px;">Allowed Methods</label>
+                                <input type="text" class="regular-text" name="cors_allowed_methods" value="<?php echo esc_attr((string)$opts['hardening_cors_allowed_methods']); ?>" placeholder="GET, POST, OPTIONS" style="width:100%; border-radius:8px;">
+                            </div>
+                            <div>
+                                <label style="display:block; font-weight:600; margin-bottom:8px;">Allowed Headers</label>
+                                <input type="text" class="regular-text" name="cors_allowed_headers" value="<?php echo esc_attr((string)$opts['hardening_cors_allowed_headers']); ?>" placeholder="Authorization, X-WP-Nonce, Content-Type" style="width:100%; border-radius:8px;">
+                            </div>
+                        </div>
+
+                        <div style="margin-top:24px; padding-top:20px; border-top:1px solid var(--tk-border-soft);">
+                            <button class="button button-primary button-hero">Save CORS Settings</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
-    <script>
+    <?php
+    $tab_script = "
     (function(){
-        function activateTab(panelId) {
-            document.querySelectorAll('.tk-tab-panel').forEach(function(panel){
-                panel.classList.toggle('is-active', panel.getAttribute('data-panel-id') === panelId);
+        var wrapper = document.querySelector('.tk-tabs');
+        if (!wrapper) return;
+
+        function activateMainTab(panelId) {
+            if (!panelId) return;
+            var panel = wrapper.querySelector('.tk-tab-panel[data-panel-id=\"' + panelId + '\"]');
+            if (!panel) return;
+            
+            wrapper.querySelectorAll('.tk-tab-panel').forEach(function(p){
+                p.classList.toggle('is-active', p.getAttribute('data-panel-id') === panelId);
+                p.style.display = (p.getAttribute('data-panel-id') === panelId) ? 'block' : 'none';
             });
-            document.querySelectorAll('.tk-tabs-nav-button').forEach(function(btn){
+            wrapper.querySelectorAll('.tk-tabs-nav-button').forEach(function(btn){
                 btn.classList.toggle('is-active', btn.getAttribute('data-panel') === panelId);
             });
         }
-        function getPanelFromHash() {
-            var hash = window.location.hash || '';
-            if (!hash) { return ''; }
-            return hash.replace('#', '');
-        }
-        document.querySelectorAll('.tk-tabs-nav-button').forEach(function(button){
-            button.addEventListener('click', function(){
-                var panelId = button.getAttribute('data-panel');
-                if (panelId) {
-                    window.location.hash = panelId;
-                    activateTab(panelId);
-                }
+
+        function activateSubTab(btn) {
+            var tabId = btn.getAttribute('data-score-tab');
+            var panel = btn.closest('.tk-tab-panel');
+            if (!panel || !tabId) return;
+
+            panel.querySelectorAll('.tk-score-tab-btn').forEach(function(b){
+                var isActive = (b === btn);
+                b.classList.toggle('is-active', isActive);
+                b.style.color = isActive ? 'var(--tk-primary)' : 'var(--tk-muted)';
+                b.style.borderBottomColor = isActive ? 'var(--tk-primary)' : 'transparent';
             });
-        });
-        var initial = getPanelFromHash();
-        if (initial) {
-            activateTab(initial);
+
+            panel.querySelectorAll('.tk-score-tab-panel').forEach(function(p){
+                p.style.display = (p.getAttribute('data-score-panel') === tabId) ? 'block' : 'none';
+            });
         }
-    })();
-    </script>
-    </div>
-    <?php
+
+        wrapper.addEventListener('click', function(e){
+            var mainBtn = e.target.closest('.tk-tabs-nav-button');
+            if (mainBtn) {
+                e.preventDefault();
+                var panelId = mainBtn.getAttribute('data-panel');
+                if (panelId) {
+                    activateMainTab(panelId);
+                    history.replaceState(null, null, '#' + panelId);
+                }
+                return;
+            }
+
+            var subBtn = e.target.closest('.tk-score-tab-btn');
+            if (subBtn) {
+                e.preventDefault();
+                activateSubTab(subBtn);
+                return;
+            }
+        });
+
+        function handleHash() {
+            var hash = window.location.hash.substring(1);
+            if (!hash) { activateMainTab('active'); return; }
+
+            // Priority 1: Direct panel match
+            if (wrapper.querySelector('.tk-tab-panel[data-panel-id=\"' + hash + '\"]')) {
+                activateMainTab(hash);
+                return;
+            }
+
+            // Priority 2: Nested element match
+            var target = document.getElementById(hash);
+            if (target) {
+                var parentPanel = target.closest('.tk-tab-panel');
+                if (parentPanel) {
+                    var panelId = parentPanel.getAttribute('data-panel-id');
+                    activateMainTab(panelId);
+
+                    // Handle sub-tabs if target is inside one
+                    var subPanel = target.closest('.tk-score-tab-panel');
+                    if (subPanel) {
+                        var subId = subPanel.getAttribute('data-score-panel');
+                        var subBtn = parentPanel.querySelector('.tk-score-tab-btn[data-score-tab=\"' + subId + '\"]');
+                        if (subBtn) activateSubTab(subBtn);
+                    }
+
+                    setTimeout(function(){
+                        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        target.style.transition = 'background 0.5s';
+                        target.style.background = 'rgba(109, 74, 255, 0.1)';
+                        setTimeout(function(){ target.style.background = 'transparent'; }, 2000);
+                    }, 200);
+                }
+            }
+        }
+
+        window.addEventListener('hashchange', handleHash);
+        handleHash();
+    })();";
+    tk_csp_print_inline_script($tab_script, array('id' => 'tk-hardening-tabs-js'));
 }
 
 function tk_hardening_save() {
@@ -2591,7 +2820,9 @@ function tk_hardening_save() {
         tk_update_option('hardening_server_aware_enabled', !empty($_POST['server_aware']) ? 1 : 0);
         tk_update_option('hardening_block_uploads_php', !empty($_POST['block_uploads_php']) ? 1 : 0);
         tk_update_option('hardening_block_plugin_installs', !empty($_POST['block_plugin_installs']) ? 1 : 0);
+        tk_update_option('hardening_browser_cache_enabled', !empty($_POST['browser_cache']) ? 1 : 0);
         tk_update_option('hardening_disable_pingbacks', !empty($_POST['pingbacks']) ? 1 : 0);
+        tk_hardening_apply_root_server_rules();
     } elseif ($tab === 'xmlrpc') {
         tk_update_option('hardening_disable_xmlrpc', !empty($_POST['xmlrpc']) ? 1 : 0);
         tk_update_option('hardening_xmlrpc_block_methods', !empty($_POST['xmlrpc_block_methods']) ? 1 : 0);

@@ -92,6 +92,26 @@
     color: #000;
 }
 
+.tk-wrap .notice p {
+    color: inherit;
+}
+
+.tk-wrap .notice.notice-success {
+    color: var(--tk-success-text);
+}
+
+.tk-wrap .notice.notice-error {
+    color: var(--tk-danger-text);
+}
+
+.tk-wrap .notice.notice-warning {
+    color: var(--tk-warn-text);
+}
+
+.tk-wrap .notice.notice-info {
+    color: #000;
+}
+
 .tk-wrap .tk-grid {
     display: grid;
     gap: 16px;

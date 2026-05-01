@@ -16,7 +16,7 @@ fi
 
 LISTING="$(unzip -Z1 "$ZIP_PATH")"
 
-if [[ "$LISTING" != tool-kits/* ]]; then
+if grep -vq '^tool-kits/' <<<"$LISTING"; then
   echo "Invalid archive root. Expected every entry to start with tool-kits/." >&2
   exit 1
 fi
@@ -51,8 +51,33 @@ if grep -q '^__MACOSX/' <<<"$LISTING"; then
   exit 1
 fi
 
+if grep -q '^tool-kits/\.git' <<<"$LISTING"; then
+  echo "Archive contains unexpected Git metadata." >&2
+  exit 1
+fi
+
 if grep -q '/\.DS_Store$' <<<"$LISTING"; then
   echo "Archive contains unexpected .DS_Store metadata." >&2
+  exit 1
+fi
+
+if grep -qx 'tool-kits/README.md' <<<"$LISTING"; then
+  echo "Archive contains development README.md. Use readme.txt for the plugin package." >&2
+  exit 1
+fi
+
+if grep -qx 'tool-kits/ROADMAP.md' <<<"$LISTING"; then
+  echo "Archive contains development ROADMAP.md." >&2
+  exit 1
+fi
+
+if grep -q '^tool-kits/scripts/' <<<"$LISTING"; then
+  echo "Archive contains development scripts/ files." >&2
+  exit 1
+fi
+
+if grep -qx 'tool-kits/tool-kits.zip' <<<"$LISTING"; then
+  echo "Archive contains nested build artifact tool-kits.zip." >&2
   exit 1
 fi
 
