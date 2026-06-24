@@ -9,10 +9,7 @@ function tk_rate_limit_init() {
     add_filter('authenticate', 'tk_rate_limit_authenticate', 30, 3);
     add_action('admin_post_tk_rate_limit_save', 'tk_rate_limit_save');
     add_action('admin_post_tk_rate_limit_unblock', 'tk_rate_limit_unblock_handler');
-    add_action('login_form', 'tk_rate_limit_unlock_prompt');
-    add_action('login_footer', 'tk_rate_limit_unlock_script');
     add_action('wp_ajax_tk_rate_limit_unlock', 'tk_rate_limit_unlock');
-    add_action('wp_ajax_nopriv_tk_rate_limit_unlock', 'tk_rate_limit_unlock');
 }
 
 function tk_rate_limit_enabled() {
@@ -325,10 +322,7 @@ function tk_rate_limit_save() {
 }
 
 function tk_rate_limit_unblock_handler() {
-    if (!tk_is_admin_user()) {
-        wp_die('Forbidden');
-    }
-    tk_check_nonce('tk_rate_limit_unblock');
+    tk_require_admin_post('tk_rate_limit_unblock');
     $ips = isset($_POST['blocked_ips']) ? (array) $_POST['blocked_ips'] : array();
     $clean = array();
     foreach ($ips as $ip) {
@@ -344,6 +338,9 @@ function tk_rate_limit_unblock_handler() {
 }
 
 function tk_rate_limit_unlock_prompt() {
+    if (!is_user_logged_in() || !tk_is_admin_user()) {
+        return;
+    }
     if (!tk_rate_limit_enabled()) {
         return;
     }
@@ -406,6 +403,9 @@ function tk_rate_limit_unlock_script() {
 
 function tk_rate_limit_unlock() {
     check_ajax_referer('tk_rate_limit_unlock', 'nonce');
+    if (!is_user_logged_in() || !tk_is_admin_user()) {
+        wp_send_json_error('forbidden');
+    }
     if (!tk_rate_limit_enabled()) {
         wp_send_json_error('disabled');
     }

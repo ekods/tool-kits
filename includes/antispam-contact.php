@@ -412,6 +412,30 @@ function tk_antispam_contains_shortener(array $values): bool {
     return false;
 }
 
+function tk_antispam_contains_non_latin(array $values): bool {
+    foreach ($values as $value) {
+        if (!is_string($value) || $value === '') {
+            continue;
+        }
+        // Check for non-Latin scripts (Cyrillic, Arabic, Chinese, etc.)
+        // We use a regex that looks for characters outside the Latin/Extended Latin range
+        if (preg_match('/[^\x00-\x7F\x80-\xFF]/u', $value)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function tk_antispam_check_referrer(): bool {
+    $referrer = isset($_SERVER['HTTP_REFERER']) ? (string) $_SERVER['HTTP_REFERER'] : '';
+    if ($referrer === '') {
+        return false;
+    }
+    $host = (string) wp_parse_url($referrer, PHP_URL_HOST);
+    $current_host = (string) wp_parse_url(home_url(), PHP_URL_HOST);
+    return strtolower($host) === strtolower($current_host);
+}
+
 function tk_antispam_log_get(): array {
     $log = tk_get_option('antispam_log', array());
     return is_array($log) ? array_values($log) : array();
@@ -779,6 +803,10 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
         }
     }
 
+    if ((int) tk_get_option('antispam_require_referrer', 1) === 1 && !tk_antispam_check_referrer()) {
+        return tk_antispam_reject($result, __('Direct submissions are not allowed.', 'tool-kits'), 'referrer_missing', array(), $tags);
+    }
+
     $values = tk_antispam_scalar_post_values();
     if (empty($values)) {
         return $result;
@@ -833,6 +861,17 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
         }
     }
 
+    if ((int) tk_get_option('antispam_block_non_latin', 0) === 1 && tk_antispam_contains_non_latin($values)) {
+        return tk_antispam_reject($result, __('Non-Latin characters are not allowed in this form.', 'tool-kits'), 'non_latin_characters_detected', $values, $tags);
+    }
+
+    if ((int) tk_get_option('antispam_block_randomness', 1) === 1) {
+        $random_reason = tk_antispam_detect_random_submission_reason($values);
+        if ($random_reason !== '') {
+            return tk_antispam_reject($result, __('Spam-like content detected.', 'tool-kits'), $random_reason, $values, $tags);
+        }
+    }
+
     $keywords = tk_antispam_line_list((string) tk_get_option('antispam_block_keywords', ''));
     if (!empty($keywords)) {
         $haystack = strtolower(implode("\n", array_filter($values, 'is_string')));
@@ -841,11 +880,6 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
                 return tk_antispam_reject($result, __('Spam-like content detected.', 'tool-kits'), 'blocked_keyword:' . strtolower($keyword), $values, $tags);
             }
         }
-    }
-
-    $random_reason = tk_antispam_detect_random_submission_reason($values);
-    if ($random_reason !== '') {
-        return tk_antispam_reject($result, __('Spam-like content detected.', 'tool-kits'), $random_reason, $values, $tags);
     }
 
     $replay_reason = tk_antispam_replay_reason($values);
@@ -892,6 +926,9 @@ function tk_render_antispam_contact_panel() {
     $rate_limit_enabled = (int) tk_get_option('antispam_rate_limit_enabled', 1);
     $rate_limit_window = (int) tk_get_option('antispam_rate_limit_window_minutes', 15);
     $rate_limit_max = (int) tk_get_option('antispam_rate_limit_max_attempts', 2);
+    $block_non_latin = (int) tk_get_option('antispam_block_non_latin', 0);
+    $block_randomness = (int) tk_get_option('antispam_block_randomness', 1);
+    $require_referrer = (int) tk_get_option('antispam_require_referrer', 1);
     $cf7_installed = function_exists('wpcf7');
 
     ?>
@@ -945,6 +982,9 @@ function tk_render_antispam_contact_panel() {
                         tk_render_switch('block_html', 'Block HTML Tags', 'Prevent code injection in textareas.', $block_html);
                         tk_render_switch('block_shorteners', 'Block URL Shorteners', 'Reject bit.ly, tinyurl, and others.', $block_shorteners);
                         tk_render_switch('block_disposable_email', 'Block Disposable Emails', 'Reject mailinator, trashmail, etc.', $block_disposable);
+                        tk_render_switch('block_non_latin', 'Block Non-Latin Characters', 'Reject Cyrillic, Chinese, Arabic, etc. (Highly Effective)', $block_non_latin);
+                        tk_render_switch('block_randomness', 'Detect Random Patterns', 'Block submissions that look like bot-generated gibberish.', $block_randomness);
+                        tk_render_switch('require_referrer', 'Enforce Local Referrer', 'Ensure submissions originate from your domain.', $require_referrer);
                         ?>
                         <div class="tk-control-row">
                             <div class="tk-control-info">
@@ -1182,6 +1222,9 @@ function tk_antispam_save_settings() {
     tk_update_option('antispam_rate_limit_enabled', !empty($_POST['rate_limit_enabled']) ? 1 : 0);
     tk_update_option('antispam_rate_limit_window_minutes', max(1, (int) tk_post('rate_limit_window_minutes', 15)));
     tk_update_option('antispam_rate_limit_max_attempts', max(1, (int) tk_post('rate_limit_max_attempts', 2)));
+    tk_update_option('antispam_block_non_latin', !empty($_POST['block_non_latin']) ? 1 : 0);
+    tk_update_option('antispam_block_randomness', !empty($_POST['block_randomness']) ? 1 : 0);
+    tk_update_option('antispam_require_referrer', !empty($_POST['require_referrer']) ? 1 : 0);
 
     wp_redirect(add_query_arg(array('page'=>'tool-kits-security-spam','tk_tab'=>'antispam','tk_saved'=>1), admin_url('admin.php')));
     exit;

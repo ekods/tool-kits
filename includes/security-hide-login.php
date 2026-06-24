@@ -202,10 +202,11 @@ function tk_hide_login_flush_rewrite($enable = true) {
 }
 
 function tk_hide_login_save() {
-    tk_check_nonce('tk_hide_login_save');
+    tk_require_admin_post('tk_hide_login_save');
 
     tk_update_option('hide_login_enabled', !empty($_POST['enabled']) ? 1 : 0);
-    tk_update_option('hide_login_slug', tk_sanitize_slug($_POST['slug']));
+    $slug = isset($_POST['slug']) ? (string) wp_unslash($_POST['slug']) : '';
+    tk_update_option('hide_login_slug', tk_sanitize_slug($slug));
 
     flush_rewrite_rules();
     wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'hide-login', 'tk_saved' => 1), admin_url('admin.php')));

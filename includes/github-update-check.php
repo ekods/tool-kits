@@ -357,7 +357,67 @@ function tk_github_download_package(string $package) {
         return new WP_Error('tk_github_download_not_zip', $message);
     }
 
+    $zip_validation = tk_github_validate_package_zip($tmp_file);
+    if (is_wp_error($zip_validation)) {
+        @unlink($tmp_file);
+        return $zip_validation;
+    }
+
     return $tmp_file;
+}
+
+function tk_github_validate_package_zip(string $zip_path) {
+    if (!class_exists('ZipArchive')) {
+        return true;
+    }
+
+    $zip = new ZipArchive();
+    $opened = $zip->open($zip_path);
+    if ($opened !== true) {
+        return new WP_Error('tk_github_zip_open_failed', 'GitHub update package could not be opened as a ZIP archive.');
+    }
+
+    $has_main_file = false;
+    $bad_root = false;
+    $unexpected_metadata = false;
+
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $name = (string) $zip->getNameIndex($i);
+
+        if ($name === '') {
+            continue;
+        }
+
+        if (strpos($name, '__MACOSX/') === 0 || strpos($name, 'tool-kits/.git') === 0 || substr($name, -9) === '.DS_Store') {
+            $unexpected_metadata = true;
+            break;
+        }
+
+        if (strpos($name, 'tool-kits/') !== 0) {
+            $bad_root = true;
+            break;
+        }
+
+        if ($name === 'tool-kits/tool-kits.php') {
+            $has_main_file = true;
+        }
+    }
+
+    $zip->close();
+
+    if ($unexpected_metadata) {
+        return new WP_Error('tk_github_zip_metadata', 'GitHub update package contains development or OS metadata.');
+    }
+
+    if ($bad_root) {
+        return new WP_Error('tk_github_zip_bad_root', 'GitHub update package must contain a top-level tool-kits/ directory.');
+    }
+
+    if (!$has_main_file) {
+        return new WP_Error('tk_github_zip_missing_plugin', 'GitHub update package is missing tool-kits/tool-kits.php.');
+    }
+
+    return true;
 }
 
 function tk_github_find_plugin_root(string $source): string {
@@ -551,6 +611,10 @@ function tk_github_upgrader_package_options($options) {
     if (!is_array($options) || empty($options['hook_extra']) || !is_array($options['hook_extra']) || !tk_github_is_target_upgrade($options['hook_extra'])) {
         return $options;
     }
+
+    $options['clear_destination'] = true;
+    $options['clear_working'] = true;
+    $options['abort_if_destination_exists'] = false;
 
     tk_github_log('Package options: destination=' . (string) ($options['destination'] ?? '') . ' clear_destination=' . (!empty($options['clear_destination']) ? 'yes' : 'no'));
 
