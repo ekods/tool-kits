@@ -316,10 +316,7 @@ function tk_webp_save() {
 }
 
 function tk_webp_generate_all() {
-    tk_check_nonce('tk_webp_generate_all');
-    if (!tk_is_admin_user()) {
-        wp_die(__('You do not have permission.', 'tool-kits'));
-    }
+    tk_require_admin_post('tk_webp_generate_all');
     $offset = max(0, (int) tk_post('offset', 0));
     $limit = 20;
     $query = new WP_Query(array(

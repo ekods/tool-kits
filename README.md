@@ -26,11 +26,14 @@ Tool Kits membantu admin WordPress mengelola 5 area utama:
 - Rate limit login berbasis IP + unblock panel.
 - Login log (success/failed) dengan retensi.
 - Hardening (XML-RPC, headers, WAF basic, HTTP Auth, CORS).
+- Firewall dengan payload WAF, IP/CIDR allowlist/blocklist, user-agent rules, dan event log.
+- Malware Scanner berbasis signature untuk executable uploads, obfuscation, encoded payload, dan web-shell marker.
 - SMTP (preset provider + test email + log).
 - Monitoring (checks, realtime, 404 monitor, healthcheck, heartbeat).
 - Cache tools (page cache, object flush, opcache reset, fragment flush).
 - Theme checker (summary, largest file, duplicate PHP, risky functions).
 - Tool Kits Access (role/IP access, alerts, audit log, owner mode, license).
+- Role Management untuk membuat role custom, mengatur capability per modul termasuk custom post type dengan CRUD, dan menentukan menu dashboard yang terlihat per role.
 
 ### Pembaruan Terbaru (Access, License, Monitoring)
 
@@ -64,19 +67,43 @@ Tool Kits membantu admin WordPress mengelola 5 area utama:
 - `Tool Kits > Rate Limit`
 - `Tool Kits > Login Log`
 - `Tool Kits > Hardening`
+- `Tool Kits > Firewall`
+- `Tool Kits > Malware Scanner`
 - `Tool Kits > SMTP`
 - `Tool Kits > Monitoring`
 - `Tool Kits > Cache`
 - `Tool Kits > Themes Checker`
 - `Tools > Tool Kits Access`
+- `Tool Kits > Role Management`
 
 Catatan: sebagian menu bergantung pada status lisensi.
+
+### Build Release ZIP
+
+Jalankan dari root workspace:
+
+```bash
+bash plugins/tool-kits/scripts/build-release-zip.sh
+```
+
+Output default akan dibuat di:
+
+```text
+plugins/tool-kits.zip
+```
+
+Untuk menentukan output manual:
+
+```bash
+bash plugins/tool-kits/scripts/build-release-zip.sh /tmp/tool-kits.zip
+```
 
 ### Penjelasan Modul (Lebih Jelas)
 
 #### 1) Database
 
 Untuk backup, migrasi, dan maintenance data.
+- Seluruh modul Database dapat digunakan tanpa aktivasi lisensi atau Collector Token.
 - `Export Database`: unduh dump SQL penuh.
 - `Export Download (Preload)`: hasil SQL.gz dengan pair find/replace yang aman untuk data serialized.
 - `Import Database`: impor `.sql` atau `.sql.gz` ke DB aktif.
@@ -96,7 +123,7 @@ Untuk percepatan loading dan pengurangan beban frontend.
 - `Auto WebP`: konversi image otomatis + generate untuk media lama.
 - `Lazy Load`: tunda loading image/iframe/video.
 - `Assets`: critical CSS, defer/preload CSS, preload font, font-display swap.
-- `Uploads`: batasi ukuran file image.
+- `Uploads`: atur batas ukuran terpisah untuk image, dokumen/PDF, dan video.
 - `User ID`: ubah ID user tertentu (aksi sensitif).
 
 #### 3) Spam Protection
@@ -227,11 +254,14 @@ Tool Kits is an all-in-one WordPress admin toolkit focused on:
 - IP-based login rate limiting with unblock panel.
 - Login logs with retention.
 - Hardening options (XML-RPC, headers, WAF basic, HTTP Auth, CORS).
+- Firewall with payload WAF, IP/CIDR allow/block rules, user-agent rules, and an event log.
+- Signature-based Malware Scanner for executable uploads, obfuscation, encoded payloads, and web-shell markers.
 - SMTP presets + test email + test logs.
 - Monitoring (checks, realtime health, 404 monitor, healthcheck, heartbeat).
 - Cache controls (page cache, object flush, OPcache reset, fragment flush).
 - Theme checker (summary, largest files, duplicate PHP, risky functions).
 - Access controls (roles/IP allowlist, alerts, audit log, owner mode, license).
+- Role Management for creating custom roles, configuring capabilities by module, and choosing visible dashboard menus per role.
 
 ### Recent Updates (Access, License, Monitoring)
 
@@ -265,11 +295,14 @@ Tool Kits is an all-in-one WordPress admin toolkit focused on:
 - `Tool Kits > Rate Limit`
 - `Tool Kits > Login Log`
 - `Tool Kits > Hardening`
+- `Tool Kits > Firewall`
+- `Tool Kits > Malware Scanner`
 - `Tool Kits > SMTP`
 - `Tool Kits > Monitoring`
 - `Tool Kits > Cache`
 - `Tool Kits > Themes Checker`
 - `Tools > Tool Kits Access`
+- `Tool Kits > Role Management`
 
 Note: some menus depend on license state.
 
@@ -278,6 +311,7 @@ Note: some menus depend on license state.
 #### 1) Database
 
 Used for backup, migration, and data maintenance.
+- The complete Database module can be used without license activation or a Collector Token.
 - `Export Database`: full SQL dump download.
 - `Export Download (Preload)`: temporary SQL.gz with serialized-safe replacement pairs.
 - `Import Database`: import `.sql` or `.sql.gz` into the active database.
@@ -297,7 +331,7 @@ Focused on frontend speed and payload reduction.
 - `Auto WebP`: convert images on upload and generate WebP for existing media.
 - `Lazy Load`: defer images/iframes/videos.
 - `Assets`: critical CSS, defer/preload CSS, preload fonts, font-display swap.
-- `Uploads`: image upload size limits.
+- `Uploads`: separate upload limits for images, documents/PDF files, and videos.
 - `User ID`: sensitive utility to change a user ID.
 
 #### 3) Spam Protection

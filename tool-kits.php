@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.3.0
+ * Version: 2.3.5
  * GitHub Plugin URI: https://github.com/ekods/tool-kits
  * Update URI: https://github.com/ekods/tool-kits
  * Author: Eko Dwi Saputro
@@ -12,7 +12,7 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-define('TK_VERSION', '2.3.0');
+define('TK_VERSION', '2.3.5');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
@@ -55,6 +55,8 @@ $tk_modules = array(
     'security-rate-limit.php'   => 'tk_rate_limit_init',
     'security-login-log.php'    => 'tk_login_log_init',
     'security-hardening.php'    => 'tk_hardening_init',
+    'security-firewall.php'     => 'tk_firewall_init',
+    'malware-scanner.php'       => 'tk_malware_scanner_init',
     'smtp.php'                  => 'tk_smtp_init',
     'monitoring-heartbeat.php'  => 'tk_heartbeat_init',
     'minify.php'                => 'tk_minify_init',
@@ -76,7 +78,11 @@ $tk_modules = array(
     'github-update-check.php'   => false,
     'security-fim.php'          => 'tk_fim_init',
     'analytics.php'             => 'tk_analytics_init',
+    'cookie-consent.php'        => 'tk_cookie_consent_init',
     'dashboard-widget.php'      => 'tk_dashboard_widget_init',
+    'admin-menu-cleaner.php'    => 'tk_admin_menu_cleaner_init',
+    'role-management.php'       => 'tk_role_management_init',
+    'plugin-shield.php'         => 'tk_plugin_shield_init',
 );
 
 // Require all modules dynamically

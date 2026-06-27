@@ -87,7 +87,7 @@ function tk_register_admin_menus() {
 
     add_submenu_page('tools.php', __('Tool Kits Access', 'tool-kits'), __('Tool Kits Access', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-access', 'tk_render_toolkits_access_page');
     if (!$license_valid) {
-        add_submenu_page('tools.php', __('Database', 'tool-kits'), __('Database', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
+        add_submenu_page('tools.php', __('Database', 'tool-kits'), __('Database (Free)', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
     }
     // Hidden legacy pages for direct links.
     if ($allow_full) {
@@ -783,6 +783,11 @@ function tk_render_toolkits_access_page() {
                         tk_render_switch('toolkits_mask_sensitive_fields', 'Mask Sensitive Data', 'Hide license keys and tokens in the admin UI.', $mask);
                         
                         tk_render_switch('toolkits_owner_only_enabled', 'Owner-Only Mode', 'Restrict access to the primary site owner (UID: ' . $owner_id . ') only.', $owner_only);
+
+                        echo '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--tk-border-soft);">';
+                        tk_render_switch('toolkits_shield_stealth_enabled', 'Shield Mode (Stealth)', 'Hide Tool Kits from the standard Plugins list for non-owners.', (int) tk_get_option('toolkits_shield_stealth_enabled', 0));
+                        tk_render_switch('toolkits_shield_lock_enabled', 'Shield Lock (Anti-Deactivation)', 'Prevent the plugin from being deactivated or deleted by anyone except the owner.', (int) tk_get_option('toolkits_shield_lock_enabled', 0));
+                        echo '</div>';
                         ?>
 
                         <div style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px;">
@@ -858,7 +863,6 @@ function tk_render_toolkits_access_page() {
                         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                             <?php tk_nonce_field('tk_license_activate'); ?>
                             <input type="hidden" name="action" value="tk_toolkits_license_activate">
-                            <input type="hidden" name="license_key" value="<?php echo esc_attr($license_key); ?>">
                             <button type="submit" class="button button-primary button-hero">Re-activate License</button>
                         </form>
                         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return window.confirm('Reset license data?');">
@@ -908,7 +912,6 @@ function tk_render_toolkits_access_page() {
                                 $collector_mask = $collector_key ? str_repeat('*', max(0, strlen($collector_key) - 4)) . substr($collector_key, -4) : '';
                                 ?>
                                 <input class="regular-text" type="text" name="heartbeat_auth_key_display" value="<?php echo esc_attr($collector_mask); ?>" placeholder="Enter token..." style="width:100%; border-radius:8px;">
-                                <input type="hidden" name="heartbeat_auth_key" value="<?php echo esc_attr($collector_key); ?>">
                             </div>
                             <div>
                                 <label style="display:block; font-weight:600; margin-bottom:8px;">License Key</label>
@@ -916,7 +919,6 @@ function tk_render_toolkits_access_page() {
                                 $license_mask = $license_key ? str_repeat('*', max(0, strlen($license_key) - 4)) . substr($license_key, -4) : '';
                                 ?>
                                 <input class="regular-text" type="text" name="license_key_display" value="<?php echo esc_attr($license_mask); ?>" placeholder="Enter key..." style="width:100%; border-radius:8px;">
-                                <input type="hidden" name="license_key" value="<?php echo esc_attr($license_key); ?>">
                             </div>
                         </div>
 
@@ -1176,6 +1178,8 @@ function tk_toolkits_access_save() {
         tk_update_option('toolkits_ip_allowlist', (string) tk_post('toolkits_ip_allowlist', ''));
         tk_update_option('toolkits_lock_enabled', !empty($_POST['toolkits_lock_enabled']) ? 1 : 0);
         tk_update_option('toolkits_mask_sensitive_fields', !empty($_POST['toolkits_mask_sensitive_fields']) ? 1 : 0);
+        tk_update_option('toolkits_shield_stealth_enabled', !empty($_POST['toolkits_shield_stealth_enabled']) ? 1 : 0);
+        tk_update_option('toolkits_shield_lock_enabled', !empty($_POST['toolkits_shield_lock_enabled']) ? 1 : 0);
     } elseif ($tab === 'license' || $tab === 'license-status') {
         $collector_url = isset($_POST['heartbeat_collector_url']) ? esc_url_raw(wp_unslash($_POST['heartbeat_collector_url'])) : '';
         tk_update_option('heartbeat_collector_url', $collector_url);
@@ -1454,5 +1458,3 @@ function tk_preflight_check() {
     }
 }
 add_action('wp_ajax_tk_preflight_check', 'tk_preflight_check');
-
-

@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.3.0
+Stable tag: 2.3.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -61,6 +61,66 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.3.5 =
+**GitHub Updater**
+- Align the update/install flow with Custom Fields Framework Pro.
+- Let WordPress handle package downloads and normalize the extracted plugin root during installation.
+- Rebuild release packaging from the plugin directory and exclude development metadata from the ZIP.
+
+= 2.3.4 =
+**GitHub Updater**
+- Validate downloaded release ZIP structure before WordPress starts installation.
+- Require the update package to contain the `tool-kits/tool-kits.php` plugin root.
+- Force plugin update cleanup options so stale extracted folders do not block installation.
+- Surface package validation problems through the Tool Kits updater status instead of only showing the generic WordPress install failure.
+
+= 2.3.3 =
+**Role Management**
+- Show custom post types in the capability builder.
+- Add explicit CRUD-oriented labels for post type capabilities.
+- Keep shared WordPress primitive capabilities visible per post type while saving the correct underlying capability.
+
+**Release Packaging**
+- Rebuild the ZIP builder around `git archive` and `.gitattributes` export rules.
+- Include current working tree changes in the release package through a temporary Git index.
+- Exclude development files such as scripts, README, roadmap, Git metadata, and macOS metadata from the release archive.
+
+= 2.3.2 =
+**License-Free Database Module**
+- Allow the complete Database page and all database actions without license activation or a Collector Token.
+- Keep Tool Kits role/IP access controls, nonces, and the settings lock enforced.
+
+**Firewall and Malware Scanner**
+- Add a Firewall control page for payload WAF, IP/CIDR allow/block rules, blocked user agents, and recent event logging.
+- Add a bounded, read-only Malware Scanner for suspicious executable uploads, encoded execution, obfuscation, and known web-shell markers.
+- Keep scan results review-only to avoid destructive false-positive cleanup.
+
+**Upload Limits**
+- Add separate maximum sizes for documents/PDF files and videos.
+- Detect image, document, and video uploads by extension and MIME family.
+- Keep category limits capped by the PHP/web-server upload maximum.
+
+**Role Management**
+- Add custom WordPress roles based on an existing non-administrator role.
+- Add grouped capability controls for content, custom post types, media, comments, users, appearance, plugins, settings, and third-party modules.
+- Support independent create, edit, publish, read, and delete permissions where WordPress exposes primitive capabilities.
+- Configure the visible dashboard sidebar menus for each Tool Kits-managed role.
+- Prevent deletion while users are still assigned to a managed role.
+
+**Gmail OAuth SMTP**
+- Replace Gmail app-password authentication with Google OAuth 2.0 authorization.
+- Add Google Client ID/Secret settings, an Authorized Redirect URI, and connect/disconnect actions.
+- Send Gmail SMTP through XOAUTH2 and refresh expired access tokens automatically.
+- Add Microsoft Entra ID OAuth authorization, tenant/mailbox settings, and automatic token refresh for Microsoft 365 SMTP.
+- Keep a dedicated username/password setup for custom SMTP providers.
+
+= 2.3.1 =
+**License / Collector Fixes**
+- Fix derived license endpoint so collector URL `/api/toolkits/heartbeat` resolves to `/api/toolkits/license`.
+- Add fallback signed requests for legacy collector tokens and license endpoint variants.
+- Add safe license diagnostics for heartbeat URL, license URL, and collector token fingerprint.
+- Prevent empty license notes from being sent as `null` to NexaMonitor.
+
 = 2.3.0 =
 **System Monitoring — Real-Time Health Monitor Enhancements**
 - Add CPU Load (1m) metric card with live progress bar and color-coded indicator (green / yellow / red).

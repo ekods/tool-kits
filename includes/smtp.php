@@ -5,6 +5,10 @@ function tk_smtp_init() {
     add_action('admin_post_tk_smtp_save', 'tk_smtp_save');
     add_action('admin_post_tk_smtp_test', 'tk_smtp_test_send');
     add_action('admin_post_tk_smtp_test_log_clear', 'tk_smtp_test_log_clear');
+    add_action('admin_post_tk_smtp_google_callback', 'tk_smtp_google_callback');
+    add_action('admin_post_tk_smtp_google_disconnect', 'tk_smtp_google_disconnect');
+    add_action('admin_post_tk_smtp_microsoft_callback', 'tk_smtp_microsoft_callback');
+    add_action('admin_post_tk_smtp_microsoft_disconnect', 'tk_smtp_microsoft_disconnect');
     // Run late so this SMTP config wins if other plugins also hook phpmailer_init.
     add_action('phpmailer_init', 'tk_smtp_phpmailer_init', 99999);
     add_filter('wp_mail_from', 'tk_smtp_mail_from', 20);
@@ -76,7 +80,7 @@ function tk_smtp_provider_presets() {
             'secure' => 'tls',
         ),
         'custom' => array(
-            'label' => 'Custom',
+            'label' => 'Other / Custom SMTP',
             'host' => '',
             'port' => 587,
             'secure' => 'tls',
@@ -105,6 +109,355 @@ function tk_smtp_get_config() {
         'force_from' => $force_from,
         'return_path' => $return_path,
     );
+}
+
+function tk_smtp_google_redirect_uri(): string {
+    return admin_url('admin-post.php?action=tk_smtp_google_callback');
+}
+
+function tk_smtp_google_is_connected(): bool {
+    return (string) tk_get_option('smtp_gmail_refresh_token', '') !== ''
+        && is_email((string) tk_get_option('smtp_gmail_email', ''));
+}
+
+function tk_smtp_google_auth_url(): string {
+    $client_id = trim((string) tk_get_option('smtp_gmail_client_id', ''));
+    $client_secret = trim((string) tk_get_option('smtp_gmail_client_secret', ''));
+    if ($client_id === '' || $client_secret === '') {
+        return '';
+    }
+
+    return add_query_arg(array(
+        'client_id' => $client_id,
+        'redirect_uri' => tk_smtp_google_redirect_uri(),
+        'response_type' => 'code',
+        'scope' => 'https://mail.google.com/ openid email',
+        'access_type' => 'offline',
+        'prompt' => 'consent',
+        'include_granted_scopes' => 'true',
+        'state' => wp_create_nonce('tk_smtp_google_oauth'),
+    ), 'https://accounts.google.com/o/oauth2/v2/auth');
+}
+
+function tk_smtp_google_admin_redirect(string $status): void {
+    wp_safe_redirect(add_query_arg(array(
+        'page' => 'tool-kits-smtp',
+        'tk_google_auth' => sanitize_key($status),
+    ), admin_url('admin.php')));
+    exit;
+}
+
+function tk_smtp_google_token_request(array $body) {
+    $response = wp_remote_post('https://oauth2.googleapis.com/token', array(
+        'timeout' => 20,
+        'headers' => array('Accept' => 'application/json'),
+        'body' => $body,
+    ));
+
+    if (is_wp_error($response)) {
+        return $response;
+    }
+
+    $status = (int) wp_remote_retrieve_response_code($response);
+    $data = json_decode((string) wp_remote_retrieve_body($response), true);
+    if ($status < 200 || $status >= 300 || !is_array($data) || empty($data['access_token'])) {
+        $message = is_array($data) && !empty($data['error_description'])
+            ? sanitize_text_field((string) $data['error_description'])
+            : __('Google did not return a valid OAuth access token.', 'tool-kits');
+        return new WP_Error('tk_smtp_google_token_error', $message);
+    }
+
+    return $data;
+}
+
+function tk_smtp_google_store_tokens(array $tokens): void {
+    if (!empty($tokens['access_token'])) {
+        tk_update_option('smtp_gmail_access_token', sanitize_text_field((string) $tokens['access_token']));
+    }
+    if (!empty($tokens['refresh_token'])) {
+        tk_update_option('smtp_gmail_refresh_token', sanitize_text_field((string) $tokens['refresh_token']));
+    }
+    $expires_in = isset($tokens['expires_in']) ? max(60, (int) $tokens['expires_in']) : 3600;
+    tk_update_option('smtp_gmail_token_expires_at', time() + $expires_in - 60);
+}
+
+function tk_smtp_google_fetch_email(string $access_token): string {
+    $response = wp_remote_get('https://www.googleapis.com/oauth2/v3/userinfo', array(
+        'timeout' => 15,
+        'headers' => array(
+            'Accept' => 'application/json',
+            'Authorization' => 'Bearer ' . $access_token,
+        ),
+    ));
+    if (is_wp_error($response) || (int) wp_remote_retrieve_response_code($response) !== 200) {
+        return '';
+    }
+    $data = json_decode((string) wp_remote_retrieve_body($response), true);
+    return is_array($data) && !empty($data['email']) ? sanitize_email((string) $data['email']) : '';
+}
+
+function tk_smtp_google_callback(): void {
+    if (!tk_is_admin_user()) {
+        wp_die(esc_html__('Forbidden', 'tool-kits'), '', array('response' => 403));
+    }
+
+    $state = isset($_GET['state']) ? sanitize_text_field(wp_unslash($_GET['state'])) : '';
+    if ($state === '' || !wp_verify_nonce($state, 'tk_smtp_google_oauth')) {
+        tk_smtp_google_admin_redirect('invalid_state');
+    }
+    if (!empty($_GET['error'])) {
+        tk_smtp_google_admin_redirect('denied');
+    }
+
+    $code = isset($_GET['code']) ? sanitize_text_field(wp_unslash($_GET['code'])) : '';
+    $client_id = trim((string) tk_get_option('smtp_gmail_client_id', ''));
+    $client_secret = trim((string) tk_get_option('smtp_gmail_client_secret', ''));
+    if ($code === '' || $client_id === '' || $client_secret === '') {
+        tk_smtp_google_admin_redirect('missing_credentials');
+    }
+
+    $tokens = tk_smtp_google_token_request(array(
+        'code' => $code,
+        'client_id' => $client_id,
+        'client_secret' => $client_secret,
+        'redirect_uri' => tk_smtp_google_redirect_uri(),
+        'grant_type' => 'authorization_code',
+    ));
+    if (is_wp_error($tokens)) {
+        tk_log('Gmail OAuth callback failed: ' . $tokens->get_error_message());
+        tk_smtp_google_admin_redirect('token_error');
+    }
+
+    tk_smtp_google_store_tokens($tokens);
+    $email = tk_smtp_google_fetch_email((string) $tokens['access_token']);
+    if ($email === '') {
+        tk_smtp_google_admin_redirect('email_error');
+    }
+
+    tk_update_option('smtp_gmail_email', $email);
+    tk_update_option('smtp_username', $email);
+    if ((int) tk_get_option('smtp_force_from', 1) === 1 || !is_email((string) tk_get_option('smtp_from_email', ''))) {
+        tk_update_option('smtp_from_email', $email);
+    }
+    tk_smtp_google_admin_redirect('connected');
+}
+
+function tk_smtp_google_disconnect(): void {
+    tk_require_admin_post('tk_smtp_google_disconnect');
+    tk_update_option('smtp_gmail_access_token', '');
+    tk_update_option('smtp_gmail_refresh_token', '');
+    tk_update_option('smtp_gmail_token_expires_at', 0);
+    tk_update_option('smtp_gmail_email', '');
+    tk_smtp_google_admin_redirect('disconnected');
+}
+
+function tk_smtp_google_access_token() {
+    $access_token = trim((string) tk_get_option('smtp_gmail_access_token', ''));
+    $expires_at = (int) tk_get_option('smtp_gmail_token_expires_at', 0);
+    if ($access_token !== '' && $expires_at > time()) {
+        return $access_token;
+    }
+
+    $refresh_token = trim((string) tk_get_option('smtp_gmail_refresh_token', ''));
+    $client_id = trim((string) tk_get_option('smtp_gmail_client_id', ''));
+    $client_secret = trim((string) tk_get_option('smtp_gmail_client_secret', ''));
+    if ($refresh_token === '' || $client_id === '' || $client_secret === '') {
+        return new WP_Error('tk_smtp_google_not_connected', __('Gmail OAuth is not connected.', 'tool-kits'));
+    }
+
+    $tokens = tk_smtp_google_token_request(array(
+        'refresh_token' => $refresh_token,
+        'client_id' => $client_id,
+        'client_secret' => $client_secret,
+        'grant_type' => 'refresh_token',
+    ));
+    if (is_wp_error($tokens)) {
+        return $tokens;
+    }
+    tk_smtp_google_store_tokens($tokens);
+    return (string) $tokens['access_token'];
+}
+
+function tk_smtp_oauth_provider(string $email, string $access_token) {
+    if (
+        !interface_exists('PHPMailer\\PHPMailer\\OAuthTokenProvider')
+        && defined('ABSPATH')
+        && defined('WPINC')
+    ) {
+        $interface_file = ABSPATH . WPINC . '/PHPMailer/OAuthTokenProvider.php';
+        if (is_readable($interface_file)) {
+            require_once $interface_file;
+        }
+    }
+    if (!interface_exists('PHPMailer\\PHPMailer\\OAuthTokenProvider')) {
+        return null;
+    }
+
+    return new class($email, $access_token) implements \PHPMailer\PHPMailer\OAuthTokenProvider {
+        private $email;
+        private $access_token;
+
+        public function __construct(string $email, string $access_token) {
+            $this->email = $email;
+            $this->access_token = $access_token;
+        }
+
+        public function getOauth64() {
+            return base64_encode('user=' . $this->email . "\001auth=Bearer " . $this->access_token . "\001\001");
+        }
+    };
+}
+
+function tk_smtp_microsoft_tenant(): string {
+    $tenant = trim((string) tk_get_option('smtp_microsoft_tenant_id', 'common'));
+    return $tenant !== '' ? preg_replace('/[^a-zA-Z0-9._-]/', '', $tenant) : 'common';
+}
+
+function tk_smtp_microsoft_redirect_uri(): string {
+    return admin_url('admin-post.php?action=tk_smtp_microsoft_callback');
+}
+
+function tk_smtp_microsoft_is_connected(): bool {
+    return (string) tk_get_option('smtp_microsoft_refresh_token', '') !== ''
+        && is_email((string) tk_get_option('smtp_microsoft_email', ''));
+}
+
+function tk_smtp_microsoft_auth_url(): string {
+    $client_id = trim((string) tk_get_option('smtp_microsoft_client_id', ''));
+    $client_secret = trim((string) tk_get_option('smtp_microsoft_client_secret', ''));
+    $email = sanitize_email((string) tk_get_option('smtp_microsoft_email', ''));
+    if ($client_id === '' || $client_secret === '' || $email === '') {
+        return '';
+    }
+
+    return add_query_arg(array(
+        'client_id' => $client_id,
+        'redirect_uri' => tk_smtp_microsoft_redirect_uri(),
+        'response_type' => 'code',
+        'response_mode' => 'query',
+        'scope' => 'openid email offline_access https://outlook.office.com/SMTP.Send',
+        'prompt' => 'select_account',
+        'login_hint' => $email,
+        'state' => wp_create_nonce('tk_smtp_microsoft_oauth'),
+    ), 'https://login.microsoftonline.com/' . rawurlencode(tk_smtp_microsoft_tenant()) . '/oauth2/v2.0/authorize');
+}
+
+function tk_smtp_microsoft_token_request(array $body) {
+    $response = wp_remote_post(
+        'https://login.microsoftonline.com/' . rawurlencode(tk_smtp_microsoft_tenant()) . '/oauth2/v2.0/token',
+        array(
+            'timeout' => 20,
+            'headers' => array('Accept' => 'application/json'),
+            'body' => $body,
+        )
+    );
+    if (is_wp_error($response)) {
+        return $response;
+    }
+
+    $status = (int) wp_remote_retrieve_response_code($response);
+    $data = json_decode((string) wp_remote_retrieve_body($response), true);
+    if ($status < 200 || $status >= 300 || !is_array($data) || empty($data['access_token'])) {
+        $message = is_array($data) && !empty($data['error_description'])
+            ? sanitize_text_field((string) $data['error_description'])
+            : __('Microsoft did not return a valid OAuth access token.', 'tool-kits');
+        return new WP_Error('tk_smtp_microsoft_token_error', $message);
+    }
+    return $data;
+}
+
+function tk_smtp_microsoft_store_tokens(array $tokens): void {
+    if (!empty($tokens['access_token'])) {
+        tk_update_option('smtp_microsoft_access_token', sanitize_text_field((string) $tokens['access_token']));
+    }
+    if (!empty($tokens['refresh_token'])) {
+        tk_update_option('smtp_microsoft_refresh_token', sanitize_text_field((string) $tokens['refresh_token']));
+    }
+    $expires_in = isset($tokens['expires_in']) ? max(60, (int) $tokens['expires_in']) : 3600;
+    tk_update_option('smtp_microsoft_token_expires_at', time() + $expires_in - 60);
+}
+
+function tk_smtp_microsoft_admin_redirect(string $status): void {
+    wp_safe_redirect(add_query_arg(array(
+        'page' => 'tool-kits-smtp',
+        'tk_microsoft_auth' => sanitize_key($status),
+    ), admin_url('admin.php')));
+    exit;
+}
+
+function tk_smtp_microsoft_callback(): void {
+    if (!tk_is_admin_user()) {
+        wp_die(esc_html__('Forbidden', 'tool-kits'), '', array('response' => 403));
+    }
+    $state = isset($_GET['state']) ? sanitize_text_field(wp_unslash($_GET['state'])) : '';
+    if ($state === '' || !wp_verify_nonce($state, 'tk_smtp_microsoft_oauth')) {
+        tk_smtp_microsoft_admin_redirect('invalid_state');
+    }
+    if (!empty($_GET['error'])) {
+        tk_smtp_microsoft_admin_redirect('denied');
+    }
+
+    $code = isset($_GET['code']) ? sanitize_text_field(wp_unslash($_GET['code'])) : '';
+    $client_id = trim((string) tk_get_option('smtp_microsoft_client_id', ''));
+    $client_secret = trim((string) tk_get_option('smtp_microsoft_client_secret', ''));
+    if ($code === '' || $client_id === '' || $client_secret === '') {
+        tk_smtp_microsoft_admin_redirect('missing_credentials');
+    }
+
+    $tokens = tk_smtp_microsoft_token_request(array(
+        'code' => $code,
+        'client_id' => $client_id,
+        'client_secret' => $client_secret,
+        'redirect_uri' => tk_smtp_microsoft_redirect_uri(),
+        'grant_type' => 'authorization_code',
+        'scope' => 'openid email offline_access https://outlook.office.com/SMTP.Send',
+    ));
+    if (is_wp_error($tokens)) {
+        tk_log('Microsoft OAuth callback failed: ' . $tokens->get_error_message());
+        tk_smtp_microsoft_admin_redirect('token_error');
+    }
+    tk_smtp_microsoft_store_tokens($tokens);
+    $email = sanitize_email((string) tk_get_option('smtp_microsoft_email', ''));
+    tk_update_option('smtp_username', $email);
+    if ((int) tk_get_option('smtp_force_from', 1) === 1 || !is_email((string) tk_get_option('smtp_from_email', ''))) {
+        tk_update_option('smtp_from_email', $email);
+    }
+    tk_smtp_microsoft_admin_redirect('connected');
+}
+
+function tk_smtp_microsoft_disconnect(): void {
+    tk_require_admin_post('tk_smtp_microsoft_disconnect');
+    tk_update_option('smtp_microsoft_access_token', '');
+    tk_update_option('smtp_microsoft_refresh_token', '');
+    tk_update_option('smtp_microsoft_token_expires_at', 0);
+    tk_smtp_microsoft_admin_redirect('disconnected');
+}
+
+function tk_smtp_microsoft_access_token() {
+    $access_token = trim((string) tk_get_option('smtp_microsoft_access_token', ''));
+    $expires_at = (int) tk_get_option('smtp_microsoft_token_expires_at', 0);
+    if ($access_token !== '' && $expires_at > time()) {
+        return $access_token;
+    }
+
+    $refresh_token = trim((string) tk_get_option('smtp_microsoft_refresh_token', ''));
+    $client_id = trim((string) tk_get_option('smtp_microsoft_client_id', ''));
+    $client_secret = trim((string) tk_get_option('smtp_microsoft_client_secret', ''));
+    if ($refresh_token === '' || $client_id === '' || $client_secret === '') {
+        return new WP_Error('tk_smtp_microsoft_not_connected', __('Microsoft OAuth is not connected.', 'tool-kits'));
+    }
+    $tokens = tk_smtp_microsoft_token_request(array(
+        'refresh_token' => $refresh_token,
+        'client_id' => $client_id,
+        'client_secret' => $client_secret,
+        'grant_type' => 'refresh_token',
+        'scope' => 'openid email offline_access https://outlook.office.com/SMTP.Send',
+    ));
+    if (is_wp_error($tokens)) {
+        return $tokens;
+    }
+    tk_smtp_microsoft_store_tokens($tokens);
+    return (string) $tokens['access_token'];
 }
 
 function tk_smtp_phpmailer_init($phpmailer = null) {
@@ -156,7 +509,24 @@ function tk_smtp_phpmailer_init($phpmailer = null) {
 
     if ($phpmailer->SMTPAuth) {
         $phpmailer->Username = $config['username'];
-        if ($config['password'] !== '') {
+        if (in_array($config['provider'], array('gmail', 'office365'), true)) {
+            $access_token = $config['provider'] === 'gmail'
+                ? tk_smtp_google_access_token()
+                : tk_smtp_microsoft_access_token();
+            if (is_wp_error($access_token)) {
+                tk_log(ucfirst($config['provider']) . ' OAuth token error: ' . $access_token->get_error_message());
+                $phpmailer->AuthType = 'XOAUTH2';
+            } else {
+                $oauth_provider = tk_smtp_oauth_provider($config['username'], $access_token);
+                if ($oauth_provider !== null && method_exists($phpmailer, 'setOAuth')) {
+                    $phpmailer->AuthType = 'XOAUTH2';
+                    $phpmailer->setOAuth($oauth_provider);
+                } else {
+                    tk_log('SMTP OAuth requires PHPMailer OAuthTokenProvider support.');
+                    $phpmailer->AuthType = 'XOAUTH2';
+                }
+            }
+        } elseif ($config['password'] !== '') {
             $phpmailer->Password = $config['password'];
         }
     }
@@ -203,15 +573,20 @@ function tk_render_smtp_page() {
         'smtp_from_name' => tk_get_option('smtp_from_name', ''),
         'smtp_force_from' => tk_get_option('smtp_force_from', 1),
         'smtp_return_path' => tk_get_option('smtp_return_path', 1),
+        'smtp_gmail_client_id' => tk_get_option('smtp_gmail_client_id', ''),
+        'smtp_gmail_email' => tk_get_option('smtp_gmail_email', ''),
+        'smtp_microsoft_client_id' => tk_get_option('smtp_microsoft_client_id', ''),
+        'smtp_microsoft_tenant_id' => tk_get_option('smtp_microsoft_tenant_id', 'common'),
+        'smtp_microsoft_email' => tk_get_option('smtp_microsoft_email', ''),
     );
 
     $presets = tk_smtp_provider_presets();
     $from_username_aligned = tk_smtp_from_username_match();
     $last_failure_reason = tk_smtp_test_log_last_failure_reason();
     $provider_notes = array(
-        'gmail' => '<ul class="tk-note-list"><li>' . __('Create an app password in your Google account.', 'tool-kits') . '</li><li>' . __('Use the app password instead of your regular Google password.', 'tool-kits') . '</li><li>' . __('Ensure the Mail scope is allowed and two-factor auth is enabled.', 'tool-kits') . '</li></ul>',
-        'office365' => '<ul class="tk-note-list"><li>' . __('Confirm the username is a licensed mailbox with an active mailbox plan.', 'tool-kits') . '</li><li>' . __('Enable SMTP AUTH for that mailbox in the Microsoft 365 admin center.', 'tool-kits') . '</li><li>' . __('If your tenant blocks basic auth globally, allow SMTP AUTH for that user.', 'tool-kits') . '</li></ul>',
-        'custom' => '<p>' . __('Use the credentials provided by your SMTP service and verify any required ports or TLS/SSL settings.', 'tool-kits') . '</p>',
+        'gmail' => '<ul class="tk-note-list"><li>' . __('Create a Web application OAuth client in Google Cloud Console.', 'tool-kits') . '</li><li>' . __('Add the Authorized redirect URI shown below, save the settings, then authorize your Google account.', 'tool-kits') . '</li><li>' . __('No Gmail password or app password is stored.', 'tool-kits') . '</li></ul>',
+        'office365' => '<ul class="tk-note-list"><li>' . __('Register a Web application in Microsoft Entra ID and add the redirect URI shown below.', 'tool-kits') . '</li><li>' . __('Enable Authenticated SMTP for the mailbox and grant the delegated SMTP.Send permission.', 'tool-kits') . '</li><li>' . __('Tool Kits uses OAuth 2.0; the mailbox password is not stored.', 'tool-kits') . '</li></ul>',
+        'custom' => '<ul class="tk-note-list"><li>' . __('Use the SMTP host, port, encryption, username, and password supplied by your provider.', 'tool-kits') . '</li><li>' . __('Custom SMTP uses password authentication because authorization endpoints and scopes differ between providers.', 'tool-kits') . '</li></ul>',
     );
     $saved = isset($_GET['tk_saved']) ? sanitize_key($_GET['tk_saved']) : '';
     $test_status = isset($_GET['tk_smtp_test']) ? sanitize_key($_GET['tk_smtp_test']) : '';
@@ -219,6 +594,10 @@ function tk_render_smtp_page() {
     $smtp_test_log = tk_smtp_test_log_get();
     $log_cleared = isset($_GET['tk_smtp_log_cleared']) ? sanitize_key($_GET['tk_smtp_log_cleared']) : '';
     $transport_warning = tk_smtp_transport_warning($opts);
+    $google_auth_status = isset($_GET['tk_google_auth']) ? sanitize_key(wp_unslash($_GET['tk_google_auth'])) : '';
+    $google_auth_url = tk_smtp_google_auth_url();
+    $microsoft_auth_status = isset($_GET['tk_microsoft_auth']) ? sanitize_key(wp_unslash($_GET['tk_microsoft_auth'])) : '';
+    $microsoft_auth_url = tk_smtp_microsoft_auth_url();
     ?>
     <div class="wrap tk-wrap">
         <?php tk_render_header_branding(); ?>
@@ -228,6 +607,20 @@ function tk_render_smtp_page() {
         <?php endif; ?>
         <?php if ($log_cleared === '1') : ?>
             <?php tk_notice('SMTP test log cleared.', 'success'); ?>
+        <?php endif; ?>
+        <?php if ($google_auth_status === 'connected') : ?>
+            <?php tk_notice('Google account connected successfully.', 'success'); ?>
+        <?php elseif ($google_auth_status === 'disconnected') : ?>
+            <?php tk_notice('Google OAuth connection removed.', 'success'); ?>
+        <?php elseif ($google_auth_status !== '') : ?>
+            <?php tk_notice('Google authorization failed (' . esc_html($google_auth_status) . '). Check the Client ID, Client Secret, redirect URI, and OAuth consent screen.', 'error'); ?>
+        <?php endif; ?>
+        <?php if ($microsoft_auth_status === 'connected') : ?>
+            <?php tk_notice('Microsoft 365 account connected successfully.', 'success'); ?>
+        <?php elseif ($microsoft_auth_status === 'disconnected') : ?>
+            <?php tk_notice('Microsoft OAuth connection removed.', 'success'); ?>
+        <?php elseif ($microsoft_auth_status !== '') : ?>
+            <?php tk_notice('Microsoft authorization failed (' . esc_html($microsoft_auth_status) . '). Check the App ID, Client Secret, tenant, redirect URI, and delegated SMTP.Send permission.', 'error'); ?>
         <?php endif; ?>
         <?php if ($transport_warning !== '') : ?>
             <?php tk_notice($transport_warning, 'warning'); ?>
@@ -297,7 +690,79 @@ function tk_render_smtp_page() {
 
                         <div class="tk-form-section" style="margin-bottom:30px;">
                             <h3 style="font-size:14px; margin-bottom:16px; color:var(--tk-primary);">3. Authentication</h3>
-                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                            <div id="tk-smtp-gmail-auth" style="<?php echo $opts['smtp_provider'] === 'gmail' ? '' : 'display:none;'; ?> background:var(--tk-bg-soft); padding:20px; border-radius:12px; border:1px solid var(--tk-border-soft);">
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+                                    <div class="tk-form-group">
+                                        <label class="tk-form-label">Google Client ID</label>
+                                        <input type="text" name="smtp_gmail_client_id" class="tk-input" style="width:100%;" value="<?php echo esc_attr($opts['smtp_gmail_client_id']); ?>" autocomplete="off" placeholder="000000000000-xxxx.apps.googleusercontent.com">
+                                    </div>
+                                    <div class="tk-form-group">
+                                        <label class="tk-form-label">Google Client Secret</label>
+                                        <input type="password" name="smtp_gmail_client_secret" class="tk-input" style="width:100%;" value="" autocomplete="new-password" placeholder="<?php echo esc_attr(tk_get_option('smtp_gmail_client_secret', '') !== '' ? 'Saved — leave blank to keep' : 'Enter client secret'); ?>">
+                                    </div>
+                                </div>
+                                <div class="tk-form-group" style="margin-top:18px;">
+                                    <label class="tk-form-label">Authorized Redirect URI</label>
+                                    <div style="display:flex; gap:8px; align-items:center;">
+                                        <input type="text" id="tk-smtp-google-redirect" class="tk-input" style="width:100%;" readonly value="<?php echo esc_attr(tk_smtp_google_redirect_uri()); ?>" onfocus="this.select();">
+                                        <button type="button" class="button" onclick="navigator.clipboard.writeText(document.getElementById('tk-smtp-google-redirect').value)">Copy</button>
+                                    </div>
+                                    <p class="tk-input-help">Add this exact URL to Google Cloud Console → OAuth client → Authorized redirect URIs.</p>
+                                </div>
+                                <div style="margin-top:18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                                    <?php if (tk_smtp_google_is_connected()) : ?>
+                                        <span class="tk-badge tk-on">Connected</span>
+                                        <span><?php echo esc_html((string) $opts['smtp_gmail_email']); ?></span>
+                                        <a class="button" href="<?php echo esc_url(add_query_arg(array('action' => 'tk_smtp_google_disconnect', '_tk_nonce' => wp_create_nonce('tk_smtp_google_disconnect')), admin_url('admin-post.php'))); ?>">Remove OAuth Connection</a>
+                                    <?php elseif ($google_auth_url !== '') : ?>
+                                        <a class="button button-primary" href="<?php echo esc_url($google_auth_url); ?>">Allow Tool Kits to send email using Google</a>
+                                        <span class="description">Save Client ID and Client Secret before authorizing.</span>
+                                    <?php else : ?>
+                                        <span class="description">Enter and save Client ID and Client Secret to generate the Google authorization URL.</span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <div id="tk-smtp-microsoft-auth" style="<?php echo $opts['smtp_provider'] === 'office365' ? '' : 'display:none;'; ?> background:var(--tk-bg-soft); padding:20px; border-radius:12px; border:1px solid var(--tk-border-soft);">
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+                                    <div class="tk-form-group">
+                                        <label class="tk-form-label">Microsoft Application (Client) ID</label>
+                                        <input type="text" name="smtp_microsoft_client_id" class="tk-input" style="width:100%;" value="<?php echo esc_attr($opts['smtp_microsoft_client_id']); ?>" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000">
+                                    </div>
+                                    <div class="tk-form-group">
+                                        <label class="tk-form-label">Microsoft Client Secret</label>
+                                        <input type="password" name="smtp_microsoft_client_secret" class="tk-input" style="width:100%;" value="" autocomplete="new-password" placeholder="<?php echo esc_attr(tk_get_option('smtp_microsoft_client_secret', '') !== '' ? 'Saved — leave blank to keep' : 'Enter client secret value'); ?>">
+                                    </div>
+                                    <div class="tk-form-group">
+                                        <label class="tk-form-label">Directory (Tenant) ID</label>
+                                        <input type="text" name="smtp_microsoft_tenant_id" class="tk-input" style="width:100%;" value="<?php echo esc_attr($opts['smtp_microsoft_tenant_id']); ?>" autocomplete="off" placeholder="common or tenant UUID">
+                                    </div>
+                                    <div class="tk-form-group">
+                                        <label class="tk-form-label">Microsoft 365 Mailbox</label>
+                                        <input type="email" name="smtp_microsoft_email" class="tk-input" style="width:100%;" value="<?php echo esc_attr($opts['smtp_microsoft_email']); ?>" autocomplete="email" placeholder="user@company.com">
+                                    </div>
+                                </div>
+                                <div class="tk-form-group" style="margin-top:18px;">
+                                    <label class="tk-form-label">Authorized Redirect URI</label>
+                                    <div style="display:flex; gap:8px; align-items:center;">
+                                        <input type="text" id="tk-smtp-microsoft-redirect" class="tk-input" style="width:100%;" readonly value="<?php echo esc_attr(tk_smtp_microsoft_redirect_uri()); ?>" onfocus="this.select();">
+                                        <button type="button" class="button" onclick="navigator.clipboard.writeText(document.getElementById('tk-smtp-microsoft-redirect').value)">Copy</button>
+                                    </div>
+                                    <p class="tk-input-help">Add this exact URL in Microsoft Entra ID → App registrations → Authentication → Web redirect URI.</p>
+                                </div>
+                                <div style="margin-top:18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                                    <?php if (tk_smtp_microsoft_is_connected()) : ?>
+                                        <span class="tk-badge tk-on">Connected</span>
+                                        <span><?php echo esc_html((string) $opts['smtp_microsoft_email']); ?></span>
+                                        <a class="button" href="<?php echo esc_url(add_query_arg(array('action' => 'tk_smtp_microsoft_disconnect', '_tk_nonce' => wp_create_nonce('tk_smtp_microsoft_disconnect')), admin_url('admin-post.php'))); ?>">Remove OAuth Connection</a>
+                                    <?php elseif ($microsoft_auth_url !== '') : ?>
+                                        <a class="button button-primary" href="<?php echo esc_url($microsoft_auth_url); ?>">Allow Tool Kits to send email using Microsoft</a>
+                                        <span class="description">Save the Microsoft settings before authorizing.</span>
+                                    <?php else : ?>
+                                        <span class="description">Enter and save the App ID, Client Secret, tenant, and mailbox to generate the Microsoft authorization URL.</span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <div id="tk-smtp-password-auth" style="display:<?php echo $opts['smtp_provider'] === 'custom' ? 'grid' : 'none'; ?>; grid-template-columns:1fr 1fr; gap:20px;">
                                 <div class="tk-form-group">
                                     <label class="tk-form-label">Username</label>
                                     <input type="text" id="tk-smtp-username" name="smtp_username" class="tk-input" style="width:100%;" value="<?php echo esc_attr($opts['smtp_username']); ?>" placeholder="user@example.com">
@@ -306,7 +771,7 @@ function tk_render_smtp_page() {
                                 <div class="tk-form-group">
                                     <label class="tk-form-label">Password / App Password</label>
                                     <input type="password" id="tk-smtp-password" name="smtp_password" class="tk-input" style="width:100%;" autocomplete="new-password" placeholder="••••••••••••••••">
-                                    <p class="tk-input-help">Use an App Password for Gmail/O365.</p>
+                                    <p class="tk-input-help">Use the credentials supplied by your mail provider.</p>
                                 </div>
                             </div>
                         </div>
@@ -473,6 +938,9 @@ Mail Service</textarea>
         var port = document.getElementById('tk-smtp-port');
         var secure = document.getElementById('tk-smtp-secure');
         var providerNote = document.getElementById('tk-smtp-provider-note');
+        var gmailAuth = document.getElementById('tk-smtp-gmail-auth');
+        var microsoftAuth = document.getElementById('tk-smtp-microsoft-auth');
+        var passwordAuth = document.getElementById('tk-smtp-password-auth');
         function markSecureAuto(value) {
             if (!secure) { return; }
             secure.setAttribute('data-tk-smtp-autosecure', value);
@@ -510,6 +978,15 @@ Mail Service</textarea>
                 }
                 if (providerNote) {
                     providerNote.innerHTML = note;
+                }
+                if (gmailAuth) {
+                    gmailAuth.style.display = select.value === 'gmail' ? 'block' : 'none';
+                }
+                if (microsoftAuth) {
+                    microsoftAuth.style.display = select.value === 'office365' ? 'block' : 'none';
+                }
+                if (passwordAuth) {
+                    passwordAuth.style.display = select.value === 'custom' ? 'grid' : 'none';
                 }
             }
             select.addEventListener('change', applyPreset);
@@ -584,7 +1061,56 @@ function tk_smtp_save() {
     tk_update_option('smtp_port', $port);
     tk_update_option('smtp_secure', $secure);
 
-    $username = isset($_POST['smtp_username']) ? sanitize_text_field(wp_unslash($_POST['smtp_username'])) : '';
+    $old_client_id = (string) tk_get_option('smtp_gmail_client_id', '');
+    $old_client_secret = (string) tk_get_option('smtp_gmail_client_secret', '');
+    $client_id = isset($_POST['smtp_gmail_client_id']) ? sanitize_text_field(wp_unslash($_POST['smtp_gmail_client_id'])) : $old_client_id;
+    $posted_client_secret = isset($_POST['smtp_gmail_client_secret']) ? trim((string) wp_unslash($_POST['smtp_gmail_client_secret'])) : '';
+    $client_secret = $posted_client_secret !== '' ? $posted_client_secret : $old_client_secret;
+    $oauth_credentials_changed = $client_id !== $old_client_id
+        || ($posted_client_secret !== '' && !hash_equals($old_client_secret, $posted_client_secret));
+    tk_update_option('smtp_gmail_client_id', $client_id);
+    if ($posted_client_secret !== '') {
+        tk_update_option('smtp_gmail_client_secret', $posted_client_secret);
+    }
+    if ($oauth_credentials_changed) {
+        tk_update_option('smtp_gmail_access_token', '');
+        tk_update_option('smtp_gmail_refresh_token', '');
+        tk_update_option('smtp_gmail_token_expires_at', 0);
+        tk_update_option('smtp_gmail_email', '');
+    }
+
+    $old_ms_client_id = (string) tk_get_option('smtp_microsoft_client_id', '');
+    $old_ms_client_secret = (string) tk_get_option('smtp_microsoft_client_secret', '');
+    $old_ms_tenant = (string) tk_get_option('smtp_microsoft_tenant_id', 'common');
+    $old_ms_email = (string) tk_get_option('smtp_microsoft_email', '');
+    $ms_client_id = isset($_POST['smtp_microsoft_client_id']) ? sanitize_text_field(wp_unslash($_POST['smtp_microsoft_client_id'])) : $old_ms_client_id;
+    $posted_ms_secret = isset($_POST['smtp_microsoft_client_secret']) ? trim((string) wp_unslash($_POST['smtp_microsoft_client_secret'])) : '';
+    $ms_tenant = isset($_POST['smtp_microsoft_tenant_id']) ? sanitize_text_field(wp_unslash($_POST['smtp_microsoft_tenant_id'])) : $old_ms_tenant;
+    $ms_tenant = $ms_tenant !== '' ? $ms_tenant : 'common';
+    $ms_email = isset($_POST['smtp_microsoft_email']) ? sanitize_email(wp_unslash($_POST['smtp_microsoft_email'])) : $old_ms_email;
+    $ms_credentials_changed = $ms_client_id !== $old_ms_client_id
+        || $ms_tenant !== $old_ms_tenant
+        || $ms_email !== $old_ms_email
+        || ($posted_ms_secret !== '' && !hash_equals($old_ms_client_secret, $posted_ms_secret));
+    tk_update_option('smtp_microsoft_client_id', $ms_client_id);
+    tk_update_option('smtp_microsoft_tenant_id', $ms_tenant);
+    tk_update_option('smtp_microsoft_email', $ms_email);
+    if ($posted_ms_secret !== '') {
+        tk_update_option('smtp_microsoft_client_secret', $posted_ms_secret);
+    }
+    if ($ms_credentials_changed) {
+        tk_update_option('smtp_microsoft_access_token', '');
+        tk_update_option('smtp_microsoft_refresh_token', '');
+        tk_update_option('smtp_microsoft_token_expires_at', 0);
+    }
+
+    if ($provider === 'gmail') {
+        $username = sanitize_email((string) tk_get_option('smtp_gmail_email', ''));
+    } elseif ($provider === 'office365') {
+        $username = $ms_email;
+    } else {
+        $username = isset($_POST['smtp_username']) ? sanitize_text_field(wp_unslash($_POST['smtp_username'])) : '';
+    }
     tk_update_option('smtp_username', $username);
 
     $password = isset($_POST['smtp_password']) ? wp_unslash($_POST['smtp_password']) : '';
@@ -656,6 +1182,7 @@ function tk_smtp_test_send() {
         'smtp_secure' => $config['secure'],
         'smtp_autotls' => 'on',
         'smtp_auth' => $config['username'] !== '' ? 'on' : 'off',
+        'smtp_auth_method' => in_array($config['provider'], array('gmail', 'office365'), true) ? 'XOAUTH2' : 'password',
         'smtp_user' => $config['username'],
         'force_from' => $config['force_from'] ? 'on' : 'off',
         'return_path_enabled' => $config['return_path'] ? 'on' : 'off',
@@ -977,6 +1504,7 @@ function tk_smtp_test_log_get_details_array(array $details): array {
         'smtp_secure' => 'Secure',
         'smtp_autotls' => 'AutoTLS',
         'smtp_auth' => 'Auth',
+        'smtp_auth_method' => 'Auth Method',
         'smtp_user' => 'User',
         'force_from' => 'Force From',
     );
@@ -999,6 +1527,7 @@ function tk_smtp_test_log_format_details(array $details): string {
         'smtp_secure' => 'Secure',
         'smtp_autotls' => 'AutoTLS',
         'smtp_auth' => 'Auth',
+        'smtp_auth_method' => 'Auth Method',
         'smtp_user' => 'User',
         'force_from' => 'Force From',
         'return_path_enabled' => 'Return-Path Enabled',

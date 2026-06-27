@@ -495,7 +495,7 @@ function tk_render_image_opt_panel() {
 }
 
 function tk_image_opt_save() {
-    tk_check_nonce('tk_image_opt_save');
+    tk_require_admin_post('tk_image_opt_save');
     tk_update_option('image_opt_enabled', !empty($_POST['image_opt_enabled']) ? 1 : 0);
     tk_update_option('image_opt_frontend_to_webp', (int) tk_get_option('webp_serve_enabled', 0));
     tk_update_option('image_opt_rewrite_all_assets', (int) tk_get_option('webp_serve_enabled', 0));

@@ -22,10 +22,13 @@ function tk_captcha_init() {
 
 function tk_captcha_custom_ajax_handler_init() {
     if (isset($_GET['tk_captcha_action'])) {
-        if ($_GET['tk_captcha_action'] === 'refresh') {
+        $action = sanitize_key((string) wp_unslash($_GET['tk_captcha_action']));
+        if ($action === 'refresh') {
             tk_captcha_refresh_ajax();
-        } else {
+        } elseif ($action === 'verify_click') {
             tk_captcha_verify_click_ajax();
+        } else {
+            wp_send_json_error('invalid_action');
         }
         exit;
     }
@@ -33,10 +36,13 @@ function tk_captcha_custom_ajax_handler_init() {
 
 function tk_captcha_custom_ajax_handler() {
     if (isset($_GET['tk_captcha_action'])) {
-        if ($_GET['tk_captcha_action'] === 'refresh') {
+        $action = sanitize_key((string) wp_unslash($_GET['tk_captcha_action']));
+        if ($action === 'refresh') {
             tk_captcha_refresh_ajax();
-        } else {
+        } elseif ($action === 'verify_click') {
             tk_captcha_verify_click_ajax();
+        } else {
+            wp_send_json_error('invalid_action');
         }
         exit;
     }
@@ -499,7 +505,7 @@ function tk_captcha_wpcf7_tag_handler($tag) {
 }
 
 function tk_captcha_refresh_ajax() {
-    $nonce = isset($_POST['nonce']) ? sanitize_text_field(wp_unslash($_POST['nonce'])) : '';
+    $nonce = isset($_REQUEST['nonce']) ? sanitize_text_field(wp_unslash($_REQUEST['nonce'])) : '';
     if (!wp_verify_nonce($nonce, 'tk_captcha_refresh')) {
         wp_send_json_error('invalid_nonce');
     }
@@ -511,7 +517,7 @@ function tk_captcha_refresh_ajax() {
 }
 
 function tk_captcha_verify_click_ajax() {
-    $nonce = isset($_POST['nonce']) ? sanitize_text_field(wp_unslash($_POST['nonce'])) : '';
+    $nonce = isset($_REQUEST['nonce']) ? sanitize_text_field(wp_unslash($_REQUEST['nonce'])) : '';
     if (!wp_verify_nonce($nonce, 'tk_captcha_verify_click')) {
         wp_send_json_error('invalid_nonce');
     }
@@ -520,7 +526,7 @@ function tk_captcha_verify_click_ajax() {
         wp_send_json_error('disabled');
     }
 
-    $token = isset($_POST['token']) ? sanitize_text_field(wp_unslash($_POST['token'])) : '';
+    $token = isset($_REQUEST['token']) ? sanitize_text_field(wp_unslash($_REQUEST['token'])) : '';
     if ($token === '') {
         wp_send_json_error('missing_token');
     }
@@ -547,13 +553,13 @@ function tk_captcha_refresh_script() {
     }
     $printed = true;
 
-    $ajax_url = home_url('/?tk_captcha_action=verify');
+    $verify_url = home_url('/?tk_captcha_action=verify_click');
     $nonce_refresh = wp_create_nonce('tk_captcha_refresh');
     $nonce_verify = wp_create_nonce('tk_captcha_verify_click');
     
     tk_csp_print_inline_script(
         "(function(){
-            var ajaxUrl = '" . esc_js($ajax_url) . "';
+            var verifyUrl = '" . esc_js($verify_url) . "';
             var nonceRefresh = '" . esc_js($nonce_refresh) . "';
             var nonceVerify = '" . esc_js($nonce_verify) . "';
             
@@ -568,55 +574,66 @@ function tk_captcha_refresh_script() {
             if (window.tkCaptchaRefreshBound) return;
             window.tkCaptchaRefreshBound = true;
 
+            function verifyCheckbox(target, event) {
+                var field = target.closest('.tk-captcha-field');
+                if (!field || field.getAttribute('data-type') !== 'checkbox') return;
+
+                if (event) event.preventDefault();
+
+                var realBox = field.querySelector('.tk-captcha-checkbox-box');
+                if (!realBox || realBox.classList.contains('is-checked') || realBox.classList.contains('is-loading')) return;
+
+                var tokenInput = field.querySelector('input[name=\"tk_captcha_token\"]');
+                if (!tokenInput || !tokenInput.value) return;
+
+                if (Date.now() - startTime < 500 && interactions === 0) {
+                    console.warn('ToolKits: Bot detected (fast click / no interaction)');
+                }
+
+                realBox.classList.add('is-loading');
+                realBox.setAttribute('aria-busy', 'true');
+
+                fetch(verifyUrl, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: new URLSearchParams({
+                        nonce: nonceVerify,
+                        token: tokenInput.value,
+                        interact: interactions,
+                        timing: Date.now() - startTime
+                    })
+                }).then(function(resp){
+                    if (!resp.ok) throw new Error('Network response was not ok');
+                    return resp.json();
+                }).then(function(data){
+                    if (data.success && data.data.answer) {
+                        setTimeout(function(){
+                            realBox.classList.remove('is-loading');
+                            realBox.classList.add('is-checked');
+                            realBox.removeAttribute('aria-busy');
+                            realBox.setAttribute('aria-checked', 'true');
+                            var ans = field.querySelector('.tk-captcha-answer-field');
+                            if (ans) ans.value = data.data.answer;
+                        }, 600);
+                    } else {
+                        throw new Error(data.data || 'Verification failed');
+                    }
+                }).catch(function(err){
+                    console.error('Captcha Verification Error:', err);
+                    realBox.classList.remove('is-loading');
+                    realBox.removeAttribute('aria-busy');
+                    alert('Verification failed. Please try again.');
+                });
+            }
+
             document.addEventListener('click', function(e){
                 var box = e.target.closest('.tk-captcha-checkbox-box');
                 var text = e.target.closest('.tk-captcha-checkbox-text');
+                var left = e.target.closest('.tk-captcha-checkbox-left');
                 
-                if (box || text) {
-                    var field = e.target.closest('.tk-captcha-field');
-                    var realBox = field.querySelector('.tk-captcha-checkbox-box');
-                    if (realBox.classList.contains('is-checked') || realBox.classList.contains('is-loading')) return;
-                    
-                    var tokenInput = field.querySelector('input[name=\"tk_captcha_token\"]');
-                    if (!tokenInput) return;
-
-                    // Strong validation: Check if time on page is too low (< 500ms) or no interaction
-                    if (Date.now() - startTime < 500 && interactions === 0) {
-                        console.warn('ToolKits: Bot detected (fast click / no interaction)');
-                        // Still allow but we can flag it or just be more strict later
-                    }
-
-                    realBox.classList.add('is-loading');
-                    
-                    fetch(ajaxUrl, {
-                        method: 'POST',
-                        credentials: 'same-origin',
-                        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                        body: new URLSearchParams({
-                            action: 'tk_captcha_verify_click',
-                            nonce: nonceVerify,
-                            token: tokenInput.value,
-                            interact: interactions,
-                            timing: Date.now() - startTime
-                        })
-                    }).then(function(resp){ 
-                        return resp.json(); 
-                    }).then(function(data){
-                        if (data.success && data.data.answer) {
-                            setTimeout(function(){
-                                realBox.classList.remove('is-loading');
-                                realBox.classList.add('is-checked');
-                                realBox.setAttribute('aria-checked', 'true');
-                                var ans = field.querySelector('.tk-captcha-answer-field');
-                                if (ans) ans.value = data.data.answer;
-                            }, 600); // Artificial delay for premium feel
-                        } else {
-                            throw new Error(data.data || 'Verification failed');
-                        }
-                    }).catch(function(err){
-                        realBox.classList.remove('is-loading');
-                        alert('Verification failed. Please try again.');
-                    });
+                if (box || text || left) {
+                    verifyCheckbox(e.target, e);
                     return;
                 }
 
@@ -662,6 +679,13 @@ function tk_captcha_refresh_script() {
                         btn.removeAttribute('aria-busy');
                     }
                 });
+            });
+
+            document.addEventListener('keydown', function(e){
+                var box = e.target.closest('.tk-captcha-checkbox-box');
+                if (box && (e.key === 'Enter' || e.key === ' ')) {
+                    verifyCheckbox(box, e);
+                }
             });
         })();",
         array('id' => 'tk-captcha-refresh')
