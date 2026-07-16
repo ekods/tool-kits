@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.3.5
+Stable tag: 2.3.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -61,6 +61,15 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.3.7 =
+**Release**
+- Sync plugin metadata for the 2.3.7 package.
+
+= 2.3.6 =
+**Access Control**
+- Enforce Role Management menu restrictions on direct admin URL access.
+- Add Hide Tool Kits Menu control to the Tool Kits Access page.
+
 = 2.3.5 =
 **GitHub Updater**
 - Align the update/install flow with Custom Fields Framework Pro.

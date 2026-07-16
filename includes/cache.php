@@ -2,6 +2,8 @@
 if (!defined('ABSPATH')) { exit; }
 
 function tk_cache_init() {
+    $page_cache_enabled = (int) tk_get_option('page_cache_enabled', 0) === 1;
+
     add_action('admin_post_tk_cache_save', 'tk_cache_save');
     add_action('admin_post_tk_cache_purge', 'tk_cache_purge');
     add_action('admin_post_tk_cache_preload', 'tk_cache_preload');
@@ -11,9 +13,12 @@ function tk_cache_init() {
     add_action('admin_bar_menu', 'tk_cache_admin_bar_menu', 100);
     add_action('admin_notices', 'tk_cache_admin_notice');
 
+    if (!$page_cache_enabled) {
+        return;
+    }
+
     add_action('template_redirect', 'tk_page_cache_maybe_serve', 0);
     add_action('template_redirect', 'tk_page_cache_start_buffer', 1);
-
     add_action('save_post', 'tk_page_cache_purge');
     add_action('deleted_post', 'tk_page_cache_purge');
     add_action('transition_comment_status', 'tk_page_cache_purge');
@@ -205,10 +210,21 @@ function tk_cache_save() {
     }
     tk_check_nonce('tk_cache_save');
 
-    tk_update_option('page_cache_enabled', !empty($_POST['page_cache_enabled']) ? 1 : 0);
+    $was_page_cache_enabled = (int) tk_get_option('page_cache_enabled', 0) === 1;
+    $page_cache_enabled = !empty($_POST['page_cache_enabled']) ? 1 : 0;
+    tk_update_option('page_cache_enabled', $page_cache_enabled);
     tk_update_option('page_cache_ttl', max(0, (int) tk_post('page_cache_ttl', 3600)));
     tk_update_option('page_cache_exclude_paths', (string) tk_post('page_cache_exclude_paths', "/wp-login.php\n/wp-admin\n"));
     tk_update_option('page_cache_preload_urls', (string) tk_post('page_cache_preload_urls', ''));
+
+    if ($was_page_cache_enabled && $page_cache_enabled === 0) {
+        $purged = tk_page_cache_purge();
+        set_transient(
+            'tk_cache_purged_notice',
+            'Page cache disabled. Removed ' . tk_page_cache_summary_text($purged) . '.',
+            30
+        );
+    }
 
     wp_redirect(admin_url('admin.php?page=tool-kits-cache&tk_updated=1'));
     exit;
@@ -463,6 +479,8 @@ function tk_cache_render_status_rows() {
     $redis = function_exists('wp_cache_get') && defined('WP_REDIS_VERSION');
     $opcache = function_exists('opcache_get_status') && ini_get('opcache.enable');
     $page_stats = tk_page_cache_stats();
+    $fragment_keys = tk_get_option('fragment_cache_keys', array());
+    $fragment_count = is_array($fragment_keys) ? count($fragment_keys) : 0;
     ?>
     <table class="widefat striped tk-table">
         <thead><tr><th>Cache</th><th>Status</th><th>Detail</th></tr></thead>
@@ -484,13 +502,13 @@ function tk_cache_render_status_rows() {
             </tr>
             <tr>
                 <td>Opcode cache</td>
-                <td><?php echo $opcache ? '<span class="tk-badge tk-on">ENABLED</span>' : '<span class="tk-badge">OFF</span>'; ?></td>
-                <td><?php echo $opcache ? 'OPcache available in PHP.' : 'OPcache not enabled.'; ?></td>
+                <td><?php echo $opcache ? '<span class="tk-badge">AVAILABLE</span>' : '<span class="tk-badge">OFF</span>'; ?></td>
+                <td><?php echo $opcache ? 'PHP OPcache is available at server level. Tool Kits does not use it for page caching.' : 'OPcache not enabled.'; ?></td>
             </tr>
             <tr>
                 <td>Fragment cache</td>
-                <td><span class="tk-badge">ON DEMAND</span></td>
-                <td>Use helper functions for specific blocks.</td>
+                <td><?php echo $fragment_count > 0 ? '<span class="tk-badge">STORED</span>' : '<span class="tk-badge">IDLE</span>'; ?></td>
+                <td>No automatic fragment caching is active. Helper functions only store fragments when called by code. Stored fragments: <?php echo esc_html((string) $fragment_count); ?>.</td>
             </tr>
         </tbody>
     </table>

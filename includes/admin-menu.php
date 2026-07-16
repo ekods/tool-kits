@@ -785,6 +785,7 @@ function tk_render_toolkits_access_page() {
                         tk_render_switch('toolkits_owner_only_enabled', 'Owner-Only Mode', 'Restrict access to the primary site owner (UID: ' . $owner_id . ') only.', $owner_only);
 
                         echo '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--tk-border-soft);">';
+                        tk_render_switch('hide_toolkits_menu', 'Hide Tool Kits Menu', 'Remove Tool Kits from the main sidebar while keeping direct access controls active.', $hidden);
                         tk_render_switch('toolkits_shield_stealth_enabled', 'Shield Mode (Stealth)', 'Hide Tool Kits from the standard Plugins list for non-owners.', (int) tk_get_option('toolkits_shield_stealth_enabled', 0));
                         tk_render_switch('toolkits_shield_lock_enabled', 'Shield Lock (Anti-Deactivation)', 'Prevent the plugin from being deactivated or deleted by anyone except the owner.', (int) tk_get_option('toolkits_shield_lock_enabled', 0));
                         echo '</div>';
@@ -1178,6 +1179,7 @@ function tk_toolkits_access_save() {
         tk_update_option('toolkits_ip_allowlist', (string) tk_post('toolkits_ip_allowlist', ''));
         tk_update_option('toolkits_lock_enabled', !empty($_POST['toolkits_lock_enabled']) ? 1 : 0);
         tk_update_option('toolkits_mask_sensitive_fields', !empty($_POST['toolkits_mask_sensitive_fields']) ? 1 : 0);
+        tk_update_option('hide_toolkits_menu', !empty($_POST['hide_toolkits_menu']) ? 1 : 0);
         tk_update_option('toolkits_shield_stealth_enabled', !empty($_POST['toolkits_shield_stealth_enabled']) ? 1 : 0);
         tk_update_option('toolkits_shield_lock_enabled', !empty($_POST['toolkits_shield_lock_enabled']) ? 1 : 0);
     } elseif ($tab === 'license' || $tab === 'license-status') {

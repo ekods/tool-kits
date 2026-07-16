@@ -1413,6 +1413,9 @@ function tk_toolkits_can_manage(): bool {
     if (!$user) {
         return false;
     }
+    if (current_user_can(tk_toolkits_capability())) {
+        return true;
+    }
     if (tk_toolkits_user_allowed($user)) {
         return true;
     }
@@ -1643,6 +1646,12 @@ function tk_toolkits_signed_post(string $url, string $body, int $timestamp, arra
             if (!empty($args['license_request']) && $code === 404) {
                 break;
             }
+            if (!empty($args['license_request']) && $code >= 500) {
+                $decoded = json_decode($raw, true);
+                if (!is_array($decoded)) {
+                    continue 2;
+                }
+            }
             return $response;
         }
     }
@@ -1659,6 +1668,25 @@ function tk_toolkits_license_validation_message(string $detail = ''): string {
         return $detail;
     }
     return 'License validation failed: ' . $detail;
+}
+
+function tk_toolkits_license_http_error_message(int $code, string $raw): string {
+    $decoded = json_decode($raw, true);
+    if (is_array($decoded) && isset($decoded['message'])) {
+        return tk_toolkits_license_validation_message((string) $decoded['message']);
+    }
+
+    if ($code >= 500) {
+        return tk_toolkits_license_validation_message('license server returned HTTP ' . $code . '. Check the NexaMonitor license API logs.');
+    }
+
+    $detail = trim(strip_tags($raw));
+    $detail = preg_replace('/\s+/', ' ', $detail) ?: '';
+    if ($detail !== '') {
+        return tk_toolkits_license_validation_message('HTTP ' . $code . ': ' . substr($detail, 0, 160));
+    }
+
+    return tk_toolkits_license_validation_message('HTTP ' . $code . '.');
 }
 
 function tk_license_signature_payload(string $status = ''): string {
@@ -2018,12 +2046,7 @@ function tk_license_validate(bool $force = false): array {
     if (is_array($data) && isset($data['message'])) {
         $new_message = (string) $data['message'];
     } elseif (!$ok) {
-        $detail = trim(strip_tags($raw));
-        if ($detail !== '') {
-            $new_message = tk_toolkits_license_validation_message('HTTP ' . $code . ': ' . substr($detail, 0, 200));
-        } else {
-            $new_message = tk_toolkits_license_validation_message();
-        }
+        $new_message = tk_toolkits_license_http_error_message($code, $raw);
     }
     if (!$ok && $new_message !== '') {
         $new_message = tk_toolkits_license_validation_message($new_message);
@@ -2114,19 +2137,24 @@ function tk_license_test_connection(): array {
         tk_license_record_diagnostic_result($result, $url);
         return $result;
     }
-    if ($code >= 200 && $code < 400) {
+    if ($code >= 200 && $code < 300) {
         tk_license_record_diagnostic_result($result, $url);
         return $result;
     }
 
     $detail = trim((string) wp_remote_retrieve_response_message($response));
     $raw = trim((string) wp_remote_retrieve_body($response));
-    if ($raw !== '') {
-        $detail = $detail !== '' ? $detail . ' ' . substr(strip_tags($raw), 0, 160) : substr(strip_tags($raw), 0, 160);
+    if ($raw !== '' && $code < 500) {
+        $body_detail = preg_replace('/\s+/', ' ', trim(strip_tags($raw))) ?: '';
+        if ($body_detail !== '') {
+            $detail = $detail !== '' ? $detail . ' ' . substr($body_detail, 0, 160) : substr($body_detail, 0, 160);
+        }
     }
     $result = array(
-        'status' => 'reachable',
-        'message' => tk_toolkits_license_reachability_message($code, $detail),
+        'status' => 'error',
+        'message' => $code >= 500
+            ? tk_toolkits_license_validation_message('license server returned HTTP ' . $code . '. Check the NexaMonitor license API logs.')
+            : tk_toolkits_license_validation_message(tk_toolkits_license_reachability_message($code, $detail)),
     );
     tk_license_record_diagnostic_result($result, $url);
     return $result;

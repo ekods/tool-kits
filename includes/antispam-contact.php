@@ -898,9 +898,13 @@ function tk_render_antispam_contact_page() {
         return;
     }
     if (!tk_is_admin_user()) return;
+    $form_guard_cleared = isset($_GET['tk_form_guard_cleared']) ? absint($_GET['tk_form_guard_cleared']) : null;
     ?>
     <div class="wrap tk-wrap">
         <h1>Spam Protection</h1>
+        <?php if ($form_guard_cleared !== null) : ?>
+            <?php tk_notice('Form Guard rate counters cleared. Removed ' . $form_guard_cleared . ' row(s).', 'success'); ?>
+        <?php endif; ?>
         <?php tk_render_antispam_contact_panel(); ?>
     </div>
     <?php
@@ -1013,11 +1017,14 @@ function tk_render_antispam_contact_panel() {
             </div>
         </form>
 
-	        <p class="description">If CF7 is not installed, the module stays passive and safe.</p>
-	    </div>
-	    <?php tk_render_antispam_block_notes(); ?>
-	    <?php
-	}
+        <p class="description">If CF7 is not installed, the module stays passive and safe.</p>
+    </div>
+    <?php if (function_exists('tk_render_form_guard_rate_limit_tools')) : ?>
+        <?php tk_render_form_guard_rate_limit_tools(); ?>
+    <?php endif; ?>
+    <?php tk_render_antispam_block_notes(); ?>
+    <?php
+}
 
 function tk_render_antispam_block_notes(): void {
     $min_seconds = max(0, (int) tk_get_option('antispam_min_seconds', 5));
