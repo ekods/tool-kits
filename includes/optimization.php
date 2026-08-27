@@ -136,7 +136,6 @@ function tk_ps_diag_run_handler() {
     if ($url === '' || !wp_http_validate_url($url)) {
         wp_redirect(add_query_arg(array(
             'page' => 'tool-kits-optimization',
-            'tk_tab' => 'diagnostics',
             'tk_ps_status' => 'fail',
             'tk_ps_msg' => 'Invalid URL.',
         ), admin_url('admin.php')));
@@ -149,7 +148,6 @@ function tk_ps_diag_run_handler() {
         set_transient(tk_ps_diag_last_result_key(), $cached_result, MINUTE_IN_SECONDS * 30);
         wp_redirect(add_query_arg(array(
             'page' => 'tool-kits-optimization',
-            'tk_tab' => 'diagnostics',
             'tk_ps_status' => 'ok',
             'tk_ps_msg' => 'PageSpeed test loaded from cache (15 minutes).',
         ), admin_url('admin.php')));
@@ -163,7 +161,6 @@ function tk_ps_diag_run_handler() {
         if ($code === 429 && !empty(tk_ps_diag_get_last_result())) {
             wp_redirect(add_query_arg(array(
                 'page' => 'tool-kits-optimization',
-                'tk_tab' => 'diagnostics',
                 'tk_ps_status' => 'warn',
                 'tk_ps_msg' => $message . ' Showing last saved results.',
             ), admin_url('admin.php')));
@@ -171,7 +168,6 @@ function tk_ps_diag_run_handler() {
         }
         wp_redirect(add_query_arg(array(
             'page' => 'tool-kits-optimization',
-            'tk_tab' => 'diagnostics',
             'tk_ps_status' => 'fail',
             'tk_ps_msg' => $message,
         ), admin_url('admin.php')));
@@ -182,7 +178,6 @@ function tk_ps_diag_run_handler() {
     set_transient($cache_key, $result, MINUTE_IN_SECONDS * 15);
     wp_redirect(add_query_arg(array(
         'page' => 'tool-kits-optimization',
-        'tk_tab' => 'diagnostics',
         'tk_ps_status' => 'ok',
         'tk_ps_msg' => 'PageSpeed test completed.',
     ), admin_url('admin.php')));
@@ -475,9 +470,9 @@ function tk_render_page_speed_diagnostics_panel() {
         <?php endif; ?>
         <p class="description" style="margin-top:12px;">
             Shortcut: <a href="<?php echo esc_url(tk_admin_url('tool-kits-cache')); ?>">Cache</a>,
-            <a href="<?php echo esc_url(tk_admin_url('tool-kits-optimization') . '#minify'); ?>">Minify</a>,
-            <a href="<?php echo esc_url(tk_admin_url('tool-kits-optimization') . '#lazy-load'); ?>">Lazy Load</a>,
-            <a href="<?php echo esc_url(tk_admin_url('tool-kits-optimization') . '#assets'); ?>">Assets</a>
+            <a href="<?php echo esc_url(tk_admin_url('tool-kits-minify')); ?>">Minify</a>,
+            <a href="<?php echo esc_url(tk_admin_url('tool-kits-lazy-load')); ?>">Lazy Load</a>,
+            <a href="<?php echo esc_url(tk_admin_url('tool-kits-assets')); ?>">Assets</a>
         </p>
 
         <hr style="margin:20px 0;">
@@ -570,17 +565,7 @@ function tk_render_page_speed_diagnostics_panel() {
 
 function tk_render_optimization_page($forced_tab = '') {
     if (!tk_is_admin_user()) return;
-    $allowed_tabs = array('diagnostics', 'hide-login', 'minify', 'webp', 'image-opt', 'seo', 'lazy-load', 'assets');
-    $requested = isset($_GET['tk_tab']) ? sanitize_key($_GET['tk_tab']) : '';
-    $active_tab = in_array($requested, $allowed_tabs, true) ? $requested : 'diagnostics';
-    if ($forced_tab !== '' && in_array($forced_tab, $allowed_tabs, true)) {
-        $active_tab = $forced_tab;
-    }
     $saved = isset($_GET['tk_saved']) ? sanitize_key($_GET['tk_saved']) : '';
-    $progress = isset($_GET['tk_webp_progress']) ? sanitize_text_field(wp_unslash($_GET['tk_webp_progress'])) : '';
-    $done = isset($_GET['tk_webp_done']) ? sanitize_key($_GET['tk_webp_done']) : '';
-    ?>
-    <?php
     $score_data = tk_optimization_calculate_score();
     $score = $score_data['score'];
     $score_color = ($score >= 80) ? '#27ae60' : (($score >= 50) ? '#f39c12' : '#e74c3c');
@@ -597,8 +582,8 @@ function tk_render_optimization_page($forced_tab = '') {
                         <span class="dashicons dashicons-admin-settings" style="color: #fff; font-size: 32px; width: 32px; height: 32px;"></span>
                     </div>
                     <div>
-                        <h1 class="tk-hero-title"><?php _e('Site Optimization', 'tool-kits'); ?></h1>
-                        <p class="tk-hero-subtitle"><?php _e('Maximize your WordPress performance with advanced caching, image optimization, and asset management.', 'tool-kits'); ?></p>
+                        <h1 class="tk-hero-title"><?php _e('Performance Diagnostics', 'tool-kits'); ?></h1>
+                        <p class="tk-hero-subtitle"><?php _e('Run PageSpeed checks and review focused recommendations before tuning cache, media, and assets.', 'tool-kits'); ?></p>
                         <div style="margin-top: 15px; display: flex; gap: 10px;">
                             <span class="tk-badge" style="background: rgba(255,255,255,0.1); color: #fff; border: none; padding: 4px 10px; font-size: 11px;"><?php echo $score_data['active_count']; ?> <?php _e('Features Active', 'tool-kits'); ?></span>
                         </div>
@@ -615,83 +600,8 @@ function tk_render_optimization_page($forced_tab = '') {
         <?php if ($saved === '1') : ?>
             <?php tk_notice('Settings saved.', 'success'); ?>
         <?php endif; ?>
-        <?php if ($progress !== '') : ?>
-            <?php tk_notice('WebP generation: ' . esc_html($progress), 'info'); ?>
-        <?php endif; ?>
-        <?php if ($done === '1') : ?>
-            <?php tk_notice('WebP generation completed.', 'success'); ?>
-        <?php endif; ?>
 
-        <div class="tk-tabs tk-optimization-tabs">
-            <div class="tk-tabs-nav">
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'diagnostics' ? ' is-active' : ''; ?>" data-panel="diagnostics">Diagnostics</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'hide-login' ? ' is-active' : ''; ?>" data-panel="hide-login">Hide Login</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'minify' ? ' is-active' : ''; ?>" data-panel="minify">Minify</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'webp' ? ' is-active' : ''; ?>" data-panel="webp">Auto WebP</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'image-opt' ? ' is-active' : ''; ?>" data-panel="image-opt">Images</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'seo' ? ' is-active' : ''; ?>" data-panel="seo">SEO</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'lazy-load' ? ' is-active' : ''; ?>" data-panel="lazy-load">Lazy Load</button>
-                <button type="button" class="tk-tabs-nav-button<?php echo $active_tab === 'assets' ? ' is-active' : ''; ?>" data-panel="assets">Assets</button>
-            </div>
-            <div class="tk-tabs-content">
-                <div class="tk-tab-panel<?php echo $active_tab === 'diagnostics' ? ' is-active' : ''; ?>" data-panel-id="diagnostics">
-                    <?php tk_render_page_speed_diagnostics_panel(); ?>
-                </div>
-                <div class="tk-tab-panel<?php echo $active_tab === 'hide-login' ? ' is-active' : ''; ?>" data-panel-id="hide-login">
-                    <?php tk_render_hide_login_panel(); ?>
-                </div>
-                <div class="tk-tab-panel<?php echo $active_tab === 'minify' ? ' is-active' : ''; ?>" data-panel-id="minify">
-                    <?php tk_render_minify_panel(); ?>
-                </div>
-                <div class="tk-tab-panel<?php echo $active_tab === 'webp' ? ' is-active' : ''; ?>" data-panel-id="webp">
-                    <?php tk_render_webp_panel(); ?>
-                </div>
-                <div class="tk-tab-panel<?php echo $active_tab === 'image-opt' ? ' is-active' : ''; ?>" data-panel-id="image-opt">
-                    <?php tk_render_image_opt_panel(); ?>
-                </div>
-                <div class="tk-tab-panel<?php echo $active_tab === 'seo' ? ' is-active' : ''; ?>" data-panel-id="seo">
-                    <?php tk_render_seo_opt_panel(); ?>
-                </div>
-                <div class="tk-tab-panel<?php echo $active_tab === 'lazy-load' ? ' is-active' : ''; ?>" data-panel-id="lazy-load">
-                    <?php tk_render_lazy_load_panel(); ?>
-                </div>
-                <div class="tk-tab-panel<?php echo $active_tab === 'assets' ? ' is-active' : ''; ?>" data-panel-id="assets">
-                    <?php tk_render_assets_panel(); ?>
-                </div>
-            </div>
-        </div>
-        <script>
-        (function(){
-            var wrapper = document.querySelector('.tk-optimization-tabs');
-            if (!wrapper) { return; }
-            function activateTab(panelId) {
-                wrapper.querySelectorAll('.tk-tab-panel').forEach(function(panel){
-                    panel.classList.toggle('is-active', panel.getAttribute('data-panel-id') === panelId);
-                });
-                wrapper.querySelectorAll('.tk-tabs-nav-button').forEach(function(btn){
-                    btn.classList.toggle('is-active', btn.getAttribute('data-panel') === panelId);
-                });
-            }
-            function getPanelFromHash() {
-                var hash = window.location.hash || '';
-                if (!hash) { return ''; }
-                return hash.replace('#', '');
-            }
-            wrapper.querySelectorAll('.tk-tabs-nav-button').forEach(function(button){
-                button.addEventListener('click', function(){
-                    var panelId = button.getAttribute('data-panel');
-                    if (panelId) {
-                        window.location.hash = panelId;
-                        activateTab(panelId);
-                    }
-                });
-            });
-            var initial = getPanelFromHash();
-            if (initial && wrapper.querySelector('.tk-tab-panel[data-panel-id="' + initial + '"]')) {
-                activateTab(initial);
-            }
-        })();
-        </script>
+        <?php tk_render_page_speed_diagnostics_panel(); ?>
     </div>
     <?php
 }

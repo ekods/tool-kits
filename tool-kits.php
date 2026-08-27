@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.3.7
+ * Version: 2.5.5
  * GitHub Plugin URI: https://github.com/ekods/tool-kits
  * Update URI: https://github.com/ekods/tool-kits
  * Author: Eko Dwi Saputro
@@ -12,7 +12,7 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-define('TK_VERSION', '2.3.7');
+define('TK_VERSION', '2.5.5');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
@@ -143,10 +143,16 @@ add_action('plugins_loaded', function() {
  * Load admin assets
  */
 add_action('admin_enqueue_scripts', function($hook) {
-    if (strpos($hook, 'tool-kits') !== false) {
+    $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+    $is_toolkits_area = strpos($hook, 'tool-kits') !== false;
+    $is_toolkits_menu = $screen && isset($screen->id) && strpos((string) $screen->id, 'tool-kits') !== false;
+    if (function_exists('tk_toolkits_can_manage') && tk_toolkits_can_manage()) {
         wp_enqueue_style('tool-kits-admin', TK_URL . 'assets/admin.css', array(), TK_VERSION);
+    }
+    if ($is_toolkits_area || $is_toolkits_menu) {
         wp_enqueue_style('tool-kits-overview', TK_URL . 'assets/overview.css', array('tool-kits-admin'), TK_VERSION);
     }
 });
 add_action('admin_footer', 'tk_toolkits_mask_fields_script');
 add_action('admin_footer', 'tk_toolkits_confirm_actions_script');
+add_action('admin_footer', 'tk_toolkits_nested_admin_menu_script');

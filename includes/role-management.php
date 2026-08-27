@@ -17,6 +17,12 @@ function tk_role_management_init(): void {
 }
 
 function tk_role_management_register_page(): void {
+    $license_valid = (string) tk_get_option('license_status', 'inactive') === 'valid';
+    $license_limited = (string) tk_get_option('license_type', '') === 'local';
+    if (!tk_toolkits_can_manage() || !$license_valid || $license_limited) {
+        return;
+    }
+
     add_submenu_page(
         'tool-kits',
         __('Role Management', 'tool-kits'),

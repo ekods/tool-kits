@@ -339,7 +339,7 @@ function tk_seo_redirect_add() {
     }
 
     if ($from === '' || ($to === '' && $status !== 410)) {
-        wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_redirect_error' => 1), admin_url('admin.php')));
+        wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_redirect_error' => 1), admin_url('admin.php')) . '#redirects');
         exit;
     }
 
@@ -359,7 +359,7 @@ function tk_seo_redirect_add() {
     );
     tk_update_option('seo_redirect_rules', $rules);
 
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_redirect_added' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_redirect_added' => 1), admin_url('admin.php')) . '#redirects');
     exit;
 }
 
@@ -383,7 +383,7 @@ function tk_seo_redirect_delete() {
     }
     tk_update_option('seo_redirect_rules', $filtered);
 
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_redirect_deleted' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_redirect_deleted' => 1), admin_url('admin.php')) . '#redirects');
     exit;
 }
 
@@ -648,7 +648,7 @@ function tk_seo_links_scan() {
     $report = tk_seo_scan_internal_links();
     tk_update_option('seo_broken_links_report', $report);
 
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_links_scanned' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_links_scanned' => 1), admin_url('admin.php')) . '#broken-links');
     exit;
 }
 
@@ -658,7 +658,7 @@ function tk_seo_links_clear() {
     }
     tk_check_nonce('tk_seo_links_clear');
     tk_update_option('seo_broken_links_report', array());
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_links_cleared' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_links_cleared' => 1), admin_url('admin.php')) . '#broken-links');
     exit;
 }
 
@@ -669,7 +669,7 @@ function tk_seo_canonical_scan() {
     tk_check_nonce('tk_seo_canonical_scan');
     $report = tk_seo_run_canonical_audit();
     tk_update_option('seo_canonical_audit_report', $report);
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_canonical_scanned' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_canonical_scanned' => 1), admin_url('admin.php')) . '#canonical');
     exit;
 }
 
@@ -679,7 +679,7 @@ function tk_seo_canonical_clear() {
     }
     tk_check_nonce('tk_seo_canonical_clear');
     tk_update_option('seo_canonical_audit_report', array());
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_canonical_cleared' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_canonical_cleared' => 1), admin_url('admin.php')) . '#canonical');
     exit;
 }
 
@@ -880,7 +880,7 @@ function tk_seo_index_add() {
         $status = 'unknown';
     }
     if ($url === '') {
-        wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_index_error' => 1), admin_url('admin.php')));
+        wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_index_error' => 1), admin_url('admin.php')) . '#indexing');
         exit;
     }
 
@@ -894,7 +894,7 @@ function tk_seo_index_add() {
     );
     tk_update_option('seo_index_monitor', $items);
 
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_index_added' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_index_added' => 1), admin_url('admin.php')) . '#indexing');
     exit;
 }
 
@@ -913,7 +913,7 @@ function tk_seo_index_delete() {
         $filtered[] = $item;
     }
     tk_update_option('seo_index_monitor', $filtered);
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_index_deleted' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_index_deleted' => 1), admin_url('admin.php')) . '#indexing');
     exit;
 }
 
@@ -924,7 +924,7 @@ function tk_seo_content_audit_scan() {
     tk_check_nonce('tk_seo_content_audit_scan');
     $report = tk_seo_run_content_audit();
     tk_update_option('seo_content_audit_report', $report);
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_audit_scanned' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_audit_scanned' => 1), admin_url('admin.php')) . '#content-audit');
     exit;
 }
 
@@ -934,7 +934,7 @@ function tk_seo_content_audit_clear() {
     }
     tk_check_nonce('tk_seo_content_audit_clear');
     tk_update_option('seo_content_audit_report', array());
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_audit_cleared' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_audit_cleared' => 1), admin_url('admin.php')) . '#content-audit');
     exit;
 }
 
@@ -1589,6 +1589,6 @@ function tk_seo_opt_save() {
     tk_update_option('seo_noindex_404', !empty($_POST['seo_noindex_404']) ? 1 : 0);
     tk_update_option('seo_noindex_paged_archives', !empty($_POST['seo_noindex_paged_archives']) ? 1 : 0);
 
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_saved' => 1), admin_url('admin.php')) . '#settings');
     exit;
 }

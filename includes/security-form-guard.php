@@ -55,7 +55,7 @@ function tk_form_guard_is_public_post(): bool {
     }
 
     $context = tk_form_guard_request_context();
-    if (in_array($context, array('login', 'comment', 'frontend', 'ajax'), true)) {
+    if (in_array($context, array('login', 'comment', 'frontend'), true)) {
         return true;
     }
 

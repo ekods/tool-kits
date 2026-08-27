@@ -573,8 +573,7 @@ function tk_assets_opt_generate_critical() {
         if (is_wp_error($resp)) {
             set_transient('tk_assets_critical_error', $message, MINUTE_IN_SECONDS * 5);
             wp_redirect(add_query_arg(array(
-                'page' => 'tool-kits-optimization',
-                'tk_tab' => 'assets',
+                'page' => 'tool-kits-assets',
                 'tk_critical_error' => 1,
             ), admin_url('admin.php')));
             exit;
@@ -584,8 +583,7 @@ function tk_assets_opt_generate_critical() {
     if ($code < 200 || $code >= 300) {
         set_transient('tk_assets_critical_error', 'HTTP status ' . $code, MINUTE_IN_SECONDS * 5);
         wp_redirect(add_query_arg(array(
-            'page' => 'tool-kits-optimization',
-            'tk_tab' => 'assets',
+            'page' => 'tool-kits-assets',
             'tk_critical_error' => 1,
         ), admin_url('admin.php')));
         exit;
@@ -646,8 +644,7 @@ function tk_assets_opt_generate_critical() {
     tk_update_option('assets_critical_css_enabled', $css !== '' ? 1 : 0);
 
     wp_redirect(add_query_arg(array(
-        'page' => 'tool-kits-optimization',
-        'tk_tab' => 'assets',
+        'page' => 'tool-kits-assets',
         'tk_critical_generated' => strlen($css),
         'tk_critical_files' => $file_count,
     ), admin_url('admin.php')));
@@ -884,8 +881,7 @@ function tk_assets_opt_scan_fonts() {
     tk_update_option('assets_preload_fonts', implode("\n", $fonts));
     $count = count($fonts);
     wp_redirect(add_query_arg(array(
-        'page' => 'tool-kits-optimization',
-        'tk_tab' => 'assets',
+        'page' => 'tool-kits-assets',
         'tk_fonts_scanned' => $count,
     ), admin_url('admin.php')));
     exit;
@@ -1094,6 +1090,6 @@ function tk_assets_opt_save() {
     tk_update_option('assets_instant_page_enabled', !empty($_POST['assets_instant_page_enabled']) ? 1 : 0);
     tk_update_option('assets_cls_guard_enabled', 1);
     tk_update_option('assets_lcp_boost_enabled', 1);
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'assets', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-assets', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }

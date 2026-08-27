@@ -83,11 +83,149 @@ function tk_page_cache_path() {
     return trailingslashit($dir) . tk_page_cache_key() . '.html';
 }
 
+function tk_cache_page_enabled(): bool {
+    return (int) tk_get_option('page_cache_enabled', 0) === 1;
+}
+
+function tk_cache_request_has_dynamic_query(): bool {
+    if (empty($_GET) || !is_array($_GET)) {
+        return false;
+    }
+
+    $allowed = array(
+        'utm_source',
+        'utm_medium',
+        'utm_campaign',
+        'utm_term',
+        'utm_content',
+        'gclid',
+        'fbclid',
+        'msclkid',
+    );
+
+    foreach (array_keys($_GET) as $key) {
+        if (!in_array((string) $key, $allowed, true)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function tk_cache_has_dynamic_cookie(): bool {
+    if (empty($_COOKIE) || !is_array($_COOKIE)) {
+        return false;
+    }
+
+    $markers = array(
+        'wordpress_logged_in_',
+        'wp-postpass_',
+        'comment_author_',
+        'woocommerce_cart_hash',
+        'woocommerce_items_in_cart',
+        'wp_woocommerce_session_',
+        'edd_items_in_cart',
+        'easy_cart',
+        'cart',
+        'checkout',
+        'session',
+    );
+
+    foreach (array_keys($_COOKIE) as $name) {
+        $name = strtolower((string) $name);
+        foreach ($markers as $marker) {
+            if (strpos($name, $marker) !== false) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+function tk_cache_dynamic_path_patterns(): array {
+    $patterns = array(
+        '/wp-login.php',
+        '/wp-admin',
+        '/wp-json',
+        '/xmlrpc.php',
+        '/cart',
+        '/checkout',
+        '/my-account',
+        '/account',
+        '/wc-api',
+        '/edd-api',
+        '/members',
+        '/login',
+        '/logout',
+        '/register',
+        '/search',
+    );
+
+    if (function_exists('wc_get_page_permalink')) {
+        foreach (array('cart', 'checkout', 'myaccount') as $page) {
+            $url = wc_get_page_permalink($page);
+            $path = is_string($url) ? (string) wp_parse_url($url, PHP_URL_PATH) : '';
+            if ($path !== '') {
+                $patterns[] = rtrim($path, '/');
+            }
+        }
+    }
+
+    return array_values(array_unique(array_filter($patterns, 'strlen')));
+}
+
+function tk_cache_is_dynamic_path(string $path): bool {
+    $path = '/' . ltrim($path, '/');
+    $path = rtrim($path, '/') ?: '/';
+
+    foreach (tk_cache_dynamic_path_patterns() as $pattern) {
+        $pattern = '/' . ltrim((string) $pattern, '/');
+        $pattern = rtrim($pattern, '/') ?: '/';
+        if ($pattern !== '/' && ($path === $pattern || strpos($path . '/', $pattern . '/') === 0)) {
+            return true;
+        }
+    }
+
+    if (function_exists('is_search') && is_search()) {
+        return true;
+    }
+    if (function_exists('is_cart') && is_cart()) {
+        return true;
+    }
+    if (function_exists('is_checkout') && is_checkout()) {
+        return true;
+    }
+    if (function_exists('is_account_page') && is_account_page()) {
+        return true;
+    }
+
+    return false;
+}
+
+function tk_cache_response_allows_store(): bool {
+    if (defined('DONOTCACHEPAGE') && DONOTCACHEPAGE) {
+        return false;
+    }
+
+    foreach (headers_list() as $header) {
+        $header = strtolower((string) $header);
+        if (strpos($header, 'cache-control:') === 0 && preg_match('/\b(no-store|no-cache|private)\b/', $header)) {
+            return false;
+        }
+        if (strpos($header, 'x-robots-tag:') === 0 && strpos($header, 'noarchive') !== false) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 function tk_cache_is_cacheable_request() {
     if (!tk_license_features_enabled()) {
         return false;
     }
-    if (!tk_get_option('page_cache_enabled', 0)) {
+    if (!tk_cache_page_enabled()) {
         return false;
     }
     if (defined('DONOTCACHEPAGE') && DONOTCACHEPAGE) {
@@ -105,9 +243,15 @@ function tk_cache_is_cacheable_request() {
     if (is_404()) {
         return false;
     }
+    if (tk_cache_request_has_dynamic_query() || tk_cache_has_dynamic_cookie()) {
+        return false;
+    }
     $path = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
     $path = strtok($path, '?');
     if ($path === '') {
+        return false;
+    }
+    if (tk_cache_is_dynamic_path($path)) {
         return false;
     }
     $excludes = tk_get_option('page_cache_exclude_paths', "/wp-login.php\n/wp-admin\n");
@@ -156,6 +300,9 @@ function tk_page_cache_callback($html) {
     }
     $code = function_exists('http_response_code') ? http_response_code() : 200;
     if ($code !== 200) {
+        return $html;
+    }
+    if (!tk_cache_response_allows_store()) {
         return $html;
     }
     $dir = tk_page_cache_dir();
@@ -437,11 +584,19 @@ function tk_cache_opcache_reset() {
 }
 
 function tk_fragment_cache_get($key) {
+    if (!tk_cache_page_enabled()) {
+        return false;
+    }
+
     $cache_key = 'tk_frag_' . md5((string) $key);
     return get_transient($cache_key);
 }
 
 function tk_fragment_cache_set($key, $value, $ttl = 300) {
+    if (!tk_cache_page_enabled()) {
+        return false;
+    }
+
     $cache_key = 'tk_frag_' . md5((string) $key);
     $ttl = max(1, (int) $ttl);
     set_transient($cache_key, $value, $ttl);
@@ -456,6 +611,8 @@ function tk_fragment_cache_set($key, $value, $ttl = 300) {
         }
         tk_update_option('fragment_cache_keys', $keys);
     }
+
+    return true;
 }
 
 function tk_fragment_cache_flush() {
@@ -488,7 +645,7 @@ function tk_cache_render_status_rows() {
             <tr>
                 <td>Page cache</td>
                 <td><?php echo tk_get_option('page_cache_enabled', 0) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?></td>
-                <td>File-based HTML cache for anonymous GET requests. Current usage: <?php echo esc_html(tk_page_cache_summary_text($page_stats)); ?>.</td>
+                <td>File-based HTML cache for anonymous static GET requests. Dynamic URLs, sessions, carts, checkout, account pages, search, and private/no-cache responses are skipped. Current usage: <?php echo esc_html(tk_page_cache_summary_text($page_stats)); ?>.</td>
             </tr>
             <tr>
                 <td>Object cache</td>
@@ -508,7 +665,7 @@ function tk_cache_render_status_rows() {
             <tr>
                 <td>Fragment cache</td>
                 <td><?php echo $fragment_count > 0 ? '<span class="tk-badge">STORED</span>' : '<span class="tk-badge">IDLE</span>'; ?></td>
-                <td>No automatic fragment caching is active. Helper functions only store fragments when called by code. Stored fragments: <?php echo esc_html((string) $fragment_count); ?>.</td>
+                <td>No automatic fragment caching is active. Helper functions only store fragments when Page Cache is enabled and called by code. Stored fragments: <?php echo esc_html((string) $fragment_count); ?>.</td>
             </tr>
         </tbody>
     </table>
@@ -636,7 +793,7 @@ function tk_render_cache_page() {
                 </div>
                 <div class="tk-card tk-tab-panel" data-panel-id="fragment">
                     <h2>Fragment Cache</h2>
-                    <p>Use helpers for parts of templates. Example:</p>
+                    <p>Use helpers for static template fragments. When Page Cache is disabled, these helpers read as empty and do not create cache entries.</p>
                     <pre>if (($block = tk_fragment_cache_get('home:hero')) === false) {
     ob_start();
     // render block

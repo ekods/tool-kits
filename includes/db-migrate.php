@@ -226,11 +226,40 @@ function tk_db_apply_pairs_to_value($value, array $pairs, string $column = '', a
  * Decide whether replacement should be skipped for a row/column pair.
  */
 function tk_db_should_skip_replacement(string $column, array $row): bool {
+    if (tk_db_is_email_column($column)) {
+        return true;
+    }
+
     if ($column !== 'option_value') {
         return false;
     }
     $name = isset($row['option_name']) ? (string) $row['option_name'] : '';
-    return $name === 'permalink_structure';
+    if ($name === 'permalink_structure') {
+        return true;
+    }
+
+    return tk_db_is_email_option_name($name);
+}
+
+function tk_db_is_email_column(string $column): bool {
+    $column = strtolower($column);
+    if ($column === 'user_email') {
+        return true;
+    }
+
+    return $column === 'email' || substr($column, -6) === '_email';
+}
+
+function tk_db_is_email_option_name(string $name): bool {
+    $name = strtolower($name);
+    if ($name === '') {
+        return false;
+    }
+
+    return $name === 'admin_email'
+        || substr($name, -6) === '_email'
+        || strpos($name, 'email_') === 0
+        || strpos($name, '_email_') !== false;
 }
 
 function tk_db_register_temp_export(string $path): string {

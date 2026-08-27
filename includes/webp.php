@@ -190,15 +190,22 @@ function tk_webp_url_to_path($url) {
 }
 
 function tk_render_webp_page() {
-    if (function_exists('tk_render_optimization_page')) {
-        tk_render_optimization_page('webp');
-        return;
-    }
     if (!tk_is_admin_user()) return;
+    $progress = isset($_GET['tk_webp_progress']) ? sanitize_text_field(wp_unslash($_GET['tk_webp_progress'])) : '';
+    $done = isset($_GET['tk_webp_done']) ? sanitize_key($_GET['tk_webp_done']) : '';
     ?>
     <div class="wrap tk-wrap">
         <?php tk_render_header_branding(); ?>
-        <h1>Optimization</h1>
+        <?php tk_render_page_hero('Auto WebP', 'Generate and serve WebP versions for supported media files.', 'dashicons-format-image'); ?>
+        <?php if (isset($_GET['tk_saved']) && sanitize_key((string) $_GET['tk_saved']) === '1') : ?>
+            <?php tk_notice('Settings saved.', 'success'); ?>
+        <?php endif; ?>
+        <?php if ($progress !== '') : ?>
+            <?php tk_notice('WebP generation: ' . esc_html($progress), 'info'); ?>
+        <?php endif; ?>
+        <?php if ($done === '1') : ?>
+            <?php tk_notice('WebP generation completed.', 'success'); ?>
+        <?php endif; ?>
         <?php tk_render_webp_panel(); ?>
     </div>
     <?php
@@ -311,7 +318,7 @@ function tk_webp_save() {
     tk_update_option('webp_convert_enabled', !empty($_POST['webp_convert_enabled']) ? 1 : 0);
     tk_update_option('webp_serve_enabled', !empty($_POST['webp_serve_enabled']) ? 1 : 0);
     tk_update_option('webp_quality', max(10, min(100, (int) tk_post('webp_quality', 82))));
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'webp', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-webp', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }
 
@@ -346,7 +353,7 @@ function tk_webp_generate_all() {
         wp_safe_redirect(add_query_arg('tk_webp_progress', rawurlencode($progress), $url));
         exit;
     }
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'webp', 'tk_webp_done' => 1), admin_url('admin.php')));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-webp', 'tk_webp_done' => 1), admin_url('admin.php')));
     exit;
 }
 

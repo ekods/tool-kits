@@ -1,62 +1,62 @@
 # Tool Kits
 
-Plugin admin toolkit untuk WordPress: database, keamanan, optimasi, monitoring, cache, dan utilitas operasional dalam satu dashboard.
+WordPress admin toolkit for database work, security, optimization, monitoring, cache, and operational utilities in one dashboard.
 
 ---
 
-## Bagian 1: Bahasa Indonesia
+## Section 1: Overview
 
-### Deskripsi Singkat
+### Short Description
 
-Tool Kits membantu admin WordPress mengelola 5 area utama:
-- Keamanan situs.
-- Optimasi performa.
-- Migrasi dan perawatan database.
-- Monitoring kesehatan situs.
-- Kontrol akses operasional plugin.
+Tool Kits helps WordPress administrators manage five main areas:
+- Site security.
+- Performance optimization.
+- Database migration and maintenance.
+- Site health monitoring.
+- Operational plugin access control.
 
-### Fitur Utama
+### Key Features
 
 - Database export/import SQL.
-- Preload export dengan serialized-safe find/replace.
-- DB cleanup (revisi, trash, spam comments, transients, optimize table).
+- Preload export with serialized-safe find/replace.
+- DB cleanup for revisions, trash, spam comments, transients, and table optimization.
 - Hide Login, Minify, Auto WebP, Lazy Load, Asset Optimization.
-- Upload limits dan User ID changer.
-- Captcha dan anti-spam Contact Form 7.
-- Rate limit login berbasis IP + unblock panel.
-- Login log (success/failed) dengan retensi.
+- Upload limits and User ID changer.
+- Captcha and anti-spam Contact Form 7.
+- IP-based login rate limiting with an unblock panel.
+- Login log for successful and failed attempts with retention.
 - Hardening (XML-RPC, headers, WAF basic, HTTP Auth, CORS).
-- Firewall dengan payload WAF, IP/CIDR allowlist/blocklist, user-agent rules, dan event log.
-- Malware Scanner berbasis signature untuk executable uploads, obfuscation, encoded payload, dan web-shell marker.
+- Firewall with payload WAF, IP/CIDR allowlist/blocklist, user-agent rules, and event log.
+- Signature-based Malware Scanner for executable uploads, obfuscation, encoded payloads, and web-shell markers.
 - SMTP (preset provider + test email + log).
 - Monitoring (checks, realtime, 404 monitor, healthcheck, heartbeat).
 - Cache tools (page cache, object flush, opcache reset, fragment flush).
 - Theme checker (summary, largest file, duplicate PHP, risky functions).
 - Tool Kits Access (role/IP access, alerts, audit log, owner mode, license).
-- Role Management untuk membuat role custom, mengatur capability per modul termasuk custom post type dengan CRUD, dan menentukan menu dashboard yang terlihat per role.
+- Role Management for custom roles, per-module capabilities including custom post type CRUD, and visible dashboard menus per role.
 
-### Pembaruan Terbaru (Access, License, Monitoring)
+### Latest Updates (Access, License, Monitoring)
 
-- Konfigurasi collector, heartbeat, dan license sekarang mengikuti satu alur config yang sama.
-- Tab `Tool Kits Access > License` menampilkan `Collector URL`, hasil auto-derive `Heartbeat URL` dan `License server URL`, serta badge `Configured/Missing`.
-- Ditambahkan `Test Heartbeat` dan `Test License Reachability` sebelum aktivasi lisensi.
-- Diagnostics menampilkan status koneksi, last success, last failure, last error, dan endpoint terakhir untuk heartbeat/license.
-- Monitoring hanya menampilkan data valid untuk healthcheck agar tidak misleading di local atau shared hosting.
+- Collector, heartbeat, and license configuration now follow one shared configuration flow.
+- The `Tool Kits Access > License` tab shows `Collector URL`, auto-derived `Heartbeat URL` and `License server URL`, plus `Configured/Missing` badges.
+- Added `Test Heartbeat` and `Test License Reachability` before license activation.
+- Diagnostics show connection status, last success, last failure, last error, and the latest heartbeat/license endpoint.
+- Monitoring only shows valid healthcheck data to avoid misleading output on local or shared hosting.
 
-### Pembaruan Terbaru (Hardening)
+### Latest Updates (Hardening)
 
-- HSTS header sekarang tersedia sebagai toggle dan default direkomendasikan aktif.
-- Opsi CSP strict ditambahkan (tanpa `unsafe-inline`/`unsafe-eval`).
-- Opsi hide server signature (`X-Powered-By`/`expose_php`) ditambahkan.
-- Opsi force `HttpOnly`/`Secure` pada cookie response ditambahkan.
-- Opsi disable WP-Cron (`DISABLE_WP_CRON`) ditambahkan dari panel hardening.
-- Opsi URL Parameter Guard ditambahkan untuk memblokir query string mencurigakan.
-- Opsi HTTP methods filtering ditambahkan (allowlist method + allowlist path).
-- Opsi block dangerous HTTP methods ditambahkan (default: PUT, DELETE, TRACE, CONNECT).
-- Opsi harden `robots.txt` ditambahkan (minimal policy).
-- Opsi block unwanted files ditambahkan (dengan daftar filename custom).
-- Check risiko MySQL publik (port 3306) ditambahkan di monitoring hardening.
-- Catatan: plugin tidak bisa menutup port 3306 langsung; mitigasi final tetap di firewall/security group server.
+- HSTS header is now available as a toggle and recommended on by default.
+- Strict CSP option added without `unsafe-inline` or `unsafe-eval`.
+- Hide server signature option added for `X-Powered-By`/`expose_php`.
+- Force `HttpOnly`/`Secure` on response cookies option added.
+- Disable WP-Cron (`DISABLE_WP_CRON`) option added from the hardening panel.
+- URL Parameter Guard option added to block suspicious query strings.
+- HTTP methods filtering added with method and path allowlists.
+- Dangerous HTTP method blocking added. Default methods: PUT, DELETE, TRACE, CONNECT.
+- Harden `robots.txt` option added with a minimal policy.
+- Unwanted file blocking added with a custom filename list.
+- Public MySQL risk check for port 3306 added to hardening monitoring.
+- Note: the plugin cannot close port 3306 directly; final mitigation must be handled in the server firewall or security group.
 
 ### Struktur Menu
 
@@ -76,121 +76,121 @@ Tool Kits membantu admin WordPress mengelola 5 area utama:
 - `Tools > Tool Kits Access`
 - `Tool Kits > Role Management`
 
-Catatan: sebagian menu bergantung pada status lisensi.
+Note: some menus depend on license status.
 
 ### Build Release ZIP
 
-Jalankan dari root workspace:
+Run from the workspace root:
 
 ```bash
 bash plugins/tool-kits/scripts/build-release-zip.sh
 ```
 
-Output default akan dibuat di:
+The default output is created at:
 
 ```text
 plugins/tool-kits.zip
 ```
 
-Untuk menentukan output manual:
+To choose a custom output path:
 
 ```bash
 bash plugins/tool-kits/scripts/build-release-zip.sh /tmp/tool-kits.zip
 ```
 
-### Penjelasan Modul (Lebih Jelas)
+### Module Details
 
 #### 1) Database
 
-Untuk backup, migrasi, dan maintenance data.
-- Seluruh modul Database dapat digunakan tanpa aktivasi lisensi atau Collector Token.
-- `Export Database`: unduh dump SQL penuh.
-- `Export Download (Preload)`: hasil SQL.gz dengan pair find/replace yang aman untuk data serialized.
-- `Import Database`: impor `.sql` atau `.sql.gz` ke DB aktif.
-- `Change Prefix`: rename prefix tabel + update key terkait, termasuk backup otomatis sebelum proses.
-- `DB Cleanup`: bersihkan data tidak perlu agar DB lebih ringan.
+For backups, migrations, and data maintenance.
+- The full Database module can be used without license activation or Collector Token.
+- `Export Database`: download a full SQL dump.
+- `Export Download (Preload)`: generate a SQL.gz file with serialized-safe find/replace pairs.
+- `Import Database`: import `.sql` or `.sql.gz` into the active database.
+- `Change Prefix`: rename table prefixes and update related keys, including an automatic backup before the process.
+- `DB Cleanup`: clean unnecessary data to keep the database lighter.
 
-Kapan dipakai:
-- Pindah domain/staging ke production.
-- Backup sebelum perubahan besar.
-- Membersihkan sampah data periodik.
+When to use it:
+- Moving domains or staging to production.
+- Backing up before major changes.
+- Periodic cleanup of redundant data.
 
 #### 2) Optimization
 
-Untuk percepatan loading dan pengurangan beban frontend.
-- `Hide Login`: ubah URL login default.
-- `Minify`: kompres HTML/inline CSS/inline JS.
-- `Auto WebP`: konversi image otomatis + generate untuk media lama.
-- `Lazy Load`: tunda loading image/iframe/video.
-- `Assets`: critical CSS, defer/preload CSS, preload font, font-display swap.
-- `Uploads`: atur batas ukuran terpisah untuk image, dokumen/PDF, dan video.
-- `User ID`: ubah ID user tertentu (aksi sensitif).
+For faster loading and reduced frontend overhead.
+- `Hide Login`: change the default login URL.
+- `Minify`: compress HTML, inline CSS, and inline JS.
+- `Auto WebP`: automatically convert images and generate WebP for existing media.
+- `Lazy Load`: defer image, iframe, and video loading.
+- `Assets`: critical CSS, deferred/preloaded CSS, font preload, and font-display swap.
+- `Uploads`: configure separate size limits for images, documents/PDFs, and videos.
+- `User ID`: change a specific user ID. This is a sensitive action.
 
 #### 3) Spam Protection
 
-Untuk mengurangi bot submit/form abuse.
-- `Captcha`: aktif/nonaktif captcha dan opsi di login form.
-- `Anti-spam Contact`: honeypot + minimum submit delay untuk CF7.
+To reduce bot submissions and form abuse.
+- `Captcha`: enable/disable captcha and login form options.
+- `Anti-spam Contact`: honeypot and minimum submit delay for CF7.
 
 #### 4) Rate Limit
 
-Untuk membatasi brute force login.
-- Atur window, jumlah percobaan, durasi lockout.
-- Opsi block IP permanen saat gagal.
-- Whitelist IP aman.
-- Unblock IP via panel admin.
+To limit brute-force login attempts.
+- Configure the window, attempt count, and lockout duration.
+- Optional permanent IP block on failure.
+- Safe IP whitelist.
+- Unblock IPs from the admin panel.
 
 #### 5) Login Log
 
-Untuk audit login.
-- Catat login berhasil/gagal.
-- Simpan waktu, IP, user agent.
+For login auditing.
+- Record successful and failed login attempts.
+- Store time, IP, and user agent.
 - Filter status + clear log.
-- Atur masa simpan log.
+- Configure log retention.
 
 #### 6) Hardening
 
-Untuk menurunkan attack surface WordPress.
+To reduce the WordPress attack surface.
 - Disable file editor.
-- Disable XML-RPC atau blok method berisiko.
+- Disable XML-RPC or block risky methods.
 - Disable REST user enumeration.
-- Tambahkan security headers (termasuk HSTS).
-- CSP strict mode (opsional).
-- Sembunyikan signature header server/PHP.
-- Force HttpOnly/Secure untuk cookie response.
-- Disable WP-Cron dari pengaturan.
+- Add security headers, including HSTS.
+- Strict CSP mode (optional).
+- Hide server/PHP signature headers.
+- Force HttpOnly/Secure for response cookies.
+- Disable WP-Cron from settings.
 - URL parameter guard.
 - HTTP methods filtering + block dangerous methods.
-- Blok eksekusi PHP di uploads.
-- WAF basic berbasis path/method.
+- Block PHP execution in uploads.
+- Basic WAF based on path/method rules.
 - HTTP Basic Auth scope frontend/backend.
 - CORS allowlist custom.
 - Harden robots.txt.
-- Block akses file tidak diinginkan.
-- Check risiko DB host publik (indikasi eksposur MySQL 3306).
+- Block unwanted file access.
+- Check public DB host risk as an indicator of MySQL port 3306 exposure.
 
 #### 7) SMTP
 
-Untuk keandalan pengiriman email WordPress.
+For reliable WordPress email delivery.
 - Preset Gmail/Microsoft 365/Custom.
 - Setting host, port, secure mode, auth.
-- Kirim email test dan lihat log hasil.
+- Send a test email and review the result log.
 
 #### 8) Monitoring
 
-Untuk visibilitas operasional dan deteksi dini masalah.
+For operational visibility and early issue detection.
 - Configuration checks.
 - Quick actions (cache clear, toggle update, wp-config permission).
 - Realtime health monitor.
 - 404 monitor + exclude rules.
 - Healthcheck endpoint + secret key.
-- Heartbeat terjadwal ke collector eksternal.
-- Ringkasan status collector/heartbeat dan hasil heartbeat terakhir.
+- Scheduled heartbeat to an external collector.
+- Summary of collector/heartbeat status and latest heartbeat result.
 
 #### 9) Cache
 
-Untuk kontrol cache dari satu tempat.
-- Page cache file-based untuk pengunjung anonim.
+- For cache control from one place.
+- File-based page cache for anonymous visitors.
 - TTL dan path exclude.
 - Purge page cache.
 - Flush object cache.
@@ -199,36 +199,36 @@ Untuk kontrol cache dari satu tempat.
 
 #### 10) Themes Checker
 
-Untuk audit kualitas tema aktif.
-- Ringkasan ukuran file dan aset.
-- Daftar file terbesar.
-- Deteksi duplicate PHP.
-- Deteksi risky function pattern.
+For active theme quality auditing.
+- File and asset size summary.
+- Largest file list.
+- Duplicate PHP detection.
+- Risky function pattern detection.
 
 #### 11) Tool Kits Access
 
-Untuk kontrol siapa yang boleh akses plugin.
+For controlling who can access the plugin.
 - Role allowlist.
 - IP allowlist.
 - Lock settings.
 - Security alerts via email.
-- Audit log perubahan.
-- Owner mode + pengaturan lisensi.
-- Status koneksi collector/heartbeat/license, token status, dan hasil check terakhir.
+- Change audit log.
+- Owner mode and license settings.
+- Collector/heartbeat/license connection status, token status, and latest check result.
 
-### Instalasi
+### Installation
 
-1. Upload folder `tool-kits` ke `wp-content/plugins/`.
-2. Aktifkan plugin dari menu `Plugins`.
-3. Buka `Tool Kits` dan `Tools > Tool Kits Access`.
-4. Konfigurasi lisensi, role akses, dan email alert sebelum dipakai di production.
+1. Upload the `tool-kits` folder to `wp-content/plugins/`.
+2. Activate the plugin from the `Plugins` screen.
+3. Open `Tool Kits` and `Tools > Tool Kits Access`.
+4. Configure the license, access roles, and alert email before using it in production.
 
 ### Best Practice
 
-- Selalu backup sebelum `Import DB`, `Change Prefix`, atau `Change User ID`.
-- Uji fitur sensitif (Hide Login, WAF, HTTP Auth, CORS, block IP) di staging.
-- Simpan URL login custom jika Hide Login aktif.
-- Gunakan SMTP test setelah ganti provider.
+- Always back up before `Import DB`, `Change Prefix`, or `Change User ID`.
+- Test sensitive features such as Hide Login, WAF, HTTP Auth, CORS, and IP blocking on staging.
+- Save the custom login URL if Hide Login is active.
+- Use the SMTP test after changing providers.
 
 ---
 

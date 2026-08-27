@@ -209,19 +209,19 @@ function tk_hide_login_save() {
     tk_update_option('hide_login_slug', tk_sanitize_slug($slug));
 
     flush_rewrite_rules();
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'hide-login', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-security-hide-login', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }
 
 function tk_render_hide_login_page() {
-    if (function_exists('tk_render_optimization_page')) {
-        tk_render_optimization_page('hide-login');
-        return;
-    }
     if (!tk_is_admin_user()) return;
     ?>
     <div class="wrap tk-wrap">
-        <h1>Optimization</h1>
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('Hide Login', 'Move the default WordPress login URL behind a custom slug.', 'dashicons-hidden'); ?>
+        <?php if (isset($_GET['tk_saved']) && sanitize_key((string) $_GET['tk_saved']) === '1') : ?>
+            <?php tk_notice('Settings saved.', 'success'); ?>
+        <?php endif; ?>
         <?php tk_render_hide_login_panel(); ?>
     </div>
     <?php

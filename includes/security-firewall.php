@@ -9,6 +9,12 @@ function tk_firewall_init(): void {
 }
 
 function tk_firewall_register_page(): void {
+    $license_valid = (string) tk_get_option('license_status', 'inactive') === 'valid';
+    $license_limited = (string) tk_get_option('license_type', '') === 'local';
+    if (!tk_toolkits_can_manage() || !$license_valid || $license_limited) {
+        return;
+    }
+
     add_submenu_page(
         'tool-kits',
         __('Firewall', 'tool-kits'),
@@ -97,6 +103,10 @@ function tk_firewall_enforce_request_rules(): void {
         return;
     }
     if ((defined('WP_CLI') && WP_CLI) || (function_exists('wp_doing_cron') && wp_doing_cron())) {
+        return;
+    }
+
+    if (function_exists('wp_doing_ajax') && wp_doing_ajax()) {
         return;
     }
 

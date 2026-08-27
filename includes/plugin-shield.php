@@ -3,31 +3,30 @@ if (!defined('ABSPATH')) { exit; }
 
 /**
  * Plugin Shield Module
- * Proteksi khusus untuk Tool Kits agar tidak mudah di-hack, dinonaktifkan, 
- * atau lisensinya dimanipulasi oleh user lain.
+ * Protects Tool Kits from unauthorized hiding, deactivation, or license tampering.
  */
 
 function tk_plugin_shield_init() {
-    // 1. Sembunyikan plugin dari daftar jika bukan Owner
+    // 1. Hide the plugin from the list for non-owner users.
     add_filter('all_plugins', 'tk_shield_hide_from_plugin_list');
     
-    // 2. Cegah deaktifasi jika Shield aktif
+    // 2. Prevent deactivation when Shield is active.
     add_filter('plugin_action_links', 'tk_shield_remove_deactivate_link', 10, 4);
     add_action('deactivate_plugin', 'tk_shield_block_deactivation', 10, 2);
 
-    // 3. Verifikasi integritas lisensi (anti-DB tampering)
+    // 3. Verify license integrity against DB tampering.
     add_action('admin_init', 'tk_shield_verify_license_integrity');
 }
 
 /**
- * Menyembunyikan Tool Kits dari daftar plugin untuk user non-owner.
+ * Hides Tool Kits from the plugin list for non-owner users.
  */
 function tk_shield_hide_from_plugin_list($plugins) {
     if (!tk_get_option('toolkits_shield_stealth_enabled', 0)) {
         return $plugins;
     }
 
-    // Jika user adalah Owner, biarkan tetap terlihat
+    // If the current user is the owner, keep the plugin visible.
     if (tk_toolkits_is_owner()) {
         return $plugins;
     }
@@ -41,7 +40,7 @@ function tk_shield_hide_from_plugin_list($plugins) {
 }
 
 /**
- * Menghapus link "Deactivate" di halaman plugins.
+ * Removes the "Deactivate" link on the Plugins screen.
  */
 function tk_shield_remove_deactivate_link($actions, $plugin_file, $plugin_data, $context) {
     if ($plugin_file !== 'tool-kits/tool-kits.php') {
@@ -52,7 +51,7 @@ function tk_shield_remove_deactivate_link($actions, $plugin_file, $plugin_data, 
         return $actions;
     }
 
-    // Jika bukan owner, hapus link deaktifasi dan hapus
+    // If the current user is not the owner, remove deactivation and deletion actions.
     if (!tk_toolkits_is_owner()) {
         unset($actions['deactivate']);
         unset($actions['delete']);
@@ -62,7 +61,7 @@ function tk_shield_remove_deactivate_link($actions, $plugin_file, $plugin_data, 
 }
 
 /**
- * Blokir aksi deaktifasi via URL/Direct request.
+ * Blocks deactivation through direct URL or request calls.
  */
 function tk_shield_block_deactivation($plugin, $silent) {
     if ($plugin !== 'tool-kits/tool-kits.php') {
@@ -79,7 +78,7 @@ function tk_shield_block_deactivation($plugin, $silent) {
 }
 
 /**
- * Memastikan lisensi tidak diubah secara manual di Database.
+ * Ensures the license is not manually changed in the database.
  */
 function tk_shield_verify_license_integrity() {
     $status = (string) tk_get_option('license_status', 'inactive');

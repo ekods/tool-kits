@@ -3,29 +3,29 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.3.7
+Stable tag: 2.5.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Tool Kits adalah plugin admin toolkit untuk:
-- DB Migrate: Export SQL, Find & Replace serialized-safe, dan Rename table prefix.
-- DB Cleanup: Bersihkan revisions, trash, spam, transients, dan optimize tabel.
-- Security: Hide Login, Captcha, Anti-spam Contact (CF7), Rate Limit login, Login Log, Hardening.
+Tool Kits is an admin toolkit plugin for:
+- DB Migrate: SQL export, serialized-safe Find & Replace, and table prefix rename.
+- DB Cleanup: Clean revisions, trash, spam, transients, and optimize tables.
+- Security: Hide Login, Captcha, Anti-spam Contact (CF7), login rate limiting, Login Log, and Hardening.
 
 == Installation ==
-1. Upload folder `tool-kits` ke `/wp-content/plugins/`
-2. Activate plugin di Plugins
-3. Buka menu "Tool Kits" dan "Tool Kits Security"
+1. Upload the `tool-kits` folder to `/wp-content/plugins/`.
+2. Activate the plugin from the Plugins screen.
+3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
-- Change DB Prefix: plugin akan rename tabel dan update meta keys, tetapi Anda tetap harus update `$table_prefix` di wp-config.php manual.
-- Export SQL: best-effort via WPDB. Untuk database besar, gunakan phpMyAdmin/CLI.
-- Update checker mengambil rilis dari GitHub (release asset `tool-kits.zip` direkomendasikan untuk instalasi otomatis).
+- Change DB Prefix: the plugin renames tables and updates related meta keys, but you still need to update `$table_prefix` in wp-config.php manually.
+- Export SQL: best-effort via WPDB. For large databases, use phpMyAdmin or WP-CLI.
+- The update checker retrieves releases from GitHub. The `tool-kits.zip` release asset is recommended for automatic installation.
 - Added heartbeat collector integration improvements: heartbeat payload now includes hide-login slug/URL and collector dashboard surfaces those fields alongside the license data.
 - License and heartbeat configuration are now aligned around a single collector-based flow with explicit derived URLs, connection diagnostics, and reachability checks.
 - Hardening update: added HSTS toggle, strict CSP, server signature hide, cookie HttpOnly/Secure enforcement, WP-Cron disable toggle, URL parameter guard, HTTP methods filtering, dangerous method block, robots.txt hardening, and unwanted file access block.
 - Monitoring checks now include risky public DB host detection (possible MySQL port 3306 exposure indicator).
-- Penting: plugin tidak dapat menutup port 3306 secara langsung; pembatasan akses DB tetap wajib di firewall/security group server.
+- Important: the plugin cannot close port 3306 directly; DB access restrictions must still be enforced in the server firewall or security group.
 
 == Developer Notes ==
 Filters to adjust CORS by environment (optional example):
@@ -61,6 +61,20 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.3.9 =
+**Compatibility**
+- Bypass Tool Kits request-level security modules for WordPress AJAX requests so frontend `admin-ajax.php` handlers are not blocked by Tool Kits.
+
+= 2.3.8 =
+**Database Tools**
+- Prevent search/replace from mutating user email fields and common email option values.
+- Keep normal URL/content replacements active for fields such as post content, home, and siteurl.
+
+**Cache**
+- Skip page cache generation for dynamic requests such as sessions, carts, checkout, account pages, search, REST/API URLs, and private/no-cache responses.
+- Prevent fragment cache helpers from creating cache entries when Page Cache is disabled.
+- Clarify cache status messaging for static anonymous page caching.
+
 = 2.3.7 =
 **Release**
 - Sync plugin metadata for the 2.3.7 package.

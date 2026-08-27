@@ -38,7 +38,7 @@ function tk_render_header_branding() {
             <span class="tk-header-version">v<?php echo TK_VERSION; ?></span>
         </div>
 
-        <div style="display:flex; align-items:center; gap:20px;">
+        <div class="tk-header-statuses">
             <?php 
             $ga_id = tk_get_option('google_analytics_gtag_id', '');
             if ($ga_id) : ?>
@@ -66,39 +66,57 @@ function tk_render_header_branding() {
             </div>
         </div>
     </div>
+    <div class="tk-external-notices is-empty" data-tk-external-notices></div>
     <style>
         .tk-header-branding {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: #fff;
-            padding: 12px 20px;
-            border-radius: 12px;
-            border: 1px solid var(--tk-border-soft);
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,250,252,0.94));
+            gap: 16px;
+            padding: 16px 18px;
+            border-radius: 14px;
+            border: 1px solid rgba(202, 213, 226, 0.8);
             margin-bottom: 24px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            box-shadow: 0 1px 2px rgba(16,24,40,0.04), 0 16px 42px rgba(15,23,42,0.07);
         }
         .tk-header-brand {
             display: flex;
             align-items: center;
-            gap: 8px;
-            font-weight: 700;
-            font-size: 14px;
-            color: #1e293b;
+            gap: 12px;
+            font-weight: 760;
+            font-size: 16px;
+            color: #172033;
+            white-space: nowrap;
         }
         .tk-header-brand .dashicons {
-            color: var(--tk-primary);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            background: linear-gradient(135deg, #2457e6, #0891b2);
+            border-radius: 11px;
             font-size: 18px;
-            width: 18px;
-            height: 18px;
+            width: 36px;
+            height: 36px;
+            box-shadow: 0 10px 22px rgba(36, 87, 230, 0.24);
         }
         .tk-header-version {
-            font-weight: 400;
+            font-weight: 700;
             color: var(--tk-muted);
-            font-size: 11px;
-            background: var(--tk-bg-soft);
-            padding: 2px 6px;
-            border-radius: 4px;
+            font-size: 12px;
+            background: #eef2f7;
+            padding: 4px 8px;
+            border-radius: 999px;
+        }
+        .tk-header-statuses {
+            display:flex;
+            align-items:center;
+            justify-content:flex-end;
+            gap:10px;
+            min-width:0;
+            flex-wrap:wrap;
         }
         .tk-header-status {
             display: flex;
@@ -106,10 +124,12 @@ function tk_render_header_branding() {
             gap: 8px;
             font-size: 12px;
             color: var(--tk-muted);
-            background: #f0fdf4;
-            padding: 6px 12px;
-            border-radius: 20px;
-            border: 1px solid #dcfce7;
+            background: rgba(255, 255, 255, 0.78);
+            padding: 8px 12px;
+            border-radius: 999px;
+            border: 1px solid #e2e8f0;
+            white-space: nowrap;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
         }
         .tk-status-dot {
             width: 8px;
@@ -119,12 +139,90 @@ function tk_render_header_branding() {
             box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
             animation: tk-pulse 2s infinite;
         }
+        .tk-external-notices {
+            margin: 0 0 24px;
+        }
+        .tk-external-notices.is-empty {
+            display: none;
+        }
+        .tk-external-notices .notice,
+        .tk-external-notices .updated,
+        .tk-external-notices .error,
+        .tk-external-notices .update-nag {
+            box-sizing: border-box;
+            width: 100%;
+            margin: 0 0 12px;
+            border-radius: 10px;
+            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+        }
         @keyframes tk-pulse {
             0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
             70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
             100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
         }
+        @media (max-width: 782px) {
+            .tk-header-branding {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+            .tk-header-statuses {
+                justify-content: flex-start;
+            }
+        }
     </style>
+    <script>
+    (function(){
+        var moving = false;
+        var noticeSelector = '.notice, .updated, .error, .update-nag';
+        var heroSelector = '.tk-hero, .tk-overview-hero';
+
+        function findTarget(hero) {
+            var wrap = hero.closest('.tk-wrap, .tk-overview-wrap') || document;
+            return wrap.querySelector('[data-tk-external-notices]') || wrap.querySelector('[data-tk-overview-external-notices]');
+        }
+
+        function syncTargetState(target) {
+            if (!target) { return; }
+            target.classList.toggle('is-empty', target.children.length === 0);
+        }
+
+        function moveHeroNotices() {
+            if (moving) { return; }
+            moving = true;
+
+            document.querySelectorAll(heroSelector).forEach(function(hero){
+                var target = findTarget(hero);
+                if (!target) { return; }
+
+                hero.querySelectorAll(noticeSelector).forEach(function(notice){
+                    if (notice.closest('[data-tk-external-notices], [data-tk-overview-external-notices]')) {
+                        return;
+                    }
+                    target.appendChild(notice);
+                });
+
+                syncTargetState(target);
+            });
+
+            moving = false;
+        }
+
+        moveHeroNotices();
+        document.addEventListener('DOMContentLoaded', moveHeroNotices);
+        window.setTimeout(moveHeroNotices, 100);
+        window.setTimeout(moveHeroNotices, 500);
+        window.setTimeout(moveHeroNotices, 1500);
+
+        if (window.MutationObserver && document.body) {
+            var observer = new MutationObserver(moveHeroNotices);
+            observer.observe(document.body, { childList: true, subtree: true });
+            window.setTimeout(function(){
+                observer.disconnect();
+                moveHeroNotices();
+            }, 4000);
+        }
+    })();
+    </script>
     <?php
 }
 
@@ -368,7 +466,7 @@ function tk_license_admin_notice() {
     if (!current_user_can('manage_options')) return;
 
     $screen = get_current_screen();
-    if ($screen && $screen->id === 'tools_page_tool-kits-access') {
+    if ($screen && in_array($screen->id, array('tools_page_tool-kits-access', 'tool-kits-settings_page_tool-kits-access', 'toplevel_page_tool-kits-settings', 'tool-kits_page_tool-kits-access'), true)) {
         return;
     }
 
@@ -379,8 +477,8 @@ function tk_license_admin_notice() {
         ?>
         <div class="notice notice-warning is-dismissible">
             <p>
-                <strong>Tool Kits:</strong> Lisensi Anda belum aktif. Silakan masukkan kunci lisensi untuk mengaktifkan fitur premium dan pembaruan otomatis.
-                <a href="<?php echo esc_url(tk_admin_url('tool-kits-access') . '#license'); ?>" class="button button-secondary" style="margin-left:10px;">Aktifkan Sekarang</a>
+                <strong>Tool Kits:</strong> Your license is not active yet. Enter your license key to enable premium features and automatic updates.
+                <a href="<?php echo esc_url(tk_admin_url('tool-kits-access') . '#license'); ?>" class="button button-secondary" style="margin-left:10px;">Activate Now</a>
             </p>
         </div>
         <?php
@@ -774,6 +872,15 @@ function tk_option_init_defaults() {
         'hide_login_enabled' => 0,
         'hide_login_slug' => 'secure-login',
         'hide_login_redirect' => home_url('/'),
+        'login_branding_enabled' => 0,
+        'login_logo_id' => 0,
+        'login_background_id' => 0,
+        'login_logo_width' => 240,
+        'login_logo_height' => 96,
+        'login_overlay_color' => '#0f172a',
+        'login_overlay_opacity' => 46,
+        'login_form_background_color' => '#ffffff',
+        'login_form_text_color' => '#1f2937',
         // Captcha
         'captcha_enabled' => 1,
         'captcha_on_login' => 0,
@@ -882,6 +989,11 @@ function tk_option_init_defaults() {
         'malware_scan_max_file_kb' => 2048,
         'malware_scan_code_files_only' => 1,
         'malware_scan_report' => array(),
+        'malware_scan_schedule_enabled' => 0,
+        'malware_scan_schedule' => 'daily',
+        'malware_scan_alert_email_enabled' => 1,
+        'malware_scan_last_scheduled_run' => 0,
+        'malware_scan_last_scheduled_status' => '',
         'hardening_httpauth_enabled' => 0,
         'hardening_httpauth_user' => '',
         'hardening_httpauth_pass' => '',
@@ -2273,7 +2385,7 @@ function tk_toolkits_guard(): void {
         return;
     }
     if (!tk_toolkits_can_manage()) {
-        $message = '<h1>Access Restricted</h1><p>Tool Kits access is restricted for your account.</p><p><a href="' . esc_url(admin_url('tools.php?page=tool-kits-access')) . '">Go to Tool Kits Access</a></p>';
+        $message = '<h1>Access Restricted</h1><p>Tool Kits access is restricted for your account.</p><p><a href="' . esc_url(admin_url('admin.php?page=tool-kits-access')) . '">Go to Tool Kits Access</a></p>';
         wp_die($message, 'Tool Kits', array('response' => 403));
     }
     if ($is_license_exempt) {
@@ -2284,7 +2396,7 @@ function tk_toolkits_guard(): void {
     }
     $collector_key = tk_heartbeat_auth_key();
     if ($collector_key === '' && $page !== 'tool-kits-access' && !in_array($action, $license_setup_actions, true)) {
-        $message = '<h1>Collector Token Required</h1><p>Please set the collector token in Tool Kits Access.</p><p><a href="' . esc_url(admin_url('tools.php?page=tool-kits-access')) . '">Open Tool Kits Access</a></p>';
+        $message = '<h1>Collector Token Required</h1><p>Please set the collector token in Tool Kits Access.</p><p><a href="' . esc_url(admin_url('admin.php?page=tool-kits-access')) . '">Open Tool Kits Access</a></p>';
         wp_die($message, 'Tool Kits', array('response' => 403));
     }
     if ($page === 'tool-kits-access' || in_array($action, $license_setup_actions, true)) {
@@ -2299,9 +2411,9 @@ function tk_toolkits_guard(): void {
     $license = tk_license_validate(true);
     if (!tk_license_is_valid()) {
         $detail = isset($license['message']) && $license['message'] !== '' ? $license['message'] : 'License invalid.';
-        $message = '<h1>License Required</h1><p>' . esc_html($detail) . '</p><p><a href="' . esc_url(admin_url('tools.php?page=tool-kits-access&tk_license=1')) . '">Open License Settings</a></p>';
+        $message = '<h1>License Required</h1><p>' . esc_html($detail) . '</p><p><a href="' . esc_url(admin_url('admin.php?page=tool-kits-access')) . '">Open License Settings</a></p>';
         if (!$is_toolkits_action) {
-            $target = admin_url('tools.php?page=tool-kits-access&tk_license=1');
+            $target = admin_url('admin.php?page=tool-kits-access');
             wp_safe_redirect($target);
             exit;
         }
@@ -2392,7 +2504,7 @@ function tk_toolkits_access_denied_page(): void {
     if ($page === '' || strpos($page, 'tool-kits') !== 0) {
         return;
     }
-    $message = '<h1>Access Restricted</h1><p>You do not have permission to access Tool Kits.</p><p><a href="' . esc_url(admin_url('tools.php?page=tool-kits-access')) . '">Go to Tool Kits Access</a></p>';
+    $message = '<h1>Access Restricted</h1><p>You do not have permission to access Tool Kits.</p><p><a href="' . esc_url(admin_url('admin.php?page=tool-kits-access')) . '">Go to Tool Kits Access</a></p>';
     wp_die($message, 'Tool Kits', array('response' => 403));
 }
 add_action('admin_page_access_denied', 'tk_toolkits_access_denied_page');
@@ -2551,5 +2663,104 @@ function tk_render_switch($name, $label, $description, $checked, $confirm = '') 
             <span class="tk-slider"></span>
         </label>
     </div>
+    <?php
+}
+
+function tk_toolkits_nested_admin_menu_script(): void {
+    if (!is_admin() || !tk_toolkits_can_manage()) {
+        return;
+    }
+    ?>
+    <script>
+    (function(){
+        var root = document.querySelector('#toplevel_page_tool-kits');
+        if (!root || root.classList.contains('tk-nested-menu-ready')) { return; }
+
+        var groups = {
+            'tool-kits-settings': ['tool-kits-general', 'tool-kits-access'],
+            'tool-kits-security': ['tool-kits-guard', 'tool-kits-firewall', 'tool-kits-security-hide-login', 'tool-kits-security-spam', 'tool-kits-security-rate-limit', 'tool-kits-security-login-log', 'tool-kits-malware-scanner'],
+            'tool-kits-performance': ['tool-kits-cache', 'tool-kits-optimization', 'tool-kits-minify', 'tool-kits-webp', 'tool-kits-image-opt', 'tool-kits-lazy-load', 'tool-kits-assets'],
+            'tool-kits-seo': [],
+            'tool-kits-system': ['tool-kits-db', 'tool-kits-role-management', 'tool-kits-user-id', 'tool-kits-smtp', 'tool-kits-theme-checker', 'tool-kits-diagnostics']
+        };
+        var closeTimer = null;
+
+        function pageFromAnchor(anchor) {
+            try {
+                var url = new URL(anchor.href, window.location.origin);
+                return url.searchParams.get('page') || '';
+            } catch (e) {
+                var match = anchor.href.match(/[?&]page=([^&#]+)/);
+                return match ? decodeURIComponent(match[1]) : '';
+            }
+        }
+
+        var anchors = Array.prototype.slice.call(root.querySelectorAll('.wp-submenu > li > a'));
+        var byPage = {};
+        anchors.forEach(function(anchor){
+            var page = pageFromAnchor(anchor);
+            if (page) {
+                byPage[page] = anchor.parentElement;
+            }
+        });
+
+        Object.keys(groups).forEach(function(groupPage){
+            var groupItem = byPage[groupPage];
+            if (!groupItem) { return; }
+
+            groupItem.classList.add('tk-submenu-group');
+            var nested = document.createElement('ul');
+            nested.className = 'wp-submenu tk-submenu-flyout';
+            nested.setAttribute('aria-label', groupItem.textContent.trim());
+            nested.setAttribute('role', 'menu');
+
+            groups[groupPage].forEach(function(childPage){
+                var childItem = byPage[childPage];
+                if (!childItem || childItem === groupItem) { return; }
+                childItem.classList.add('tk-submenu-child');
+                if (childItem.classList.contains('current')) {
+                    groupItem.classList.add('tk-submenu-current');
+                }
+                nested.appendChild(childItem);
+            });
+
+            if (nested.children.length) {
+                groupItem.appendChild(nested);
+                groupItem.classList.add('has-tk-submenu');
+
+                groupItem.addEventListener('mouseenter', function(){
+                    window.clearTimeout(closeTimer);
+                    root.querySelectorAll('.tk-submenu-group.is-open').forEach(function(item){
+                        if (item !== groupItem) {
+                            item.classList.remove('is-open');
+                        }
+                    });
+                    groupItem.classList.add('is-open');
+                });
+
+                groupItem.addEventListener('mouseleave', function(){
+                    closeTimer = window.setTimeout(function(){
+                        groupItem.classList.remove('is-open');
+                    }, 140);
+                });
+
+                groupItem.addEventListener('focusin', function(){
+                    window.clearTimeout(closeTimer);
+                    groupItem.classList.add('is-open');
+                });
+
+                groupItem.addEventListener('focusout', function(event){
+                    if (!groupItem.contains(event.relatedTarget)) {
+                        closeTimer = window.setTimeout(function(){
+                            groupItem.classList.remove('is-open');
+                        }, 140);
+                    }
+                });
+            }
+        });
+
+        root.classList.add('tk-nested-menu-ready');
+    })();
+    </script>
     <?php
 }

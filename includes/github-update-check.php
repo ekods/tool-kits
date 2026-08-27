@@ -10,6 +10,7 @@ if (!defined('ABSPATH')) {
 add_filter('pre_set_site_transient_update_plugins', 'tk_github_plugin_update_check', 20);
 add_filter('site_transient_update_plugins', 'tk_github_plugin_update_check', 20);
 add_filter('plugins_api', 'tk_github_plugin_api', 20, 3);
+add_filter('upgrader_package_options', 'tk_github_upgrader_package_options', 10);
 add_filter('upgrader_source_selection', 'tk_github_upgrader_source_selection', 10, 4);
 add_filter('upgrader_pre_install', 'tk_github_upgrader_pre_install', 10, 2);
 add_filter('upgrader_post_install', 'tk_github_upgrader_post_install', 10, 3);
@@ -269,6 +270,19 @@ function tk_github_is_target_upgrade(array $hook_extra): bool {
     return false;
 }
 
+function tk_github_upgrader_package_options(array $options): array {
+    $hook_extra = isset($options['hook_extra']) && is_array($options['hook_extra']) ? $options['hook_extra'] : array();
+
+    if (!tk_github_is_target_upgrade($hook_extra)) {
+        return $options;
+    }
+
+    $options['clear_destination'] = true;
+    $options['abort_if_destination_exists'] = false;
+
+    return $options;
+}
+
 function tk_github_store_status(string $status, string $message, array $context = array()): void {
     $payload = array(
         'status'    => $status,
@@ -385,6 +399,28 @@ function tk_github_upgrader_source_selection($source, $remote_source, $upgrader,
         return $source;
     }
 
+    $direct_plugin_file = trailingslashit($source) . 'tool-kits.php';
+    if (is_file($direct_plugin_file)) {
+        return tk_github_normalize_source_directory($source, $remote_source);
+    }
+
+    $nested_source = trailingslashit($source) . 'tool-kits';
+    $nested_plugin_file = trailingslashit($nested_source) . 'tool-kits.php';
+    if (is_dir($nested_source) && is_file($nested_plugin_file)) {
+        return $nested_source;
+    }
+
+    tk_github_store_status('failed', 'Plugin update package does not contain tool-kits/tool-kits.php.', array(
+        'source' => $source,
+    ));
+
+    return new WP_Error(
+        'tk_github_updater_bad_package_root',
+        __('Plugin update package does not contain tool-kits/tool-kits.php.', 'tool-kits')
+    );
+}
+
+function tk_github_normalize_source_directory(string $source, string $remote_source) {
     $expected = trailingslashit($remote_source) . 'tool-kits';
     if (untrailingslashit($source) === untrailingslashit($expected)) {
         return $source;

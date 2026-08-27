@@ -578,6 +578,9 @@ function tk_hardening_force_cookie_httponly(): void {
 
 function tk_hardening_url_param_guard(): void {
     $doing_ajax = function_exists('wp_doing_ajax') ? wp_doing_ajax() : false;
+    if ($doing_ajax) {
+        return;
+    }
     if (is_admin() && !$doing_ajax) {
         return;
     }
