@@ -122,6 +122,7 @@ function tk_general_settings_presets(): array {
             'options' => array(
                 'page_cache_enabled' => 1,
                 'page_cache_ttl' => 3600,
+                'page_cache_auto_preload_after_purge' => 1,
                 'lazy_load_enabled' => 1,
                 'lazy_load_html_images' => 1,
                 'lazy_load_iframe_video' => 1,

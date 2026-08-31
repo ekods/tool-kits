@@ -278,6 +278,11 @@ function tk_clear_all_caches(): array {
         }
     }
 
+    if (function_exists('tk_page_cache_purge')) {
+        $purged = tk_page_cache_purge();
+        $actions[] = 'Tool Kits page cache cleared: ' . tk_page_cache_summary_text($purged) . '.';
+    }
+
     if (isset($wpdb->options)) {
         $deleted = $wpdb->query(
             "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_%' OR option_name LIKE '_site_transient_%'"
@@ -300,49 +305,14 @@ function tk_clear_all_caches(): array {
         }
     }
 
-    if (function_exists('rocket_clean_domain')) {
-        rocket_clean_domain();
-        $actions[] = 'WP Rocket cache cleared.';
-    }
-    if (function_exists('w3tc_flush_all')) {
-        w3tc_flush_all();
-        $actions[] = 'W3 Total Cache cleared.';
-    }
-    if (function_exists('wp_cache_clear_cache')) {
-        wp_cache_clear_cache();
-        $actions[] = 'WP Super Cache cleared.';
-    }
-    if (function_exists('litespeed_purge_all')) {
-        litespeed_purge_all();
-        $actions[] = 'LiteSpeed cache cleared.';
-    }
-    if (has_action('litespeed_purge_all')) {
-        do_action('litespeed_purge_all');
-        $actions[] = 'LiteSpeed purge triggered.';
-    }
-    if (class_exists('WpeCommon')) {
-        if (method_exists('WpeCommon', 'purge_memcached')) {
-            WpeCommon::purge_memcached();
+    if (function_exists('tk_server_cache_purge_layers')) {
+        $external = tk_server_cache_purge_layers();
+        if (!empty($external['actions']) && is_array($external['actions'])) {
+            $actions = array_merge($actions, $external['actions']);
         }
-        if (method_exists('WpeCommon', 'purge_varnish_cache')) {
-            WpeCommon::purge_varnish_cache();
+        if (!empty($external['errors']) && is_array($external['errors'])) {
+            $errors = array_merge($errors, $external['errors']);
         }
-        $actions[] = 'WP Engine cache cleared.';
-    }
-    if (class_exists('autoptimizeCache')) {
-        autoptimizeCache::clearall();
-        $actions[] = 'Autoptimize cache cleared.';
-    }
-    if (class_exists('Cache_Enabler')) {
-        Cache_Enabler::clear_total_cache();
-        $actions[] = 'Cache Enabler cleared.';
-    }
-    if (class_exists('WpFastestCache')) {
-        $wpf = new WpFastestCache();
-        if (method_exists($wpf, 'deleteCache')) {
-            $wpf->deleteCache();
-        }
-        $actions[] = 'WP Fastest Cache cleared.';
     }
 
     if (empty($actions)) {
@@ -1057,6 +1027,7 @@ function tk_option_init_defaults() {
         'page_cache_ttl' => 3600,
         'page_cache_exclude_paths' => "/wp-login.php\n/wp-admin\n",
         'page_cache_preload_urls' => '',
+        'page_cache_auto_preload_after_purge' => 0,
         'fragment_cache_keys' => array(),
         'webp_convert_enabled' => 0,
         'webp_serve_enabled' => 0,

@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.5.5
+Stable tag: 2.5.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -61,6 +61,15 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.5.6 =
+**Cache**
+- Add dashboard cache status widget with cached file count, cache size, and one-click page cache purge.
+- Detect server/CDN cache layers from response headers and known WordPress cache integrations.
+- Add server cache debug headers and refresh detection action to the Cache Status page.
+- Purge supported plugin/server cache layers when clearing Tool Kits page cache.
+- Auto-purge page cache on content, meta, term, menu, customizer, theme, and relevant option changes.
+- Add optional auto-preload after purge for homepage and configured critical URLs.
+
 = 2.3.9 =
 **Compatibility**
 - Bypass Tool Kits request-level security modules for WordPress AJAX requests so frontend `admin-ajax.php` handlers are not blocked by Tool Kits.
