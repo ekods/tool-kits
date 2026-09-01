@@ -83,6 +83,14 @@ function tk_role_management_sanitize_menu_slug($menu_slug): string {
     return substr($menu_slug, 0, 200);
 }
 
+function tk_role_management_slug_from_name(string $role_name): string {
+    $slug = sanitize_title($role_name);
+    $slug = str_replace('-', '_', $slug);
+    $slug = sanitize_key($slug);
+    $slug = trim($slug, '_');
+    return $slug;
+}
+
 function tk_role_management_available_menus(): array {
     global $menu, $submenu;
 
@@ -862,17 +870,15 @@ function tk_role_management_save(): void {
     $original_slug = isset($_POST['original_role_slug'])
         ? sanitize_key(wp_unslash((string) $_POST['original_role_slug']))
         : '';
-    $role_slug = isset($_POST['role_slug'])
-        ? sanitize_key(wp_unslash((string) $_POST['role_slug']))
-        : '';
     $role_name = isset($_POST['role_name'])
         ? sanitize_text_field(wp_unslash((string) $_POST['role_name']))
         : '';
+    $role_slug = $original_slug !== '' ? $original_slug : tk_role_management_slug_from_name($role_name);
     $base_role = isset($_POST['base_role'])
         ? sanitize_key(wp_unslash((string) $_POST['base_role']))
         : 'subscriber';
 
-    if ($role_slug === '' || $role_name === '' || $role_slug === 'administrator') {
+    if ($role_name === '' || $role_slug === '' || $role_slug === 'administrator') {
         tk_role_management_redirect('invalid');
     }
 
@@ -1062,7 +1068,7 @@ function tk_role_management_render_page(): void {
     $notices = array(
         'saved' => array('Role settings saved.', 'success'),
         'deleted' => array('Custom role deleted.', 'success'),
-        'invalid' => array('Role slug and display name are required.', 'error'),
+        'invalid' => array('Display name must generate a valid role slug.', 'error'),
         'exists' => array('That role slug already exists.', 'error'),
         'invalid_base' => array('The selected base role is not allowed.', 'error'),
         'create_failed' => array('WordPress could not create the role.', 'error'),
@@ -1127,9 +1133,12 @@ function tk_role_management_render_page(): void {
                     <tr>
                         <th scope="row"><label for="tk-role-slug"><?php esc_html_e('Role Slug', 'tool-kits'); ?></label></th>
                         <td>
-                            <input id="tk-role-slug" class="regular-text" type="text" name="role_slug" required value="<?php echo esc_attr($editing ? $edit_slug : ''); ?>" placeholder="content_manager" <?php disabled($editing); ?>>
-                            <?php if ($editing) : ?><input type="hidden" name="role_slug" value="<?php echo esc_attr($edit_slug); ?>"><?php endif; ?>
-                            <p class="description"><?php esc_html_e('Lowercase letters, numbers, and underscores. The slug is immutable after creation.', 'tool-kits'); ?></p>
+                            <?php if ($editing) : ?>
+                                <code id="tk-role-slug"><?php echo esc_html($edit_slug); ?></code>
+                            <?php else : ?>
+                                <code id="tk-role-slug" data-empty-label="<?php echo esc_attr__('Generated after you type a display name', 'tool-kits'); ?>"><?php esc_html_e('Generated after you type a display name', 'tool-kits'); ?></code>
+                            <?php endif; ?>
+                            <p class="description"><?php esc_html_e('Generated automatically from the display name. The slug is immutable after creation.', 'tool-kits'); ?></p>
                         </td>
                     </tr>
                     <tr>
@@ -1237,7 +1246,23 @@ function tk_role_management_render_page(): void {
         $tk_role_script = <<<'JS'
         (function () {
             var baseSelect = document.getElementById('tk-base-role');
+            var roleNameInput = document.getElementById('tk-role-name');
+            var roleSlugPreview = document.getElementById('tk-role-slug');
             var presets = __TK_ROLE_PRESETS__;
+
+            function slugFromName(name) {
+                return String(name || '')
+                    .toLowerCase()
+                    .trim()
+                    .replace(/[^a-z0-9]+/g, '_')
+                    .replace(/^_+|_+$/g, '');
+            }
+
+            if (roleNameInput && roleSlugPreview && roleSlugPreview.hasAttribute('data-empty-label')) {
+                roleNameInput.addEventListener('input', function () {
+                    roleSlugPreview.textContent = slugFromName(roleNameInput.value) || roleSlugPreview.getAttribute('data-empty-label');
+                });
+            }
 
             document.querySelectorAll('.tk-role-tab').forEach(function (button) {
                 button.addEventListener('click', function () {

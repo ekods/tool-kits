@@ -83,6 +83,21 @@ function tk_firewall_ip_matches_any(string $ip, array $rules): bool {
 }
 
 function tk_firewall_log_event(string $reason, string $ip): void {
+    if (function_exists('tk_security_events_record')) {
+        $location = function_exists('tk_security_alert_ip_location') ? tk_security_alert_ip_location($ip) : '';
+        $is_blocklist = stripos($reason, 'Blocked IP/CIDR') !== false || stripos($reason, 'Blocked user agent') !== false;
+        tk_security_events_record(array(
+            'event_type' => 'blocked',
+            'category' => $is_blocklist ? 'blocklist' : 'complex',
+            'ip' => $ip,
+            'location' => $location,
+            'user_agent' => isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : '',
+            'reason' => $reason,
+            'request_method' => isset($_SERVER['REQUEST_METHOD']) ? strtolower((string) $_SERVER['REQUEST_METHOD']) : '',
+            'request_uri' => isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '',
+        ));
+    }
+
     if (!(int) tk_get_option('firewall_log_enabled', 1)) {
         return;
     }

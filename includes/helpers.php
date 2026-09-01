@@ -1103,6 +1103,12 @@ function tk_option_init_defaults() {
         'toolkits_alert_admin_created' => 1,
         'toolkits_alert_role_change' => 1,
         'toolkits_alert_admin_login_new_ip' => 1,
+        'security_auto_block_enabled' => 1,
+        'security_auto_block_threshold' => 10,
+        'security_auto_block_window_minutes' => 10,
+        'security_auto_block_user_agents' => "python-requests\ncurl\nwget\nsqlmap\nmasscan\nnikto\nacunetix\nwpscan",
+        'security_events_retention_days' => 90,
+        'security_events_backfilled' => 0,
         'toolkits_owner_only_enabled' => 0,
         'toolkits_owner_user_id' => 1,
         'toolkits_install_id' => '',
@@ -1387,6 +1393,214 @@ function tk_get_ip() {
         }
     }
     return '0.0.0.0';
+}
+
+function tk_security_events_table(): string {
+    global $wpdb;
+    return $wpdb->prefix . 'tk_security_events';
+}
+
+function tk_security_events_install_table(): void {
+    global $wpdb;
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+    $sql = "CREATE TABLE " . tk_security_events_table() . " (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        time DATETIME NOT NULL,
+        event_type VARCHAR(40) NOT NULL,
+        category VARCHAR(40) NOT NULL,
+        ip VARCHAR(64),
+        country VARCHAR(100),
+        location VARCHAR(191),
+        user_agent VARCHAR(255),
+        reason VARCHAR(191),
+        request_method VARCHAR(12),
+        request_uri VARCHAR(500),
+        username VARCHAR(60),
+        user_id BIGINT,
+        PRIMARY KEY (id),
+        KEY time (time),
+        KEY event_type (event_type),
+        KEY category (category),
+        KEY ip (ip),
+        KEY event_time (event_type, time),
+        KEY category_time (category, time),
+        KEY ip_time (ip, time),
+        KEY country_time (country, time)
+    ) {$wpdb->get_charset_collate()};";
+
+    dbDelta($sql);
+}
+
+function tk_security_events_table_exists(): bool {
+    static $exists = null;
+    if ($exists !== null) {
+        return $exists;
+    }
+
+    global $wpdb;
+    $table = tk_security_events_table();
+    $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+    $exists = is_string($found) && $found === $table;
+    return $exists;
+}
+
+function tk_security_events_country_from_location(string $location): string {
+    $location = trim($location);
+    if ($location === '' || $location === 'Unknown' || $location === 'Private/local IP') {
+        return '';
+    }
+
+    $parts = array_values(array_filter(array_map('trim', explode(',', $location))));
+    return !empty($parts) ? (string) end($parts) : '';
+}
+
+function tk_security_events_record(array $event): void {
+    if (!tk_security_events_table_exists()) {
+        tk_security_events_install_table();
+    }
+
+    global $wpdb;
+    $location = isset($event['location']) ? sanitize_text_field((string) $event['location']) : '';
+    $country = isset($event['country']) ? sanitize_text_field((string) $event['country']) : '';
+    if ($country === '') {
+        $country = tk_security_events_country_from_location($location);
+    }
+
+    $wpdb->insert(tk_security_events_table(), array(
+        'time' => isset($event['time']) ? sanitize_text_field((string) $event['time']) : current_time('mysql', 1),
+        'event_type' => sanitize_key((string) ($event['event_type'] ?? 'blocked')),
+        'category' => sanitize_key((string) ($event['category'] ?? 'complex')),
+        'ip' => substr(sanitize_text_field((string) ($event['ip'] ?? '')), 0, 64),
+        'country' => substr($country, 0, 100),
+        'location' => substr($location, 0, 191),
+        'user_agent' => substr(sanitize_text_field((string) ($event['user_agent'] ?? tk_user_agent())), 0, 255),
+        'reason' => substr(sanitize_text_field((string) ($event['reason'] ?? '')), 0, 191),
+        'request_method' => substr(sanitize_key((string) ($event['request_method'] ?? ($_SERVER['REQUEST_METHOD'] ?? ''))), 0, 12),
+        'request_uri' => substr(sanitize_text_field((string) ($event['request_uri'] ?? ($_SERVER['REQUEST_URI'] ?? ''))), 0, 500),
+        'username' => substr(sanitize_text_field((string) ($event['username'] ?? '')), 0, 60),
+        'user_id' => isset($event['user_id']) ? (int) $event['user_id'] : 0,
+    ));
+}
+
+function tk_security_events_schedule_maintenance(): void {
+    if (!wp_next_scheduled('tk_security_events_maintenance')) {
+        wp_schedule_event(time() + HOUR_IN_SECONDS, 'daily', 'tk_security_events_maintenance');
+    }
+}
+
+function tk_security_events_clear_maintenance(): void {
+    $timestamp = wp_next_scheduled('tk_security_events_maintenance');
+    if ($timestamp) {
+        wp_unschedule_event($timestamp, 'tk_security_events_maintenance');
+    }
+}
+
+function tk_security_events_maintenance(): void {
+    tk_security_events_install_table();
+    tk_security_events_backfill();
+    tk_security_events_cleanup();
+}
+
+function tk_security_events_cleanup(): int {
+    if (!tk_security_events_table_exists()) {
+        return 0;
+    }
+
+    $days = max(7, (int) tk_get_option('security_events_retention_days', 90));
+    $before = gmdate('Y-m-d H:i:s', time() - ($days * DAY_IN_SECONDS));
+    global $wpdb;
+    $result = $wpdb->query($wpdb->prepare(
+        'DELETE FROM ' . tk_security_events_table() . ' WHERE time < %s',
+        $before
+    ));
+    return is_numeric($result) ? (int) $result : 0;
+}
+
+function tk_security_events_backfill(): int {
+    if ((int) tk_get_option('security_events_backfilled', 0) === 1) {
+        return 0;
+    }
+    if (!tk_security_events_table_exists()) {
+        tk_security_events_install_table();
+    }
+
+    $inserted = 0;
+    $inserted += tk_security_events_backfill_login_log();
+    $inserted += tk_security_events_backfill_firewall_log();
+    tk_update_option('security_events_backfilled', 1);
+    tk_update_option('security_events_last_backfill_count', $inserted);
+    tk_update_option('security_events_last_backfill_time', time());
+    return $inserted;
+}
+
+function tk_security_events_backfill_login_log(): int {
+    if (!function_exists('tk_login_log_table')) {
+        return 0;
+    }
+
+    global $wpdb;
+    $login_table = tk_login_log_table();
+    $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $login_table));
+    if (!is_string($found) || $found !== $login_table) {
+        return 0;
+    }
+
+    $columns = $wpdb->get_col('DESC ' . $login_table, 0);
+    $has_reason = is_array($columns) && in_array('reason', $columns, true);
+    $reason_select = $has_reason ? 'reason' : "'' AS reason";
+    $rows = $wpdb->get_results(
+        "SELECT time, username, user_id, ip, location, agent, status, {$reason_select} FROM {$login_table} WHERE status = 'failed' ORDER BY time ASC LIMIT 5000"
+    );
+    if (!is_array($rows)) {
+        return 0;
+    }
+
+    $inserted = 0;
+    foreach ($rows as $row) {
+        tk_security_events_record(array(
+            'time' => (string) ($row->time ?? current_time('mysql', 1)),
+            'event_type' => 'blocked',
+            'category' => 'brute_force',
+            'ip' => (string) ($row->ip ?? ''),
+            'location' => (string) ($row->location ?? ''),
+            'user_agent' => (string) ($row->agent ?? ''),
+            'reason' => (string) ($row->reason ?? 'Backfilled failed login'),
+            'request_method' => 'post',
+            'request_uri' => '/wp-login.php',
+            'username' => (string) ($row->username ?? ''),
+            'user_id' => (int) ($row->user_id ?? 0),
+        ));
+        $inserted++;
+    }
+    return $inserted;
+}
+
+function tk_security_events_backfill_firewall_log(): int {
+    $events = tk_get_option('firewall_event_log', array());
+    if (!is_array($events) || empty($events)) {
+        return 0;
+    }
+
+    $inserted = 0;
+    foreach (array_reverse($events) as $event) {
+        $ip = isset($event['ip']) ? trim((string) $event['ip']) : '';
+        $reason = isset($event['reason']) ? (string) $event['reason'] : '';
+        $is_blocklist = stripos($reason, 'Blocked IP/CIDR') !== false || stripos($reason, 'Blocked user agent') !== false;
+        tk_security_events_record(array(
+            'time' => gmdate('Y-m-d H:i:s', isset($event['time']) ? (int) $event['time'] : time()),
+            'event_type' => 'blocked',
+            'category' => $is_blocklist ? 'blocklist' : 'complex',
+            'ip' => $ip,
+            'location' => $ip !== '' && function_exists('tk_security_alert_ip_location') ? tk_security_alert_ip_location($ip) : '',
+            'user_agent' => '',
+            'reason' => $reason !== '' ? $reason : 'Backfilled firewall event',
+            'request_method' => (string) ($event['method'] ?? ''),
+            'request_uri' => (string) ($event['uri'] ?? ''),
+        ));
+        $inserted++;
+    }
+    return $inserted;
 }
 
 function tk_toolkits_allowed_roles(): array {

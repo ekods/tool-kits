@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.5.6
+Stable tag: 2.5.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -61,6 +61,23 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.5.7 =
+**Security Dashboard**
+- Add a Wordfence-style dashboard widget with attacks blocked charts, firewall summary, top countries, and top blocked IPs.
+- Add drilldown links from country and IP summaries to a persistent Attack Details page.
+- Add persistent `tk_security_events` storage for blocked request metrics with indexes for event, category, IP, and country queries.
+- Add one-time backfill from legacy login and firewall logs into persistent security events.
+- Add configurable retention cleanup for security events with daily maintenance and a manual Run Maintenance action.
+
+**Login Protection**
+- Add failed-login reason tracking and show the reason in login activity details.
+- Record failed logins, firewall blocks, WAF blocks, and auto-block actions as security events.
+- Add configurable auto-block rules for repeated failed logins and bot-like login user agents.
+
+**Role Management**
+- Generate custom role slugs automatically from the display name.
+- Keep custom role slugs immutable after creation while showing a live slug preview during role creation.
+
 = 2.5.6 =
 **Cache**
 - Add dashboard cache status widget with cached file count, cache size, and one-click page cache purge.

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.5.6
+ * Version: 2.5.7
  * GitHub Plugin URI: https://github.com/ekods/tool-kits
  * Update URI: https://github.com/ekods/tool-kits
  * Author: Eko Dwi Saputro
@@ -12,7 +12,7 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-define('TK_VERSION', '2.5.6');
+define('TK_VERSION', '2.5.7');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
@@ -36,6 +36,8 @@ add_action('init', 'tk_load_textdomain');
 add_action('plugins_loaded', 'tk_killswitch_init', 1);
 add_action('admin_init', 'tk_debug_deprecated_init');
 add_action('admin_init', 'tk_toolkits_guard', 0);
+add_action('init', 'tk_security_events_schedule_maintenance');
+add_action('tk_security_events_maintenance', 'tk_security_events_maintenance');
 
 /**
  * Module Registry
@@ -100,6 +102,8 @@ function tk_activate() {
 
     // Create login log table
     tk_login_log_install_table();
+    tk_security_events_install_table();
+    tk_security_events_schedule_maintenance();
 
     // Hide login rewrite rules
     tk_hide_login_flush_rewrite(true);
@@ -114,6 +118,7 @@ register_activation_hook(__FILE__, 'tk_activate');
 function tk_deactivate() {
     // Flush rewrite rules so custom login slug is removed cleanly
     tk_hide_login_flush_rewrite(false);
+    tk_security_events_clear_maintenance();
 
 }
 register_deactivation_hook(__FILE__, 'tk_deactivate');
@@ -131,6 +136,9 @@ register_uninstall_hook(__FILE__, 'tk_uninstall');
 add_action('plugins_loaded', function() {
     global $tk_modules;
     tk_run_versioned_upgrades();
+    if (function_exists('tk_security_events_install_table')) {
+        tk_security_events_install_table();
+    }
 
     foreach ($tk_modules as $file => $init_func) {
         if ($init_func && function_exists($init_func)) {

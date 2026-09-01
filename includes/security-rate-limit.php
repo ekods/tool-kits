@@ -229,6 +229,34 @@ function tk_render_rate_limit_page() {
                             <textarea name="whitelist" rows="4" class="large-text"><?php echo esc_textarea((string) tk_get_option('rate_limit_whitelist', '')); ?></textarea>
                         </p>
 
+                        <hr>
+
+                        <h3><?php esc_html_e('Auto Block Rules', 'tool-kits'); ?></h3>
+                        <p class="description"><?php esc_html_e('Automatically block obvious bot login traffic and IPs that exceed the failed-login threshold.', 'tool-kits'); ?></p>
+
+                        <p>
+                            <label>
+                                <input type="checkbox" name="auto_block_enabled" value="1"
+                                    <?php checked(1, tk_get_option('security_auto_block_enabled', 1)); ?>>
+                                Enable auto block rules
+                            </label>
+                        </p>
+
+                        <p>
+                            Failed-login threshold<br>
+                            <input type="number" name="auto_block_threshold" value="<?php echo esc_attr(tk_get_option('security_auto_block_threshold', 10)); ?>" min="2">
+                        </p>
+
+                        <p>
+                            Threshold window (minutes)<br>
+                            <input type="number" name="auto_block_window" value="<?php echo esc_attr(tk_get_option('security_auto_block_window_minutes', 10)); ?>" min="1">
+                        </p>
+
+                        <p>
+                            Blocked login user-agent fragments (one per line)<br>
+                            <textarea name="auto_block_user_agents" rows="5" class="large-text"><?php echo esc_textarea((string) tk_get_option('security_auto_block_user_agents', '')); ?></textarea>
+                        </p>
+
                         <p><button class="button button-primary">Save</button></p>
                     </form>
                 </div>
@@ -306,6 +334,12 @@ function tk_rate_limit_save() {
     tk_update_option('rate_limit_max_attempts', (int) $_POST['max']);
     tk_update_option('rate_limit_lockout_minutes', (int) $_POST['lock']);
     tk_update_option('rate_limit_block_on_fail', !empty($_POST['block_on_fail']) ? 1 : 0);
+    tk_update_option('security_auto_block_enabled', !empty($_POST['auto_block_enabled']) ? 1 : 0);
+    tk_update_option('security_auto_block_threshold', max(2, (int) $_POST['auto_block_threshold']));
+    tk_update_option('security_auto_block_window_minutes', max(1, (int) $_POST['auto_block_window']));
+    $auto_agents = isset($_POST['auto_block_user_agents']) ? (string) wp_unslash($_POST['auto_block_user_agents']) : '';
+    $auto_agents = implode("\n", array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $auto_agents)))));
+    tk_update_option('security_auto_block_user_agents', $auto_agents);
     $whitelist_raw = isset($_POST['whitelist']) ? (string) wp_unslash($_POST['whitelist']) : '';
     $whitelist_ips = tk_rate_limit_parse_ip_list($whitelist_raw);
     tk_update_option('rate_limit_whitelist', implode("\n", $whitelist_ips));
