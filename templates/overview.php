@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) { exit; }
 ?>
 <div class="wrap tk-overview-wrap">
     <?php tk_render_header_branding(); ?>
+    <div class="tk-overview-external-notices is-empty" data-tk-overview-external-notices></div>
 
     <div class="tk-overview-hero">
         <div class="tk-overview-hero-content">
@@ -223,4 +224,23 @@ if (!defined('ABSPATH')) { exit; }
         </div>
     </div>
 
+    <script>
+    (function(){
+        var target = document.querySelector('[data-tk-overview-external-notices]');
+        var hero = document.querySelector('.tk-overview-hero');
+        if (!target || !hero) { return; }
+
+        function moveHeroNotices() {
+            hero.querySelectorAll('.notice, .updated, .error, .update-nag').forEach(function(notice){
+                target.appendChild(notice);
+            });
+            target.classList.toggle('is-empty', target.children.length === 0);
+        }
+
+        moveHeroNotices();
+        document.addEventListener('DOMContentLoaded', moveHeroNotices);
+        window.setTimeout(moveHeroNotices, 250);
+        window.setTimeout(moveHeroNotices, 1000);
+    })();
+    </script>
 </div>

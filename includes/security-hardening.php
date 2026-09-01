@@ -63,6 +63,21 @@ function tk_hardening_init() {
     if (tk_get_option('hardening_disable_rest_user_enum', 1)) {
         add_filter('rest_endpoints', 'tk_disable_user_enum');
     }
+    if (tk_get_option('hardening_reduce_wp_fingerprint', 1)) {
+        add_action('init', 'tk_hardening_reduce_wp_fingerprint');
+        add_action('send_headers', 'tk_hardening_remove_fingerprint_headers', 999);
+        add_filter('redirect_canonical', 'tk_hardening_block_author_canonical_redirect', 10, 2);
+    }
+    if (tk_get_option('hardening_block_author_enumeration', 1)) {
+        add_action('init', 'tk_hardening_block_author_enumeration');
+    }
+    if (tk_get_option('hardening_remove_query_ver', 0)) {
+        add_filter('style_loader_src', 'tk_remove_wp_version_strings', 9999);
+        add_filter('script_loader_src', 'tk_remove_wp_version_strings', 9999);
+    }
+    if (tk_get_option('hardening_disable_emojis', 0)) {
+        add_action('init', 'tk_hardening_disable_emojis');
+    }
     if (tk_get_option('hardening_disable_pingbacks', 1)) {
         add_filter('xmlrpc_methods', 'tk_disable_pingbacks');
     }
@@ -140,17 +155,120 @@ function tk_hardening_clean_wp_head() {
     remove_action('template_redirect', 'rest_output_link_header', 11);
 }
 
+function tk_hardening_reduce_wp_fingerprint(): void {
+    tk_hardening_clean_wp_head();
+    remove_action('wp_head', 'feed_links', 2);
+    remove_action('wp_head', 'feed_links_extra', 3);
+    add_filter('emoji_svg_url', '__return_false');
+    add_filter('wp_headers', 'tk_hardening_filter_wp_headers');
+}
+
+function tk_hardening_filter_wp_headers($headers) {
+    if (!is_array($headers)) {
+        return $headers;
+    }
+    unset($headers['X-Pingback']);
+    unset($headers['X-Redirect-By']);
+    unset($headers['Link']);
+    return $headers;
+}
+
+function tk_hardening_remove_fingerprint_headers(): void {
+    if (!function_exists('header_remove') || headers_sent()) {
+        return;
+    }
+    @header_remove('X-Pingback');
+    @header_remove('X-Redirect-By');
+    @header_remove('Link');
+}
+
 function tk_disable_user_enum($endpoints) {
     unset($endpoints['/wp/v2/users']);
     unset($endpoints['/wp/v2/users/(?P<id>[\d]+)']);
     return $endpoints;
 }
 
+function tk_hardening_block_author_enumeration() {
+    if (is_admin()) {
+        return;
+    }
+    if (isset($_GET['author']) && !empty($_GET['author'])) {
+        wp_die(__('Author scanning is disabled for security reasons.', 'tool-kits'), __('Forbidden', 'tool-kits'), array('response' => 403));
+    }
+}
+
+function tk_hardening_block_author_canonical_redirect($redirect_url, $requested_url) {
+    if (is_admin()) {
+        return $redirect_url;
+    }
+    if (isset($_GET['author']) && $_GET['author'] !== '') {
+        return false;
+    }
+    return $redirect_url;
+}
+
+function tk_remove_wp_version_strings($src) {
+    if (strpos($src, 'ver=')) {
+        $src = remove_query_arg('ver', $src);
+    }
+    return $src;
+}
+
+function tk_hardening_disable_emojis() {
+    remove_action('wp_head', 'print_emoji_detection_script', 7);
+    remove_action('admin_print_scripts', 'print_emoji_detection_script');
+    remove_action('wp_print_styles', 'print_emoji_styles');
+    remove_action('admin_print_styles', 'print_emoji_styles');
+    remove_filter('the_content_feed', 'wp_staticize_emoji');
+    remove_filter('comment_text_rss', 'wp_staticize_emoji');
+    remove_filter('wp_mail', 'wp_staticize_emoji_for_email');
+    add_filter('tiny_mce_plugins', 'tk_disable_emojis_tinymce');
+    add_filter('wp_resource_hints', 'tk_disable_emojis_remove_dns_prefetch', 10, 2);
+}
+
+function tk_disable_emojis_tinymce($plugins) {
+    if (is_array($plugins)) {
+        return array_diff($plugins, array('wpemoji'));
+    }
+    return array();
+}
+
+function tk_disable_emojis_remove_dns_prefetch($urls, $relation_type) {
+    if ('dns-prefetch' === $relation_type) {
+        $emoji_svg_url = apply_filters('emoji_svg_url', 'https://s.w.org/images/core/emoji/14.0.0/svg/');
+        foreach ($urls as $key => $url) {
+            if (strpos($url, $emoji_svg_url) !== false) {
+                unset($urls[$key]);
+            }
+        }
+    }
+    return $urls;
+}
+
 function tk_security_headers() {
+    if (headers_sent()) {
+        return;
+    }
+
     header('X-Frame-Options: SAMEORIGIN');
+    header('X-XSS-Protection: 1; mode=block');
     header('X-Content-Type-Options: nosniff');
-    header('Referrer-Policy: strict-origin');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
     header('Cross-Origin-Resource-Policy: cross-origin');
+    header('Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=()');
+
+    if (tk_get_option('hardening_hsts_enabled', 0) && is_ssl()) {
+        $hsts = 'max-age=31536000; includeSubDomains';
+        if (tk_get_option('hardening_hsts_preload', 0)) {
+            $hsts .= '; preload';
+        }
+        header('Strict-Transport-Security: ' . $hsts);
+    }
+
+    if (is_admin()) {
+        return;
+    }
+
     $nonce = tk_csp_nonce();
     $nonce_token = $nonce !== '' ? " 'nonce-" . $nonce . "'" : '';
     if (tk_get_option('hardening_csp_strict_enabled', 0)) {
@@ -223,13 +341,7 @@ function tk_security_headers() {
             'upgrade-insecure-requests',
         )));
     }
-    if (tk_get_option('hardening_hsts_enabled', 0) && is_ssl()) {
-        $hsts = 'max-age=31536000; includeSubDomains';
-        if (tk_get_option('hardening_hsts_preload', 0)) {
-            $hsts .= '; preload';
-        }
-        header('Strict-Transport-Security: ' . $hsts);
-    }
+
 }
 
 function tk_hardening_csp_google_sources($directive = '') {
@@ -508,6 +620,9 @@ function tk_hardening_force_cookie_httponly(): void {
 
 function tk_hardening_url_param_guard(): void {
     $doing_ajax = function_exists('wp_doing_ajax') ? wp_doing_ajax() : false;
+    if ($doing_ajax) {
+        return;
+    }
     if (is_admin() && !$doing_ajax) {
         return;
     }
@@ -679,7 +794,7 @@ function tk_hardening_robots_txt_content(string $output, bool $public): string {
 }
 
 function tk_hardening_unwanted_file_names(): array {
-    $raw = tk_get_option('hardening_unwanted_file_names', '.ds_store, thumbs.db, phpinfo.php, error_log, debug.log');
+    $raw = tk_get_option('hardening_unwanted_file_names', '.ds_store, thumbs.db, phpinfo.php, error_log, debug.log, readme.html, license.txt, wp-config-sample.php, composer.json, composer.lock, package.json, package-lock.json, yarn.lock');
     $lines = is_string($raw) ? preg_split('/[\s,]+/', strtolower($raw)) : array();
     $names = array();
     foreach ($lines as $line) {
@@ -689,7 +804,7 @@ function tk_hardening_unwanted_file_names(): array {
         }
     }
     if (empty($names)) {
-        $names = array('.ds_store', 'thumbs.db', 'phpinfo.php', 'error_log', 'debug.log');
+        $names = array('.ds_store', 'thumbs.db', 'phpinfo.php', 'error_log', 'debug.log', 'readme.html', 'license.txt', 'wp-config-sample.php', 'composer.json', 'composer.lock', 'package.json', 'package-lock.json', 'yarn.lock');
     }
     return array_values(array_unique($names));
 }
@@ -813,6 +928,7 @@ function tk_hardening_apply_recommended_defaults(): void {
             'hardening_disable_file_editor',
             'hardening_disable_xmlrpc',
             'hardening_disable_rest_user_enum',
+            'hardening_reduce_wp_fingerprint',
             'hardening_security_headers',
             'hardening_csp_lite_enabled',
             'hardening_server_aware_enabled',
@@ -833,6 +949,11 @@ function tk_hardening_apply_recommended_defaults(): void {
     tk_update_option('hardening_disable_xmlrpc', 1);
     tk_update_option('hardening_xmlrpc_block_methods', 1);
     tk_update_option('hardening_disable_rest_user_enum', 1);
+    tk_update_option('hardening_block_author_enumeration', 1);
+    tk_update_option('hardening_reduce_wp_fingerprint', 1);
+    tk_update_option('hardening_remove_query_ver', 1);
+    tk_update_option('hardening_disable_emojis', 1);
+    tk_update_option('hardening_clean_wp_head', 1);
     tk_update_option('hardening_security_headers', 1);
     tk_update_option('hardening_csp_lite_enabled', 1);
     tk_update_option('hardening_hsts_enabled', 1);
@@ -882,6 +1003,9 @@ function tk_hardening_block_uploads_php(): void {
 
 function tk_hardening_http_auth(): void {
     if (defined('WP_CLI') && WP_CLI) {
+        return;
+    }
+    if (function_exists('tk_toolkits_hardening_admin_bypass') && tk_toolkits_hardening_admin_bypass()) {
         return;
     }
     if (function_exists('wp_doing_cron') && wp_doing_cron()) {
@@ -1042,21 +1166,21 @@ function tk_hardening_server_rule_snippet(): string {
     $browser_cache = (int) tk_get_option('hardening_browser_cache_enabled', 1) === 1;
 
     if ($server === 'apache' || $server === 'litespeed' || $server === 'openlitespeed') {
-        $out = "<IfModule mod_autoindex.c>\n  Options -Indexes\n</IfModule>\n<FilesMatch \"^\\.env|debug\\.log$\">\n  Require all denied\n</FilesMatch>\n<IfModule mod_rewrite.c>\n  RewriteEngine On\n  RewriteRule ^wp-content/uploads/.*\\.php$ - [F]\n</IfModule>";
+        $out = "<IfModule mod_autoindex.c>\n  Options -Indexes\n</IfModule>\n<FilesMatch \"^(\\.env|debug\\.log|readme\\.html|license\\.txt|wp-config-sample\\.php|composer\\.(json|lock)|package(-lock)?\\.json|yarn\\.lock)$\">\n  Require all denied\n</FilesMatch>\n<IfModule mod_rewrite.c>\n  RewriteEngine On\n  RewriteRule ^wp-content/uploads/.*\\.php$ - [F]\n</IfModule>";
         if ($browser_cache) {
             $out .= "\n<IfModule mod_expires.c>\n  ExpiresActive On\n  ExpiresDefault \"access plus 1 month\"\n  ExpiresByType image/jpg \"access plus 1 year\"\n  ExpiresByType image/jpeg \"access plus 1 year\"\n  ExpiresByType image/gif \"access plus 1 year\"\n  ExpiresByType image/png \"access plus 1 year\"\n  ExpiresByType image/webp \"access plus 1 year\"\n  ExpiresByType image/x-icon \"access plus 1 year\"\n  ExpiresByType image/svg+xml \"access plus 1 year\"\n  ExpiresByType text/css \"access plus 1 year\"\n  ExpiresByType application/javascript \"access plus 1 year\"\n  ExpiresByType application/x-javascript \"access plus 1 year\"\n  ExpiresByType font/woff2 \"access plus 1 year\"\n  ExpiresByType font/woff \"access plus 1 year\"\n  ExpiresByType font/ttf \"access plus 1 year\"\n  ExpiresByType font/otf \"access plus 1 year\"\n</IfModule>\n<IfModule mod_headers.c>\n  <FilesMatch \"\\.(ico|pdf|jpg|jpeg|png|gif|webp|svg|js|css|woff2|woff|ttf|otf)$\">\n    Header set Cache-Control \"max-age=31536000, public\"\n  </FilesMatch>\n</IfModule>";
         }
         return $out;
     }
     if ($server === 'nginx') {
-        $out = "autoindex off;\nlocation = /.env { deny all; }\nlocation = /wp-content/debug.log { deny all; }\nlocation ~* ^/wp-content/uploads/.*\\.php$ { deny all; }\nfastcgi_param HTTP_AUTHORIZATION \$http_authorization;";
+        $out = "autoindex off;\nlocation ~* ^/(\\.env|readme\\.html|license\\.txt|wp-config-sample\\.php|composer\\.(json|lock)|package(-lock)?\\.json|yarn\\.lock)$ { deny all; }\nlocation = /wp-content/debug.log { deny all; }\nlocation ~* ^/wp-content/uploads/.*\\.php$ { deny all; }\nfastcgi_param HTTP_AUTHORIZATION \$http_authorization;";
         if ($browser_cache) {
             $out .= "\nlocation ~* \\.(jpg|jpeg|gif|png|webp|svg|woff|woff2|ttf|css|js|ico|pdf|zip|gz|mp4|m4v|ogg|ogv|webm)$ {\n  expires 1y;\n  add_header Cache-Control \"public, no-transform\";\n}";
         }
         return $out;
     }
     if ($server === 'caddy') {
-        $out = "file_server {\n  browse off\n}\n@blocked path /.env /wp-content/debug.log\nrespond @blocked 403\n@uploadsPhp path_regexp uploadsPhp ^/wp-content/uploads/.*\\.php$\nrespond @uploadsPhp 403";
+        $out = "file_server {\n  browse off\n}\n@blocked path /.env /readme.html /license.txt /wp-config-sample.php /composer.json /composer.lock /package.json /package-lock.json /yarn.lock /wp-content/debug.log\nrespond @blocked 403\n@uploadsPhp path_regexp uploadsPhp ^/wp-content/uploads/.*\\.php$\nrespond @uploadsPhp 403";
         return $out;
     }
     if ($server === 'iis') {
@@ -1860,18 +1984,21 @@ function tk_xmlrpc_rate_limit($method): void {
 }
 
 function tk_hardening_waf(): void {
+    if (defined('TK_FIREWALL_REQUEST_ALLOWLISTED') && TK_FIREWALL_REQUEST_ALLOWLISTED) {
+        return;
+    }
     if (defined('WP_CLI') && WP_CLI) {
         return;
     }
     if (function_exists('wp_doing_cron') && wp_doing_cron()) {
         return;
     }
-    // Skip wp-admin requests to avoid blocking legitimate editor and settings saves.
-    if (is_admin()) {
+    $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+    // Skip admin and login requests to avoid blocking legitimate users.
+    if (is_admin() || stripos($request_uri, 'wp-login.php') !== false) {
         return;
     }
 
-    $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
     $query = isset($_SERVER['QUERY_STRING']) ? (string) $_SERVER['QUERY_STRING'] : '';
     $method = isset($_SERVER['REQUEST_METHOD']) ? strtoupper((string) $_SERVER['REQUEST_METHOD']) : '';
     $methods_value = tk_get_option('hardening_waf_check_methods', '');
@@ -1941,6 +2068,9 @@ function tk_hardening_waf(): void {
     foreach ($patterns as $pattern) {
         if (@preg_match($pattern, $payload)) {
             tk_log('WAF blocked request: ' . $method . ' ' . $request_uri . ' pattern=' . $pattern);
+            if (function_exists('tk_firewall_log_event')) {
+                tk_firewall_log_event('Malicious request payload: ' . $pattern, function_exists('tk_firewall_request_ip') ? tk_firewall_request_ip() : '');
+            }
             if (tk_get_option('hardening_waf_log_to_file', 0)) {
                 tk_hardening_waf_log_to_file($method, $request_uri, $pattern);
             }
@@ -2099,7 +2229,11 @@ function tk_disable_file_editor_caps($allcaps, $caps, $args, $user) {
 function tk_hardening_calculate_score() {
     $rules = array(
         'hardening_disable_file_editor' => array('weight' => 10, 'default' => 1),
-        'hardening_disable_rest_user_enum' => array('weight' => 8, 'default' => 1),
+        'hardening_block_author_enumeration' => array('weight' => 8, 'default' => 1),
+        'hardening_reduce_wp_fingerprint' => array('weight' => 8, 'default' => 1),
+        'hardening_remove_query_ver' => array('weight' => 5, 'default' => 1),
+        'hardening_disable_emojis' => array('weight' => 5, 'default' => 1),
+        'hardening_clean_wp_head' => array('weight' => 5, 'default' => 1),
         'hardening_disable_pingbacks' => array('weight' => 5, 'default' => 1),
         'hardening_hide_wp_version' => array('weight' => 5, 'default' => 1),
         'hardening_block_uploads_php' => array('weight' => 15, 'default' => 1),
@@ -2130,6 +2264,7 @@ function tk_hardening_calculate_score() {
     $labels = array(
         'hardening_disable_file_editor' => __('File Editor Protection', 'tool-kits'),
         'hardening_disable_rest_user_enum' => __('REST API Hardening', 'tool-kits'),
+        'hardening_reduce_wp_fingerprint' => __('WP Fingerprint Reduction', 'tool-kits'),
         'hardening_disable_pingbacks' => __('Pingback Protection', 'tool-kits'),
         'hardening_hide_wp_version' => __('WP Version Masking', 'tool-kits'),
         'hardening_block_uploads_php' => __('Uploads Folder Security', 'tool-kits'),
@@ -2146,6 +2281,7 @@ function tk_hardening_calculate_score() {
     $links = array(
         'hardening_disable_file_editor' => $base_url . '#section-file_editor',
         'hardening_disable_rest_user_enum' => $base_url . '#section-rest_user_enum',
+        'hardening_reduce_wp_fingerprint' => $base_url . '#section-reduce_wp_fingerprint',
         'hardening_disable_pingbacks' => $base_url . '#section-pingbacks',
         'hardening_hide_wp_version' => $base_url . '#section-hide_wp_version',
         'hardening_block_uploads_php' => $base_url . '#section-block_uploads_php',
@@ -2173,6 +2309,10 @@ function tk_hardening_get_recommendations() {
     $rules = array(
         'hardening_disable_file_editor' => array('weight' => 10, 'default' => 1, 'label' => 'Disable File Editor', 'link' => $base_url . '#section-file_editor'),
         'hardening_disable_rest_user_enum' => array('weight' => 8, 'default' => 1, 'label' => 'Block REST User Enumeration', 'link' => $base_url . '#section-rest_user_enum'),
+        'hardening_block_author_enumeration' => array('weight' => 8, 'default' => 1, 'label' => 'Block URL Author Enumeration', 'link' => $base_url . '#section-author_enum'),
+        'hardening_reduce_wp_fingerprint' => array('weight' => 8, 'default' => 1, 'label' => 'Reduce WordPress Fingerprint', 'link' => $base_url . '#section-reduce_wp_fingerprint'),
+        'hardening_remove_query_ver' => array('weight' => 5, 'default' => 1, 'label' => 'Remove Script Versions', 'link' => $base_url . '#section-remove_ver'),
+        'hardening_clean_wp_head' => array('weight' => 5, 'default' => 1, 'label' => 'Clean WordPress Head Tags', 'link' => $base_url . '#section-clean_wp_head'),
         'hardening_disable_pingbacks' => array('weight' => 5, 'default' => 1, 'label' => 'Disable Pingbacks', 'link' => $base_url . '#section-pingbacks'),
         'hardening_hide_wp_version' => array('weight' => 5, 'default' => 1, 'label' => 'Hide WP Version', 'link' => $base_url . '#section-hide_wp_version'),
         'hardening_block_uploads_php' => array('weight' => 15, 'default' => 1, 'label' => 'Block PHP in Uploads', 'link' => $base_url . '#section-block_uploads_php'),
@@ -2215,6 +2355,10 @@ function tk_render_hardening_page() {
         'hardening_disable_file_editor' => tk_get_option('hardening_disable_file_editor', 1),
         'hardening_disable_xmlrpc' => tk_get_option('hardening_disable_xmlrpc', 1),
         'hardening_disable_rest_user_enum' => tk_get_option('hardening_disable_rest_user_enum', 1),
+        'hardening_block_author_enumeration' => tk_get_option('hardening_block_author_enumeration', 1),
+        'hardening_reduce_wp_fingerprint' => tk_get_option('hardening_reduce_wp_fingerprint', 1),
+        'hardening_remove_query_ver' => tk_get_option('hardening_remove_query_ver', 1),
+        'hardening_disable_emojis' => tk_get_option('hardening_disable_emojis', 1),
         'hardening_security_headers' => tk_get_option('hardening_security_headers', 1),
         'hardening_disable_pingbacks' => tk_get_option('hardening_disable_pingbacks', 1),
         'hardening_cors_allowed_origins' => tk_get_option('hardening_cors_allowed_origins', ''),
@@ -2270,13 +2414,13 @@ function tk_render_hardening_page() {
         'hardening_dangerous_methods_allow_paths' => tk_get_option('hardening_dangerous_methods_allow_paths', "/wp-json/\n/wp-admin/admin-ajax.php\n/wp-cron.php"),
         'hardening_robots_txt_hardened' => tk_get_option('hardening_robots_txt_hardened', 0),
         'hardening_block_unwanted_files_enabled' => tk_get_option('hardening_block_unwanted_files_enabled', 1),
-        'hardening_unwanted_file_names' => tk_get_option('hardening_unwanted_file_names', '.ds_store, thumbs.db, phpinfo.php, error_log, debug.log'),
+        'hardening_unwanted_file_names' => tk_get_option('hardening_unwanted_file_names', '.ds_store, thumbs.db, phpinfo.php, error_log, debug.log, readme.html, license.txt, wp-config-sample.php, composer.json, composer.lock, package.json, package-lock.json, yarn.lock'),
         'hardening_mysql_exposure_check_enabled' => tk_get_option('hardening_mysql_exposure_check_enabled', 1),
         'hardening_mysql_allow_public_host' => tk_get_option('hardening_mysql_allow_public_host', 0),
         'hardening_block_plugin_installs' => tk_get_option('hardening_block_plugin_installs', 1),
         'hardening_browser_cache_enabled' => tk_get_option('hardening_browser_cache_enabled', 1),
         'hardening_hide_wp_version' => tk_get_option('hardening_hide_wp_version', 1),
-        'hardening_clean_wp_head' => tk_get_option('hardening_clean_wp_head', 0),
+        'hardening_clean_wp_head' => tk_get_option('hardening_clean_wp_head', 1),
     );
     $csp_mode = 'off';
     if (!empty($opts['hardening_csp_strict_enabled'])) {
@@ -2362,7 +2506,7 @@ function tk_render_hardening_page() {
                                             $link = '#' . end($parts);
                                         }
                                     ?>
-                                        <a href="<?php echo esc_attr($link); ?>" class="tk-score-item-link" style="background:rgba(39, 174, 96, 0.05); border:1px solid rgba(39, 174, 96, 0.2); padding:14px 18px; border-radius:12px; display:flex; align-items:center; gap:12px; font-size:13px; color:#27ae60; font-weight:500; text-decoration:none; transition:all 0.2s ease;">
+                                        <a href="<?php echo esc_url($link); ?>" class="tk-score-item-link" style="background:rgba(39, 174, 96, 0.05); border:1px solid rgba(39, 174, 96, 0.2); padding:14px 18px; border-radius:12px; display:flex; align-items:center; gap:12px; font-size:13px; color:#27ae60; font-weight:500; text-decoration:none; transition:all 0.2s ease;">
                                             <span class="dashicons dashicons-yes-alt" style="font-size:18px; width:18px; height:18px;"></span>
                                             <?php echo esc_html($item['label']); ?>
                                             <span class="dashicons dashicons-arrow-right-alt2" style="margin-left:auto; font-size:16px; width:16px; height:16px; opacity:0.5;"></span>
@@ -2382,7 +2526,7 @@ function tk_render_hardening_page() {
                                             $link = '#' . end($parts);
                                         }
                                     ?>
-                                        <a href="<?php echo esc_attr($link); ?>" class="tk-score-item-link" style="background:rgba(231, 76, 60, 0.05); border:1px solid rgba(231, 76, 60, 0.2); padding:14px 18px; border-radius:12px; display:flex; align-items:center; gap:12px; font-size:13px; color:#c0392b; font-weight:500; text-decoration:none; transition:all 0.2s ease;">
+                                        <a href="<?php echo esc_url($link); ?>" class="tk-score-item-link" style="background:rgba(231, 76, 60, 0.05); border:1px solid rgba(231, 76, 60, 0.2); padding:14px 18px; border-radius:12px; display:flex; align-items:center; gap:12px; font-size:13px; color:#c0392b; font-weight:500; text-decoration:none; transition:all 0.2s ease;">
                                              <span class="dashicons dashicons-warning" style="font-size:18px; width:18px; height:18px;"></span>
                                              <?php echo esc_html($rec['label']); ?>
                                              <span style="margin-left:auto; font-size:11px; background:rgba(231, 76, 60, 0.1); padding:3px 8px; border-radius:12px; margin-right:4px;">+<?php echo $rec['weight']; ?>%</span>
@@ -2408,11 +2552,23 @@ function tk_render_hardening_page() {
                         <?php 
                         tk_render_switch('file_editor', 'Disable theme/plugin file editor', 'Prevents hackers from editing your files via the WP dashboard.', $opts['hardening_disable_file_editor'], 'Disables the built-in theme/plugin editor. You will need FTP access.');
                         
-                        tk_render_switch('rest_user_enum', 'Block REST API user enumeration', 'Prevents bots from scanning your site to find valid usernames.', $opts['hardening_disable_rest_user_enum']);
+                        tk_render_switch('disable_comments', 'Disable comments globally', 'Completely removes commenting functionality across the site, including REST API and XML-RPC.', $opts['hardening_disable_comments']);
+                        
+                        tk_render_switch('rest_user_enum', 'Block REST API user enumeration', 'Prevents bots from scanning your site to find valid usernames via REST.', $opts['hardening_disable_rest_user_enum']);
+                        
+                        tk_render_switch('author_enum', 'Block URL author enumeration', 'Prevents scanning for usernames via URL parameters like /?author=1.', $opts['hardening_block_author_enumeration']);
+
+                        tk_render_switch('reduce_wp_fingerprint', 'Ghost Mode: Reduce WordPress fingerprint', 'Removes common public WordPress discovery links, headers, feed links, and author redirect signals without disabling the REST API.', $opts['hardening_reduce_wp_fingerprint']);
+                        
+                        tk_render_switch('remove_ver', 'Ghost Mode: Remove script versions', 'Removes ?ver=x.x.x from CSS/JS to hide WP version and platform info.', $opts['hardening_remove_query_ver']);
+                        
+                        tk_render_switch('disable_emojis', 'Ghost Mode: Disable WP Emojis', 'Removes WordPress emoji scripts and DNS prefetch to hide platform traces.', $opts['hardening_disable_emojis']);
                         
                         tk_render_switch('pingbacks', 'Disable XML-RPC pingbacks', 'Prevents your site from being used in DDoS attacks against others.', $opts['hardening_disable_pingbacks']);
                         
                         tk_render_switch('hide_wp_version', 'Hide WordPress version', 'Removes the version number from your source code to slow down targeted attacks.', $opts['hardening_hide_wp_version']);
+
+                        tk_render_switch('clean_wp_head', 'Ghost Mode: Clean WordPress head tags', 'Removes RSD, WLW manifest, shortlink, REST discovery, oEmbed discovery, and generator tags from the public page source.', $opts['hardening_clean_wp_head']);
                         
                         tk_render_switch('block_uploads_php', 'Block PHP execution in uploads', 'Crucial! Prevents uploaded malicious files from being executed.', $opts['hardening_block_uploads_php']);
                         
@@ -2430,9 +2586,9 @@ function tk_render_hardening_page() {
     add_header Cache-Control "public, no-transform";
 }</pre>
                             </div>
-                        <?php endif; ?>
-
-                        tk_render_switch('headers', 'Send security headers', 'Adds X-Frame-Options, X-XSS-Protection, and X-Content-Type-Options.', $opts['hardening_security_headers']);
+                        <?php 
+                        endif; 
+                        tk_render_switch('headers', 'Send security headers', 'Adds X-Frame-Options, X-XSS-Protection, X-Content-Type-Options, Referrer-Policy, HSTS, and Permissions-Policy.', $opts['hardening_security_headers']);
                         ?>
 
                         <div style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px;">
@@ -2751,6 +2907,10 @@ function tk_hardening_save() {
             update_option('default_ping_status', 'closed', false);
         }
         tk_update_option('hardening_disable_rest_user_enum', !empty($_POST['rest_user_enum']) ? 1 : 0);
+        tk_update_option('hardening_block_author_enumeration', !empty($_POST['author_enum']) ? 1 : 0);
+        tk_update_option('hardening_reduce_wp_fingerprint', !empty($_POST['reduce_wp_fingerprint']) ? 1 : 0);
+        tk_update_option('hardening_remove_query_ver', !empty($_POST['remove_ver']) ? 1 : 0);
+        tk_update_option('hardening_disable_emojis', !empty($_POST['disable_emojis']) ? 1 : 0);
         tk_update_option('hardening_hide_wp_version', !empty($_POST['hide_wp_version']) ? 1 : 0);
         tk_update_option('hardening_clean_wp_head', !empty($_POST['clean_wp_head']) ? 1 : 0);
         tk_update_option('hardening_security_headers', !empty($_POST['headers']) ? 1 : 0);

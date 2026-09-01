@@ -6,13 +6,11 @@ if (!defined('ABSPATH')) exit;
  */
 
 function tk_rate_limit_init() {
+    add_action('init', 'tk_rate_limit_honey_trap_request', 0);
     add_filter('authenticate', 'tk_rate_limit_authenticate', 30, 3);
     add_action('admin_post_tk_rate_limit_save', 'tk_rate_limit_save');
     add_action('admin_post_tk_rate_limit_unblock', 'tk_rate_limit_unblock_handler');
-    add_action('login_form', 'tk_rate_limit_unlock_prompt');
-    add_action('login_footer', 'tk_rate_limit_unlock_script');
     add_action('wp_ajax_tk_rate_limit_unlock', 'tk_rate_limit_unlock');
-    add_action('wp_ajax_nopriv_tk_rate_limit_unlock', 'tk_rate_limit_unlock');
 }
 
 function tk_rate_limit_enabled() {
@@ -25,6 +23,132 @@ function tk_rate_limit_key() {
 
 function tk_rate_limit_lock_key() {
     return 'tk_rl_lock_' . md5(tk_get_ip());
+}
+
+function tk_rate_limit_offense_key() {
+    return 'tk_rl_offense_' . md5(tk_get_ip());
+}
+
+function tk_rate_limit_parse_minutes_list($raw): array {
+    if (!is_string($raw) || trim($raw) === '') {
+        return array(15, 60, 360, 1440);
+    }
+    $parts = preg_split('/[\s,]+/', $raw);
+    $parts = is_array($parts) ? $parts : array();
+    $minutes = array();
+    foreach ($parts as $part) {
+        $value = (int) trim((string) $part);
+        if ($value > 0) {
+            $minutes[] = min($value, 10080);
+        }
+    }
+    return !empty($minutes) ? array_values($minutes) : array(15, 60, 360, 1440);
+}
+
+function tk_rate_limit_progressive_steps(): array {
+    return tk_rate_limit_parse_minutes_list((string) tk_get_option('rate_limit_progressive_steps', '15, 60, 360, 1440'));
+}
+
+function tk_rate_limit_next_lock_minutes(): int {
+    if ((int) tk_get_option('rate_limit_progressive_enabled', 1) !== 1) {
+        return max(1, (int) tk_get_option('rate_limit_lockout_minutes', 30));
+    }
+
+    $steps = tk_rate_limit_progressive_steps();
+    $offenses = (int) get_transient(tk_rate_limit_offense_key());
+    $index = min(max(0, $offenses), count($steps) - 1);
+    $minutes = (int) $steps[$index];
+    set_transient(tk_rate_limit_offense_key(), $offenses + 1, 7 * DAY_IN_SECONDS);
+    return max(1, $minutes);
+}
+
+function tk_rate_limit_lock_current_ip(int $minutes, string $reason = ''): void {
+    $ip = tk_get_ip();
+    if (tk_rate_limit_is_whitelisted($ip)) {
+        return;
+    }
+    set_transient(tk_rate_limit_lock_key(), 1, max(1, $minutes) * MINUTE_IN_SECONDS);
+    if (function_exists('tk_security_events_record')) {
+        tk_security_events_record(array(
+            'event_type' => 'blocked',
+            'category' => 'brute_force',
+            'ip' => $ip,
+            'user_agent' => tk_user_agent(),
+            'reason' => $reason !== '' ? $reason : 'progressive_lockout',
+            'request_method' => isset($_SERVER['REQUEST_METHOD']) ? (string) $_SERVER['REQUEST_METHOD'] : '',
+            'request_uri' => isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '',
+        ));
+    }
+}
+
+function tk_rate_limit_honey_trap_paths(): array {
+    $raw = (string) tk_get_option('rate_limit_honey_trap_paths', "/wp-login.php\n/login\n/admin\n/wp-admin.php\n/administrator\n/user/login");
+    return tk_rate_limit_normalize_honey_trap_paths($raw);
+}
+
+function tk_rate_limit_normalize_honey_trap_paths(string $raw): array {
+    $lines = preg_split('/\r\n|\r|\n/', $raw);
+    $lines = is_array($lines) ? $lines : array();
+    $paths = array();
+    foreach ($lines as $line) {
+        $line = trim((string) $line);
+        if ($line === '') {
+            continue;
+        }
+        $path = '/' . trim($line, '/');
+        if ($path !== '/') {
+            $paths[] = strtolower($path);
+        }
+    }
+    return array_values(array_unique($paths));
+}
+
+function tk_rate_limit_request_path(): string {
+    $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+    if ($request_uri === '') {
+        return '';
+    }
+    $path = wp_parse_url($request_uri, PHP_URL_PATH);
+    return is_string($path) ? '/' . trim($path, '/') : '';
+}
+
+function tk_rate_limit_honey_trap_matches_path(string $path): bool {
+    if ($path === '') {
+        return false;
+    }
+    foreach (tk_rate_limit_honey_trap_paths() as $trap_path) {
+        if ($path === $trap_path || substr($path, -strlen($trap_path)) === $trap_path) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function tk_rate_limit_honey_trap_request(): void {
+    if ((int) tk_get_option('rate_limit_honey_trap_enabled', 1) !== 1) {
+        return;
+    }
+    if (!tk_get_option('hide_login_enabled', 0)) {
+        return;
+    }
+    if (defined('WP_CLI') && WP_CLI) {
+        return;
+    }
+    $path = strtolower(tk_rate_limit_request_path());
+    if ($path === '') {
+        return;
+    }
+    if ($path === '/wp-admin/admin-ajax.php' || $path === '/wp-admin/admin-post.php') {
+        return;
+    }
+    if (!tk_rate_limit_honey_trap_matches_path($path)) {
+        return;
+    }
+
+    $minutes = tk_rate_limit_next_lock_minutes();
+    tk_rate_limit_lock_current_ip($minutes, 'login_honey_trap:' . $path);
+    wp_safe_redirect(home_url('/'));
+    exit;
 }
 
 function tk_rate_limit_parse_ip_list($raw) {
@@ -167,7 +291,8 @@ function tk_rate_limit_increment() {
     set_transient($key, $data, $window * MINUTE_IN_SECONDS);
 
     if ($data['count'] >= $max) {
-        set_transient(tk_rate_limit_lock_key(), 1, $lock * MINUTE_IN_SECONDS);
+        $lock = tk_rate_limit_next_lock_minutes();
+        tk_rate_limit_lock_current_ip($lock, 'progressive_login_lockout');
     }
 }
 
@@ -221,6 +346,20 @@ function tk_render_rate_limit_page() {
 
                         <p>
                             <label>
+                                <input type="checkbox" name="progressive_enabled" value="1"
+                                    <?php checked(1, tk_get_option('rate_limit_progressive_enabled', 1)); ?>>
+                                Enable progressive lockout
+                            </label>
+                        </p>
+
+                        <p>
+                            Progressive lockout steps (minutes)<br>
+                            <input type="text" name="progressive_steps" class="regular-text" value="<?php echo esc_attr((string) tk_get_option('rate_limit_progressive_steps', '15, 60, 360, 1440')); ?>">
+                            <span class="description">Comma-separated. Example: 15, 60, 360, 1440.</span>
+                        </p>
+
+                        <p>
+                            <label>
                                 <input type="checkbox" name="block_on_fail" value="1"
                                     <?php checked(1, tk_get_option('rate_limit_block_on_fail', 0)); ?>>
                                 Block IP on failed login (manual unblock required)
@@ -230,6 +369,52 @@ function tk_render_rate_limit_page() {
                         <p>
                             Whitelist IPs (one per line)<br>
                             <textarea name="whitelist" rows="4" class="large-text"><?php echo esc_textarea((string) tk_get_option('rate_limit_whitelist', '')); ?></textarea>
+                        </p>
+
+                        <hr>
+
+                        <h3><?php esc_html_e('Auto Block Rules', 'tool-kits'); ?></h3>
+                        <p class="description"><?php esc_html_e('Automatically block obvious bot login traffic and IPs that exceed the failed-login threshold.', 'tool-kits'); ?></p>
+
+                        <p>
+                            <label>
+                                <input type="checkbox" name="auto_block_enabled" value="1"
+                                    <?php checked(1, tk_get_option('security_auto_block_enabled', 1)); ?>>
+                                Enable auto block rules
+                            </label>
+                        </p>
+
+                        <p>
+                            Failed-login threshold<br>
+                            <input type="number" name="auto_block_threshold" value="<?php echo esc_attr(tk_get_option('security_auto_block_threshold', 10)); ?>" min="2">
+                        </p>
+
+                        <p>
+                            Threshold window (minutes)<br>
+                            <input type="number" name="auto_block_window" value="<?php echo esc_attr(tk_get_option('security_auto_block_window_minutes', 10)); ?>" min="1">
+                        </p>
+
+                        <p>
+                            Blocked login user-agent fragments (one per line)<br>
+                            <textarea name="auto_block_user_agents" rows="5" class="large-text"><?php echo esc_textarea((string) tk_get_option('security_auto_block_user_agents', '')); ?></textarea>
+                        </p>
+
+                        <hr>
+
+                        <h3><?php esc_html_e('Login Honey Trap', 'tool-kits'); ?></h3>
+                        <p class="description"><?php esc_html_e('When Hide Login is active, requests to common bot login paths are redirected to the homepage and temporarily locked out.', 'tool-kits'); ?></p>
+
+                        <p>
+                            <label>
+                                <input type="checkbox" name="honey_trap_enabled" value="1"
+                                    <?php checked(1, tk_get_option('rate_limit_honey_trap_enabled', 1)); ?>>
+                                Enable login honey trap
+                            </label>
+                        </p>
+
+                        <p>
+                            Honey trap paths (one per line)<br>
+                            <textarea name="honey_trap_paths" rows="6" class="large-text"><?php echo esc_textarea((string) tk_get_option('rate_limit_honey_trap_paths', "/wp-login.php\n/login\n/admin\n/wp-admin.php\n/administrator\n/user/login")); ?></textarea>
                         </p>
 
                         <p><button class="button button-primary">Save</button></p>
@@ -308,7 +493,20 @@ function tk_rate_limit_save() {
     tk_update_option('rate_limit_window_minutes', (int) $_POST['window']);
     tk_update_option('rate_limit_max_attempts', (int) $_POST['max']);
     tk_update_option('rate_limit_lockout_minutes', (int) $_POST['lock']);
+    tk_update_option('rate_limit_progressive_enabled', !empty($_POST['progressive_enabled']) ? 1 : 0);
+    $progressive_steps = isset($_POST['progressive_steps']) ? (string) wp_unslash($_POST['progressive_steps']) : '';
+    tk_update_option('rate_limit_progressive_steps', implode(', ', tk_rate_limit_parse_minutes_list($progressive_steps)));
     tk_update_option('rate_limit_block_on_fail', !empty($_POST['block_on_fail']) ? 1 : 0);
+    tk_update_option('security_auto_block_enabled', !empty($_POST['auto_block_enabled']) ? 1 : 0);
+    tk_update_option('security_auto_block_threshold', max(2, (int) $_POST['auto_block_threshold']));
+    tk_update_option('security_auto_block_window_minutes', max(1, (int) $_POST['auto_block_window']));
+    $auto_agents = isset($_POST['auto_block_user_agents']) ? (string) wp_unslash($_POST['auto_block_user_agents']) : '';
+    $auto_agents = implode("\n", array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $auto_agents)))));
+    tk_update_option('security_auto_block_user_agents', $auto_agents);
+    tk_update_option('rate_limit_honey_trap_enabled', !empty($_POST['honey_trap_enabled']) ? 1 : 0);
+    $honey_paths = isset($_POST['honey_trap_paths']) ? (string) wp_unslash($_POST['honey_trap_paths']) : '';
+    $honey_paths = implode("\n", tk_rate_limit_normalize_honey_trap_paths($honey_paths));
+    tk_update_option('rate_limit_honey_trap_paths', $honey_paths);
     $whitelist_raw = isset($_POST['whitelist']) ? (string) wp_unslash($_POST['whitelist']) : '';
     $whitelist_ips = tk_rate_limit_parse_ip_list($whitelist_raw);
     tk_update_option('rate_limit_whitelist', implode("\n", $whitelist_ips));
@@ -325,10 +523,7 @@ function tk_rate_limit_save() {
 }
 
 function tk_rate_limit_unblock_handler() {
-    if (!tk_is_admin_user()) {
-        wp_die('Forbidden');
-    }
-    tk_check_nonce('tk_rate_limit_unblock');
+    tk_require_admin_post('tk_rate_limit_unblock');
     $ips = isset($_POST['blocked_ips']) ? (array) $_POST['blocked_ips'] : array();
     $clean = array();
     foreach ($ips as $ip) {
@@ -344,6 +539,9 @@ function tk_rate_limit_unblock_handler() {
 }
 
 function tk_rate_limit_unlock_prompt() {
+    if (!is_user_logged_in() || !tk_is_admin_user()) {
+        return;
+    }
     if (!tk_rate_limit_enabled()) {
         return;
     }
@@ -406,6 +604,9 @@ function tk_rate_limit_unlock_script() {
 
 function tk_rate_limit_unlock() {
     check_ajax_referer('tk_rate_limit_unlock', 'nonce');
+    if (!is_user_logged_in() || !tk_is_admin_user()) {
+        wp_send_json_error('forbidden');
+    }
     if (!tk_rate_limit_enabled()) {
         wp_send_json_error('disabled');
     }

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.3.0
+ * Version: 2.5.11
  * GitHub Plugin URI: https://github.com/ekods/tool-kits
  * Update URI: https://github.com/ekods/tool-kits
  * Author: Eko Dwi Saputro
@@ -12,7 +12,7 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-define('TK_VERSION', '2.3.0');
+define('TK_VERSION', '2.5.11');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
@@ -36,6 +36,8 @@ add_action('init', 'tk_load_textdomain');
 add_action('plugins_loaded', 'tk_killswitch_init', 1);
 add_action('admin_init', 'tk_debug_deprecated_init');
 add_action('admin_init', 'tk_toolkits_guard', 0);
+add_action('init', 'tk_security_events_schedule_maintenance');
+add_action('tk_security_events_maintenance', 'tk_security_events_maintenance');
 
 /**
  * Module Registry
@@ -55,6 +57,8 @@ $tk_modules = array(
     'security-rate-limit.php'   => 'tk_rate_limit_init',
     'security-login-log.php'    => 'tk_login_log_init',
     'security-hardening.php'    => 'tk_hardening_init',
+    'security-firewall.php'     => 'tk_firewall_init',
+    'malware-scanner.php'       => 'tk_malware_scanner_init',
     'smtp.php'                  => 'tk_smtp_init',
     'monitoring-heartbeat.php'  => 'tk_heartbeat_init',
     'minify.php'                => 'tk_minify_init',
@@ -76,7 +80,11 @@ $tk_modules = array(
     'github-update-check.php'   => false,
     'security-fim.php'          => 'tk_fim_init',
     'analytics.php'             => 'tk_analytics_init',
+    'cookie-consent.php'        => 'tk_cookie_consent_init',
     'dashboard-widget.php'      => 'tk_dashboard_widget_init',
+    'admin-menu-cleaner.php'    => 'tk_admin_menu_cleaner_init',
+    'role-management.php'       => 'tk_role_management_init',
+    'plugin-shield.php'         => 'tk_plugin_shield_init',
 );
 
 // Require all modules dynamically
@@ -94,6 +102,8 @@ function tk_activate() {
 
     // Create login log table
     tk_login_log_install_table();
+    tk_security_events_install_table();
+    tk_security_events_schedule_maintenance();
 
     // Hide login rewrite rules
     tk_hide_login_flush_rewrite(true);
@@ -108,6 +118,7 @@ register_activation_hook(__FILE__, 'tk_activate');
 function tk_deactivate() {
     // Flush rewrite rules so custom login slug is removed cleanly
     tk_hide_login_flush_rewrite(false);
+    tk_security_events_clear_maintenance();
 
 }
 register_deactivation_hook(__FILE__, 'tk_deactivate');
@@ -125,6 +136,9 @@ register_uninstall_hook(__FILE__, 'tk_uninstall');
 add_action('plugins_loaded', function() {
     global $tk_modules;
     tk_run_versioned_upgrades();
+    if (function_exists('tk_security_events_install_table')) {
+        tk_security_events_install_table();
+    }
 
     foreach ($tk_modules as $file => $init_func) {
         if ($init_func && function_exists($init_func)) {
@@ -137,10 +151,16 @@ add_action('plugins_loaded', function() {
  * Load admin assets
  */
 add_action('admin_enqueue_scripts', function($hook) {
-    if (strpos($hook, 'tool-kits') !== false) {
+    $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+    $is_toolkits_area = strpos($hook, 'tool-kits') !== false;
+    $is_toolkits_menu = $screen && isset($screen->id) && strpos((string) $screen->id, 'tool-kits') !== false;
+    if (function_exists('tk_toolkits_can_manage') && tk_toolkits_can_manage()) {
         wp_enqueue_style('tool-kits-admin', TK_URL . 'assets/admin.css', array(), TK_VERSION);
+    }
+    if ($is_toolkits_area || $is_toolkits_menu) {
         wp_enqueue_style('tool-kits-overview', TK_URL . 'assets/overview.css', array('tool-kits-admin'), TK_VERSION);
     }
 });
 add_action('admin_footer', 'tk_toolkits_mask_fields_script');
 add_action('admin_footer', 'tk_toolkits_confirm_actions_script');
+add_action('admin_footer', 'tk_toolkits_nested_admin_menu_script');

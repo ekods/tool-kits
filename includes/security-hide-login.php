@@ -50,6 +50,14 @@ function tk_hide_login_is_slug_path($path) {
     return in_array($normalized, $paths, true);
 }
 
+function tk_hide_login_is_wp_login_path($path) {
+    if ($path === '') {
+        return false;
+    }
+    $normalized = strtolower((string) $path);
+    return basename($normalized) === 'wp-login.php';
+}
+
 function tk_hide_login_custom_url() {
     $slug = tk_hide_login_slug();
     if ($slug === '') {
@@ -119,9 +127,12 @@ function tk_hide_login_block() {
         exit;
     }
 
-    if (strpos($path, 'wp-login.php') !== false) {
+    if (tk_hide_login_is_wp_login_path($path)) {
         if (empty(tk_hide_login_slug_path())) {
             return;
+        }
+        if (isset($_SERVER['REQUEST_METHOD']) && strtoupper((string) $_SERVER['REQUEST_METHOD']) === 'POST') {
+            tk_hide_login_deny_direct_request();
         }
         $query = isset($_SERVER['QUERY_STRING']) ? (string) $_SERVER['QUERY_STRING'] : '';
         $target = tk_hide_login_custom_url();
@@ -153,27 +164,27 @@ function tk_hide_login_block_login() {
         return;
     }
     $path = strtok($path, '?');
-    if (tk_hide_login_is_allowed_post()) {
-        return;
-    }
     if (tk_hide_login_is_slug_path($path)) {
         return;
     }
-    wp_redirect(home_url());
-    exit;
+    tk_hide_login_deny_direct_request();
 }
 
-function tk_hide_login_is_allowed_post() {
-    if (!isset($_SERVER['REQUEST_METHOD']) || strtoupper((string) $_SERVER['REQUEST_METHOD']) !== 'POST') {
-        return false;
+function tk_hide_login_deny_direct_request() {
+    if (function_exists('tk_security_events_record')) {
+        tk_security_events_record(array(
+            'event_type' => 'blocked',
+            'category' => 'brute_force',
+            'ip' => function_exists('tk_get_ip') ? tk_get_ip() : '',
+            'user_agent' => isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : '',
+            'reason' => 'direct_wp_login_blocked',
+            'request_method' => isset($_SERVER['REQUEST_METHOD']) ? (string) $_SERVER['REQUEST_METHOD'] : '',
+            'request_uri' => isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '',
+            'username' => isset($_POST['log']) ? (string) wp_unslash($_POST['log']) : '',
+        ));
     }
-    if (isset($_POST['log'], $_POST['pwd'])) {
-        return true;
-    }
-    if (!empty($_REQUEST['action']) && $_REQUEST['action'] === 'lostpassword' && isset($_POST['user_login'])) {
-        return true;
-    }
-    return false;
+    wp_safe_redirect(home_url('/'));
+    exit;
 }
 
 function tk_hide_login_block_admin() {
@@ -202,25 +213,26 @@ function tk_hide_login_flush_rewrite($enable = true) {
 }
 
 function tk_hide_login_save() {
-    tk_check_nonce('tk_hide_login_save');
+    tk_require_admin_post('tk_hide_login_save');
 
     tk_update_option('hide_login_enabled', !empty($_POST['enabled']) ? 1 : 0);
-    tk_update_option('hide_login_slug', tk_sanitize_slug($_POST['slug']));
+    $slug = isset($_POST['slug']) ? (string) wp_unslash($_POST['slug']) : '';
+    tk_update_option('hide_login_slug', tk_sanitize_slug($slug));
 
     flush_rewrite_rules();
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'hide-login', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-security-hide-login', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }
 
 function tk_render_hide_login_page() {
-    if (function_exists('tk_render_optimization_page')) {
-        tk_render_optimization_page('hide-login');
-        return;
-    }
     if (!tk_is_admin_user()) return;
     ?>
     <div class="wrap tk-wrap">
-        <h1>Optimization</h1>
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('Hide Login', 'Move the default WordPress login URL behind a custom slug.', 'dashicons-hidden'); ?>
+        <?php if (isset($_GET['tk_saved']) && sanitize_key((string) $_GET['tk_saved']) === '1') : ?>
+            <?php tk_notice('Settings saved.', 'success'); ?>
+        <?php endif; ?>
         <?php tk_render_hide_login_panel(); ?>
     </div>
     <?php

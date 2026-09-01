@@ -495,12 +495,12 @@ function tk_render_image_opt_panel() {
 }
 
 function tk_image_opt_save() {
-    tk_check_nonce('tk_image_opt_save');
+    tk_require_admin_post('tk_image_opt_save');
     tk_update_option('image_opt_enabled', !empty($_POST['image_opt_enabled']) ? 1 : 0);
     tk_update_option('image_opt_frontend_to_webp', (int) tk_get_option('webp_serve_enabled', 0));
     tk_update_option('image_opt_rewrite_all_assets', (int) tk_get_option('webp_serve_enabled', 0));
     tk_update_option('image_opt_quality', max(30, min(95, (int) tk_post('image_opt_quality', 78))));
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'image-opt', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-image-opt', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }
 

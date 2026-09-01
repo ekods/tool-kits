@@ -3,29 +3,30 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.3.0
+Stable tag: 2.5.11
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Tool Kits adalah plugin admin toolkit untuk:
-- DB Migrate: Export SQL, Find & Replace serialized-safe, dan Rename table prefix.
-- DB Cleanup: Bersihkan revisions, trash, spam, transients, dan optimize tabel.
-- Security: Hide Login, Captcha, Anti-spam Contact (CF7), Rate Limit login, Login Log, Hardening.
+Tool Kits is an admin toolkit plugin for:
+- DB Migrate: SQL export, serialized-safe Find & Replace, and table prefix rename.
+- DB Cleanup: Clean revisions, trash, spam, transients, and optimize tables.
+- Security: Hide Login, Captcha, Anti-spam Contact (CF7), login rate limiting, Login Log, and Hardening.
 
 == Installation ==
-1. Upload folder `tool-kits` ke `/wp-content/plugins/`
-2. Activate plugin di Plugins
-3. Buka menu "Tool Kits" dan "Tool Kits Security"
+1. Upload the `tool-kits` folder to `/wp-content/plugins/`.
+2. Activate the plugin from the Plugins screen.
+3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
-- Change DB Prefix: plugin akan rename tabel dan update meta keys, tetapi Anda tetap harus update `$table_prefix` di wp-config.php manual.
-- Export SQL: best-effort via WPDB. Untuk database besar, gunakan phpMyAdmin/CLI.
-- Update checker mengambil rilis dari GitHub (release asset `tool-kits.zip` direkomendasikan untuk instalasi otomatis).
+- Change DB Prefix: the plugin renames tables and updates related meta keys, but you still need to update `$table_prefix` in wp-config.php manually.
+- Export SQL: best-effort via WPDB. For large databases, use phpMyAdmin or WP-CLI.
+- The update checker retrieves releases from GitHub. The `tool-kits.zip` release asset is recommended for automatic installation.
 - Added heartbeat collector integration improvements: heartbeat payload now includes hide-login slug/URL and collector dashboard surfaces those fields alongside the license data.
 - License and heartbeat configuration are now aligned around a single collector-based flow with explicit derived URLs, connection diagnostics, and reachability checks.
 - Hardening update: added HSTS toggle, strict CSP, server signature hide, cookie HttpOnly/Secure enforcement, WP-Cron disable toggle, URL parameter guard, HTTP methods filtering, dangerous method block, robots.txt hardening, and unwanted file access block.
+- Stealth hardening update: reduce public WordPress fingerprint by removing discovery links, REST link headers, feed links, generator output, script versions, emoji traces, and common scanner-readable root files.
 - Monitoring checks now include risky public DB host detection (possible MySQL port 3306 exposure indicator).
-- Penting: plugin tidak dapat menutup port 3306 secara langsung; pembatasan akses DB tetap wajib di firewall/security group server.
+- Important: the plugin cannot close port 3306 directly; DB access restrictions must still be enforced in the server firewall or security group.
 
 == Developer Notes ==
 Filters to adjust CORS by environment (optional example):
@@ -61,6 +62,140 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.5.11 =
+**Login Protection**
+- Add login honey trap paths for common bot targets when Hide Login is enabled.
+- Redirect honey trap hits to the homepage and temporarily lock the source IP.
+- Add progressive lockout steps for repeated login abuse.
+- Add Rate Limit settings for progressive lockout and honey trap path configuration.
+
+= 2.5.10 =
+**Hide Login**
+- Redirect direct `/wp-login.php` hits to the homepage when Hide Login is enabled.
+- Continue recording blocked direct login hits as `brute_force` security events.
+
+= 2.5.9 =
+**Hide Login**
+- Block direct `/wp-login.php` requests when Hide Login is enabled instead of allowing POST login attempts through the default endpoint.
+- Keep custom login slug flow working for login, logout, lost password, and register URLs.
+- Record blocked direct login hits as `brute_force` security events with reason `direct_wp_login_blocked`.
+
+= 2.5.8 =
+**Stealth Hardening**
+- Add WordPress fingerprint reduction for public head tags, REST discovery headers, feed links, emoji traces, and author redirect signals.
+- Enable safer stealth defaults through Auto Hardening for existing sites.
+- Expand unwanted file blocking and server rule snippets for common WordPress/dev files such as readme.html, license.txt, wp-config-sample.php, composer files, and package manifests.
+- Include fingerprint reduction in hardening score, active protections, recommendations, and security tamper checks.
+
+= 2.5.7 =
+**Security Dashboard**
+- Add a Wordfence-style dashboard widget with attacks blocked charts, firewall summary, top countries, and top blocked IPs.
+- Add drilldown links from country and IP summaries to a persistent Attack Details page.
+- Add persistent `tk_security_events` storage for blocked request metrics with indexes for event, category, IP, and country queries.
+- Add one-time backfill from legacy login and firewall logs into persistent security events.
+- Add configurable retention cleanup for security events with daily maintenance and a manual Run Maintenance action.
+
+**Login Protection**
+- Add failed-login reason tracking and show the reason in login activity details.
+- Record failed logins, firewall blocks, WAF blocks, and auto-block actions as security events.
+- Add configurable auto-block rules for repeated failed logins and bot-like login user agents.
+
+**Role Management**
+- Generate custom role slugs automatically from the display name.
+- Keep custom role slugs immutable after creation while showing a live slug preview during role creation.
+
+= 2.5.6 =
+**Cache**
+- Add dashboard cache status widget with cached file count, cache size, and one-click page cache purge.
+- Detect server/CDN cache layers from response headers and known WordPress cache integrations.
+- Add server cache debug headers and refresh detection action to the Cache Status page.
+- Purge supported plugin/server cache layers when clearing Tool Kits page cache.
+- Auto-purge page cache on content, meta, term, menu, customizer, theme, and relevant option changes.
+- Add optional auto-preload after purge for homepage and configured critical URLs.
+
+= 2.3.9 =
+**Compatibility**
+- Bypass Tool Kits request-level security modules for WordPress AJAX requests so frontend `admin-ajax.php` handlers are not blocked by Tool Kits.
+
+= 2.3.8 =
+**Database Tools**
+- Prevent search/replace from mutating user email fields and common email option values.
+- Keep normal URL/content replacements active for fields such as post content, home, and siteurl.
+
+**Cache**
+- Skip page cache generation for dynamic requests such as sessions, carts, checkout, account pages, search, REST/API URLs, and private/no-cache responses.
+- Prevent fragment cache helpers from creating cache entries when Page Cache is disabled.
+- Clarify cache status messaging for static anonymous page caching.
+
+= 2.3.7 =
+**Release**
+- Sync plugin metadata for the 2.3.7 package.
+
+= 2.3.6 =
+**Access Control**
+- Enforce Role Management menu restrictions on direct admin URL access.
+- Add Hide Tool Kits Menu control to the Tool Kits Access page.
+
+= 2.3.5 =
+**GitHub Updater**
+- Align the update/install flow with Custom Fields Framework Pro.
+- Let WordPress handle package downloads and normalize the extracted plugin root during installation.
+- Rebuild release packaging from the plugin directory and exclude development metadata from the ZIP.
+
+= 2.3.4 =
+**GitHub Updater**
+- Validate downloaded release ZIP structure before WordPress starts installation.
+- Require the update package to contain the `tool-kits/tool-kits.php` plugin root.
+- Force plugin update cleanup options so stale extracted folders do not block installation.
+- Surface package validation problems through the Tool Kits updater status instead of only showing the generic WordPress install failure.
+
+= 2.3.3 =
+**Role Management**
+- Show custom post types in the capability builder.
+- Add explicit CRUD-oriented labels for post type capabilities.
+- Keep shared WordPress primitive capabilities visible per post type while saving the correct underlying capability.
+
+**Release Packaging**
+- Rebuild the ZIP builder around `git archive` and `.gitattributes` export rules.
+- Include current working tree changes in the release package through a temporary Git index.
+- Exclude development files such as scripts, README, roadmap, Git metadata, and macOS metadata from the release archive.
+
+= 2.3.2 =
+**License-Free Database Module**
+- Allow the complete Database page and all database actions without license activation or a Collector Token.
+- Keep Tool Kits role/IP access controls, nonces, and the settings lock enforced.
+
+**Firewall and Malware Scanner**
+- Add a Firewall control page for payload WAF, IP/CIDR allow/block rules, blocked user agents, and recent event logging.
+- Add a bounded, read-only Malware Scanner for suspicious executable uploads, encoded execution, obfuscation, and known web-shell markers.
+- Keep scan results review-only to avoid destructive false-positive cleanup.
+
+**Upload Limits**
+- Add separate maximum sizes for documents/PDF files and videos.
+- Detect image, document, and video uploads by extension and MIME family.
+- Keep category limits capped by the PHP/web-server upload maximum.
+
+**Role Management**
+- Add custom WordPress roles based on an existing non-administrator role.
+- Add grouped capability controls for content, custom post types, media, comments, users, appearance, plugins, settings, and third-party modules.
+- Support independent create, edit, publish, read, and delete permissions where WordPress exposes primitive capabilities.
+- Configure the visible dashboard sidebar menus for each Tool Kits-managed role.
+- Prevent deletion while users are still assigned to a managed role.
+
+**Gmail OAuth SMTP**
+- Replace Gmail app-password authentication with Google OAuth 2.0 authorization.
+- Add Google Client ID/Secret settings, an Authorized Redirect URI, and connect/disconnect actions.
+- Send Gmail SMTP through XOAUTH2 and refresh expired access tokens automatically.
+- Add Microsoft Entra ID OAuth authorization, tenant/mailbox settings, and automatic token refresh for Microsoft 365 SMTP.
+- Keep a dedicated username/password setup for custom SMTP providers.
+
+= 2.3.1 =
+**License / Collector Fixes**
+- Fix derived license endpoint so collector URL `/api/toolkits/heartbeat` resolves to `/api/toolkits/license`.
+- Add fallback signed requests for legacy collector tokens and license endpoint variants.
+- Add safe license diagnostics for heartbeat URL, license URL, and collector token fingerprint.
+- Prevent empty license notes from being sent as `null` to NexaMonitor.
+
 = 2.3.0 =
 **System Monitoring — Real-Time Health Monitor Enhancements**
 - Add CPU Load (1m) metric card with live progress bar and color-coded indicator (green / yellow / red).

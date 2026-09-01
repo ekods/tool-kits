@@ -274,6 +274,6 @@ function tk_lazy_load_save() {
     tk_update_option('lazy_load_iframe_video', !empty($_POST['lazy_load_iframe_video']) ? 1 : 0);
     tk_update_option('lazy_load_script_defer', sanitize_text_field((string) tk_post('lazy_load_script_defer', '')));
     tk_update_option('lazy_load_script_delay', sanitize_text_field((string) tk_post('lazy_load_script_delay', '')));
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'lazy-load', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-lazy-load', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }

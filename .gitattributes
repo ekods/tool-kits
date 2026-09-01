@@ -2,3 +2,6 @@
 .gitignore export-ignore
 .gitattributes export-ignore
 README.md export-ignore
+ROADMAP.md export-ignore
+tool-kits.zip export-ignore
+/scripts export-ignore

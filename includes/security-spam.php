@@ -11,6 +11,7 @@ function tk_render_spam_protection_page($forced_tab = '') {
     }
     $saved = isset($_GET['tk_saved']) ? sanitize_key($_GET['tk_saved']) : '';
     $cleared = isset($_GET['tk_cleared']) ? sanitize_key($_GET['tk_cleared']) : '';
+    $form_guard_cleared = isset($_GET['tk_form_guard_cleared']) ? absint($_GET['tk_form_guard_cleared']) : null;
     ?>
     <div class="wrap tk-wrap">
         <?php tk_render_header_branding(); ?>
@@ -20,6 +21,9 @@ function tk_render_spam_protection_page($forced_tab = '') {
         <?php endif; ?>
         <?php if ($cleared === '1') : ?>
             <?php tk_notice('Anti-spam log cleared.', 'success'); ?>
+        <?php endif; ?>
+        <?php if ($form_guard_cleared !== null) : ?>
+            <?php tk_notice('Form Guard rate counters cleared. Removed ' . $form_guard_cleared . ' row(s).', 'success'); ?>
         <?php endif; ?>
         <div class="tk-tabs tk-spam-tabs">
             <div class="tk-tabs-nav">
