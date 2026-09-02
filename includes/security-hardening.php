@@ -1062,6 +1062,8 @@ function tk_hardening_http_auth(): void {
 
 function tk_hardening_httpauth_scope_match(string $scope): bool {
     $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+    $request_path = wp_parse_url($request_uri, PHP_URL_PATH);
+    $request_path = is_string($request_path) ? $request_path : '';
     $is_admin_request = is_admin();
     if (!$is_admin_request && function_exists('get_current_screen')) {
         $screen = get_current_screen();
@@ -1071,6 +1073,12 @@ function tk_hardening_httpauth_scope_match(string $scope): bool {
         $is_admin_request = true;
     }
     if (!$is_admin_request && isset($GLOBALS['pagenow']) && $GLOBALS['pagenow'] === 'wp-login.php') {
+        $is_admin_request = true;
+    }
+    if (!$is_admin_request && function_exists('tk_hide_login_is_slug_path') && tk_hide_login_is_slug_path($request_path)) {
+        $is_admin_request = true;
+    }
+    if (!$is_admin_request && function_exists('tk_hide_login_is_wp_login_path') && tk_hide_login_is_wp_login_path($request_path)) {
         $is_admin_request = true;
     }
     return $scope === 'admin' ? $is_admin_request : !$is_admin_request;

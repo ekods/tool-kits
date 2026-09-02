@@ -767,6 +767,18 @@ function tk_hardening_active_items(): array {
     if (tk_get_option('hardening_auto_toggle', 1)) {
         $items[] = array('label' => 'Auto hardening', 'link' => $base_url . '#general');
     }
+    if (tk_get_option('security_login_error_obfuscation_enabled', 1)) {
+        $items[] = array('label' => 'Login errors hidden', 'link' => tk_admin_url('tool-kits-security-rate-limit'));
+    }
+    if (tk_get_option('security_block_bad_usernames_enabled', 1)) {
+        $items[] = array('label' => 'Common attacker usernames blocked', 'link' => tk_admin_url('tool-kits-security-rate-limit'));
+    }
+    if (tk_get_option('security_login_origin_guard_enabled', 1)) {
+        $items[] = array('label' => 'Login origin guard', 'link' => tk_admin_url('tool-kits-security-rate-limit'));
+    }
+    if (tk_get_option('security_404_scanner_trap_enabled', 1)) {
+        $items[] = array('label' => '404 scanner trap', 'link' => tk_admin_url('tool-kits-security-rate-limit'));
+    }
     if (tk_get_option('hardening_security_headers', 1)) {
         $items[] = array('label' => 'Security headers', 'link' => $base_url . '#section-headers');
     }
@@ -1122,6 +1134,15 @@ function tk_option_init_defaults() {
         'security_auto_block_threshold' => 10,
         'security_auto_block_window_minutes' => 10,
         'security_auto_block_user_agents' => "python-requests\ncurl\nwget\nsqlmap\nmasscan\nnikto\nacunetix\nwpscan",
+        'security_login_error_obfuscation_enabled' => 1,
+        'security_block_bad_usernames_enabled' => 1,
+        'security_bad_usernames' => "admin\nadministrator\nroot\ntest\ndemo\nuser\nwpadmin\nwebmaster",
+        'security_login_origin_guard_enabled' => 1,
+        'security_login_origin_require_header' => 0,
+        'security_404_scanner_trap_enabled' => 1,
+        'security_404_scanner_threshold' => 4,
+        'security_404_scanner_window_minutes' => 10,
+        'security_404_scanner_paths' => "/.env\n/wp-config.php.bak\n/wp-config.php.save\n/wp-config.old\n/vendor/phpunit\n/phpunit\n/backup.zip\n/backup.sql\n/database.sql\n/wp-content/debug.log\n/.git\n/.svn\n/adminer.php\n/phpinfo.php",
         'security_events_retention_days' => 90,
         'security_events_backfilled' => 0,
         'toolkits_owner_only_enabled' => 0,
@@ -1151,6 +1172,7 @@ function tk_option_init_defaults() {
 
 function tk_run_versioned_upgrades(): void {
     $stored_version = (string) get_option('tk_version', '');
+    $current_version = defined('TK_VERSION') ? (string) TK_VERSION : '0.0.0';
     tk_option_init_defaults();
     tk_upgrade_antispam_duplicate_window_default();
     if ($stored_version === '' || version_compare($stored_version, '2.2.0', '<')) {
@@ -1159,7 +1181,28 @@ function tk_run_versioned_upgrades(): void {
     if ($stored_version === '' || version_compare($stored_version, '2.5.8', '<')) {
         tk_upgrade_to_258_stealth_hardening();
     }
-    update_option('tk_version', defined('TK_VERSION') ? (string) TK_VERSION : '0.0.0', false);
+    tk_force_relogin_after_update($stored_version, $current_version);
+    update_option('tk_version', $current_version, false);
+}
+
+function tk_force_relogin_after_update(string $stored_version, string $current_version): void {
+    if ($stored_version === '' || $current_version === '' || version_compare($current_version, $stored_version, '<=')) {
+        return;
+    }
+    if (defined('WP_CLI') && WP_CLI) {
+        return;
+    }
+
+    if (class_exists('WP_Session_Tokens') && method_exists('WP_Session_Tokens', 'destroy_all_for_all_users')) {
+        WP_Session_Tokens::destroy_all_for_all_users();
+    } else {
+        delete_metadata('user', 0, 'session_tokens', '', true);
+    }
+
+    if (function_exists('wp_clear_auth_cookie')) {
+        wp_clear_auth_cookie();
+    }
+    update_option('tk_sessions_invalidated_for_version', $current_version, false);
 }
 
 function tk_upgrade_antispam_duplicate_window_default(): void {

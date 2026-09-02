@@ -15,6 +15,8 @@ function tk_hide_login_init() {
     add_filter('logout_url', 'tk_hide_login_filter_logout_url', 10, 2);
     add_filter('lostpassword_url', 'tk_hide_login_filter_lostpassword_url', 10, 2);
     add_filter('register_url', 'tk_hide_login_filter_register_url', 10, 1);
+    add_filter('site_url', 'tk_hide_login_filter_site_url', 10, 4);
+    add_filter('network_site_url', 'tk_hide_login_filter_network_site_url', 10, 3);
 }
 
 function tk_hide_login_slug() {
@@ -91,6 +93,11 @@ function tk_hide_login_swap_url_base($url) {
     return $new;
 }
 
+function tk_hide_login_url_has_wp_login($url) {
+    $path = wp_parse_url((string) $url, PHP_URL_PATH);
+    return is_string($path) && tk_hide_login_is_wp_login_path($path);
+}
+
 function tk_hide_login_filter_login_url($login_url, $redirect, $force_reauth) {
     return tk_hide_login_swap_url_base($login_url);
 }
@@ -105,6 +112,21 @@ function tk_hide_login_filter_lostpassword_url($lostpassword_url, $redirect) {
 
 function tk_hide_login_filter_register_url($register_url) {
     return tk_hide_login_swap_url_base($register_url);
+}
+
+function tk_hide_login_filter_site_url($url, $path = '', $scheme = null, $blog_id = null) {
+    if (!tk_get_option('hide_login_enabled')) {
+        return $url;
+    }
+    $path = (string) $path;
+    if (stripos($path, 'wp-login.php') === false && !tk_hide_login_url_has_wp_login($url)) {
+        return $url;
+    }
+    return tk_hide_login_swap_url_base($url);
+}
+
+function tk_hide_login_filter_network_site_url($url, $path = '', $scheme = null) {
+    return tk_hide_login_filter_site_url($url, $path, $scheme, null);
 }
 
 function tk_hide_login_rewrite() {
@@ -131,16 +153,7 @@ function tk_hide_login_block() {
         if (empty(tk_hide_login_slug_path())) {
             return;
         }
-        if (isset($_SERVER['REQUEST_METHOD']) && strtoupper((string) $_SERVER['REQUEST_METHOD']) === 'POST') {
-            tk_hide_login_deny_direct_request();
-        }
-        $query = isset($_SERVER['QUERY_STRING']) ? (string) $_SERVER['QUERY_STRING'] : '';
-        $target = tk_hide_login_custom_url();
-        if ($query !== '') {
-            $target .= '?' . $query;
-        }
-        wp_redirect($target);
-        exit;
+        tk_hide_login_deny_direct_request();
     }
 
     $is_admin_area = strpos($path, '/wp-admin') === 0 || strpos($path, '/admin') === 0;

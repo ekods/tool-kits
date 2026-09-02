@@ -47,6 +47,8 @@ Tool Kits helps WordPress administrators manage five main areas:
 
 - Direct `/wp-login.php` requests are now redirected to the homepage when Hide Login is enabled; only the configured custom login slug can reach the WordPress login flow.
 - Login honey trap and progressive lockout added to reduce repeated bot hits against common login URLs.
+- Login Shield added with generic login errors, common attacker username protection, same-site Origin/Referer guard, and configurable 404 scanner trap.
+- Firewall Summary Blocklist now includes active blocked IPs and configured Firewall IP/CIDR rules, not only historical blocklist events.
 - WordPress fingerprint reduction added for public discovery links, REST link headers, feed links, emoji traces, author redirect signals, and common scanner-readable root files.
 - HSTS header is now available as a toggle and recommended on by default.
 - Strict CSP option added without `unsafe-inline` or `unsafe-eval`.

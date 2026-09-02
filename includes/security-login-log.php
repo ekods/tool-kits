@@ -7,6 +7,8 @@ if (!defined('ABSPATH')) exit;
 
 function tk_login_log_init() {
     add_filter('authenticate', 'tk_login_log_auto_block_authenticate', 5, 3);
+    add_filter('authenticate', 'tk_login_security_guard_authenticate', 8, 3);
+    add_filter('login_errors', 'tk_login_security_obfuscate_errors', 999);
     add_action('wp_login_failed', 'tk_login_log_failed', 10, 2);
     add_action('wp_login', 'tk_login_log_success', 10, 2);
     add_action('admin_post_tk_login_log_save', 'tk_login_log_save');
@@ -76,6 +78,98 @@ function tk_login_log_insert($username, $user_id, $status, $reason = '') {
     if ($status === 'failed') {
         tk_login_log_auto_block_maybe($ip, $agent);
     }
+}
+
+function tk_login_security_bad_usernames(): array {
+    $raw = (string) tk_get_option('security_bad_usernames', "admin\nadministrator\nroot\ntest\ndemo\nuser\nwpadmin\nwebmaster");
+    $lines = preg_split('/\r\n|\r|\n/', $raw);
+    $lines = is_array($lines) ? $lines : array();
+    $items = array();
+    foreach ($lines as $line) {
+        $line = strtolower(trim((string) $line));
+        if ($line !== '') {
+            $items[] = $line;
+        }
+    }
+    return array_values(array_unique($items));
+}
+
+function tk_login_security_request_host(): string {
+    $host = isset($_SERVER['HTTP_HOST']) ? strtolower(trim((string) $_SERVER['HTTP_HOST'])) : '';
+    return preg_replace('/:\d+$/', '', $host) ?: '';
+}
+
+function tk_login_security_origin_allowed(): bool {
+    $origin = isset($_SERVER['HTTP_ORIGIN']) ? trim((string) $_SERVER['HTTP_ORIGIN']) : '';
+    $referer = isset($_SERVER['HTTP_REFERER']) ? trim((string) $_SERVER['HTTP_REFERER']) : '';
+    $source = $origin !== '' ? $origin : $referer;
+    if ($source === '') {
+        return (int) tk_get_option('security_login_origin_require_header', 0) !== 1;
+    }
+
+    $source_host = wp_parse_url($source, PHP_URL_HOST);
+    $home_host = wp_parse_url(home_url('/'), PHP_URL_HOST);
+    $site_host = wp_parse_url(site_url('/'), PHP_URL_HOST);
+    $request_host = tk_login_security_request_host();
+    $allowed_hosts = array_filter(array_map('strtolower', array($home_host, $site_host, $request_host)));
+
+    return is_string($source_host) && in_array(strtolower($source_host), $allowed_hosts, true);
+}
+
+function tk_login_security_record_block(string $reason, string $username = ''): void {
+    if (!function_exists('tk_security_events_record')) {
+        return;
+    }
+    $ip = function_exists('tk_get_ip') ? tk_get_ip() : '';
+    tk_security_events_record(array(
+        'event_type' => 'blocked',
+        'category' => 'brute_force',
+        'ip' => $ip,
+        'location' => function_exists('tk_login_log_location_for_ip') ? tk_login_log_location_for_ip($ip) : '',
+        'user_agent' => function_exists('tk_user_agent') ? tk_user_agent() : '',
+        'reason' => $reason,
+        'username' => $username,
+        'request_method' => isset($_SERVER['REQUEST_METHOD']) ? (string) $_SERVER['REQUEST_METHOD'] : '',
+        'request_uri' => isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '',
+    ));
+}
+
+function tk_login_security_guard_authenticate($user, $username, $password) {
+    if (!isset($_POST['log'], $_POST['pwd'])) {
+        return $user;
+    }
+
+    $username = strtolower(trim((string) $username));
+    if (
+        (int) tk_get_option('security_block_bad_usernames_enabled', 1) === 1
+        && in_array($username, tk_login_security_bad_usernames(), true)
+        && function_exists('username_exists')
+        && !username_exists($username)
+    ) {
+        if (function_exists('tk_rate_limit_block_ip')) {
+            tk_rate_limit_block_ip(function_exists('tk_get_ip') ? tk_get_ip() : '');
+        }
+        tk_login_security_record_block('blocked_bad_username', $username);
+        return new WP_Error('tk_blocked_bad_username', __('Login failed.', 'tool-kits'));
+    }
+
+    if ((int) tk_get_option('security_login_origin_guard_enabled', 1) === 1 && !tk_login_security_origin_allowed()) {
+        $minutes = function_exists('tk_rate_limit_next_lock_minutes') ? tk_rate_limit_next_lock_minutes() : max(1, (int) tk_get_option('rate_limit_lockout_minutes', 30));
+        if (function_exists('tk_rate_limit_lock_current_ip')) {
+            tk_rate_limit_lock_current_ip($minutes, 'blocked_login_origin');
+        }
+        tk_login_security_record_block('blocked_login_origin', $username);
+        return new WP_Error('tk_blocked_login_origin', __('Login failed.', 'tool-kits'));
+    }
+
+    return $user;
+}
+
+function tk_login_security_obfuscate_errors($error) {
+    if ((int) tk_get_option('security_login_error_obfuscation_enabled', 1) !== 1) {
+        return $error;
+    }
+    return __('Login failed.', 'tool-kits');
 }
 
 function tk_login_log_location_for_ip($ip): string {

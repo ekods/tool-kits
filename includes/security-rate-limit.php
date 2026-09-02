@@ -103,6 +103,20 @@ function tk_rate_limit_normalize_honey_trap_paths(string $raw): array {
     return array_values(array_unique($paths));
 }
 
+function tk_rate_limit_normalize_lines(string $raw, bool $lowercase = false): array {
+    $lines = preg_split('/\r\n|\r|\n/', $raw);
+    $lines = is_array($lines) ? $lines : array();
+    $items = array();
+    foreach ($lines as $line) {
+        $line = trim((string) $line);
+        if ($line === '') {
+            continue;
+        }
+        $items[] = $lowercase ? strtolower($line) : $line;
+    }
+    return array_values(array_unique($items));
+}
+
 function tk_rate_limit_request_path(): string {
     $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
     if ($request_uri === '') {
@@ -139,6 +153,9 @@ function tk_rate_limit_honey_trap_request(): void {
         return;
     }
     if ($path === '/wp-admin/admin-ajax.php' || $path === '/wp-admin/admin-post.php') {
+        return;
+    }
+    if (function_exists('tk_hide_login_is_slug_path') && tk_hide_login_is_slug_path($path)) {
         return;
     }
     if (!tk_rate_limit_honey_trap_matches_path($path)) {
@@ -401,6 +418,48 @@ function tk_render_rate_limit_page() {
 
                         <hr>
 
+                        <h3><?php esc_html_e('Login Shield', 'tool-kits'); ?></h3>
+                        <p class="description"><?php esc_html_e('Reduce username discovery and reject suspicious direct login posts before WordPress reveals useful feedback.', 'tool-kits'); ?></p>
+
+                        <p>
+                            <label>
+                                <input type="checkbox" name="login_error_obfuscation_enabled" value="1"
+                                    <?php checked(1, tk_get_option('security_login_error_obfuscation_enabled', 1)); ?>>
+                                Hide detailed login errors
+                            </label>
+                        </p>
+
+                        <p>
+                            <label>
+                                <input type="checkbox" name="block_bad_usernames_enabled" value="1"
+                                    <?php checked(1, tk_get_option('security_block_bad_usernames_enabled', 1)); ?>>
+                                Block common attacker usernames
+                            </label>
+                        </p>
+
+                        <p>
+                            Blocked usernames (one per line)<br>
+                            <textarea name="bad_usernames" rows="5" class="large-text"><?php echo esc_textarea((string) tk_get_option('security_bad_usernames', "admin\nadministrator\nroot\ntest\ndemo\nuser\nwpadmin\nwebmaster")); ?></textarea>
+                        </p>
+
+                        <p>
+                            <label>
+                                <input type="checkbox" name="login_origin_guard_enabled" value="1"
+                                    <?php checked(1, tk_get_option('security_login_origin_guard_enabled', 1)); ?>>
+                                Require same-site login Origin/Referer when present
+                            </label>
+                        </p>
+
+                        <p>
+                            <label>
+                                <input type="checkbox" name="login_origin_require_header" value="1"
+                                    <?php checked(1, tk_get_option('security_login_origin_require_header', 0)); ?>>
+                                Block login POST when both Origin and Referer are missing
+                            </label>
+                        </p>
+
+                        <hr>
+
                         <h3><?php esc_html_e('Login Honey Trap', 'tool-kits'); ?></h3>
                         <p class="description"><?php esc_html_e('When Hide Login is active, requests to common bot login paths are redirected to the homepage and temporarily locked out.', 'tool-kits'); ?></p>
 
@@ -415,6 +474,35 @@ function tk_render_rate_limit_page() {
                         <p>
                             Honey trap paths (one per line)<br>
                             <textarea name="honey_trap_paths" rows="6" class="large-text"><?php echo esc_textarea((string) tk_get_option('rate_limit_honey_trap_paths', "/wp-login.php\n/login\n/admin\n/wp-admin.php\n/administrator\n/user/login")); ?></textarea>
+                        </p>
+
+                        <hr>
+
+                        <h3><?php esc_html_e('404 Scanner Trap', 'tool-kits'); ?></h3>
+                        <p class="description"><?php esc_html_e('Temporarily lock IPs that probe multiple sensitive files or exploit paths that should never exist publicly.', 'tool-kits'); ?></p>
+
+                        <p>
+                            <label>
+                                <input type="checkbox" name="scanner_trap_enabled" value="1"
+                                    <?php checked(1, tk_get_option('security_404_scanner_trap_enabled', 1)); ?>>
+                                Enable 404 scanner trap
+                            </label>
+                        </p>
+
+                        <p>
+                            Scanner threshold<br>
+                            <input type="number" name="scanner_trap_threshold" value="<?php echo esc_attr((string) tk_get_option('security_404_scanner_threshold', 4)); ?>" min="1">
+                            <span class="description">Sensitive 404 hits within the window before lockout.</span>
+                        </p>
+
+                        <p>
+                            Scanner window (minutes)<br>
+                            <input type="number" name="scanner_trap_window" value="<?php echo esc_attr((string) tk_get_option('security_404_scanner_window_minutes', 10)); ?>" min="1">
+                        </p>
+
+                        <p>
+                            Sensitive scanner paths (one per line)<br>
+                            <textarea name="scanner_trap_paths" rows="8" class="large-text"><?php echo esc_textarea((string) tk_get_option('security_404_scanner_paths', "/.env\n/wp-config.php.bak\n/wp-config.php.save\n/wp-config.old\n/vendor/phpunit\n/phpunit\n/backup.zip\n/backup.sql\n/database.sql\n/wp-content/debug.log\n/.git\n/.svn\n/adminer.php\n/phpinfo.php")); ?></textarea>
                         </p>
 
                         <p><button class="button button-primary">Save</button></p>
@@ -503,10 +591,21 @@ function tk_rate_limit_save() {
     $auto_agents = isset($_POST['auto_block_user_agents']) ? (string) wp_unslash($_POST['auto_block_user_agents']) : '';
     $auto_agents = implode("\n", array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $auto_agents)))));
     tk_update_option('security_auto_block_user_agents', $auto_agents);
+    tk_update_option('security_login_error_obfuscation_enabled', !empty($_POST['login_error_obfuscation_enabled']) ? 1 : 0);
+    tk_update_option('security_block_bad_usernames_enabled', !empty($_POST['block_bad_usernames_enabled']) ? 1 : 0);
+    $bad_usernames = isset($_POST['bad_usernames']) ? (string) wp_unslash($_POST['bad_usernames']) : '';
+    tk_update_option('security_bad_usernames', implode("\n", tk_rate_limit_normalize_lines($bad_usernames, true)));
+    tk_update_option('security_login_origin_guard_enabled', !empty($_POST['login_origin_guard_enabled']) ? 1 : 0);
+    tk_update_option('security_login_origin_require_header', !empty($_POST['login_origin_require_header']) ? 1 : 0);
     tk_update_option('rate_limit_honey_trap_enabled', !empty($_POST['honey_trap_enabled']) ? 1 : 0);
     $honey_paths = isset($_POST['honey_trap_paths']) ? (string) wp_unslash($_POST['honey_trap_paths']) : '';
     $honey_paths = implode("\n", tk_rate_limit_normalize_honey_trap_paths($honey_paths));
     tk_update_option('rate_limit_honey_trap_paths', $honey_paths);
+    tk_update_option('security_404_scanner_trap_enabled', !empty($_POST['scanner_trap_enabled']) ? 1 : 0);
+    tk_update_option('security_404_scanner_threshold', max(1, (int) ($_POST['scanner_trap_threshold'] ?? 4)));
+    tk_update_option('security_404_scanner_window_minutes', max(1, (int) ($_POST['scanner_trap_window'] ?? 10)));
+    $scanner_paths = isset($_POST['scanner_trap_paths']) ? (string) wp_unslash($_POST['scanner_trap_paths']) : '';
+    tk_update_option('security_404_scanner_paths', implode("\n", tk_rate_limit_normalize_honey_trap_paths($scanner_paths)));
     $whitelist_raw = isset($_POST['whitelist']) ? (string) wp_unslash($_POST['whitelist']) : '';
     $whitelist_ips = tk_rate_limit_parse_ip_list($whitelist_raw);
     tk_update_option('rate_limit_whitelist', implode("\n", $whitelist_ips));

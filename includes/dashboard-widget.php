@@ -124,20 +124,48 @@ function tk_dashboard_widget_firewall_count(int $since, string $kind = 'all'): i
     return $count;
 }
 
+function tk_dashboard_widget_current_blocklist_count(): int {
+    $items = array();
+
+    if (function_exists('tk_rate_limit_blocked_ips')) {
+        foreach (tk_rate_limit_blocked_ips() as $ip => $time) {
+            $ip = trim((string) $ip);
+            if ($ip !== '') {
+                $items['rate:' . $ip] = true;
+            }
+        }
+    }
+
+    if (function_exists('tk_firewall_parse_lines')) {
+        foreach (tk_firewall_parse_lines((string) tk_get_option('firewall_ip_blocklist', '')) as $rule) {
+            $rule = trim((string) $rule);
+            if ($rule !== '') {
+                $items['firewall:' . strtolower($rule)] = true;
+            }
+        }
+    }
+
+    return count($items);
+}
+
 function tk_dashboard_widget_attacks_count(int $since, string $kind = 'total'): int {
     if (tk_dashboard_widget_use_security_events()) {
-        return tk_dashboard_widget_security_events_count($since, $kind);
+        $count = tk_dashboard_widget_security_events_count($since, $kind);
+        if ($kind === 'blocklist') {
+            $count += tk_dashboard_widget_current_blocklist_count();
+        }
+        return $count;
     }
     if ($kind === 'brute') {
         return tk_dashboard_widget_login_failed_count($since);
     }
     if ($kind === 'blocklist') {
-        return tk_dashboard_widget_firewall_count($since, 'blocklist');
+        return tk_dashboard_widget_firewall_count($since, 'blocklist') + tk_dashboard_widget_current_blocklist_count();
     }
     if ($kind === 'complex') {
         return tk_dashboard_widget_firewall_count($since, 'complex');
     }
-    return tk_dashboard_widget_firewall_count($since, 'all') + tk_dashboard_widget_login_failed_count($since);
+    return tk_dashboard_widget_firewall_count($since, 'all') + tk_dashboard_widget_login_failed_count($since) + tk_dashboard_widget_current_blocklist_count();
 }
 
 function tk_dashboard_widget_use_security_events(): bool {
@@ -612,6 +640,7 @@ function tk_render_attacks_blocked_dashboard_widget() {
 
         <div class="tk-attacks-summary-title">
             <strong>Firewall Summary:</strong> Attacks Blocked for <?php echo esc_html(wp_parse_url(home_url('/'), PHP_URL_HOST) ?: get_bloginfo('name')); ?>
+            <span class="tk-attacks-summary-note">Blocklist includes active blocked IP/rule entries.</span>
         </div>
         <table class="tk-attacks-summary">
             <thead>
@@ -786,6 +815,13 @@ function tk_render_attacks_blocked_dashboard_widget() {
             padding-top: 14px;
             margin-bottom: 10px;
             font-size: 14px;
+        }
+        .tk-attacks-summary-note {
+            display: block;
+            margin-top: 3px;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 500;
         }
         .tk-attacks-summary {
             width: 100%;

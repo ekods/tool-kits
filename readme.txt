@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.5.11
+Stable tag: 2.5.16
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -62,6 +62,35 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.5.16 =
+**HTTP Authentication**
+- Treat the active Hide Login custom slug as an admin/login request for HTTP Authentication scope matching.
+- Ensure HTTP Authentication appears on the custom Hide Login URL when the scope is set to `Admin and login only`.
+
+= 2.5.15 =
+**Update Security**
+- Force all administrators and users to re-login after Tool Kits is updated to a newer version.
+- Invalidate all WordPress session tokens on plugin version upgrade and clear the current auth cookie during the update request.
+
+= 2.5.14 =
+**Hide Login**
+- Rewrite WordPress core `wp-login.php` form/action URLs to the configured custom login slug.
+- Keep the login honey trap from blocking the active custom login slug, even when the slug matches a configured trap path.
+- Direct `/wp-login.php` hits continue to be blocked and redirected to the homepage.
+
+= 2.5.13 =
+**Login Protection**
+- Add generic login error obfuscation to reduce username discovery.
+- Add common attacker username protection for non-existing usernames such as admin, administrator, root, test, demo, and wpadmin.
+- Add same-site Origin/Referer guard for login POST requests.
+- Add configurable 404 scanner trap for sensitive probe paths such as .env, wp-config backups, debug logs, adminer, phpinfo, and backup dumps.
+- Add Rate Limit dashboard controls for login shield and scanner trap settings.
+
+= 2.5.12 =
+**Security Dashboard**
+- Count active Rate Limit blocked IPs and Firewall IP/CIDR blocklist rules in the Firewall Summary Blocklist column.
+- Add a dashboard note clarifying that Blocklist includes currently blocked IP/rule entries.
+
 = 2.5.11 =
 **Login Protection**
 - Add login honey trap paths for common bot targets when Hide Login is enabled.
