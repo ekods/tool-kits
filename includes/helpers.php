@@ -2941,7 +2941,7 @@ function tk_toolkits_nested_admin_menu_script(): void {
 
         var groups = {
             'tool-kits-settings': ['tool-kits-general', 'tool-kits-access'],
-            'tool-kits-security': ['tool-kits-guard', 'tool-kits-firewall', 'tool-kits-security-hide-login', 'tool-kits-security-spam', 'tool-kits-security-rate-limit', 'tool-kits-security-login-log', 'tool-kits-malware-scanner'],
+            'tool-kits-security': ['tool-kits-guard', 'tool-kits-firewall', 'tool-kits-security-hide-login', 'tool-kits-security-spam', 'tool-kits-security-rate-limit', 'tool-kits-brute-force', 'tool-kits-security-login-log', 'tool-kits-malware-scanner', 'tool-kits-vulnerability-scanner', 'tool-kits-incident-response'],
             'tool-kits-performance': ['tool-kits-cache', 'tool-kits-optimization', 'tool-kits-minify', 'tool-kits-webp', 'tool-kits-image-opt', 'tool-kits-lazy-load', 'tool-kits-assets'],
             'tool-kits-seo': [],
             'tool-kits-system': ['tool-kits-db', 'tool-kits-role-management', 'tool-kits-user-id', 'tool-kits-smtp', 'tool-kits-theme-checker', 'tool-kits-diagnostics']

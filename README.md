@@ -27,7 +27,9 @@ Tool Kits helps WordPress administrators manage five main areas:
 - Login log for successful and failed attempts with retention.
 - Hardening (XML-RPC, headers, WAF basic, HTTP Auth, CORS).
 - Firewall with payload WAF, IP/CIDR allowlist/blocklist, user-agent rules, and event log.
-- Signature-based Malware Scanner for executable uploads, obfuscation, encoded payloads, and web-shell markers.
+- Signature-based Malware Scanner for executable uploads, obfuscation, encoded payloads, and web-shell markers, including line numbers, reasons, and code snippets in reports and alert emails. Theme iframe/SVG cases are skipped where they commonly create false positives.
+- Vulnerability Scanner for outdated WordPress core, plugin/theme updates, inactive components, and security-sensitive configuration.
+- Incident Response workflow for malware investigation/removal tracking, post-incident blocklist removal, and search engine security cleanup.
 - SMTP (preset provider + test email + log).
 - Monitoring (checks, realtime, 404 monitor, healthcheck, heartbeat).
 - Cache tools (page cache, object flush, opcache reset, fragment flush).
@@ -70,10 +72,12 @@ Tool Kits helps WordPress administrators manage five main areas:
 - `Tool Kits > Optimization`
 - `Tool Kits > Spam Protection`
 - `Tool Kits > Rate Limit`
+- `Tool Kits > Brute Force Protection`
 - `Tool Kits > Login Log`
 - `Tool Kits > Hardening`
 - `Tool Kits > Firewall`
 - `Tool Kits > Malware Scanner`
+- `Tool Kits > Vulnerability Scanner`
 - `Tool Kits > SMTP`
 - `Tool Kits > Monitoring`
 - `Tool Kits > Cache`
@@ -173,6 +177,38 @@ To reduce the WordPress attack surface.
 - Harden robots.txt.
 - Block unwanted file access.
 - Check public DB host risk as an indicator of MySQL port 3306 exposure.
+
+#### 6.1) Incident Response
+
+For controlled post-compromise cleanup and evidence tracking.
+- Investigation and Malware Removal checklist.
+- Investigation snapshot with WordPress, PHP, theme, plugin, administrator, malware finding, firewall, and login log counts.
+- Malware removal log for confirmed removed files, restored clean files, credential rotation, and patch notes.
+- Post-incident Blocklist Removal checklist and vendor review links.
+- Post-incident Search Engine Security Cleanup checklist for spam URLs, sitemap/indexing repairs, Search Console, Bing Webmaster Tools, and recrawl tracking.
+- Exportable plain-text incident report.
+
+#### 6.2) Vulnerability Scanner
+
+For update and exposure review without requiring an external API key.
+- Refresh WordPress update metadata before scanning.
+- Report available WordPress core updates.
+- Report plugin and theme updates, prioritizing active components.
+- Flag inactive plugins and themes for removal review.
+- Flag HTTPS configuration risk when WordPress does not detect SSL.
+- Keep the latest report in Tool Kits options until cleared.
+
+#### 6.3) Brute Force Protection
+
+For login endpoint protection and bot lockout workflows.
+- Dedicated Brute Force Protection menu entry.
+- IP-based login throttling.
+- Progressive lockout steps.
+- Manual permanent IP block option.
+- Attacker username blocking.
+- Same-site login Origin/Referer guard.
+- Login honey trap for common bot paths when Hide Login is active.
+- 404 scanner trap for repeated probes against sensitive paths.
 
 #### 7) SMTP
 

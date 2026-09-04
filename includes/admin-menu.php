@@ -240,6 +240,11 @@ function tk_render_security_overview_page() {
                 <h2>Rate Limit</h2>
                 <p class="description">Limit repeated login attempts and unblock legitimate users when needed.</p>
             </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-brute-force')); ?>">
+                <span class="dashicons dashicons-lock"></span>
+                <h2>Brute Force Protection</h2>
+                <p class="description">Protect login endpoints with progressive lockouts, attacker username blocking, honey traps, and scanner traps.</p>
+            </a>
             <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-security-login-log')); ?>">
                 <span class="dashicons dashicons-list-view"></span>
                 <h2>Login Log</h2>
@@ -249,6 +254,16 @@ function tk_render_security_overview_page() {
                 <span class="dashicons dashicons-search"></span>
                 <h2>Malware Scanner</h2>
                 <p class="description">Scan plugin, theme, and upload files for suspicious signatures and risky code patterns.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-vulnerability-scanner')); ?>">
+                <span class="dashicons dashicons-shield-alt"></span>
+                <h2>Vulnerability Scanner</h2>
+                <p class="description">Review outdated core, plugins, themes, inactive components, and security-sensitive configuration.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-incident-response')); ?>">
+                <span class="dashicons dashicons-sos"></span>
+                <h2>Incident Response</h2>
+                <p class="description">Track malware investigation, removal evidence, blocklist delisting, and search engine cleanup.</p>
             </a>
         </div>
     </div>

@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.5.16
+Stable tag: 2.5.20
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -11,6 +11,9 @@ Tool Kits is an admin toolkit plugin for:
 - DB Migrate: SQL export, serialized-safe Find & Replace, and table prefix rename.
 - DB Cleanup: Clean revisions, trash, spam, transients, and optimize tables.
 - Security: Hide Login, Captcha, Anti-spam Contact (CF7), login rate limiting, Login Log, and Hardening.
+- Vulnerability Scanner: review outdated WordPress core, plugins, themes, inactive components, and security-sensitive configuration.
+- Brute Force Protection: dedicated login protection workflow for rate limiting, progressive lockout, bad username blocking, origin guard, honey traps, and scanner traps.
+- Incident Response: investigation and malware removal tracking, post-incident blocklist removal, and post-incident search engine security cleanup.
 
 == Installation ==
 1. Upload the `tool-kits` folder to `/wp-content/plugins/`.
@@ -62,6 +65,37 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.5.20 =
+**Malware Scanner**
+- Skip hidden iframe signature matching inside theme files to reduce false positives from legitimate theme embeds.
+- Skip SVG files inside themes from malware scanning when SVG is included through scanner extension filters.
+- Keep executable upload, encoded execution, request execution, web-shell, and obfuscation signatures active for theme PHP/JS/HTML files.
+
+= 2.5.19 =
+**Malware Scanner**
+- Store line number, reason, and a short code snippet for each matched malware signature.
+- Include findings, reasons, and code snippets in scheduled malware alert emails.
+- Show evidence details in the Malware Scanner report table.
+
+= 2.5.18 =
+**Vulnerability Scanner**
+- Add Vulnerability Scanner under Tool Kits Security.
+- Scan WordPress core, plugins, and themes using WordPress update metadata.
+- Flag inactive plugins and themes for removal review.
+- Flag HTTPS configuration risk when WordPress does not detect SSL.
+
+**Brute Force Protection**
+- Add dedicated Brute Force Protection menu entry.
+- Reuse the existing login protection engine for IP throttling, progressive lockout, attacker username blocking, origin guard, honey traps, scanner traps, and unblock workflows.
+
+= 2.5.17 =
+**Incident Response**
+- Add Incident Response workflow under Tool Kits Security.
+- Add Investigation and Malware Removal checklist with case status, notes, removal log, and investigation snapshot.
+- Add Post-incident Blocklist Removal tracking with external vendor review links.
+- Add Post-incident Search Engine Security Cleanup tracking for spam URL cleanup, sitemap/indexing repair, Search Console/Bing review, and recrawl follow-up.
+- Add exportable plain-text incident response report.
+
 = 2.5.16 =
 **HTTP Authentication**
 - Treat the active Hide Login custom slug as an admin/login request for HTTP Authentication scope matching.

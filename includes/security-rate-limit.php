@@ -8,9 +8,27 @@ if (!defined('ABSPATH')) exit;
 function tk_rate_limit_init() {
     add_action('init', 'tk_rate_limit_honey_trap_request', 0);
     add_filter('authenticate', 'tk_rate_limit_authenticate', 30, 3);
+    add_action('admin_menu', 'tk_rate_limit_register_brute_force_page', 23);
     add_action('admin_post_tk_rate_limit_save', 'tk_rate_limit_save');
     add_action('admin_post_tk_rate_limit_unblock', 'tk_rate_limit_unblock_handler');
     add_action('wp_ajax_tk_rate_limit_unlock', 'tk_rate_limit_unlock');
+}
+
+function tk_rate_limit_register_brute_force_page(): void {
+    $license_valid = (string) tk_get_option('license_status', 'inactive') === 'valid';
+    $license_limited = (string) tk_get_option('license_type', '') === 'local';
+    if (!tk_toolkits_can_manage() || !$license_valid || $license_limited) {
+        return;
+    }
+
+    add_submenu_page(
+        'tool-kits',
+        __('Brute Force Protection', 'tool-kits'),
+        __('Brute Force Protection', 'tool-kits'),
+        'manage_options',
+        'tool-kits-brute-force',
+        'tk_render_brute_force_page'
+    );
 }
 
 function tk_rate_limit_enabled() {
@@ -313,8 +331,10 @@ function tk_rate_limit_increment() {
     }
 }
 
-function tk_render_rate_limit_page() {
+function tk_render_rate_limit_page($title = null, $description = null) {
     if (!tk_is_admin_user()) return;
+    $title = $title ?: __('Login Rate Limiter', 'tool-kits');
+    $description = $description ?: __('Prevent brute-force attacks by limiting the number of login attempts from specific IPs.', 'tool-kits');
     $unblocked = isset($_GET['tk_unblocked']) ? sanitize_key($_GET['tk_unblocked']) : '';
     if ($unblocked === '1') {
         tk_notice('Blocked IPs updated.', 'success');
@@ -327,7 +347,7 @@ function tk_render_rate_limit_page() {
     ?>
     <div class="wrap tk-wrap">
         <?php tk_render_header_branding(); ?>
-        <?php tk_render_page_hero(__('Login Rate Limiter', 'tool-kits'), __('Prevent brute-force attacks by limiting the number of login attempts from specific IPs.', 'tool-kits'), 'dashicons-warning'); ?>
+        <?php tk_render_page_hero($title, $description, 'dashicons-warning'); ?>
         <div class="tk-tabs">
             <div class="tk-tabs-nav">
                 <button type="button" class="tk-tabs-nav-button is-active" data-panel="settings">Settings</button>
@@ -572,6 +592,13 @@ function tk_render_rate_limit_page() {
         </script>
     </div>
     <?php
+}
+
+function tk_render_brute_force_page(): void {
+    tk_render_rate_limit_page(
+        __('Brute Force Protection', 'tool-kits'),
+        __('Protect login endpoints with IP throttling, progressive lockouts, attacker username blocking, origin checks, honey traps, and scanner traps.', 'tool-kits')
+    );
 }
 
 function tk_rate_limit_save() {
