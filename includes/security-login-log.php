@@ -165,8 +165,41 @@ function tk_login_security_guard_authenticate($user, $username, $password) {
     return $user;
 }
 
+function tk_login_security_is_login_post(): bool {
+    return isset($_POST['log'], $_POST['pwd']);
+}
+
+function tk_login_security_is_non_auth_error($error): bool {
+    $text = trim(wp_strip_all_tags((string) $error));
+    if ($text === '') {
+        return true;
+    }
+
+    $non_auth_fragments = array(
+        'cookies are blocked',
+        'cookies are not enabled',
+        'session has expired',
+        'you are now logged out',
+        'please log in again',
+        'check your email',
+        'password reset',
+        'registration confirmation',
+    );
+    $lower = strtolower($text);
+    foreach ($non_auth_fragments as $fragment) {
+        if (strpos($lower, $fragment) !== false) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function tk_login_security_obfuscate_errors($error) {
     if ((int) tk_get_option('security_login_error_obfuscation_enabled', 1) !== 1) {
+        return $error;
+    }
+    if (!tk_login_security_is_login_post() && tk_login_security_is_non_auth_error($error)) {
         return $error;
     }
     return __('Login failed.', 'tool-kits');

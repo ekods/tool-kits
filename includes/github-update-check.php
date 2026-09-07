@@ -641,11 +641,6 @@ function tk_github_check_now_notice(): void {
         $status = get_option('tk_github_updater_status');
     }
 
-    if (isset($_GET['tk_update_checked']) && (string) $_GET['tk_update_checked'] === '1' && empty($status)) {
-        echo '<div class="notice notice-success is-dismissible"><p>Tool Kits update check has been refreshed.</p></div>';
-        return;
-    }
-
     if (!is_array($status) || empty($status['status']) || empty($status['message'])) {
         return;
     }
@@ -671,4 +666,8 @@ function tk_github_check_now_notice(): void {
     }
 
     echo '<div class="notice ' . esc_attr($class) . ' is-dismissible"><p><strong>Tool Kits updater:</strong> ' . esc_html((string) $status['message']) . $context . '</p></div>';
+
+    if ($status['status'] === 'completed' || $status['status'] === 'installed') {
+        tk_github_clear_stored_status();
+    }
 }

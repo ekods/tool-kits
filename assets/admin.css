@@ -270,6 +270,11 @@
     color: var(--tk-success-text);
 }
 
+.tk-badge.tk-off {
+    background: #f2f4f7;
+    color: #667085;
+}
+
 .tk-badge.tk-warn {
     background: var(--tk-warn-bg);
     color: var(--tk-warn-text);

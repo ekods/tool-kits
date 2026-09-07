@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.5.20
+Stable tag: 2.5.21
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,12 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.5.21 =
+**GEO Security Events**
+- Validate GEO lookup flow for security alerts and dashboard country reporting.
+- Resolve missing security event locations automatically when an event has a public IP.
+- Add lightweight maintenance backfill for older security events with missing location/country data.
+
 = 2.5.20 =
 **Malware Scanner**
 - Skip hidden iframe signature matching inside theme files to reduce false positives from legitimate theme embeds.

@@ -1540,6 +1540,9 @@ function tk_security_events_record(array $event): void {
 
     global $wpdb;
     $location = isset($event['location']) ? sanitize_text_field((string) $event['location']) : '';
+    if ($location === '' && !empty($event['ip']) && function_exists('tk_security_alert_ip_location')) {
+        $location = sanitize_text_field(tk_security_alert_ip_location((string) $event['ip']));
+    }
     $country = isset($event['country']) ? sanitize_text_field((string) $event['country']) : '';
     if ($country === '') {
         $country = tk_security_events_country_from_location($location);
@@ -1577,6 +1580,7 @@ function tk_security_events_clear_maintenance(): void {
 function tk_security_events_maintenance(): void {
     tk_security_events_install_table();
     tk_security_events_backfill();
+    tk_security_events_backfill_geo();
     tk_security_events_cleanup();
 }
 
@@ -1593,6 +1597,43 @@ function tk_security_events_cleanup(): int {
         $before
     ));
     return is_numeric($result) ? (int) $result : 0;
+}
+
+function tk_security_events_backfill_geo(): int {
+    if (!tk_security_events_table_exists() || !function_exists('tk_security_alert_ip_location')) {
+        return 0;
+    }
+
+    global $wpdb;
+    $table = tk_security_events_table();
+    $rows = $wpdb->get_results(
+        "SELECT DISTINCT ip FROM {$table} WHERE ip <> '' AND (location IS NULL OR location = '' OR country IS NULL OR country = '') ORDER BY id DESC LIMIT 100"
+    );
+    if (!is_array($rows) || empty($rows)) {
+        return 0;
+    }
+
+    $updated = 0;
+    foreach ($rows as $row) {
+        $ip = isset($row->ip) ? trim((string) $row->ip) : '';
+        if ($ip === '') {
+            continue;
+        }
+
+        $location = tk_security_alert_ip_location($ip);
+        $country = tk_security_events_country_from_location($location);
+        $result = $wpdb->query($wpdb->prepare(
+            "UPDATE {$table} SET location = %s, country = %s WHERE ip = %s AND (location IS NULL OR location = '' OR country IS NULL OR country = '')",
+            substr($location, 0, 191),
+            substr($country, 0, 100),
+            substr($ip, 0, 64)
+        ));
+        if (is_numeric($result)) {
+            $updated += (int) $result;
+        }
+    }
+
+    return $updated;
 }
 
 function tk_security_events_backfill(): int {
