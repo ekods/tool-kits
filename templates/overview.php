@@ -5,6 +5,10 @@ if (!defined('ABSPATH')) { exit; }
  * @var string $score_color
  * @var array $opts
  */
+$seo_score_data = isset($seo_score_data) && is_array($seo_score_data) ? $seo_score_data : array('score' => 0, 'color' => '#e74c3c', 'checks' => array(), 'link' => '#');
+$geo_score_data = isset($geo_score_data) && is_array($geo_score_data) ? $geo_score_data : array('score' => 0, 'color' => '#e74c3c', 'checks' => array(), 'link' => '#');
+$seo_score = (int) ($seo_score_data['score'] ?? 0);
+$geo_score = (int) ($geo_score_data['score'] ?? 0);
 ?>
 <div class="wrap tk-overview-wrap">
     <?php tk_render_header_branding(); ?>
@@ -37,6 +41,25 @@ if (!defined('ABSPATH')) { exit; }
             </div>
             <div class="tk-overview-score-label"><?php _e('Security Score', 'tool-kits'); ?></div>
         </div>
+    </div>
+
+    <div class="tk-overview-score-widgets">
+        <a class="tk-card tk-overview-mini-score" href="<?php echo esc_url((string) ($seo_score_data['link'] ?? '#')); ?>">
+            <span class="dashicons dashicons-search"></span>
+            <span class="tk-overview-mini-score-body">
+                <strong><?php _e('SEO Score', 'tool-kits'); ?></strong>
+                <span><?php _e('Metadata, sitemap, canonical, and indexability.', 'tool-kits'); ?></span>
+            </span>
+            <span class="tk-overview-mini-score-value" style="color:<?php echo esc_attr((string) ($seo_score_data['color'] ?? '#e74c3c')); ?>;"><?php echo esc_html((string) $seo_score); ?>%</span>
+        </a>
+        <a class="tk-card tk-overview-mini-score" href="<?php echo esc_url((string) ($geo_score_data['link'] ?? '#')); ?>">
+            <span class="dashicons dashicons-editor-code"></span>
+            <span class="tk-overview-mini-score-body">
+                <strong><?php _e('GEO Score', 'tool-kits'); ?></strong>
+                <span><?php _e('JSON-LD, FAQPage, ItemList, llms.txt, and crawler access.', 'tool-kits'); ?></span>
+            </span>
+            <span class="tk-overview-mini-score-value" style="color:<?php echo esc_attr((string) ($geo_score_data['color'] ?? '#e74c3c')); ?>;"><?php echo esc_html((string) $geo_score); ?>%</span>
+        </a>
     </div>
 
     <?php if (isset($_GET['tk_waf_reset']) && sanitize_key((string) $_GET['tk_waf_reset']) === '1') : ?>
@@ -185,6 +208,31 @@ if (!defined('ABSPATH')) { exit; }
                             </span>
                             <span style="font-size: 10px; font-weight: 700; color: <?php echo $is_active ? '#22c55e' : '#cbd5e1'; ?>;">
                                 <?php echo $is_active ? '+' . $weight . '%' : '0%'; ?>
+                            </span>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <div class="tk-sidebar-widget">
+                <h2 style="display:flex; align-items:center;">
+                    <?php _e('SEO & GEO Audit', 'tool-kits'); ?>
+                    <span class="tk-badge" style="background:#f1f5f9; color:#475569; margin-left:auto; font-size:10px;"><?php echo esc_html((string) round(($seo_score + $geo_score) / 2)); ?>%</span>
+                </h2>
+                <div class="tk-audit-list" style="margin-top: 15px;">
+                    <?php foreach (array_merge((array) ($seo_score_data['checks'] ?? array()), (array) ($geo_score_data['checks'] ?? array())) as $check) : ?>
+                        <?php $is_active = !empty($check['ok']); ?>
+                        <a href="<?php echo esc_url((string) ($check['link'] ?? '#')); ?>" class="tk-stat-row" style="border-bottom: 1px solid #f1f5f9; padding: 8px 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; text-decoration: none; transition: all 0.2s ease;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='transparent';">
+                            <span style="font-size: 12px; color: <?php echo $is_active ? '#1e293b' : '#94a3b8'; ?>; display: flex; align-items: center;">
+                                <?php if ($is_active) : ?>
+                                    <span class="dashicons dashicons-yes" style="color: #22c55e; font-size: 16px; width: 16px; height: 16px; margin-right: 5px;"></span>
+                                <?php else : ?>
+                                    <span class="dashicons dashicons-no-alt" style="color: #e2e8f0; font-size: 16px; width: 16px; height: 16px; margin-right: 5px;"></span>
+                                <?php endif; ?>
+                                <?php echo esc_html((string) ($check['label'] ?? '')); ?>
+                            </span>
+                            <span style="font-size: 10px; font-weight: 700; color: <?php echo $is_active ? '#22c55e' : '#cbd5e1'; ?>;">
+                                <?php echo $is_active ? '+' . esc_html((string) ((int) ($check['weight'] ?? 0))) . '%' : '0%'; ?>
                             </span>
                         </a>
                     <?php endforeach; ?>

@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.5.21
+Stable tag: 2.5.33
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,74 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.5.33 =
+**Admin Card Spacing**
+- Remove the global adjacent card top margin so card spacing is controlled by each page layout.
+
+= 2.5.32 =
+**Overview Score Card Alignment**
+- Match SEO and GEO score card heights on the Welcome overview page.
+- Keep score cards stretched evenly across the grid for a cleaner layout.
+
+= 2.5.31 =
+**Overview Score Card Styling**
+- Render SEO and GEO overview score widgets as Tool Kits cards with admin CSS fallback styling.
+- Improve cache busting for the updated overview score widget layout.
+
+= 2.5.30 =
+**Admin Tab Persistence**
+- Keep the current Tool Kits tab active after saving settings, running actions, or page refreshes.
+- Restore tab state per admin page using browser session storage with hash links still taking priority.
+
+= 2.5.29 =
+**Overview SEO & GEO Scores**
+- Add SEO Score and GEO Score widgets to the Welcome to Tool Kits overview.
+- Add sidebar SEO & GEO audit checklist with links to the relevant configuration sections.
+- Calculate overview SEO/GEO scores from configured Tool Kits options and stored crawler review results.
+
+= 2.5.28 =
+**Image Optimizer No-Resize Default**
+- Change image optimization defaults to TinyJPG-like compression without resizing pixel dimensions.
+- Keep max width and max height disabled by default; existing installs using the old 2560px defaults are migrated to no-resize.
+- Preserve optional resize caps for users who intentionally want oversized images resized.
+
+= 2.5.27 =
+**Image Optimizer Sharpness**
+- Raise the default image compression quality from 78 to 86 for sharper frontend optimized assets.
+- Add a Preserve Sharpness after resize option using Imagick unsharp masking when resized images are post-processed.
+- Migrate installs still using the previous default quality to the sharper quality preset.
+
+= 2.5.26 =
+**Image Optimizer Processing Overlay**
+- Add a processing overlay while existing media library image optimization batches are running.
+- Show live batch progress text inside the overlay and hide it automatically when processing completes or fails.
+
+= 2.5.25 =
+**GEO Report Export & Select2**
+- Add horizontal scrolling to Crawler Preview and AI crawler review report tables.
+- Add print-to-PDF export actions for Crawler Preview and AI Crawler Accessibility Review reports.
+- Enhance ItemList post selection with Select2 multiselect on the GEO admin page.
+
+= 2.5.24 =
+**GEO UI Improvements**
+- Split GEO settings into feature tabs for output, Custom JSON-LD, FAQPage, ItemList, llms.txt, duplicate detector, crawler preview, AI access review, and preview.
+- Add a Custom JSON-LD draft generator button for editable WebSite and Organization schema.
+- Add FAQPage question rows with add and remove controls.
+- Update Crawler Preview to test all known AI crawler user agents and list which ones can visibly fetch the page.
+
+= 2.5.23 =
+**Updater Session Fix**
+- Stop forcing logout after every Tool Kits plugin update.
+- Invalidate sessions only when Hide Login enabled state or custom slug changes.
+- Make successful updater completion notices one-time by clearing completed status before rendering and avoiding persistent completed status storage.
+
+= 2.5.22 =
+**GEO & Image Optimization**
+- Add GEO admin menu for custom JSON-LD, FAQPage structured content, ItemList generation, and editable virtual llms.txt output.
+- Add AI crawler accessibility review, crawler fetch checklist, crawler preview, and schema duplicate detector.
+- Add safe image optimizer derivatives with `-tkopt` filenames, frontend fallback to originals, DPI metadata normalization, metadata stripping, and dimension caps.
+- Add compression report and WP-Cron background queue for large media library optimization.
+
 = 2.5.21 =
 **GEO Security Events**
 - Validate GEO lookup flow for security alerts and dashboard country reporting.

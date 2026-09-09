@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.5.21
+ * Version: 2.5.33
  * GitHub Plugin URI: https://github.com/ekods/tool-kits
  * Update URI: https://github.com/ekods/tool-kits
  * Author: Eko Dwi Saputro
@@ -12,7 +12,7 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-define('TK_VERSION', '2.5.21');
+define('TK_VERSION', '2.5.33');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
@@ -68,6 +68,7 @@ $tk_modules = array(
     'webp.php'                  => 'tk_webp_init',
     'image-optimizer.php'       => 'tk_image_opt_init',
     'seo-optimization.php'      => 'tk_seo_opt_init',
+    'geo.php'                   => 'tk_geo_init',
     'monitoring-404-health.php' => 'tk_monitoring_404_health_init',
     'optimization.php'          => false,
     'lazy-load.php'             => 'tk_lazy_load_init',
@@ -162,7 +163,12 @@ add_action('admin_enqueue_scripts', function($hook) {
     if ($is_toolkits_area || $is_toolkits_menu) {
         wp_enqueue_style('tool-kits-overview', TK_URL . 'assets/overview.css', array('tool-kits-admin'), TK_VERSION);
     }
+    if ($hook === 'tool-kits_page_tool-kits-geo') {
+        wp_enqueue_style('select2', 'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css', array(), '4.1.0-rc.0');
+        wp_enqueue_script('select2', 'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js', array('jquery'), '4.1.0-rc.0', true);
+    }
 });
 add_action('admin_footer', 'tk_toolkits_mask_fields_script');
 add_action('admin_footer', 'tk_toolkits_confirm_actions_script');
 add_action('admin_footer', 'tk_toolkits_nested_admin_menu_script');
+add_action('admin_footer', 'tk_toolkits_persist_tabs_script');

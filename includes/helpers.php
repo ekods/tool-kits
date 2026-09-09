@@ -1062,7 +1062,16 @@ function tk_option_init_defaults() {
         'image_opt_enabled' => 0,
         'image_opt_frontend_to_webp' => 0,
         'image_opt_rewrite_all_assets' => 0,
-        'image_opt_quality' => 78,
+        'image_opt_quality' => 86,
+        'image_opt_safe_derivatives' => 1,
+        'image_opt_frontend_optimize' => 0,
+        'image_opt_max_width' => 0,
+        'image_opt_max_height' => 0,
+        'image_opt_target_dpi' => 72,
+        'image_opt_strip_metadata' => 1,
+        'image_opt_sharpen_enabled' => 1,
+        'image_opt_compression_report' => array(),
+        'image_opt_queue' => array(),
         'seo_enabled' => 0,
         'seo_meta_desc_enabled' => 1,
         'seo_canonical_enabled' => 1,
@@ -1083,6 +1092,24 @@ function tk_option_init_defaults() {
         'seo_canonical_audit_report' => array(),
         'seo_index_monitor' => array(),
         'seo_content_audit_report' => array(),
+        'geo_enabled' => 0,
+        'geo_custom_jsonld' => '',
+        'geo_faq_enabled' => 0,
+        'geo_faq_items' => array(),
+        'geo_itemlist_enabled' => 0,
+        'geo_itemlist_name' => '',
+        'geo_itemlist_description' => '',
+        'geo_itemlist_post_type' => 'post',
+        'geo_itemlist_post_ids' => array(),
+        'geo_itemlist_limit' => 10,
+        'geo_ai_access_report' => array(),
+        'geo_schema_duplicate_report' => array(),
+        'geo_crawler_preview' => array(),
+        'geo_llms_enabled' => 0,
+        'geo_llms_mode' => 'auto',
+        'geo_llms_manual' => '',
+        'geo_llms_include_faq' => 1,
+        'geo_llms_include_itemlist' => 1,
         'lazy_load_enabled' => 0,
         'lazy_load_eager_images' => 2,
         'lazy_load_html_images' => 1,
@@ -1181,7 +1208,12 @@ function tk_run_versioned_upgrades(): void {
     if ($stored_version === '' || version_compare($stored_version, '2.5.8', '<')) {
         tk_upgrade_to_258_stealth_hardening();
     }
-    tk_force_relogin_after_update($stored_version, $current_version);
+    if ($stored_version === '' || version_compare($stored_version, '2.5.27', '<')) {
+        tk_upgrade_to_2527_image_sharpness();
+    }
+    if ($stored_version === '' || version_compare($stored_version, '2.5.28', '<')) {
+        tk_upgrade_to_2528_image_no_resize_default();
+    }
     update_option('tk_version', $current_version, false);
 }
 
@@ -1189,6 +1221,15 @@ function tk_force_relogin_after_update(string $stored_version, string $current_v
     if ($stored_version === '' || $current_version === '' || version_compare($current_version, $stored_version, '<=')) {
         return;
     }
+    if (defined('WP_CLI') && WP_CLI) {
+        return;
+    }
+
+    tk_invalidate_all_user_sessions();
+    update_option('tk_sessions_invalidated_for_version', $current_version, false);
+}
+
+function tk_invalidate_all_user_sessions(): void {
     if (defined('WP_CLI') && WP_CLI) {
         return;
     }
@@ -1202,7 +1243,6 @@ function tk_force_relogin_after_update(string $stored_version, string $current_v
     if (function_exists('wp_clear_auth_cookie')) {
         wp_clear_auth_cookie();
     }
-    update_option('tk_sessions_invalidated_for_version', $current_version, false);
 }
 
 function tk_upgrade_antispam_duplicate_window_default(): void {
@@ -1215,6 +1255,22 @@ function tk_upgrade_antispam_duplicate_window_default(): void {
     }
 
     tk_update_option('antispam_duplicate_window_default_5_migrated', 1);
+}
+
+function tk_upgrade_to_2527_image_sharpness(): void {
+    if ((int) tk_get_option('image_opt_quality', 86) === 78) {
+        tk_update_option('image_opt_quality', 86);
+    }
+    tk_update_option('image_opt_sharpen_enabled', 1);
+}
+
+function tk_upgrade_to_2528_image_no_resize_default(): void {
+    if ((int) tk_get_option('image_opt_max_width', 0) === 2560) {
+        tk_update_option('image_opt_max_width', 0);
+    }
+    if ((int) tk_get_option('image_opt_max_height', 0) === 2560) {
+        tk_update_option('image_opt_max_height', 0);
+    }
 }
 
 function tk_upgrade_to_220(): void {
@@ -2790,6 +2846,106 @@ function tk_toolkits_confirm_actions_script(): void {
             }, true);
         })();",
         array('id' => 'tk-confirm-actions')
+    );
+}
+
+function tk_toolkits_persist_tabs_script(): void {
+    if (!is_admin()) {
+        return;
+    }
+
+    $page = isset($_GET['page']) ? sanitize_key((string) $_GET['page']) : '';
+    if ($page === '' || strpos($page, 'tool-kits') !== 0) {
+        return;
+    }
+
+    tk_csp_print_inline_script(
+        "(function(){
+            if (!window.sessionStorage || !window.URLSearchParams) {
+                return;
+            }
+
+            var page = new URLSearchParams(window.location.search).get('page') || window.location.pathname;
+            var storageKey = 'tk-active-tab:' + page;
+
+            function currentTab(wrapper) {
+                var activeButton = wrapper.querySelector('.tk-tabs-nav-button.is-active[data-panel]');
+                if (activeButton) {
+                    return activeButton.getAttribute('data-panel') || '';
+                }
+                var activePanel = wrapper.querySelector('.tk-tab-panel.is-active[data-panel-id]');
+                return activePanel ? (activePanel.getAttribute('data-panel-id') || '') : '';
+            }
+
+            function activate(wrapper, panelId) {
+                if (!panelId) {
+                    return;
+                }
+                var found = false;
+                wrapper.querySelectorAll('.tk-tab-panel[data-panel-id]').forEach(function(panel){
+                    var active = panel.getAttribute('data-panel-id') === panelId;
+                    panel.classList.toggle('is-active', active);
+                    if (active) {
+                        found = true;
+                    }
+                });
+                if (!found) {
+                    return;
+                }
+                wrapper.querySelectorAll('.tk-tabs-nav-button[data-panel]').forEach(function(button){
+                    button.classList.toggle('is-active', button.getAttribute('data-panel') === panelId);
+                });
+                var activeInput = wrapper.querySelector('input[name=\"tk_geo_active_tab\"]') || document.getElementById('tk-geo-active-tab');
+                if (activeInput) {
+                    activeInput.value = panelId;
+                }
+            }
+
+            function remember(wrapper) {
+                var tab = currentTab(wrapper);
+                if (tab) {
+                    sessionStorage.setItem(storageKey, tab);
+                }
+            }
+
+            function bind() {
+                document.querySelectorAll('.tk-tabs').forEach(function(wrapper){
+                    if (wrapper.getAttribute('data-tk-tabs-persist-bound') === '1') {
+                        return;
+                    }
+                    wrapper.setAttribute('data-tk-tabs-persist-bound', '1');
+
+                    wrapper.querySelectorAll('.tk-tabs-nav-button[data-panel]').forEach(function(button){
+                        button.addEventListener('click', function(){
+                            var panelId = button.getAttribute('data-panel') || '';
+                            if (panelId) {
+                                sessionStorage.setItem(storageKey, panelId);
+                            }
+                        });
+                    });
+
+                    wrapper.querySelectorAll('form').forEach(function(form){
+                        form.addEventListener('submit', function(){ remember(wrapper); });
+                    });
+
+                    wrapper.querySelectorAll('a[href], button[type=\"submit\"], input[type=\"submit\"]').forEach(function(control){
+                        control.addEventListener('click', function(){ remember(wrapper); });
+                    });
+                });
+
+                var initial = window.location.hash ? window.location.hash.substring(1) : sessionStorage.getItem(storageKey);
+                if (initial) {
+                    document.querySelectorAll('.tk-tabs').forEach(function(wrapper){
+                        activate(wrapper, initial);
+                    });
+                }
+            }
+
+            bind();
+            document.addEventListener('DOMContentLoaded', bind);
+            window.setTimeout(bind, 250);
+        })();",
+        array('id' => 'tk-persist-tabs')
     );
 }
 

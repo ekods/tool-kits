@@ -291,8 +291,13 @@ function tk_github_store_status(string $status, string $message, array $context 
         'timestamp' => time(),
     );
 
-    set_transient('tk_github_updater_status', $payload, DAY_IN_SECONDS);
-    update_option('tk_github_updater_status', $payload, false);
+    $ttl = in_array($status, array('completed', 'installed'), true) ? 5 * MINUTE_IN_SECONDS : DAY_IN_SECONDS;
+    set_transient('tk_github_updater_status', $payload, $ttl);
+    if (in_array($status, array('completed', 'installed'), true)) {
+        delete_option('tk_github_updater_status');
+    } else {
+        update_option('tk_github_updater_status', $payload, false);
+    }
 }
 
 function tk_github_get_stored_status() {
@@ -665,9 +670,9 @@ function tk_github_check_now_notice(): void {
         }
     }
 
-    echo '<div class="notice ' . esc_attr($class) . ' is-dismissible"><p><strong>Tool Kits updater:</strong> ' . esc_html((string) $status['message']) . $context . '</p></div>';
-
     if ($status['status'] === 'completed' || $status['status'] === 'installed') {
         tk_github_clear_stored_status();
     }
+
+    echo '<div class="notice ' . esc_attr($class) . ' is-dismissible"><p><strong>Tool Kits updater:</strong> ' . esc_html((string) $status['message']) . $context . '</p></div>';
 }

@@ -84,6 +84,7 @@ function tk_register_admin_menus() {
 
         if ($allow_full) {
             add_submenu_page('tool-kits', __('SEO', 'tool-kits'), __('SEO', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-seo', 'tk_render_seo_page');
+            add_submenu_page('tool-kits', __('GEO', 'tool-kits'), __('GEO', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-geo', 'tk_render_geo_page');
         }
 
         add_submenu_page('tool-kits', __('System Tools', 'tool-kits'), __('System Tools', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-system', 'tk_render_system_tools_page');
@@ -180,13 +181,78 @@ function tk_render_overview_page() {
     $score_data = tk_hardening_calculate_score();
     $score = $score_data['score'];
     $score_color = ($score >= 80) ? '#27ae60' : (($score >= 50) ? '#f39c12' : '#e74c3c');
+    $seo_score_data = tk_overview_calculate_seo_score();
+    $geo_score_data = tk_overview_calculate_geo_score();
 
     tk_get_template('overview', array(
         'score' => $score,
         'score_color' => $score_color,
         'score_data' => $score_data,
+        'seo_score_data' => $seo_score_data,
+        'geo_score_data' => $geo_score_data,
         'opts' => $opts
     ));
+}
+
+function tk_overview_score_color(int $score): string {
+    return $score >= 80 ? '#27ae60' : ($score >= 50 ? '#f39c12' : '#e74c3c');
+}
+
+function tk_overview_calculate_seo_score(): array {
+    $checks = array(
+        array('label' => 'SEO module enabled', 'ok' => (int) tk_get_option('seo_enabled', 0) === 1, 'weight' => 20, 'link' => tk_admin_url('tool-kits-seo')),
+        array('label' => 'XML sitemap enabled', 'ok' => (int) tk_get_option('seo_sitemap_enabled', 1) === 1, 'weight' => 15, 'link' => tk_admin_url('tool-kits-seo') . '#settings'),
+        array('label' => 'Canonical handling enabled', 'ok' => (int) tk_get_option('seo_canonical_enabled', 1) === 1, 'weight' => 15, 'link' => tk_admin_url('tool-kits-seo') . '#canonical'),
+        array('label' => 'Meta description enabled', 'ok' => (int) tk_get_option('seo_meta_desc_enabled', 1) === 1, 'weight' => 15, 'link' => tk_admin_url('tool-kits-seo') . '#settings'),
+        array('label' => 'Open Graph enabled', 'ok' => (int) tk_get_option('seo_og_enabled', 1) === 1, 'weight' => 10, 'link' => tk_admin_url('tool-kits-seo') . '#settings'),
+        array('label' => 'Schema output enabled', 'ok' => (int) tk_get_option('seo_schema_enabled', 1) === 1, 'weight' => 10, 'link' => tk_admin_url('tool-kits-seo') . '#settings'),
+        array('label' => 'Search visibility enabled', 'ok' => trim((string) get_option('blog_public')) === '1', 'weight' => 15, 'link' => admin_url('options-reading.php')),
+    );
+
+    $score = 0;
+    foreach ($checks as $check) {
+        if (!empty($check['ok'])) {
+            $score += (int) $check['weight'];
+        }
+    }
+
+    return array(
+        'score' => max(0, min(100, $score)),
+        'color' => tk_overview_score_color($score),
+        'checks' => $checks,
+        'link' => tk_admin_url('tool-kits-seo'),
+    );
+}
+
+function tk_overview_calculate_geo_score(): array {
+    $ai_report = tk_get_option('geo_ai_access_report', array());
+    $ai_score = is_array($ai_report) && isset($ai_report['score']) ? (int) $ai_report['score'] : null;
+    $schema_docs = function_exists('tk_geo_build_schema_documents') ? tk_geo_build_schema_documents() : array();
+    $faq_items = function_exists('tk_geo_normalize_faq_items') ? tk_geo_normalize_faq_items(tk_get_option('geo_faq_items', array())) : array();
+    $item_ids = function_exists('tk_geo_selected_itemlist_ids') ? tk_geo_selected_itemlist_ids() : array();
+
+    $checks = array(
+        array('label' => 'GEO output enabled', 'ok' => (int) tk_get_option('geo_enabled', 0) === 1, 'weight' => 20, 'link' => tk_admin_url('tool-kits-geo') . '#overview'),
+        array('label' => 'Structured data configured', 'ok' => !empty($schema_docs), 'weight' => 20, 'link' => tk_admin_url('tool-kits-geo') . '#preview'),
+        array('label' => 'FAQPage content available', 'ok' => (int) tk_get_option('geo_faq_enabled', 0) === 1 && !empty($faq_items), 'weight' => 15, 'link' => tk_admin_url('tool-kits-geo') . '#faqpage'),
+        array('label' => 'ItemList curated or fallback configured', 'ok' => (int) tk_get_option('geo_itemlist_enabled', 0) === 1 && (!empty($item_ids) || (int) tk_get_option('geo_itemlist_limit', 10) > 0), 'weight' => 15, 'link' => tk_admin_url('tool-kits-geo') . '#itemlist'),
+        array('label' => 'llms.txt enabled', 'ok' => (int) tk_get_option('geo_llms_enabled', 0) === 1, 'weight' => 15, 'link' => tk_admin_url('tool-kits-geo') . '#llms'),
+        array('label' => 'AI crawler review passed', 'ok' => $ai_score !== null && $ai_score >= 70, 'weight' => 15, 'link' => tk_admin_url('tool-kits-geo') . '#ai-access'),
+    );
+
+    $score = 0;
+    foreach ($checks as $check) {
+        if (!empty($check['ok'])) {
+            $score += (int) $check['weight'];
+        }
+    }
+
+    return array(
+        'score' => max(0, min(100, $score)),
+        'color' => tk_overview_score_color($score),
+        'checks' => $checks,
+        'link' => tk_admin_url('tool-kits-geo'),
+    );
 }
 
 function tk_render_settings_overview_page() {
@@ -322,6 +388,15 @@ function tk_render_image_opt_page() {
         <?php if (isset($_GET['tk_saved']) && sanitize_key((string) $_GET['tk_saved']) === '1') : ?>
             <?php tk_notice('Settings saved.', 'success'); ?>
         <?php endif; ?>
+        <?php if (isset($_GET['tk_image_report']) && sanitize_key((string) $_GET['tk_image_report']) === '1') : ?>
+            <?php tk_notice('Compression report generated.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_image_queue']) && sanitize_key((string) $_GET['tk_image_queue']) === 'started') : ?>
+            <?php tk_notice('Background optimization queue started.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_image_queue']) && sanitize_key((string) $_GET['tk_image_queue']) === 'stopped') : ?>
+            <?php tk_notice('Background optimization queue stopped.', 'success'); ?>
+        <?php endif; ?>
         <?php tk_render_image_opt_panel(); ?>
     </div>
     <?php
@@ -440,6 +515,35 @@ function tk_render_seo_page() {
         <?php else : ?>
             <?php echo $seo_html; ?>
         <?php endif; ?>
+    </div>
+    <?php
+}
+
+function tk_render_geo_page() {
+    if (!tk_is_admin_user()) return;
+    ?>
+    <div class="wrap tk-wrap">
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('GEO', 'Manage JSON-LD, FAQPage, and ItemList schema for generative engine optimization.', 'dashicons-editor-code'); ?>
+        <?php if (isset($_GET['tk_saved']) && sanitize_key((string) $_GET['tk_saved']) === '1') : ?>
+            <?php tk_notice('GEO settings saved.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_geo_ai_access_scanned']) && sanitize_key((string) $_GET['tk_geo_ai_access_scanned']) === '1') : ?>
+            <?php tk_notice('AI crawler accessibility review completed.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_geo_ai_access_cleared']) && sanitize_key((string) $_GET['tk_geo_ai_access_cleared']) === '1') : ?>
+            <?php tk_notice('AI crawler accessibility review cleared.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_geo_schema_duplicates']) && sanitize_key((string) $_GET['tk_geo_schema_duplicates']) === '1') : ?>
+            <?php tk_notice('Schema duplicate detector completed.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_geo_crawler_preview']) && sanitize_key((string) $_GET['tk_geo_crawler_preview']) === '1') : ?>
+            <?php tk_notice('Crawler preview completed.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_geo_error']) && sanitize_key((string) $_GET['tk_geo_error']) === 'json') : ?>
+            <?php tk_notice('Custom JSON-LD is not valid JSON. Settings were not saved.', 'error'); ?>
+        <?php endif; ?>
+        <?php tk_render_geo_panel(); ?>
     </div>
     <?php
 }
