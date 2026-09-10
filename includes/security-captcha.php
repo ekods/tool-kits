@@ -586,10 +586,6 @@ function tk_captcha_refresh_script() {
                 var tokenInput = field.querySelector('input[name=\"tk_captcha_token\"]');
                 if (!tokenInput || !tokenInput.value) return;
 
-                if (Date.now() - startTime < 500 && interactions === 0) {
-                    console.warn('ToolKits: Bot detected (fast click / no interaction)');
-                }
-
                 realBox.classList.add('is-loading');
                 realBox.setAttribute('aria-busy', 'true');
 
@@ -619,8 +615,7 @@ function tk_captcha_refresh_script() {
                     } else {
                         throw new Error(data.data || 'Verification failed');
                     }
-                }).catch(function(err){
-                    console.error('Captcha Verification Error:', err);
+                }).catch(function(){
                     realBox.classList.remove('is-loading');
                     realBox.removeAttribute('aria-busy');
                     alert('Verification failed. Please try again.');
@@ -666,8 +661,7 @@ function tk_captcha_refresh_script() {
                     } else {
                         throw new Error('Invalid response from server');
                     }
-                }).catch(function(err){
-                    console.error('Captcha Refresh Error:', err);
+                }).catch(function(){
                     btn.disabled = false;
                     btn.classList.remove('is-refreshing');
                     btn.removeAttribute('aria-busy');

@@ -10,20 +10,20 @@ $geo_score_data = isset($geo_score_data) && is_array($geo_score_data) ? $geo_sco
 $seo_score = (int) ($seo_score_data['score'] ?? 0);
 $geo_score = (int) ($geo_score_data['score'] ?? 0);
 ?>
-<div class="wrap tk-overview-wrap">
+<div class="wrap tk-wrap">
     <?php tk_render_header_branding(); ?>
     <div class="tk-overview-external-notices is-empty" data-tk-overview-external-notices></div>
 
     <div class="tk-overview-hero">
         <div class="tk-overview-hero-content">
             <h1 class="tk-overview-hero-title"><?php _e('Welcome to Tool Kits', 'tool-kits'); ?></h1>
-            <p class="tk-overview-hero-subtitle"><?php _e('Your ultimate suite for WordPress security, optimization, and real-time monitoring.', 'tool-kits'); ?></p>
+            <p class="tk-overview-hero-subtitle"><?php _e('Site health, security, and optimization.', 'tool-kits'); ?></p>
             
             <div class="tk-overview-hero-actions">
                 <a href="<?php echo esc_url(tk_admin_url('tool-kits-monitoring') . '#realtime'); ?>" class="button button-primary button-hero">
                     <?php _e('View Live Monitor', 'tool-kits'); ?>
                 </a>
-                <a href="<?php echo esc_url(tk_admin_url(tk_hardening_page_slug())); ?>" class="button button-hero" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff;">
+                <a href="<?php echo esc_url(tk_admin_url(tk_hardening_page_slug())); ?>" class="button button-hero">
                     <?php _e('Security Settings', 'tool-kits'); ?>
                 </a>
             </div>

@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.5.33
+Stable tag: 2.5.46
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,92 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.5.46 =
+**Health Monitor Asset Cache Fix**
+- Rename the Monitoring controller and shared admin stylesheet so browser, proxy, and CDN caches cannot combine the new canvas markup with the legacy SVG renderer.
+- Use new WordPress asset handles and retain file-versioned Monitoring JavaScript loading.
+- Remove ToolKits diagnostic messages from production browser consoles.
+- Add browser regression coverage for current asset URLs and a clean ToolKits console.
+
+= 2.5.45 =
+**Chart.js Health Monitor**
+- Replace the custom SVG chart renderer with locally bundled Chart.js 4.5.1 line charts.
+- Add responsive canvas rendering, automatic high-DPI scaling, tooltips, stable axes, and native chart animations.
+- Keep CPU and memory data in a 30-sample rolling window with unused startup slots left empty.
+- Load Chart.js only on the Monitoring page and retain loading, retry, visibility-aware polling, and tab persistence.
+
+= 2.5.44 =
+**Page Heading Card Fix**
+- Add the tk-card class directly to the shared tk-hero tk-page-heading component.
+- Strengthen the white background, border, radius, and shadow rules so legacy hero styles cannot hide the card surface.
+
+= 2.5.43 =
+**Real-Time Chart Layout Fix**
+- Rebuild the CPU and memory chart layout with stable card dimensions, aligned axes, compact legends, and matching desktop heights.
+- Keep early samples anchored to the right side of the 30-sample rolling window so startup data no longer stretches across the full chart.
+- Use five metric columns on wide screens and a compact two-column layout on mobile, with the final metric spanning the row.
+- Prevent chart, label, and marker clipping at narrow WordPress admin widths.
+
+= 2.5.42 =
+**Monitoring Load Performance and Header Cards**
+- Restore tk-hero tk-page-heading as a bordered card with responsive spacing.
+- Respect the existing license validation cache during menu rendering; preserve signature checks and explicit activation validation.
+- Move page-triggered file integrity alerts to WP-Cron and omit unused plugin directory scans from chart requests.
+- Cache CPU capacity detection and add chart loading, unavailable, timeout, and retry states.
+- Prevent overlapping polling, cancel requests on hidden pages or inactive tabs, and retain the selected Monitoring tab.
+- Show the first sample immediately, animate chart updates with reduced-motion support, and align chart scales on mobile and desktop.
+
+= 2.5.41 =
+**Admin UI and Image Optimizer Workspace**
+- Refresh Tool Kits page headers, navigation, buttons, form controls, tables, and overview scores with a restrained responsive layout.
+- Organize Image Optimizer into Settings, Media Library, Compression Report, and Maintenance tabs with keyboard navigation and tab persistence.
+- Add aligned toggle settings, synchronized quality controls, Hi-Res resize states, report summaries, image thumbnails, and empty states.
+- Improve processing overlay accessibility and allow interrupted optimization to resume from the last completed batch.
+
+= 2.5.40 =
+**Hi-Res Image Optimization and Validation**
+- Add Hi-Res mode: preserve original pixel dimensions, ignore legacy resize limits, and apply a minimum JPEG quality of 95.
+- Encode from original uploads in one pass, preserve ICC profiles, apply DPI before encoding, and reject larger or invalid results.
+- Validate JPEG quality and lossless PNG/WebP pixel fidelity with Imagick; preserve source files when validation cannot pass.
+- Serve only validated generated copies with source fallback and cache revisions. Frontend requests no longer encode images.
+- Fix full-resolution and lazy-load source selection, legacy thumbnail WebP resolution, and single-candidate srcset widths.
+- Restrict local image paths to uploads, retain original files, and safely remove obsolete thumbnail derivatives and their reports.
+- Prevent concurrent background workers, reduce batch size, respect queue stop/restart, and fix Auto WebP metadata filter arguments.
+
+= 2.5.39 =
+**Performance, GEO / AI Visibility, and Monitoring**
+- Add AI Visibility Score per URL with crawler visibility, robots access, metadata, and JSON-LD checks.
+- Add llms.txt section builder, prompt preview, and schema validation report per post.
+- Add safe image optimizer maintenance cleanup for stale `-tkopt` derivatives.
+- Add Monitoring summary cards for Performance & Images, GEO / AI Visibility, and system health.
+
+= 2.5.38 =
+**OTP Hide Login Compatibility**
+- Ensure OTP challenge URLs explicitly use the custom Hide Login slug when Hide Login is enabled.
+- Keep OTP verification routes compatible with hidden login URLs instead of direct `wp-login.php` links.
+
+= 2.5.37 =
+**OTP Login**
+- Add Security > OTP Login with email-based one-time codes after valid username/password authentication.
+- Support protected roles, expiry, max attempts, resend cooldown, optional trusted devices, editable email templates, and OTP audit logs.
+- Add emergency bypass support with `TOOLKITS_DISABLE_OTP`.
+
+= 2.5.36 =
+**Image Optimizer Original URL Rewrite**
+- Resolve frontend thumbnail URLs like `-768x549` back to their full-size original before generating optimized frontend URLs when original-only srcset is enabled.
+- Clean up unused optimized thumbnail derivatives across image extensions, including stale `-tkopt.webp` files.
+
+= 2.5.35 =
+**Image Optimizer Derivative Cleanup**
+- When original-only frontend srcset is enabled, regenerate only the full-size optimized copy.
+- Delete old optimized `-tkopt` files for unused intermediate thumbnail sizes during image regeneration.
+
+= 2.5.34 =
+**Image Optimizer Srcset & Quality**
+- Add an original-only frontend srcset option so browsers use the full-size image candidate instead of many generated thumbnail sizes.
+- Raise the image optimizer quality preset to 92 and WebP quality fallback to 90 to reduce visible compression artifacts.
+- Migrate existing installs using previous default quality values to the sharper preset.
+
 = 2.5.33 =
 **Admin Card Spacing**
 - Remove the global adjacent card top margin so card spacing is controlled by each page layout.

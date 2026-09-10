@@ -276,6 +276,10 @@ function tk_healthcheck_load_average(): ?array {
 }
 
 function tk_healthcheck_cpu_cores(): ?int {
+    $cached = get_transient('tk_healthcheck_cpu_cores');
+    if (is_numeric($cached)) {
+        return (int) $cached > 0 ? (int) $cached : null;
+    }
     if (function_exists('shell_exec')) {
         $commands = array(
             'getconf _NPROCESSORS_ONLN',
@@ -287,11 +291,12 @@ function tk_healthcheck_cpu_cores(): ?int {
             $output = @shell_exec($command . ' 2>/dev/null');
             $cores = is_string($output) ? (int) trim($output) : 0;
             if ($cores > 0) {
+                set_transient('tk_healthcheck_cpu_cores', $cores, HOUR_IN_SECONDS);
                 return $cores;
             }
         }
     }
-
+    set_transient('tk_healthcheck_cpu_cores', 0, HOUR_IN_SECONDS);
     return null;
 }
 
@@ -368,11 +373,12 @@ function tk_realtime_health_ajax() {
     if (!current_user_can('manage_options')) {
         wp_send_json_error(array('message' => 'forbidden'));
     }
-    $data = tk_realtime_health_data();
+    // The charts do not display plugin disk sizes; avoid a recursive scan on a cold cache.
+    $data = tk_realtime_health_data(false);
     wp_send_json_success($data);
 }
 
-function tk_realtime_health_data(): array {
+function tk_realtime_health_data(bool $include_plugin_sizes = true): array {
     $load = tk_healthcheck_load_average();
     $cpu_cores = tk_healthcheck_cpu_cores();
     $memory_used = function_exists('memory_get_usage') ? (int) memory_get_usage(true) : 0;
@@ -380,7 +386,7 @@ function tk_realtime_health_data(): array {
     $memory_limit = tk_parse_size(ini_get('memory_limit'));
     $memory_pct = $memory_limit > 0 ? round(($memory_used / $memory_limit) * 100, 1) : null;
     $errors = tk_error_rate_recent(300);
-    $heavy_list = tk_heaviest_active_plugins(4);
+    $heavy_list = $include_plugin_sizes ? tk_heaviest_active_plugins(4) : array();
     $heavy = !empty($heavy_list) ? $heavy_list[0] : array('name' => '-', 'size' => 0);
     $object_cache = 'unknown';
     if (function_exists('wp_using_ext_object_cache')) {

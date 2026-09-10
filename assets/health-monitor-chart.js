@@ -1,9 +1,10 @@
 (function(){
     'use strict';
 
-    console.log('ToolKits: Monitoring Tabs JS Loaded');
-
     var intervalId     = null;
+    var pendingRequest = null;
+    var charts = { cpu: null, mem: null };
+    var storageKey = 'tk-active-tab:tool-kits-monitoring';
     var container      = null;
     var content        = null;
     var cpuHistory     = [];   // CPU chart values: percent when capacity is known, load otherwise
@@ -12,33 +13,22 @@
     var memTimestamps  = [];   // matching timestamps (ms)
     var maxHistoryPoints = 30;
 
-    // Fixed slot width across the retained history window.
-    // New samples are appended left-to-right; once the buffer is full,
-    // the oldest sample is dropped and the chart keeps the same scale.
-    var STEP_X = 100 / (maxHistoryPoints - 1);
-
     function isRealtimeActive() {
         if (!content) return false;
         var panel = content.querySelector('[data-panel-id="realtime"]');
-        return panel && panel.classList.contains('is-active');
+        return panel && panel.classList.contains('is-active') && !document.hidden;
     }
 
     function activateTab(panelId) {
-        if (!panelId) return;
-
-        console.log('ToolKits: Activating panel ->', panelId);
+        if (!validTab(panelId)) return;
 
         var panels = document.querySelectorAll('#tk-monitoring-tabs-content [data-panel-id]');
         var buttons = document.querySelectorAll('#tk-monitoring-tabs .tk-tabs-nav-button');
 
-        console.log('ToolKits: Found', panels.length, 'panels and', buttons.length, 'buttons');
-
-        var found = false;
         panels.forEach(function(p){
             if (p.getAttribute('data-panel-id') === panelId) {
                 p.classList.add('is-active');
                 p.style.display = 'block';
-                found = true;
             } else {
                 p.classList.remove('is-active');
                 p.style.display = 'none';
@@ -53,9 +43,41 @@
             }
         });
 
-        if (!found) { console.warn('ToolKits: Panel not found in DOM ->', panelId); }
-        window.location.hash = panelId;
-        if (panelId === 'realtime') { startPolling(); } else { stopPolling(); }
+        try {
+            window.history.replaceState(null, '', '#' + panelId);
+            window.sessionStorage.setItem(storageKey, panelId);
+        } catch (e) {}
+        if (panelId === 'realtime') {
+            Object.keys(charts).forEach(function(name) {
+                if (charts[name]) window.setTimeout(function() { charts[name].resize(); }, 0);
+            });
+            startPolling();
+        } else {
+            stopPolling();
+        }
+    }
+
+    function validTab(id) {
+        return Array.from(content.querySelectorAll('[data-panel-id]')).some(function(panel) {
+            return panel.getAttribute('data-panel-id') === id;
+        });
+    }
+
+    function chartState(name, message, busy) {
+        var plot = document.getElementById('tk-rt-' + name + '-plot');
+        var state = document.getElementById('tk-rt-' + name + '-state');
+        if (plot) plot.setAttribute('aria-busy', busy ? 'true' : 'false');
+        if (state) {
+            state.hidden = !message;
+            state.textContent = message || '';
+        }
+    }
+
+    function status(message, failed) {
+        var label = document.getElementById('tk-rt-status');
+        var retry = document.getElementById('tk-rt-retry');
+        if (label) label.textContent = message;
+        if (retry) retry.hidden = !failed;
     }
 
     function formatBytes(bytes) {
@@ -87,40 +109,150 @@
         return total / values.length;
     }
 
+    function createChart(name, config) {
+        var canvas = document.getElementById('tk-rt-' + name + '-chart');
+        if (!canvas || typeof window.Chart !== 'function') return null;
+
+        return new window.Chart(canvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Penggunaan',
+                        data: [],
+                        borderColor: '#2457e6',
+                        backgroundColor: 'rgba(36, 87, 230, 0.08)',
+                        borderWidth: 2,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#2457e6',
+                        pointBorderWidth: 2,
+                        pointHoverRadius: 5,
+                        tension: 0.28,
+                        spanGaps: true,
+                        fill: false
+                    },
+                    {
+                        label: 'Limit',
+                        data: [],
+                        borderColor: '#dc3545',
+                        borderWidth: 1,
+                        borderDash: [4, 4],
+                        pointRadius: 0,
+                        pointHoverRadius: 0,
+                        tension: 0,
+                        fill: false
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                normalized: true,
+                animation: { duration: 280, easing: 'easeOutQuart' },
+                interaction: { mode: 'index', intersect: false },
+                layout: { padding: { top: 4, right: 4, bottom: 0, left: 0 } },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: {
+                            color: '#646b76',
+                            boxWidth: 18,
+                            boxHeight: 2,
+                            padding: 18,
+                            font: { size: 11, weight: '500' },
+                            filter: function(item, data) {
+                                return data.datasets[item.datasetIndex].data.some(function(value) { return Number.isFinite(value); });
+                            }
+                        }
+                    },
+                    tooltip: {
+                        displayColors: true,
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': ' + config.formatValue(context.parsed.y);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        border: { display: false },
+                        grid: { display: false },
+                        ticks: { color: '#646b76', maxRotation: 0, autoSkip: true, maxTicksLimit: 3, font: { size: 10 } }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        border: { display: false },
+                        grid: { color: '#e5e7eb', drawTicks: false },
+                        ticks: {
+                            color: '#646b76',
+                            count: 3,
+                            padding: 8,
+                            font: { size: 10 },
+                            callback: function(value) { return config.formatValue(value); }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     function drawLineChart(config) {
         var history = config.history || [];
         var timestamps = config.timestamps || [];
         var maxValue = config.maxValue || 100;
         var n = history.length;
         if (n === 0) return;
-
-        var chartLine = document.getElementById(config.lineId);
-        if (!chartLine) return;
-
-        var svgEl = document.getElementById(config.svgId);
-        if (svgEl) { svgEl.setAttribute('viewBox', '0 0 100 100'); }
-
-        var points = [];
-        for (var i = 0; i < n; i++) {
-            var px = i * STEP_X;
-            var py = 100 - (history[i] / maxValue) * 100;
-            py = Math.max(0, Math.min(100, py));
-            points.push(px.toFixed(3) + ',' + py.toFixed(3));
+        var name = config.name;
+        var chart = charts[name];
+        if (!chart) {
+            chart = createChart(name, config);
+            charts[name] = chart;
+        }
+        if (!chart) {
+            chartState(name, 'Chart.js could not be loaded.', false);
+            return;
         }
 
-        chartLine.setAttribute('points', points.join(' '));
-        chartLine.setAttribute('stroke', config.color || '#6d4aff');
-
-        if (timestamps.length > 0) {
-            var xOld = document.getElementById(config.xOldId);
-            var xNow = document.getElementById(config.xNowId);
-            if (xOld) { xOld.textContent = formatTime(timestamps[0]); }
-            if (xNow) { xNow.textContent = formatTime(timestamps[timestamps.length - 1]); }
+        var firstSlot = maxHistoryPoints - n;
+        var latest = timestamps[timestamps.length - 1] || Date.now();
+        var labels = [];
+        var usage = [];
+        for (var i = 0; i < maxHistoryPoints; i++) {
+            labels.push(formatTime(latest - ((maxHistoryPoints - 1 - i) * 5000)));
+            usage.push(i < firstSlot ? null : history[i - firstSlot]);
         }
+        var limit = config.showLimit ? labels.map(function() { return config.limitValue; }) : labels.map(function() { return null; });
+
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = usage;
+        chart.data.datasets[0].pointRadius = usage.map(function(value, index) {
+            return Number.isFinite(value) && index === maxHistoryPoints - 1 ? 3 : 0;
+        });
+        chart.data.datasets[1].data = limit;
+        chart.options.scales.y.max = maxValue;
+        chart.options.scales.y.ticks.callback = function(value) { return config.formatValue(value); };
+        chart.options.plugins.tooltip.callbacks.label = function(context) {
+            return context.dataset.label + ': ' + config.formatValue(context.parsed.y);
+        };
+        var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        chart.options.animation.duration = reduced ? 0 : 280;
+        chart.update(reduced ? 'none' : undefined);
+        chartState(name, '', false);
     }
 
     function fetchHealth() {
         if (!isRealtimeActive()) { stopPolling(); return; }
+        if (pendingRequest) return;
+        intervalId = null;
+        var request = { controller: new AbortController(), cancelled: false };
+        pendingRequest = request;
+        var timeout = setTimeout(function() { request.controller.abort(); }, 15000);
+        if (!cpuHistory.length) chartState('cpu', 'Loading CPU metrics...', true);
+        if (!memHistory.length) chartState('mem', 'Loading memory metrics...', true);
+        status(cpuHistory.length || memHistory.length ? 'Updating metrics...' : 'Loading metrics...', false);
 
         var rttEl     = document.getElementById('tk-rt-rtt');
         var memEl     = document.getElementById('tk-rt-mem');
@@ -143,25 +275,30 @@
             });
         }
 
-        fetch(window.ajaxurl || '/wp-admin/admin-ajax.php', {
+        fetch((window.tkMonitoringData && window.tkMonitoringData.ajaxurl) || window.ajaxurl || '/wp-admin/admin-ajax.php', {
             method: 'POST',
             credentials: 'same-origin',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: data.toString()
-        }).then(function(resp){ return resp.json(); }).then(function(res){
+            body: data.toString(),
+            signal: request.controller.signal
+        }).then(function(resp){
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            return resp.json();
+        }).then(function(res){
+            if (request.cancelled || !isRealtimeActive()) return;
+            if (!res || !res.success || !res.data || typeof res.data !== 'object') throw new Error('Invalid metrics response');
             if (rttEl) {
                 var rtt = Date.now() - start;
                 rttEl.textContent = rtt + ' ms';
                 rttEl.style.color = rtt > 800 ? '#e74c3c' : (rtt > 300 ? '#f39c12' : '#27ae60');
             }
-            if (!res || !res.success || !res.data) return;
             var d = res.data;
 
             // ── CPU Load ──────────────────────────────────────────────────────
             var cpuEl    = document.getElementById('tk-rt-cpu');
             var cpuBarEl = document.getElementById('tk-rt-cpu-bar');
             if (cpuEl) {
-                if (d.load && d.load.length > 0) {
+                if (Array.isArray(d.load) && Number.isFinite(d.load[0])) {
                     var load1m   = d.load[0];
                     var cpuCores = d.cpu_cores && d.cpu_cores > 0 ? parseInt(d.cpu_cores, 10) : 0;
                     var hasCpuCapacity = cpuCores > 0;
@@ -192,43 +329,30 @@
 
                     var cpuAvgEl = document.getElementById('tk-rt-cpu-avg');
                     var cpuLimitEl = document.getElementById('tk-rt-cpu-limit');
-                    var cpuLimitLine = document.getElementById('tk-rt-cpu-limit-line');
-                    var cpuLimitLegend = document.getElementById('tk-rt-cpu-limit-legend');
-                    var cpuChartMaxEl = document.getElementById('tk-rt-cpu-chart-max');
-                    var cpuChartMidEl = document.getElementById('tk-rt-cpu-chart-mid');
-                    var cpuChartZeroEl = document.getElementById('tk-rt-cpu-chart-zero');
                     if (hasCpuCapacity) {
                         if (cpuAvgEl) { cpuAvgEl.textContent = Math.round(average(cpuHistory)) + '%'; }
                         if (cpuLimitEl) { cpuLimitEl.textContent = '100%'; }
-                        if (cpuLimitLine) { cpuLimitLine.style.display = 'block'; }
-                        if (cpuLimitLegend) { cpuLimitLegend.style.display = 'flex'; }
-                        if (cpuChartMaxEl) { cpuChartMaxEl.textContent = '100%'; }
-                        if (cpuChartMidEl) { cpuChartMidEl.textContent = '50%'; }
-                        if (cpuChartZeroEl) { cpuChartZeroEl.textContent = '0%'; }
                     } else {
                         for (var chi = 0; chi < cpuHistory.length; chi++) {
                             if (cpuHistory[chi] > chartMax) chartMax = Math.ceil(cpuHistory[chi]);
                         }
                         if (cpuAvgEl) { cpuAvgEl.textContent = average(cpuHistory).toFixed(2); }
                         if (cpuLimitEl) { cpuLimitEl.textContent = '-'; }
-                        if (cpuLimitLine) { cpuLimitLine.style.display = 'none'; }
-                        if (cpuLimitLegend) { cpuLimitLegend.style.display = 'none'; }
-                        if (cpuChartMaxEl) { cpuChartMaxEl.textContent = chartMax.toFixed(1); }
-                        if (cpuChartMidEl) { cpuChartMidEl.textContent = (chartMax / 2).toFixed(1); }
-                        if (cpuChartZeroEl) { cpuChartZeroEl.textContent = '0'; }
                     }
 
                     drawLineChart({
+                        name: 'cpu',
                         history: cpuHistory,
                         timestamps: cpuTimestamps,
                         maxValue: chartMax,
-                        svgId: 'tk-rt-cpu-chart',
-                        lineId: 'tk-rt-cpu-line',
-                        xOldId: 'tk-rt-cpu-x-old',
-                        xNowId: 'tk-rt-cpu-x-now',
-                        color: '#6d4aff'
+                        showLimit: hasCpuCapacity,
+                        limitValue: 100,
+                        formatValue: hasCpuCapacity
+                            ? function(value) { return Math.round(value) + '%'; }
+                            : function(value) { return Number(value).toFixed(1); }
                     });
                 } else {
+                    chartState('cpu', 'CPU metrics unavailable on this server.', false);
                     cpuEl.textContent = 'N/A';
                     cpuEl.style.color = '#94a3b8';
                     cpuEl.title = 'sys_getloadavg() is not available';
@@ -242,10 +366,10 @@
                 memBarEl.style.width = d.memory.percent + '%';
                 memBarEl.style.background = d.memory.percent > 80 ? '#e74c3c' : (d.memory.percent > 50 ? '#f39c12' : 'linear-gradient(90deg, #1d4ed8, #60a5fa)');
             }
-            if (d.memory) {
+            if (d.memory && Number.isFinite(d.memory.used) && d.memory.used >= 0) {
                 var memUsedMb = d.memory.used ? d.memory.used / 1048576 : 0;
                 var memLimitMb = d.memory.limit ? d.memory.limit / 1048576 : 0;
-                var memChartMax = memLimitMb > 0 ? Math.ceil(memLimitMb / 1000) * 1000 : Math.max(128, Math.ceil(memUsedMb / 128) * 128);
+                var memChartMax = memLimitMb > 0 ? memLimitMb : Math.max(128, Math.ceil(memUsedMb / 128) * 128);
                 if (memChartMax <= 0) memChartMax = 128;
 
                 memHistory.push(memUsedMb);
@@ -257,30 +381,20 @@
 
                 var memAvgEl = document.getElementById('tk-rt-mem-avg');
                 var memLimitEl = document.getElementById('tk-rt-mem-limit');
-                var memMaxEl = document.getElementById('tk-rt-mem-chart-max');
-                var memMidEl = document.getElementById('tk-rt-mem-chart-mid');
-                var memLimitLine = document.getElementById('tk-rt-mem-limit-line');
                 if (memAvgEl) { memAvgEl.textContent = formatMb(average(memHistory)); }
                 if (memLimitEl) { memLimitEl.textContent = memLimitMb > 0 ? formatMb(memLimitMb) : '-'; }
-                if (memMaxEl) { memMaxEl.textContent = formatMb(memChartMax); }
-                if (memMidEl) { memMidEl.textContent = formatMb(memChartMax / 2); }
-                if (memLimitLine && memLimitMb > 0) {
-                    memLimitLine.style.display = 'block';
-                    memLimitLine.style.top = Math.max(0, Math.min(100, 100 - (memLimitMb / memChartMax * 100))).toFixed(2) + '%';
-                } else if (memLimitLine) {
-                    memLimitLine.style.display = 'none';
-                }
 
                 drawLineChart({
+                    name: 'mem',
                     history: memHistory,
                     timestamps: memTimestamps,
                     maxValue: memChartMax,
-                    svgId: 'tk-rt-mem-chart',
-                    lineId: 'tk-rt-mem-line',
-                    xOldId: 'tk-rt-mem-x-old',
-                    xNowId: 'tk-rt-mem-x-now',
-                    color: '#6d4aff'
+                    showLimit: memLimitMb > 0,
+                    limitValue: memLimitMb,
+                    formatValue: function(value) { return formatMb(value); }
                 });
+            } else {
+                chartState('mem', 'Memory metrics unavailable on this server.', false);
             }
 
             // ── Error Rate ────────────────────────────────────────────────────
@@ -313,33 +427,44 @@
                 (d.heavy_plugins || []).forEach(function(item){
                     if (!item || !item.name) return;
                     var li = document.createElement('li');
-                    li.innerHTML = '<strong>' + item.name + '</strong>: ' + formatBytes(item.size);
+                    li.textContent = item.name + ': ' + formatBytes(item.size);
                     pluginsEl.appendChild(li);
                 });
             }
+            status('Updated ' + formatTime(Date.now()), false);
         }).catch(function(){
+            if (request.cancelled || !isRealtimeActive()) return;
             if (rttEl) rttEl.textContent = 'Failed';
+            status('Metrics could not be updated. Retrying shortly.', true);
+            chartState('cpu', cpuHistory.length ? '' : 'CPU metrics could not be loaded.', false);
+            chartState('mem', memHistory.length ? '' : 'Memory metrics could not be loaded.', false);
+        }).finally(function() {
+            clearTimeout(timeout);
+            pendingRequest = null;
+            if (isRealtimeActive()) intervalId = setTimeout(fetchHealth, request.cancelled ? 0 : 5000);
         });
     }
 
     function startPolling() {
-        if (intervalId !== null) return;
-        fetchHealth();
-        intervalId = setInterval(fetchHealth, 5000);
+        if (!isRealtimeActive() || intervalId !== null || pendingRequest) return;
+        // Allow the loading state to paint before starting the first request.
+        intervalId = setTimeout(fetchHealth, 80);
     }
 
     function stopPolling() {
-        if (intervalId === null) return;
-        clearInterval(intervalId);
+        clearTimeout(intervalId);
         intervalId = null;
+        if (pendingRequest) {
+            pendingRequest.cancelled = true;
+            pendingRequest.controller.abort();
+        }
     }
 
     function init() {
         container = document.getElementById('tk-monitoring-tabs');
         content   = document.getElementById('tk-monitoring-tabs-content');
 
-        if (!container) { console.warn('ToolKits: #tk-monitoring-tabs not found'); return; }
-        console.log('ToolKits: Monitoring initialized');
+        if (!container || !content) return;
 
         var nav = container.querySelector('.tk-tabs-nav');
         if (nav) {
@@ -354,28 +479,38 @@
         }
 
         var hash = window.location.hash.replace('#', '');
-        if (hash) {
-            activateTab(hash);
-        } else {
-            var activeBtn = container.querySelector('.tk-tabs-nav-button.is-active');
-            if (activeBtn) {
-                var panelId = activeBtn.getAttribute('data-panel');
-                if (panelId === 'realtime') startPolling();
-            }
-        }
+        var saved = '';
+        try { saved = window.sessionStorage.getItem(storageKey); } catch (e) {}
+        activateTab(validTab(hash) ? hash : (validTab(saved) ? saved : 'realtime'));
+        window.addEventListener('hashchange', function() {
+            var id = window.location.hash.slice(1);
+            activateTab(validTab(id) ? id : 'realtime');
+        });
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) stopPolling(); else startPolling();
+        });
+        window.addEventListener('pagehide', stopPolling);
+        window.addEventListener('pageshow', startPolling);
+        var retry = document.getElementById('tk-rt-retry');
+        if (retry) retry.addEventListener('click', function() {
+            clearTimeout(intervalId);
+            intervalId = null;
+            startPolling();
+        });
 
-        // Measure Load Time using Performance API
-        setTimeout(function() {
+        function measureLoad() {
             var loadEl = document.getElementById('tk-rt-load');
-            if (loadEl && window.performance && window.performance.timing) {
-                var t = window.performance.timing;
-                var loadTime = t.loadEventEnd - t.navigationStart;
+            if (loadEl && window.performance) {
+                var entry = performance.getEntriesByType('navigation')[0];
+                var loadTime = entry ? entry.loadEventEnd : 0;
                 if (loadTime > 0) {
                     loadEl.textContent = (loadTime / 1000).toFixed(2) + ' s';
                     loadEl.style.color = loadTime > 3000 ? '#e74c3c' : (loadTime > 1500 ? '#f39c12' : '#27ae60');
                 }
             }
-        }, 0);
+        }
+        if (document.readyState === 'complete') setTimeout(measureLoad, 0);
+        else window.addEventListener('load', function() { setTimeout(measureLoad, 0); }, { once: true });
     }
 
     if (document.readyState === 'loading') {

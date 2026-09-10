@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.5.33
+ * Version: 2.5.46
  * GitHub Plugin URI: https://github.com/ekods/tool-kits
  * Update URI: https://github.com/ekods/tool-kits
  * Author: Eko Dwi Saputro
@@ -12,7 +12,7 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-define('TK_VERSION', '2.5.33');
+define('TK_VERSION', '2.5.46');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
@@ -55,6 +55,7 @@ $tk_modules = array(
     'security-form-guard.php'   => 'tk_form_guard_init',
     'security-spam.php'         => false,
     'security-rate-limit.php'   => 'tk_rate_limit_init',
+    'security-otp.php'          => 'tk_otp_init',
     'security-login-log.php'    => 'tk_login_log_init',
     'security-hardening.php'    => 'tk_hardening_init',
     'security-firewall.php'     => 'tk_firewall_init',
@@ -122,6 +123,7 @@ function tk_deactivate() {
     // Flush rewrite rules so custom login slug is removed cleanly
     tk_hide_login_flush_rewrite(false);
     tk_security_events_clear_maintenance();
+    wp_clear_scheduled_hook('tk_monitoring_deferred_checks');
 
 }
 register_deactivation_hook(__FILE__, 'tk_deactivate');
@@ -162,6 +164,8 @@ add_action('admin_enqueue_scripts', function($hook) {
     }
     if ($is_toolkits_area || $is_toolkits_menu) {
         wp_enqueue_style('tool-kits-overview', TK_URL . 'assets/overview.css', array('tool-kits-admin'), TK_VERSION);
+        wp_enqueue_style('tool-kits-admin-ui-v2', TK_URL . 'assets/tool-kits-admin-ui.css', array('tool-kits-overview'), TK_VERSION);
+        wp_enqueue_script('tool-kits-image-optimizer', TK_URL . 'assets/image-optimizer.js', array(), TK_VERSION, true);
     }
     if ($hook === 'tool-kits_page_tool-kits-geo') {
         wp_enqueue_style('select2', 'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css', array(), '4.1.0-rc.0');

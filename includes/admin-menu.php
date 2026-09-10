@@ -17,6 +17,7 @@ function tk_admin_menu_init() {
     add_action('admin_post_tk_heartbeat_manual', 'tk_heartbeat_manual_send');
     add_action('admin_post_tk_monitoring_save', 'tk_monitoring_save');
     add_action('tk_monitoring_cron', 'tk_monitoring_cron_run');
+    add_action('tk_monitoring_deferred_checks', 'tk_monitoring_cron_run');
     add_action('init', 'tk_monitoring_schedule_cron');
 }
 
@@ -24,11 +25,18 @@ function tk_monitoring_maybe_enqueue_assets($hook_suffix) {
     if ($hook_suffix !== 'tool-kits_page_tool-kits-monitoring') {
         return;
     }
-    $asset_url  = TK_URL . 'assets/monitoring-tabs.js';
-    $asset_path = TK_PATH . 'assets/monitoring-tabs.js';
+    $asset_url  = TK_URL . 'assets/health-monitor-chart.js';
+    $asset_path = TK_PATH . 'assets/health-monitor-chart.js';
     $ver = file_exists($asset_path) ? filemtime($asset_path) : TK_VERSION;
-    wp_enqueue_script('tk-monitoring-tabs', $asset_url, array(), $ver, true);
-    wp_localize_script('tk-monitoring-tabs', 'tkMonitoringData', array(
+    wp_enqueue_script(
+        'tk-chart-js-451',
+        TK_URL . 'assets/vendor/chart.js/chart.umd.min.js',
+        array(),
+        '4.5.1',
+        true
+    );
+    wp_enqueue_script('tk-health-monitor-chart-v2', $asset_url, array('tk-chart-js-451'), $ver, true);
+    wp_localize_script('tk-health-monitor-chart-v2', 'tkMonitoringData', array(
         'nonce'   => wp_create_nonce('tk_realtime_health'),
         'ajaxurl' => admin_url('admin-ajax.php'),
     ));
@@ -39,7 +47,7 @@ function tk_register_admin_menus() {
     $license_key = (string) tk_get_option('license_key', '');
     $license_reset = isset($_GET['tk_reset_license']) ? sanitize_key($_GET['tk_reset_license']) : '';
     if ($license_key !== '' && $license_reset !== '1' && (int) get_option('tk_license_reset_skip_validate', 0) !== 1) {
-        tk_license_validate(true);
+        tk_license_validate();
     }
     $license_status = (string) tk_get_option('license_status', 'inactive');
     $license_missing = $license_key === '';
@@ -70,6 +78,7 @@ function tk_register_admin_menus() {
             add_submenu_page('tool-kits', __('Hide Login', 'tool-kits'), __('Hide Login', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-hide-login', 'tk_render_hide_login_page');
             add_submenu_page('tool-kits', __('Spam Protection', 'tool-kits'), __('Spam Protection', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-spam', 'tk_render_spam_protection_page');
             add_submenu_page('tool-kits', __('Rate Limit', 'tool-kits'), __('Rate Limit', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-rate-limit', 'tk_render_rate_limit_page');
+            add_submenu_page('tool-kits', __('OTP Login', 'tool-kits'), __('OTP Login', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-otp', 'tk_render_otp_page');
             add_submenu_page('tool-kits', __('Login Log', 'tool-kits'), __('Login Log', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-login-log', 'tk_render_login_log_page');
         }
 
@@ -127,8 +136,10 @@ function tk_render_monitoring_page() {
     $server_status = tk_hardening_server_rule_status();
     $noncore_root = tk_hardening_noncore_root_entries();
     
-    tk_monitoring_maybe_send_alert($noncore_root);
-    tk_tamper_maybe_alert();
+    // File hashing and alert delivery must not block the admin page response.
+    if (!get_transient('tk_monitoring_checks_recent') && !wp_next_scheduled('tk_monitoring_deferred_checks')) {
+        wp_schedule_single_event(time(), 'tk_monitoring_deferred_checks');
+    }
 
     $monitor_email = (string) tk_get_option('monitoring_alert_email', '');
     $log = tk_get_option('monitoring_404_log', array());
@@ -306,6 +317,11 @@ function tk_render_security_overview_page() {
                 <h2>Rate Limit</h2>
                 <p class="description">Limit repeated login attempts and unblock legitimate users when needed.</p>
             </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-security-otp')); ?>">
+                <span class="dashicons dashicons-email-alt"></span>
+                <h2>OTP Login</h2>
+                <p class="description">Require email verification codes after valid username and password authentication.</p>
+            </a>
             <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-brute-force')); ?>">
                 <span class="dashicons dashicons-lock"></span>
                 <h2>Brute Force Protection</h2>
@@ -384,7 +400,7 @@ function tk_render_image_opt_page() {
     ?>
     <div class="wrap tk-wrap">
         <?php tk_render_header_branding(); ?>
-        <?php tk_render_page_hero('Image Optimization', 'Compress uploaded images and align image delivery with WebP conversion settings.', 'dashicons-format-image'); ?>
+        <?php tk_render_page_hero('Image Optimizer', 'Image quality, optimized delivery, and media library maintenance.', 'dashicons-format-image'); ?>
         <?php if (isset($_GET['tk_saved']) && sanitize_key((string) $_GET['tk_saved']) === '1') : ?>
             <?php tk_notice('Settings saved.', 'success'); ?>
         <?php endif; ?>
@@ -1764,6 +1780,7 @@ function tk_monitoring_schedule_cron() {
 }
 
 function tk_monitoring_cron_run() {
+    set_transient('tk_monitoring_checks_recent', 1, HOUR_IN_SECONDS);
     $noncore_root = tk_hardening_noncore_root_entries();
     tk_monitoring_maybe_send_alert($noncore_root);
     tk_tamper_maybe_alert();

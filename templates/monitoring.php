@@ -62,9 +62,62 @@ if (!defined('ABSPATH')) { exit; }
     if (isset($_GET['tk_404_updated']) && $_GET['tk_404_updated'] === '1') tk_notice(__('404 monitor settings saved.', 'tool-kits'), 'success');
     if (isset($_GET['tk_404_cleared']) && $_GET['tk_404_cleared'] === '1') tk_notice(__('404 log cleared.', 'tool-kits'), 'success');
     if (isset($_GET['tk_health_updated']) && $_GET['tk_health_updated'] === '1') tk_notice(__('Healthcheck settings saved.', 'tool-kits'), 'success');
+
+    $image_report = tk_get_option('image_opt_compression_report', array());
+    $image_report = is_array($image_report) ? $image_report : array();
+    $image_cleanup_report = tk_get_option('image_opt_cleanup_report', array());
+    $image_cleanup_report = is_array($image_cleanup_report) ? $image_cleanup_report : array();
+    $geo_visibility_report = tk_get_option('geo_visibility_report', array());
+    $geo_visibility_report = is_array($geo_visibility_report) ? $geo_visibility_report : array();
+    $geo_ai_report = tk_get_option('geo_ai_access_report', array());
+    $geo_ai_report = is_array($geo_ai_report) ? $geo_ai_report : array();
+    $image_saved = (int) ($image_report['estimated_saved_bytes'] ?? 0);
+    $image_missing = (int) ($image_report['missing_derivatives'] ?? 0);
+    $image_score = empty($image_report) ? 0 : max(0, min(100, 100 - min(80, $image_missing * 3)));
+    $geo_score = isset($geo_visibility_report['score']) ? (int) $geo_visibility_report['score'] : (int) ($geo_ai_report['score'] ?? 0);
+    $monitor_health_score = 100;
+    if (empty($connection_summary['collector_status']) || $connection_summary['collector_status'] !== 'configured') {
+        $monitor_health_score -= 20;
+    }
+    if (!empty($healthcheck['cron']['disabled'])) {
+        $monitor_health_score -= 25;
+    }
+    if (empty($monitor_email)) {
+        $monitor_health_score -= 10;
+    }
+    $monitor_health_score = max(0, min(100, $monitor_health_score));
     ?>
 
-    <div class="tk-tabs" id="tk-monitoring-tabs">
+    <div class="tk-grid tk-grid-3" style="gap:18px; margin-bottom:22px;">
+        <div class="tk-card" style="min-height:150px; display:flex; flex-direction:column; justify-content:space-between;">
+            <div>
+                <h3 style="margin-top:0; display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-performance"></span> <?php _e('Performance & Images', 'tool-kits'); ?></h3>
+                <p class="description"><?php echo empty($image_report) ? esc_html__('No compression report yet.', 'tool-kits') : esc_html(sprintf(__('Saved %s, %d missing optimized copies.', 'tool-kits'), size_format($image_saved), $image_missing)); ?></p>
+                <?php if (!empty($image_cleanup_report)) : ?>
+                    <p class="description"><?php echo esc_html(sprintf(__('Last cleanup removed %d files.', 'tool-kits'), (int) ($image_cleanup_report['removed'] ?? 0))); ?></p>
+                <?php endif; ?>
+            </div>
+            <p style="margin:0;"><span class="tk-badge <?php echo $image_score >= 80 ? 'tk-on' : ($image_score >= 60 ? 'tk-warn' : ''); ?>"><?php echo esc_html((string) $image_score); ?>%</span> <a href="<?php echo esc_url(tk_admin_url('tool-kits-image-opt')); ?>"><?php _e('Open Image Optimizer', 'tool-kits'); ?></a></p>
+        </div>
+        <div class="tk-card" style="min-height:150px; display:flex; flex-direction:column; justify-content:space-between;">
+            <div>
+                <h3 style="margin-top:0; display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-search"></span> <?php _e('GEO / AI Visibility', 'tool-kits'); ?></h3>
+                <p class="description"><?php echo !empty($geo_visibility_report) ? esc_html((string) ($geo_visibility_report['url'] ?? '')) : esc_html__('Run AI Visibility Score per URL from the GEO module.', 'tool-kits'); ?></p>
+                <p class="description"><?php echo !empty($geo_ai_report) ? esc_html__('AI crawler accessibility review is available.', 'tool-kits') : esc_html__('AI crawler accessibility review has not been run yet.', 'tool-kits'); ?></p>
+            </div>
+            <p style="margin:0;"><span class="tk-badge <?php echo $geo_score >= 80 ? 'tk-on' : ($geo_score >= 60 ? 'tk-warn' : ''); ?>"><?php echo esc_html((string) $geo_score); ?>%</span> <a href="<?php echo esc_url(tk_admin_url('tool-kits-geo') . '#ai-visibility'); ?>"><?php _e('Open GEO', 'tool-kits'); ?></a></p>
+        </div>
+        <div class="tk-card" style="min-height:150px; display:flex; flex-direction:column; justify-content:space-between;">
+            <div>
+                <h3 style="margin-top:0; display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-heart"></span> <?php _e('Monitoring', 'tool-kits'); ?></h3>
+                <p class="description"><?php echo $connection_summary['collector_status'] === 'configured' ? esc_html__('Collector connection configured.', 'tool-kits') : esc_html__('Collector connection is not configured.', 'tool-kits'); ?></p>
+                <p class="description"><?php echo !empty($healthcheck['cron']['disabled']) ? esc_html__('WP-Cron is disabled.', 'tool-kits') : esc_html__('WP-Cron is available.', 'tool-kits'); ?></p>
+            </div>
+            <p style="margin:0;"><span class="tk-badge <?php echo $monitor_health_score >= 80 ? 'tk-on' : ($monitor_health_score >= 60 ? 'tk-warn' : ''); ?>"><?php echo esc_html((string) $monitor_health_score); ?>%</span> <a href="#health" onclick="document.querySelector('[data-panel=health]').click(); return false;"><?php _e('Open Healthcheck', 'tool-kits'); ?></a></p>
+        </div>
+    </div>
+
+    <div class="tk-tabs" id="tk-monitoring-tabs" data-tk-tabs-managed="1">
         <div class="tk-tabs-nav">
             <button type="button" class="tk-tabs-nav-button is-active" data-panel="realtime"><?php _e('Realtime', 'tool-kits'); ?></button>
             <button type="button" class="tk-tabs-nav-button" data-panel="overview"><?php _e('Security Overview', 'tool-kits'); ?></button>
@@ -101,7 +154,7 @@ if (!defined('ABSPATH')) { exit; }
                         </div>
                         <h3 style="margin:0 0 4px; font-size:16px;">Hardening Score</h3>
                         <p class="description" style="margin-bottom:16px;"><?php printf(__('%d features active', 'tool-kits'), $score); ?></p>
-                        <a href="<?php echo esc_url(tk_admin_url(tk_hardening_page_slug())); ?>" class="button button-primary button-small" style="width:100%; border-radius:8px;"><?php _e('Optimize Now', 'tool-kits'); ?></a>
+                        <a href="<?php echo esc_url(tk_admin_url(tk_hardening_page_slug())); ?>" class="button button-primary" style="width:100%; border-radius:8px;"><?php _e('Optimize Now', 'tool-kits'); ?></a>
                     </div>
                     
                     <div class="tk-card" style="text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:30px 20px;">
@@ -127,7 +180,7 @@ if (!defined('ABSPATH')) { exit; }
                         <p class="description" style="margin-bottom:16px;"><?php echo $fim_last > 0 ? __('Last scan:', 'tool-kits') . ' ' . date_i18n('Y-m-d H:i', $fim_last) : __('Not scanned yet', 'tool-kits'); ?></p>
                         <div style="display:flex; gap:8px; width:100%;">
                             <span class="tk-badge <?php echo $fim_badge; ?>" style="flex:1; display:flex; align-items:center; justify-content:center;"><?php echo esc_html($fim_status); ?></span>
-                            <button type="button" class="button button-small" style="border-radius:8px;" onclick="document.querySelector('[data-panel=integrity]').click();"><?php _e('Scan', 'tool-kits'); ?></button>
+                            <button type="button" class="button" style="border-radius:8px;" onclick="document.querySelector('[data-panel=integrity]').click();"><?php _e('Scan', 'tool-kits'); ?></button>
                         </div>
                     </div>
 
@@ -141,7 +194,7 @@ if (!defined('ABSPATH')) { exit; }
                         ?>
                         <h3 style="margin:0 0 4px; font-size:16px;">Spam Blocked</h3>
                         <p class="description" style="margin-bottom:16px;"><?php printf(__('%d requests caught', 'tool-kits'), $spam_count); ?></p>
-                        <a href="<?php echo esc_url(tk_admin_url('tool-kits-security-spam')); ?>" class="button button-small" style="width:100%; border-radius:8px;"><?php _e('View Audit Logs', 'tool-kits'); ?></a>
+                        <a href="<?php echo esc_url(tk_admin_url('tool-kits-security-spam')); ?>" class="button" style="width:100%; border-radius:8px;"><?php _e('View Audit Logs', 'tool-kits'); ?></a>
                     </div>
                 </div>
             </div>
@@ -323,7 +376,7 @@ if (!defined('ABSPATH')) { exit; }
                             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                                 <?php tk_nonce_field('tk_remove_ds_store'); ?>
                                 <input type="hidden" name="action" value="tk_remove_ds_store">
-                                <button class="button button-secondary button-small" style="width:100%;"><?php _e('Remove .DS_Store & __MACOSX', 'tool-kits'); ?></button>
+                                <button class="button button-secondary" style="width:100%;"><?php _e('Remove .DS_Store & __MACOSX', 'tool-kits'); ?></button>
                             </form>
                         </div>
                     </div>
@@ -344,11 +397,14 @@ if (!defined('ABSPATH')) { exit; }
 
             <!-- Panel: Realtime -->
             <div class="tk-card tk-tab-panel is-active" data-panel-id="realtime">
-                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
-                    <h2 style="margin:0;"><?php _e('Health Monitor Real-Time', 'tool-kits'); ?></h2>
+                <div class="tk-rt-panel-header">
+                    <h2><?php _e('Health Monitor Real-Time', 'tool-kits'); ?></h2>
                     <div id="tk-rt-pulse" class="tk-pulse" title="Live Heartbeat"></div>
                 </div>
-                <p class="description"><?php _e('Live system metrics refreshed every 5 seconds.', 'tool-kits'); ?></p>
+                <div class="tk-rt-status-row">
+                    <p id="tk-rt-status" role="status"><?php _e('Loading metrics...', 'tool-kits'); ?></p>
+                    <button type="button" class="button" id="tk-rt-retry" hidden><span class="dashicons dashicons-update" aria-hidden="true"></span> <?php _e('Retry', 'tool-kits'); ?></button>
+                </div>
 
                 <div class="tk-rt-grid">
                     <div class="tk-rt-card">
@@ -380,90 +436,50 @@ if (!defined('ABSPATH')) { exit; }
                     </div>
                 </div>
                 
-                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:22px; margin-top:20px;">
-                    <div class="tk-card" style="border-radius:14px; padding:28px;">
-                        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:26px;">
-                            <h3 style="margin:0; font-size:22px; display:flex; align-items:center; gap:8px;"><?php _e('CPU', 'tool-kits'); ?> <span class="dashicons dashicons-info-outline" title="<?php esc_attr_e('CPU percentage is shown only when CPU capacity can be detected.', 'tool-kits'); ?>"></span></h3>
-                            <div style="display:flex; gap:18px; align-items:flex-start;">
-                                <div>
-                                    <div id="tk-rt-cpu-avg" style="font-size:24px; font-weight:800; color:#6d4aff;">-</div>
-                                    <div style="font-size:13px; color:var(--tk-muted);"><?php _e('Rata-rata', 'tool-kits'); ?></div>
+                <div class="tk-rt-charts">
+                    <section class="tk-rt-chart-section" aria-label="CPU">
+                        <div class="tk-rt-chart-heading">
+                            <h3><?php _e('CPU', 'tool-kits'); ?> <span class="dashicons dashicons-info-outline" title="<?php esc_attr_e('CPU percentage is shown only when CPU capacity can be detected.', 'tool-kits'); ?>"></span></h3>
+                            <div class="tk-rt-chart-stats">
+                                <div class="tk-rt-chart-stat">
+                                    <strong id="tk-rt-cpu-avg">-</strong>
+                                    <span><?php _e('Rata-rata', 'tool-kits'); ?></span>
                                 </div>
-                                <div style="width:1px; height:44px; background:var(--tk-border-soft);"></div>
-                                <div>
-                                    <div id="tk-rt-cpu-limit" style="font-size:24px; font-weight:800;">-</div>
-                                    <div style="font-size:13px; color:var(--tk-muted);"><?php _e('Tersedia', 'tool-kits'); ?></div>
-                                </div>
-                            </div>
-                        </div>
-                        <div style="display:flex; gap:14px;">
-                            <div style="display:flex; flex-direction:column; justify-content:space-between; align-items:flex-end; font-size:12px; color:var(--tk-muted); width:50px; padding-bottom:20px;">
-                                <span id="tk-rt-cpu-chart-max">100%</span>
-                                <span id="tk-rt-cpu-chart-mid">50%</span>
-                                <span id="tk-rt-cpu-chart-zero">0%</span>
-                            </div>
-                            <div style="flex:1; min-width:0;">
-                                <div style="height:210px; position:relative;">
-                                    <div id="tk-rt-cpu-limit-line" style="position:absolute; left:0; right:0; top:0; border-top:1px dashed #ef4444;"></div>
-                                    <div style="position:absolute; left:0; right:0; top:50%; border-top:1px solid var(--tk-border-soft);"></div>
-                                    <div style="position:absolute; left:0; right:0; bottom:0; border-top:1px solid var(--tk-border-soft);"></div>
-                                    <svg id="tk-rt-cpu-chart" width="100%" height="100%" preserveAspectRatio="none" style="position:relative; z-index:1; overflow:hidden;">
-                                        <polyline id="tk-rt-cpu-line" fill="none" stroke="#6d4aff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points=""></polyline>
-                                    </svg>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--tk-muted); margin-top:8px;">
-                                    <span id="tk-rt-cpu-x-old">&mdash;</span>
-                                    <span id="tk-rt-cpu-x-now">&mdash;</span>
-                                </div>
-                                <div style="display:flex; align-items:center; justify-content:center; gap:28px; margin-top:22px; font-weight:700;">
-                                    <span style="display:flex; align-items:center; gap:8px;"><span style="display:inline-block;width:18px;height:2px;background:#6d4aff;"></span><?php _e('Penggunaan', 'tool-kits'); ?></span>
-                                    <span id="tk-rt-cpu-limit-legend" style="display:flex; align-items:center; gap:8px;"><span style="display:inline-block;width:18px;height:0;border-top:1px dashed #ef4444;"></span><?php _e('Limit', 'tool-kits'); ?></span>
+                                <div class="tk-rt-chart-stat">
+                                    <strong id="tk-rt-cpu-limit">-</strong>
+                                    <span><?php _e('Tersedia', 'tool-kits'); ?></span>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                        <div class="tk-rt-plot" id="tk-rt-cpu-plot" aria-busy="true">
+                            <div class="tk-rt-chart-state" id="tk-rt-cpu-state"><?php _e('Loading CPU metrics...', 'tool-kits'); ?></div>
+                            <canvas id="tk-rt-cpu-chart" role="img" aria-label="<?php esc_attr_e('Real-time CPU usage chart', 'tool-kits'); ?>">
+                                <?php _e('Your browser does not support the real-time CPU chart.', 'tool-kits'); ?>
+                            </canvas>
+                        </div>
+                    </section>
 
-                    <div class="tk-card" style="border-radius:14px; padding:28px;">
-                        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:26px;">
-                            <h3 style="margin:0; font-size:22px; display:flex; align-items:center; gap:8px;"><?php _e('Memori', 'tool-kits'); ?> <span class="dashicons dashicons-info-outline" title="<?php esc_attr_e('Memory limit follows the PHP memory_limit value available to WordPress.', 'tool-kits'); ?>"></span></h3>
-                            <div style="display:flex; gap:18px; align-items:flex-start;">
-                                <div>
-                                    <div id="tk-rt-mem-avg" style="font-size:24px; font-weight:800; color:#6d4aff;">-</div>
-                                    <div style="font-size:13px; color:var(--tk-muted);"><?php _e('Rata-rata', 'tool-kits'); ?></div>
+                    <section class="tk-rt-chart-section" aria-label="Memory">
+                        <div class="tk-rt-chart-heading">
+                            <h3><?php _e('Memori', 'tool-kits'); ?> <span class="dashicons dashicons-info-outline" title="<?php esc_attr_e('Memory limit follows the PHP memory_limit value available to WordPress.', 'tool-kits'); ?>"></span></h3>
+                            <div class="tk-rt-chart-stats">
+                                <div class="tk-rt-chart-stat">
+                                    <strong id="tk-rt-mem-avg">-</strong>
+                                    <span><?php _e('Rata-rata', 'tool-kits'); ?></span>
                                 </div>
-                                <div style="width:1px; height:44px; background:var(--tk-border-soft);"></div>
-                                <div>
-                                    <div id="tk-rt-mem-limit" style="font-size:24px; font-weight:800;">-</div>
-                                    <div style="font-size:13px; color:var(--tk-muted);"><?php _e('Tersedia', 'tool-kits'); ?></div>
-                                </div>
-                            </div>
-                        </div>
-                        <div style="display:flex; gap:14px;">
-                            <div style="display:flex; flex-direction:column; justify-content:space-between; align-items:flex-end; font-size:12px; color:var(--tk-muted); width:62px; padding-bottom:20px;">
-                                <span id="tk-rt-mem-chart-max">-</span>
-                                <span id="tk-rt-mem-chart-mid">-</span>
-                                <span id="tk-rt-mem-chart-zero">0 MB</span>
-                            </div>
-                            <div style="flex:1; min-width:0;">
-                                <div style="height:210px; position:relative;">
-                                    <div id="tk-rt-mem-limit-line" style="position:absolute; left:0; right:0; top:0; border-top:1px dashed #ef4444;"></div>
-                                    <div style="position:absolute; left:0; right:0; top:50%; border-top:1px solid var(--tk-border-soft);"></div>
-                                    <div style="position:absolute; left:0; right:0; bottom:0; border-top:1px solid var(--tk-border-soft);"></div>
-                                    <svg id="tk-rt-mem-chart" width="100%" height="100%" preserveAspectRatio="none" style="position:relative; z-index:1; overflow:hidden;">
-                                        <polyline id="tk-rt-mem-line" fill="none" stroke="#6d4aff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points=""></polyline>
-                                    </svg>
-                                </div>
-                                <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--tk-muted); margin-top:8px;">
-                                    <span id="tk-rt-mem-x-old">&mdash;</span>
-                                    <span id="tk-rt-mem-x-now">&mdash;</span>
-                                </div>
-                                <div style="display:flex; align-items:center; justify-content:center; gap:28px; margin-top:22px; font-weight:700;">
-                                    <span style="display:flex; align-items:center; gap:8px;"><span style="display:inline-block;width:18px;height:2px;background:#6d4aff;"></span><?php _e('Penggunaan', 'tool-kits'); ?></span>
-                                    <span style="display:flex; align-items:center; gap:8px;"><span style="display:inline-block;width:18px;height:0;border-top:1px dashed #ef4444;"></span><?php _e('Limit', 'tool-kits'); ?></span>
+                                <div class="tk-rt-chart-stat">
+                                    <strong id="tk-rt-mem-limit">-</strong>
+                                    <span><?php _e('Tersedia', 'tool-kits'); ?></span>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                        <div class="tk-rt-plot" id="tk-rt-mem-plot" aria-busy="true">
+                            <div class="tk-rt-chart-state" id="tk-rt-mem-state"><?php _e('Loading memory metrics...', 'tool-kits'); ?></div>
+                            <canvas id="tk-rt-mem-chart" role="img" aria-label="<?php esc_attr_e('Real-time memory usage chart', 'tool-kits'); ?>">
+                                <?php _e('Your browser does not support the real-time memory chart.', 'tool-kits'); ?>
+                            </canvas>
+                        </div>
+                    </section>
                 </div>
             </div>
 
@@ -474,7 +490,7 @@ if (!defined('ABSPATH')) { exit; }
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0;">
                         <?php tk_nonce_field('tk_404_clear'); ?>
                         <input type="hidden" name="action" value="tk_404_clear">
-                        <button class="button button-secondary button-small" data-confirm="Clear 404 log?"><?php _e('Clear Log', 'tool-kits'); ?></button>
+                        <button class="button button-secondary" data-confirm="Clear 404 log?"><?php _e('Clear Log', 'tool-kits'); ?></button>
                     </form>
                 </div>
                 <p class="description"><?php _e('Track missing URLs to fix broken links and spot suspicious scanning activity.', 'tool-kits'); ?></p>
@@ -681,26 +697,4 @@ if (!defined('ABSPATH')) { exit; }
         </div>
     </div>
     
-    <script>
-    (function() {
-        var c = document.getElementById('tk-monitoring-tabs');
-        if (!c) { return; }
-        var panels  = c.querySelectorAll('[data-panel-id]');
-        var buttons = c.querySelectorAll('[data-panel]');
-        function activate(id) {
-            panels.forEach(function(p) { p.classList.toggle('is-active', p.getAttribute('data-panel-id') === id); });
-            buttons.forEach(function(b) { b.classList.toggle('is-active', b.getAttribute('data-panel') === id); });
-            try { history.replaceState(null, null, '#' + id); } catch(e) {}
-        }
-        buttons.forEach(function(btn) {
-            btn.addEventListener('click', function(e) {
-                e.preventDefault();
-                var id = btn.getAttribute('data-panel');
-                if (id) { activate(id); }
-            });
-        });
-        var hash = window.location.hash.replace('#', '');
-        if (hash && c.querySelector('[data-panel-id="' + hash + '"]')) { activate(hash); }
-    })();
-    </script>
 </div>

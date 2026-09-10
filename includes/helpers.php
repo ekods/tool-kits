@@ -5,14 +5,11 @@ if (!defined('ABSPATH')) { exit; }
 
 function tk_render_page_hero($title, $description, $icon = 'dashicons-admin-tools', $action_html = '') {
     ?>
-    <div class="tk-hero">
-        <div class="tk-hero-bg-1"></div>
-        <div class="tk-hero-bg-2"></div>
-        
-        <div class="tk-hero-content" style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
-            <div style="display: flex; align-items: center; gap: 20px;">
-                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 16px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2);">
-                    <span class="dashicons <?php echo esc_attr($icon); ?>" style="color: #fff; font-size: 32px; width: 32px; height: 32px;"></span>
+    <div class="tk-hero tk-page-heading tk-card">
+        <div class="tk-hero-content">
+            <div class="tk-page-heading-main">
+                <div class="tk-page-icon">
+                    <span class="dashicons <?php echo esc_attr($icon); ?>" aria-hidden="true"></span>
                 </div>
                 <div>
                     <h1 class="tk-hero-title"><?php echo esc_html($title); ?></h1>
@@ -33,7 +30,7 @@ function tk_render_header_branding() {
     ?>
     <div class="tk-header-branding">
         <div class="tk-header-brand">
-            <span class="dashicons dashicons-admin-tools"></span>
+            <img class="tk-brand-logo" src="<?php echo esc_url(TK_URL . 'assets/icon-128x128.png'); ?>" width="32" height="32" alt="">
             <span>Tool Kits Pro</span>
             <span class="tk-header-version">v<?php echo TK_VERSION; ?></span>
         </div>
@@ -1058,19 +1055,22 @@ function tk_option_init_defaults() {
         'fragment_cache_keys' => array(),
         'webp_convert_enabled' => 0,
         'webp_serve_enabled' => 0,
-        'webp_quality' => 82,
+        'webp_quality' => 90,
         'image_opt_enabled' => 0,
         'image_opt_frontend_to_webp' => 0,
         'image_opt_rewrite_all_assets' => 0,
-        'image_opt_quality' => 86,
+        'image_opt_quality' => 95,
+        'image_opt_preserve_hires' => 1,
         'image_opt_safe_derivatives' => 1,
         'image_opt_frontend_optimize' => 0,
+        'image_opt_srcset_original_only' => 1,
         'image_opt_max_width' => 0,
         'image_opt_max_height' => 0,
         'image_opt_target_dpi' => 72,
         'image_opt_strip_metadata' => 1,
         'image_opt_sharpen_enabled' => 1,
         'image_opt_compression_report' => array(),
+        'image_opt_cleanup_report' => array(),
         'image_opt_queue' => array(),
         'seo_enabled' => 0,
         'seo_meta_desc_enabled' => 1,
@@ -1105,9 +1105,13 @@ function tk_option_init_defaults() {
         'geo_ai_access_report' => array(),
         'geo_schema_duplicate_report' => array(),
         'geo_crawler_preview' => array(),
+        'geo_visibility_report' => array(),
+        'geo_prompt_preview_report' => array(),
+        'geo_post_schema_report' => array(),
         'geo_llms_enabled' => 0,
         'geo_llms_mode' => 'auto',
         'geo_llms_manual' => '',
+        'geo_llms_sections' => array(),
         'geo_llms_include_faq' => 1,
         'geo_llms_include_itemlist' => 1,
         'lazy_load_enabled' => 0,
@@ -1166,6 +1170,15 @@ function tk_option_init_defaults() {
         'security_bad_usernames' => "admin\nadministrator\nroot\ntest\ndemo\nuser\nwpadmin\nwebmaster",
         'security_login_origin_guard_enabled' => 1,
         'security_login_origin_require_header' => 0,
+        'otp_login_enabled' => 0,
+        'otp_login_roles' => array('administrator'),
+        'otp_login_expiry_minutes' => 5,
+        'otp_login_max_attempts' => 5,
+        'otp_login_resend_cooldown' => 60,
+        'otp_login_trusted_days' => 0,
+        'otp_login_email_subject' => 'Your {site_name} login code',
+        'otp_login_email_message' => "Your login verification code is: {code}\n\nThis code expires in {expires_minutes} minutes.",
+        'otp_login_audit_log' => array(),
         'security_404_scanner_trap_enabled' => 1,
         'security_404_scanner_threshold' => 4,
         'security_404_scanner_window_minutes' => 10,
@@ -1213,6 +1226,9 @@ function tk_run_versioned_upgrades(): void {
     }
     if ($stored_version === '' || version_compare($stored_version, '2.5.28', '<')) {
         tk_upgrade_to_2528_image_no_resize_default();
+    }
+    if ($stored_version === '' || version_compare($stored_version, '2.5.34', '<')) {
+        tk_upgrade_to_2534_image_quality_srcset();
     }
     update_option('tk_version', $current_version, false);
 }
@@ -1271,6 +1287,16 @@ function tk_upgrade_to_2528_image_no_resize_default(): void {
     if ((int) tk_get_option('image_opt_max_height', 0) === 2560) {
         tk_update_option('image_opt_max_height', 0);
     }
+}
+
+function tk_upgrade_to_2534_image_quality_srcset(): void {
+    if ((int) tk_get_option('image_opt_quality', 92) <= 86) {
+        tk_update_option('image_opt_quality', 92);
+    }
+    if ((int) tk_get_option('webp_quality', 90) <= 82) {
+        tk_update_option('webp_quality', 90);
+    }
+    tk_update_option('image_opt_srcset_original_only', 1);
 }
 
 function tk_upgrade_to_220(): void {
@@ -2910,6 +2936,9 @@ function tk_toolkits_persist_tabs_script(): void {
 
             function bind() {
                 document.querySelectorAll('.tk-tabs').forEach(function(wrapper){
+                    if (wrapper.getAttribute('data-tk-tabs-managed') === '1') {
+                        return;
+                    }
                     if (wrapper.getAttribute('data-tk-tabs-persist-bound') === '1') {
                         return;
                     }
@@ -3138,7 +3167,7 @@ function tk_toolkits_nested_admin_menu_script(): void {
 
         var groups = {
             'tool-kits-settings': ['tool-kits-general', 'tool-kits-access'],
-            'tool-kits-security': ['tool-kits-guard', 'tool-kits-firewall', 'tool-kits-security-hide-login', 'tool-kits-security-spam', 'tool-kits-security-rate-limit', 'tool-kits-brute-force', 'tool-kits-security-login-log', 'tool-kits-malware-scanner', 'tool-kits-vulnerability-scanner', 'tool-kits-incident-response'],
+            'tool-kits-security': ['tool-kits-guard', 'tool-kits-firewall', 'tool-kits-security-hide-login', 'tool-kits-security-spam', 'tool-kits-security-rate-limit', 'tool-kits-security-otp', 'tool-kits-brute-force', 'tool-kits-security-login-log', 'tool-kits-malware-scanner', 'tool-kits-vulnerability-scanner', 'tool-kits-incident-response'],
             'tool-kits-performance': ['tool-kits-cache', 'tool-kits-optimization', 'tool-kits-minify', 'tool-kits-webp', 'tool-kits-image-opt', 'tool-kits-lazy-load', 'tool-kits-assets'],
             'tool-kits-seo': [],
             'tool-kits-system': ['tool-kits-db', 'tool-kits-role-management', 'tool-kits-user-id', 'tool-kits-smtp', 'tool-kits-theme-checker', 'tool-kits-diagnostics']

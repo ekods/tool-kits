@@ -63,7 +63,6 @@ function tk_analytics_render_gtag(): void {
                 gtag('js', new Date());
                 gtag('config', gtagId);
                 
-                console.log('ToolKits: Google Analytics Lazy Loaded');
             }
 
             // Load on first interaction or after 3.5s delay
