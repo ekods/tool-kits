@@ -7,12 +7,15 @@ function tk_webp_init() {
     add_action('wp_ajax_tk_webp_generate_batch', 'tk_webp_generate_batch');
     add_filter('wp_generate_attachment_metadata', 'tk_webp_generate_on_upload', 20, 2);
     add_action('add_attachment', 'tk_webp_generate_on_attachment_add');
-    add_action('wp_update_attachment_metadata', 'tk_webp_generate_on_attachment_add', 20, 2);
+    add_filter('wp_update_attachment_metadata', 'tk_webp_generate_on_metadata_update', 20, 2);
     add_filter('wp_get_attachment_image_src', 'tk_webp_filter_image_src', 20, 2);
     add_filter('wp_calculate_image_srcset', 'tk_webp_filter_srcset', 20, 5);
 }
 
 function tk_webp_should_serve() {
+    if (function_exists('tk_image_opt_frontend_optimize_enabled') && tk_image_opt_frontend_optimize_enabled()) {
+        return false;
+    }
     if (is_admin()) {
         return false;
     }
@@ -52,7 +55,19 @@ function tk_webp_generate_on_attachment_add($attachment_id, $metadata = null) {
     return $metadata;
 }
 
+function tk_webp_generate_on_metadata_update($metadata, $attachment_id) {
+    tk_webp_generate_on_attachment_add($attachment_id, $metadata);
+    return $metadata;
+}
+
 function tk_webp_generate_for_attachment($attachment_id, $quality, $metadata = null) {
+    if (tk_get_option('image_opt_enabled', 0) && function_exists('tk_image_opt_generate_copies')) {
+        $source = tk_image_opt_source_file($attachment_id, $metadata);
+        if ($source !== '') {
+            tk_image_opt_generate_copies($source, (int) tk_get_option('image_opt_quality', 95));
+        }
+        return;
+    }
     $file = get_attached_file($attachment_id);
     if (!is_string($file) || $file === '' || !file_exists($file)) {
         return;
@@ -190,15 +205,22 @@ function tk_webp_url_to_path($url) {
 }
 
 function tk_render_webp_page() {
-    if (function_exists('tk_render_optimization_page')) {
-        tk_render_optimization_page('webp');
-        return;
-    }
     if (!tk_is_admin_user()) return;
+    $progress = isset($_GET['tk_webp_progress']) ? sanitize_text_field(wp_unslash($_GET['tk_webp_progress'])) : '';
+    $done = isset($_GET['tk_webp_done']) ? sanitize_key($_GET['tk_webp_done']) : '';
     ?>
     <div class="wrap tk-wrap">
         <?php tk_render_header_branding(); ?>
-        <h1>Optimization</h1>
+        <?php tk_render_page_hero('Auto WebP', 'Generate and serve WebP versions for supported media files.', 'dashicons-format-image'); ?>
+        <?php if (isset($_GET['tk_saved']) && sanitize_key((string) $_GET['tk_saved']) === '1') : ?>
+            <?php tk_notice('Settings saved.', 'success'); ?>
+        <?php endif; ?>
+        <?php if ($progress !== '') : ?>
+            <?php tk_notice('WebP generation: ' . esc_html($progress), 'info'); ?>
+        <?php endif; ?>
+        <?php if ($done === '1') : ?>
+            <?php tk_notice('WebP generation completed.', 'success'); ?>
+        <?php endif; ?>
         <?php tk_render_webp_panel(); ?>
     </div>
     <?php
@@ -311,15 +333,12 @@ function tk_webp_save() {
     tk_update_option('webp_convert_enabled', !empty($_POST['webp_convert_enabled']) ? 1 : 0);
     tk_update_option('webp_serve_enabled', !empty($_POST['webp_serve_enabled']) ? 1 : 0);
     tk_update_option('webp_quality', max(10, min(100, (int) tk_post('webp_quality', 82))));
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'webp', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-webp', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }
 
 function tk_webp_generate_all() {
-    tk_check_nonce('tk_webp_generate_all');
-    if (!tk_is_admin_user()) {
-        wp_die(__('You do not have permission.', 'tool-kits'));
-    }
+    tk_require_admin_post('tk_webp_generate_all');
     $offset = max(0, (int) tk_post('offset', 0));
     $limit = 20;
     $query = new WP_Query(array(
@@ -349,7 +368,7 @@ function tk_webp_generate_all() {
         wp_safe_redirect(add_query_arg('tk_webp_progress', rawurlencode($progress), $url));
         exit;
     }
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'webp', 'tk_webp_done' => 1), admin_url('admin.php')));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-webp', 'tk_webp_done' => 1), admin_url('admin.php')));
     exit;
 }
 

@@ -1,0 +1,18 @@
+.tk-post-faq .dashicons { vertical-align: middle; }
+.tk-faq-dialog { box-sizing: border-box; width: 640px; max-width: calc(100vw - 32px); max-height: calc(100vh - 48px); padding: 20px; border: 1px solid #c3c4c7; border-radius: 6px; color: #1d2327; background: #fff; }
+.tk-faq-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+.tk-faq-header, .tk-faq-footer { display: flex; align-items: center; gap: 12px; }
+.tk-faq-header { justify-content: space-between; margin-bottom: 16px; }
+.tk-faq-header h2 { margin: 0 !important; padding: 0 !important; font-size: 18px !important; }
+.tk-faq-row { position: relative; padding: 16px 42px 16px 0; border-top: 1px solid #dcdcde; }
+.tk-faq-row label { display: block; margin-bottom: 6px; font-weight: 600; }
+.tk-faq-row input, .tk-faq-row textarea { box-sizing: border-box; width: 100%; margin-bottom: 12px; }
+.tk-faq-remove { position: absolute; right: 0; top: 16px; width: 32px; height: 32px; padding: 0 !important; }
+.tk-faq-footer { flex-wrap: wrap; border-top: 1px solid #dcdcde; padding-top: 16px; }
+.tk-faq-add { margin-right: auto !important; }
+.tk-faq-error { color: #b32d2e; }
+.tk-faq-language-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.tk-faq-language-tabs [aria-selected="true"] { background: #2271b1; border-color: #2271b1; color: #fff; }
+.tk-faq-language-tools { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.tk-faq-language-tools input { min-width: 0; max-width: 100%; }
+.tk-faq-row[hidden] { display: none !important; }

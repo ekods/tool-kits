@@ -3,29 +3,33 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.3.0
+Stable tag: 2.5.74
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Tool Kits adalah plugin admin toolkit untuk:
-- DB Migrate: Export SQL, Find & Replace serialized-safe, dan Rename table prefix.
-- DB Cleanup: Bersihkan revisions, trash, spam, transients, dan optimize tabel.
-- Security: Hide Login, Captcha, Anti-spam Contact (CF7), Rate Limit login, Login Log, Hardening.
+Tool Kits is an admin toolkit plugin for:
+- DB Migrate: SQL export, serialized-safe Find & Replace, and table prefix rename.
+- DB Cleanup: Clean revisions, trash, spam, transients, and optimize tables.
+- Security: Hide Login, Captcha, Anti-spam Contact (CF7), login rate limiting, Login Log, and Hardening.
+- Vulnerability Scanner: review outdated WordPress core, plugins, themes, inactive components, and security-sensitive configuration.
+- Brute Force Protection: dedicated login protection workflow for rate limiting, progressive lockout, bad username blocking, origin guard, honey traps, and scanner traps.
+- Incident Response: investigation and malware removal tracking, post-incident blocklist removal, and post-incident search engine security cleanup.
 
 == Installation ==
-1. Upload folder `tool-kits` ke `/wp-content/plugins/`
-2. Activate plugin di Plugins
-3. Buka menu "Tool Kits" dan "Tool Kits Security"
+1. Upload the `tool-kits` folder to `/wp-content/plugins/`.
+2. Activate the plugin from the Plugins screen.
+3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
-- Change DB Prefix: plugin akan rename tabel dan update meta keys, tetapi Anda tetap harus update `$table_prefix` di wp-config.php manual.
-- Export SQL: best-effort via WPDB. Untuk database besar, gunakan phpMyAdmin/CLI.
-- Update checker mengambil rilis dari GitHub (release asset `tool-kits.zip` direkomendasikan untuk instalasi otomatis).
+- Change DB Prefix: the plugin renames tables and updates related meta keys, but you still need to update `$table_prefix` in wp-config.php manually.
+- Export SQL: best-effort via WPDB. For large databases, use phpMyAdmin or WP-CLI.
+- The update checker retrieves releases from GitHub. The `tool-kits.zip` release asset is recommended for automatic installation.
 - Added heartbeat collector integration improvements: heartbeat payload now includes hide-login slug/URL and collector dashboard surfaces those fields alongside the license data.
 - License and heartbeat configuration are now aligned around a single collector-based flow with explicit derived URLs, connection diagnostics, and reachability checks.
 - Hardening update: added HSTS toggle, strict CSP, server signature hide, cookie HttpOnly/Secure enforcement, WP-Cron disable toggle, URL parameter guard, HTTP methods filtering, dangerous method block, robots.txt hardening, and unwanted file access block.
+- Stealth hardening update: reduce public WordPress fingerprint by removing discovery links, REST link headers, feed links, generator output, script versions, emoji traces, and common scanner-readable root files.
 - Monitoring checks now include risky public DB host detection (possible MySQL port 3306 exposure indicator).
-- Penting: plugin tidak dapat menutup port 3306 secara langsung; pembatasan akses DB tetap wajib di firewall/security group server.
+- Important: the plugin cannot close port 3306 directly; DB access restrictions must still be enforced in the server firewall or security group.
 
 == Developer Notes ==
 Filters to adjust CORS by environment (optional example):
@@ -61,6 +65,546 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.5.74 =
+**SEO Optimization Tabs**
+- Organize the SEO Optimization page into Settings, Redirects, Canonical, Indexing, Broken Links, and Content Audit tabs, matching other Tool Kits screens.
+- Return to the originating tab after saving settings, managing redirects or indexing items, and running or clearing audits.
+- Show third-party and theme-managed SEO warnings above the tabs and remove the duplicated page title.
+
+= 2.5.73 =
+**Captcha Shortcode Modes**
+- Add robot and classic captcha mode parameters to the `[toolkits_captcha]` shortcode and CF7 tag, including the `clasic` compatibility spelling.
+- Preserve the selected captcha mode when refreshing and validating each challenge.
+- Keep the first hide-login page visit informational and only apply CAPTCHA/error obfuscation to actual login submissions.
+- Show CAPTCHA instructions and validation messages in Indonesian or English based on the active WordPress locale.
+- Add an optional Duplicate Page/Post row action under General Settings, creating editable drafts with taxonomy and custom-field data preserved.
+- Preserve the source language when duplicating Polylang or WPML content without copying its existing translation-group relationship.
+- Import FAQPage JSON-LD in replace or append mode and assign each question to its declared locale, with the WordPress locale as fallback.
+- Submit generated sitemaps to Google Search Console and Bing Webmaster Tools using stored OAuth access tokens, with status tracking.
+
+= 2.5.72 =
+**Mobile FAQ Typography**
+- Set FAQ question text to 18px and answer paragraphs to 14px on viewports up to 767px.
+- Preserve existing desktop typography.
+
+= 2.5.71 =
+**On-Demand GEO Result Reuse**
+- Reuse saved URL audit results, including failures, unless Retry Failed is explicitly requested.
+- Preserve existing results across all batch modes and reuse saved GEO review/preview reports.
+- Add Clear All Saved GEO Results for an explicit fresh review.
+- Limit preloader request duration to a twelve-second budget, stop on the first failure and apply a five-minute cooldown.
+
+= 2.5.70 =
+**Preserve Page Cache During Audits**
+- Avoid full page-cache purges when only admin GEO/SEO/authority reports change in tk_options.
+- Continue invalidating page cache for real settings and FAQ changes, including mixed report/settings updates.
+- Add regression coverage for report updates, report removals and content changes.
+
+= 2.5.69 =
+**Lazy Media Reliability and Development Cleanup**
+- Observe rendered video/picture containers instead of non-rendered source elements and restore child sources before loading video.
+- Initialize lazy media after DOM readiness, prevent duplicate initialization, and observe dynamically inserted media.
+- Preserve explicit eager/high-priority images and eager iframes without disabling below-fold lazy loading.
+- Consolidate standalone regression tests into one runner and historical release notes into RELEASE.md.
+
+= 2.5.68 =
+**GEO Audit Cache-Safe Refresh**
+- Keep a dedicated build parameter on the audit script when Ghost Mode strips version strings.
+- Navigate to a fresh report URL after completion and retain the GEO Audit tab.
+
+= 2.5.67 =
+**GEO Audit Report Refresh**
+- Automatically reload the page after the audit batch completes to display saved results.
+- Preserve the original cURL timeout details for server connectivity diagnosis.
+- Normalize the displayed timeout to the actual request limit.
+
+= 2.5.66 =
+**GEO Report Button Feedback**
+- Initialize batch controls after the page DOM is ready.
+- Display audit progress, selection warnings and request errors directly beside report actions.
+- Add UI regression tests for report buttons and AJAX execution.
+
+= 2.5.65 =
+**GEO Report Bulk Retry**
+- Add per-URL checkboxes and select-all controls to the GEO Audit report table.
+- Add Run Selected and Retry Failed actions for existing report URLs.
+- Merge retried results by URL while preserving successful results for other pages.
+- Restrict retries to eligible public targets and add regression checks for failure selection and result preservation.
+
+= 2.5.64 =
+**Bulk GEO Audit**
+- Add Run All and Run Selected actions with public URL checkboxes, progress, per-URL results, and a Stop control.
+- Process one URL per AJAX request with a full 20-second timeout and continue after individual connection failures.
+- Save results incrementally in the GEO Audit report and restrict audit sessions to the authenticated user.
+- Add regression checks for target selection, full timeouts, failure continuation, and saved progress.
+
+= 2.5.63 =
+**GEO Audit Timeout Handling**
+- Increase the GEO Audit per-URL timeout to 20 seconds within a 25-second request-loop budget.
+- Stop the audit on connection failures and show an incomplete-audit notice when targets remain unchecked.
+- Mark connection failures as unverified instead of grade F and exclude unverified pages from average scores.
+- Add regression checks for timeout configuration, early stopping, and score exclusion.
+
+= 2.5.62 =
+**Plugins-Page GitHub Update Checks**
+- Limit remote GitHub update checks to the Installed Plugins page and authenticated manual checks.
+- Preserve stored update offers without remote checks on frontend, cron, AJAX, or other admin pages.
+- Retain the one-hour release cache and add a five-minute retry cooldown to reduce repeated failed requests.
+- Add regression checks for request scope, stored offers, and retry cooldown behavior.
+
+= 2.5.61 =
+**CPU Workload Optimizations and Authority Timeout**
+- Cache theme asset content hashes for 60 seconds using file metadata keys to avoid repeated full-file hashing.
+- Limit editor SEO scoring to the current entry and retain cross-page duplicate checks in full Content Audit.
+- Reduce realtime monitoring polling frequency to 15 seconds and cache error-rate readings for 30 seconds.
+- Consolidate automatic page cache purges into one shutdown action per request and exclude internal audit metadata and editor locks.
+- Add a configurable External Authority timeout of 5-30 seconds with a 20-second default and clearer timeout results.
+- Add regression checks for hash caching, editor query scope, error-rate caching, and deferred cache invalidation.
+
+= 2.5.60 =
+**FAQ Language Tab Empty State Fix**
+- Show an initial question/answer row when selecting an empty language tab in the global FAQ editor or per-content popup.
+- Automatically assign the selected language to the new row and ignore completely empty popup rows when applying changes.
+
+= 2.5.59 =
+**Global FAQ Language Tabs**
+- Group the GEO settings FAQPage editor into ID, EN, Default, and additional language tabs.
+- Assign newly added questions to the selected language and retain all groups when saving.
+- Preserve existing untagged FAQs under Default and add language code validation.
+
+= 2.5.58 =
+**FAQ Popup Language Tabs**
+- Group per-content FAQ popup entries into ID, EN, and additional language tabs.
+- Add language groups using validated language codes and assign new FAQ rows to the active tab.
+- Preserve untagged entries in a Default tab and retain the 50-entry total limit.
+- Support arrow-key tab navigation and reveal the relevant language group when validation fails.
+
+= 2.5.57 =
+**Multilingual FAQ Entries**
+- Add language code inputs to global FAQ rows and per-content FAQ popups.
+- Filter FAQ shortcode and schema entries by page language using existing Polylang/WPML language detection, with site language as fallback.
+- Keep entries without language codes available in all languages and retain the 50-row total limit.
+- Normalize language tags, validate popup language inputs, and add language-selection regression checks.
+
+= 2.5.56 =
+**llms.txt Markdown Links**
+- Generate Markdown links for site, sitemap, important URLs, and curated content instead of plain URLs.
+- Include the homepage in the important URL list even when no other review URLs are available.
+- Escape Markdown link labels and URL parentheses to preserve valid link syntax.
+
+= 2.5.55 =
+**External Authority Source Checks**
+- Add an External Authority menu to manage a brand name and up to 50 external source URLs.
+- Check each saved URL for HTTP availability, brand mentions, and links to the website domain, including link rel attributes.
+- Store per-source evidence and check timestamps; inaccessible or unsupported sources remain unverified.
+- Use nonce-protected actions, feature access checks, and safe HTTP requests; reject same-site source URLs.
+- Add regression checks for source origins, mention matching, domain links, and false positives.
+
+= 2.5.54 =
+**Share Description Shortcode Fix**
+- Strip registered shortcodes from excerpts and content before generating Tool Kits meta descriptions and Open Graph descriptions.
+- Retain the site description fallback when removing shortcodes leaves no readable text.
+- Add regression checks for shortcode-free content, excerpt, and fallback descriptions.
+
+= 2.5.53 =
+**Global FAQ Add Question Fix**
+- Align the global FAQ Add Question button with the 50-row storage limit.
+- Disable the button at the limit, enable it again after removing a row, and focus newly added questions.
+
+= 2.5.52 =
+**FAQ Accordion and Increased Limit**
+- Increase local and global FAQ storage limits to 50 and update the per-content popup limit.
+- Render the FAQ shortcode as a native details/summary accordion with collapsed answers, toggle indicators, and keyboard focus styling.
+- Remove the shortcode H2 title while retaining FAQ structured data attributes.
+- Add regression checks for FAQ counts above 20 and the 50-item storage limit.
+
+= 2.5.51 =
+**SEO / GEO Content Type Selection**
+- Add content type checkboxes in SEO settings for pages, posts, and registered custom post types with editor interfaces.
+- Exclude section-only and non-public types by default while allowing explicit selection.
+- Apply selected types to editor panels, FAQ editor assets, per-content controls, and content audits.
+- Preserve existing per-content data when a type is disabled and reject public audit requests for excluded types.
+
+= 2.5.50 =
+**Per-Page FAQ Editor and Content Scores**
+- Add a GEO FAQ popup with dynamic question/answer rows, add/remove controls, validation, and apply/cancel actions for pages, posts, and public custom post types.
+- Save local FAQ items per content entry and use them for FAQ schema and shortcode output, respecting the GEO toggle.
+- Display saved-content SEO scores and findings in the editor, including draft content.
+- Add an on-demand public-page audit with a separate rendered SEO score, HTML findings, text samples, and content-change notices.
+- Add regression checks for FAQ persistence, nonce and edit permissions, and rendered HTML parsing.
+
+= 2.5.49 =
+**Theme Asset Version Hardening Compatibility**
+- Add theme CSS/JS content hashes after Ghost Mode removes platform version strings so automatic cache invalidation remains active.
+
+= 2.5.48 =
+**Per-Content SEO and GEO Toggles**
+- Add separate SEO and GEO on/off controls for pages, posts, and public custom post types in the Tool Kits SEO / GEO editor panel.
+- Apply per-content controls to Tool Kits SEO metadata and GEO schema output while retaining global settings and existing SEO conflict protection.
+- Keep existing content enabled by default and preserve archive behavior; disabling output does not add noindex or change third-party SEO output.
+
+= 2.5.47 =
+**Automatic Asset Versions and Expanded SEO Audit**
+- Version local admin CSS and JavaScript automatically using file modification times.
+- Version enqueued theme CSS and JavaScript using content hashes so updated assets receive new URLs after deployment.
+- Expand Content Audit with ten SEO categories, per-page findings, optimization recommendations, and review links.
+- Add focus keyword and Jakarta/Singapore target location fields to the content editor.
+- Detect exact duplicate stored content and potential placeholder wording within the latest 200 published entries; mark rendered-page checks for live review.
+
+= 2.5.46 =
+**Health Monitor Asset Cache Fix**
+- Rename the Monitoring controller and shared admin stylesheet so browser, proxy, and CDN caches cannot combine the new canvas markup with the legacy SVG renderer.
+- Use new WordPress asset handles and retain file-versioned Monitoring JavaScript loading.
+- Remove ToolKits diagnostic messages from production browser consoles.
+- Add browser regression coverage for current asset URLs and a clean ToolKits console.
+
+= 2.5.45 =
+**Chart.js Health Monitor**
+- Replace the custom SVG chart renderer with locally bundled Chart.js 4.5.1 line charts.
+- Add responsive canvas rendering, automatic high-DPI scaling, tooltips, stable axes, and native chart animations.
+- Keep CPU and memory data in a 30-sample rolling window with unused startup slots left empty.
+- Load Chart.js only on the Monitoring page and retain loading, retry, visibility-aware polling, and tab persistence.
+
+= 2.5.44 =
+**Page Heading Card Fix**
+- Add the tk-card class directly to the shared tk-hero tk-page-heading component.
+- Strengthen the white background, border, radius, and shadow rules so legacy hero styles cannot hide the card surface.
+
+= 2.5.43 =
+**Real-Time Chart Layout Fix**
+- Rebuild the CPU and memory chart layout with stable card dimensions, aligned axes, compact legends, and matching desktop heights.
+- Keep early samples anchored to the right side of the 30-sample rolling window so startup data no longer stretches across the full chart.
+- Use five metric columns on wide screens and a compact two-column layout on mobile, with the final metric spanning the row.
+- Prevent chart, label, and marker clipping at narrow WordPress admin widths.
+
+= 2.5.42 =
+**Monitoring Load Performance and Header Cards**
+- Restore tk-hero tk-page-heading as a bordered card with responsive spacing.
+- Respect the existing license validation cache during menu rendering; preserve signature checks and explicit activation validation.
+- Move page-triggered file integrity alerts to WP-Cron and omit unused plugin directory scans from chart requests.
+- Cache CPU capacity detection and add chart loading, unavailable, timeout, and retry states.
+- Prevent overlapping polling, cancel requests on hidden pages or inactive tabs, and retain the selected Monitoring tab.
+- Show the first sample immediately, animate chart updates with reduced-motion support, and align chart scales on mobile and desktop.
+
+= 2.5.41 =
+**Admin UI and Image Optimizer Workspace**
+- Refresh Tool Kits page headers, navigation, buttons, form controls, tables, and overview scores with a restrained responsive layout.
+- Organize Image Optimizer into Settings, Media Library, Compression Report, and Maintenance tabs with keyboard navigation and tab persistence.
+- Add aligned toggle settings, synchronized quality controls, Hi-Res resize states, report summaries, image thumbnails, and empty states.
+- Improve processing overlay accessibility and allow interrupted optimization to resume from the last completed batch.
+
+= 2.5.40 =
+**Hi-Res Image Optimization and Validation**
+- Add Hi-Res mode: preserve original pixel dimensions, ignore legacy resize limits, and apply a minimum JPEG quality of 95.
+- Encode from original uploads in one pass, preserve ICC profiles, apply DPI before encoding, and reject larger or invalid results.
+- Validate JPEG quality and lossless PNG/WebP pixel fidelity with Imagick; preserve source files when validation cannot pass.
+- Serve only validated generated copies with source fallback and cache revisions. Frontend requests no longer encode images.
+- Fix full-resolution and lazy-load source selection, legacy thumbnail WebP resolution, and single-candidate srcset widths.
+- Restrict local image paths to uploads, retain original files, and safely remove obsolete thumbnail derivatives and their reports.
+- Prevent concurrent background workers, reduce batch size, respect queue stop/restart, and fix Auto WebP metadata filter arguments.
+
+= 2.5.39 =
+**Performance, GEO / AI Visibility, and Monitoring**
+- Add AI Visibility Score per URL with crawler visibility, robots access, metadata, and JSON-LD checks.
+- Add llms.txt section builder, prompt preview, and schema validation report per post.
+- Add safe image optimizer maintenance cleanup for stale `-tkopt` derivatives.
+- Add Monitoring summary cards for Performance & Images, GEO / AI Visibility, and system health.
+
+= 2.5.38 =
+**OTP Hide Login Compatibility**
+- Ensure OTP challenge URLs explicitly use the custom Hide Login slug when Hide Login is enabled.
+- Keep OTP verification routes compatible with hidden login URLs instead of direct `wp-login.php` links.
+
+= 2.5.37 =
+**OTP Login**
+- Add Security > OTP Login with email-based one-time codes after valid username/password authentication.
+- Support protected roles, expiry, max attempts, resend cooldown, optional trusted devices, editable email templates, and OTP audit logs.
+- Add emergency bypass support with `TOOLKITS_DISABLE_OTP`.
+
+= 2.5.36 =
+**Image Optimizer Original URL Rewrite**
+- Resolve frontend thumbnail URLs like `-768x549` back to their full-size original before generating optimized frontend URLs when original-only srcset is enabled.
+- Clean up unused optimized thumbnail derivatives across image extensions, including stale `-tkopt.webp` files.
+
+= 2.5.35 =
+**Image Optimizer Derivative Cleanup**
+- When original-only frontend srcset is enabled, regenerate only the full-size optimized copy.
+- Delete old optimized `-tkopt` files for unused intermediate thumbnail sizes during image regeneration.
+
+= 2.5.34 =
+**Image Optimizer Srcset & Quality**
+- Add an original-only frontend srcset option so browsers use the full-size image candidate instead of many generated thumbnail sizes.
+- Raise the image optimizer quality preset to 92 and WebP quality fallback to 90 to reduce visible compression artifacts.
+- Migrate existing installs using previous default quality values to the sharper preset.
+
+= 2.5.33 =
+**Admin Card Spacing**
+- Remove the global adjacent card top margin so card spacing is controlled by each page layout.
+
+= 2.5.32 =
+**Overview Score Card Alignment**
+- Match SEO and GEO score card heights on the Welcome overview page.
+- Keep score cards stretched evenly across the grid for a cleaner layout.
+
+= 2.5.31 =
+**Overview Score Card Styling**
+- Render SEO and GEO overview score widgets as Tool Kits cards with admin CSS fallback styling.
+- Improve cache busting for the updated overview score widget layout.
+
+= 2.5.30 =
+**Admin Tab Persistence**
+- Keep the current Tool Kits tab active after saving settings, running actions, or page refreshes.
+- Restore tab state per admin page using browser session storage with hash links still taking priority.
+
+= 2.5.29 =
+**Overview SEO & GEO Scores**
+- Add SEO Score and GEO Score widgets to the Welcome to Tool Kits overview.
+- Add sidebar SEO & GEO audit checklist with links to the relevant configuration sections.
+- Calculate overview SEO/GEO scores from configured Tool Kits options and stored crawler review results.
+
+= 2.5.28 =
+**Image Optimizer No-Resize Default**
+- Change image optimization defaults to TinyJPG-like compression without resizing pixel dimensions.
+- Keep max width and max height disabled by default; existing installs using the old 2560px defaults are migrated to no-resize.
+- Preserve optional resize caps for users who intentionally want oversized images resized.
+
+= 2.5.27 =
+**Image Optimizer Sharpness**
+- Raise the default image compression quality from 78 to 86 for sharper frontend optimized assets.
+- Add a Preserve Sharpness after resize option using Imagick unsharp masking when resized images are post-processed.
+- Migrate installs still using the previous default quality to the sharper quality preset.
+
+= 2.5.26 =
+**Image Optimizer Processing Overlay**
+- Add a processing overlay while existing media library image optimization batches are running.
+- Show live batch progress text inside the overlay and hide it automatically when processing completes or fails.
+
+= 2.5.25 =
+**GEO Report Export & Select2**
+- Add horizontal scrolling to Crawler Preview and AI crawler review report tables.
+- Add print-to-PDF export actions for Crawler Preview and AI Crawler Accessibility Review reports.
+- Enhance ItemList post selection with Select2 multiselect on the GEO admin page.
+
+= 2.5.24 =
+**GEO UI Improvements**
+- Split GEO settings into feature tabs for output, Custom JSON-LD, FAQPage, ItemList, llms.txt, duplicate detector, crawler preview, AI access review, and preview.
+- Add a Custom JSON-LD draft generator button for editable WebSite and Organization schema.
+- Add FAQPage question rows with add and remove controls.
+- Update Crawler Preview to test all known AI crawler user agents and list which ones can visibly fetch the page.
+
+= 2.5.23 =
+**Updater Session Fix**
+- Stop forcing logout after every Tool Kits plugin update.
+- Invalidate sessions only when Hide Login enabled state or custom slug changes.
+- Make successful updater completion notices one-time by clearing completed status before rendering and avoiding persistent completed status storage.
+
+= 2.5.22 =
+**GEO & Image Optimization**
+- Add GEO admin menu for custom JSON-LD, FAQPage structured content, ItemList generation, and editable virtual llms.txt output.
+- Add AI crawler accessibility review, crawler fetch checklist, crawler preview, and schema duplicate detector.
+- Add safe image optimizer derivatives with `-tkopt` filenames, frontend fallback to originals, DPI metadata normalization, metadata stripping, and dimension caps.
+- Add compression report and WP-Cron background queue for large media library optimization.
+
+= 2.5.21 =
+**GEO Security Events**
+- Validate GEO lookup flow for security alerts and dashboard country reporting.
+- Resolve missing security event locations automatically when an event has a public IP.
+- Add lightweight maintenance backfill for older security events with missing location/country data.
+
+= 2.5.20 =
+**Malware Scanner**
+- Skip hidden iframe signature matching inside theme files to reduce false positives from legitimate theme embeds.
+- Skip SVG files inside themes from malware scanning when SVG is included through scanner extension filters.
+- Keep executable upload, encoded execution, request execution, web-shell, and obfuscation signatures active for theme PHP/JS/HTML files.
+
+= 2.5.19 =
+**Malware Scanner**
+- Store line number, reason, and a short code snippet for each matched malware signature.
+- Include findings, reasons, and code snippets in scheduled malware alert emails.
+- Show evidence details in the Malware Scanner report table.
+
+= 2.5.18 =
+**Vulnerability Scanner**
+- Add Vulnerability Scanner under Tool Kits Security.
+- Scan WordPress core, plugins, and themes using WordPress update metadata.
+- Flag inactive plugins and themes for removal review.
+- Flag HTTPS configuration risk when WordPress does not detect SSL.
+
+**Brute Force Protection**
+- Add dedicated Brute Force Protection menu entry.
+- Reuse the existing login protection engine for IP throttling, progressive lockout, attacker username blocking, origin guard, honey traps, scanner traps, and unblock workflows.
+
+= 2.5.17 =
+**Incident Response**
+- Add Incident Response workflow under Tool Kits Security.
+- Add Investigation and Malware Removal checklist with case status, notes, removal log, and investigation snapshot.
+- Add Post-incident Blocklist Removal tracking with external vendor review links.
+- Add Post-incident Search Engine Security Cleanup tracking for spam URL cleanup, sitemap/indexing repair, Search Console/Bing review, and recrawl follow-up.
+- Add exportable plain-text incident response report.
+
+= 2.5.16 =
+**HTTP Authentication**
+- Treat the active Hide Login custom slug as an admin/login request for HTTP Authentication scope matching.
+- Ensure HTTP Authentication appears on the custom Hide Login URL when the scope is set to `Admin and login only`.
+
+= 2.5.15 =
+**Update Security**
+- Force all administrators and users to re-login after Tool Kits is updated to a newer version.
+- Invalidate all WordPress session tokens on plugin version upgrade and clear the current auth cookie during the update request.
+
+= 2.5.14 =
+**Hide Login**
+- Rewrite WordPress core `wp-login.php` form/action URLs to the configured custom login slug.
+- Keep the login honey trap from blocking the active custom login slug, even when the slug matches a configured trap path.
+- Direct `/wp-login.php` hits continue to be blocked and redirected to the homepage.
+
+= 2.5.13 =
+**Login Protection**
+- Add generic login error obfuscation to reduce username discovery.
+- Add common attacker username protection for non-existing usernames such as admin, administrator, root, test, demo, and wpadmin.
+- Add same-site Origin/Referer guard for login POST requests.
+- Add configurable 404 scanner trap for sensitive probe paths such as .env, wp-config backups, debug logs, adminer, phpinfo, and backup dumps.
+- Add Rate Limit dashboard controls for login shield and scanner trap settings.
+
+= 2.5.12 =
+**Security Dashboard**
+- Count active Rate Limit blocked IPs and Firewall IP/CIDR blocklist rules in the Firewall Summary Blocklist column.
+- Add a dashboard note clarifying that Blocklist includes currently blocked IP/rule entries.
+
+= 2.5.11 =
+**Login Protection**
+- Add login honey trap paths for common bot targets when Hide Login is enabled.
+- Redirect honey trap hits to the homepage and temporarily lock the source IP.
+- Add progressive lockout steps for repeated login abuse.
+- Add Rate Limit settings for progressive lockout and honey trap path configuration.
+
+= 2.5.10 =
+**Hide Login**
+- Redirect direct `/wp-login.php` hits to the homepage when Hide Login is enabled.
+- Continue recording blocked direct login hits as `brute_force` security events.
+
+= 2.5.9 =
+**Hide Login**
+- Block direct `/wp-login.php` requests when Hide Login is enabled instead of allowing POST login attempts through the default endpoint.
+- Keep custom login slug flow working for login, logout, lost password, and register URLs.
+- Record blocked direct login hits as `brute_force` security events with reason `direct_wp_login_blocked`.
+
+= 2.5.8 =
+**Stealth Hardening**
+- Add WordPress fingerprint reduction for public head tags, REST discovery headers, feed links, emoji traces, and author redirect signals.
+- Enable safer stealth defaults through Auto Hardening for existing sites.
+- Expand unwanted file blocking and server rule snippets for common WordPress/dev files such as readme.html, license.txt, wp-config-sample.php, composer files, and package manifests.
+- Include fingerprint reduction in hardening score, active protections, recommendations, and security tamper checks.
+
+= 2.5.7 =
+**Security Dashboard**
+- Add a Wordfence-style dashboard widget with attacks blocked charts, firewall summary, top countries, and top blocked IPs.
+- Add drilldown links from country and IP summaries to a persistent Attack Details page.
+- Add persistent `tk_security_events` storage for blocked request metrics with indexes for event, category, IP, and country queries.
+- Add one-time backfill from legacy login and firewall logs into persistent security events.
+- Add configurable retention cleanup for security events with daily maintenance and a manual Run Maintenance action.
+
+**Login Protection**
+- Add failed-login reason tracking and show the reason in login activity details.
+- Record failed logins, firewall blocks, WAF blocks, and auto-block actions as security events.
+- Add configurable auto-block rules for repeated failed logins and bot-like login user agents.
+
+**Role Management**
+- Generate custom role slugs automatically from the display name.
+- Keep custom role slugs immutable after creation while showing a live slug preview during role creation.
+
+= 2.5.6 =
+**Cache**
+- Add dashboard cache status widget with cached file count, cache size, and one-click page cache purge.
+- Detect server/CDN cache layers from response headers and known WordPress cache integrations.
+- Add server cache debug headers and refresh detection action to the Cache Status page.
+- Purge supported plugin/server cache layers when clearing Tool Kits page cache.
+- Auto-purge page cache on content, meta, term, menu, customizer, theme, and relevant option changes.
+- Add optional auto-preload after purge for homepage and configured critical URLs.
+
+= 2.3.9 =
+**Compatibility**
+- Bypass Tool Kits request-level security modules for WordPress AJAX requests so frontend `admin-ajax.php` handlers are not blocked by Tool Kits.
+
+= 2.3.8 =
+**Database Tools**
+- Prevent search/replace from mutating user email fields and common email option values.
+- Keep normal URL/content replacements active for fields such as post content, home, and siteurl.
+
+**Cache**
+- Skip page cache generation for dynamic requests such as sessions, carts, checkout, account pages, search, REST/API URLs, and private/no-cache responses.
+- Prevent fragment cache helpers from creating cache entries when Page Cache is disabled.
+- Clarify cache status messaging for static anonymous page caching.
+
+= 2.3.7 =
+**Release**
+- Sync plugin metadata for the 2.3.7 package.
+
+= 2.3.6 =
+**Access Control**
+- Enforce Role Management menu restrictions on direct admin URL access.
+- Add Hide Tool Kits Menu control to the Tool Kits Access page.
+
+= 2.3.5 =
+**GitHub Updater**
+- Align the update/install flow with Custom Fields Framework Pro.
+- Let WordPress handle package downloads and normalize the extracted plugin root during installation.
+- Rebuild release packaging from the plugin directory and exclude development metadata from the ZIP.
+
+= 2.3.4 =
+**GitHub Updater**
+- Validate downloaded release ZIP structure before WordPress starts installation.
+- Require the update package to contain the `tool-kits/tool-kits.php` plugin root.
+- Force plugin update cleanup options so stale extracted folders do not block installation.
+- Surface package validation problems through the Tool Kits updater status instead of only showing the generic WordPress install failure.
+
+= 2.3.3 =
+**Role Management**
+- Show custom post types in the capability builder.
+- Add explicit CRUD-oriented labels for post type capabilities.
+- Keep shared WordPress primitive capabilities visible per post type while saving the correct underlying capability.
+
+**Release Packaging**
+- Rebuild the ZIP builder around `git archive` and `.gitattributes` export rules.
+- Include current working tree changes in the release package through a temporary Git index.
+- Exclude development files such as scripts, README, roadmap, Git metadata, and macOS metadata from the release archive.
+
+= 2.3.2 =
+**License-Free Database Module**
+- Allow the complete Database page and all database actions without license activation or a Collector Token.
+- Keep Tool Kits role/IP access controls, nonces, and the settings lock enforced.
+
+**Firewall and Malware Scanner**
+- Add a Firewall control page for payload WAF, IP/CIDR allow/block rules, blocked user agents, and recent event logging.
+- Add a bounded, read-only Malware Scanner for suspicious executable uploads, encoded execution, obfuscation, and known web-shell markers.
+- Keep scan results review-only to avoid destructive false-positive cleanup.
+
+**Upload Limits**
+- Add separate maximum sizes for documents/PDF files and videos.
+- Detect image, document, and video uploads by extension and MIME family.
+- Keep category limits capped by the PHP/web-server upload maximum.
+
+**Role Management**
+- Add custom WordPress roles based on an existing non-administrator role.
+- Add grouped capability controls for content, custom post types, media, comments, users, appearance, plugins, settings, and third-party modules.
+- Support independent create, edit, publish, read, and delete permissions where WordPress exposes primitive capabilities.
+- Configure the visible dashboard sidebar menus for each Tool Kits-managed role.
+- Prevent deletion while users are still assigned to a managed role.
+
+**Gmail OAuth SMTP**
+- Replace Gmail app-password authentication with Google OAuth 2.0 authorization.
+- Add Google Client ID/Secret settings, an Authorized Redirect URI, and connect/disconnect actions.
+- Send Gmail SMTP through XOAUTH2 and refresh expired access tokens automatically.
+- Add Microsoft Entra ID OAuth authorization, tenant/mailbox settings, and automatic token refresh for Microsoft 365 SMTP.
+- Keep a dedicated username/password setup for custom SMTP providers.
+
+= 2.3.1 =
+**License / Collector Fixes**
+- Fix derived license endpoint so collector URL `/api/toolkits/heartbeat` resolves to `/api/toolkits/license`.
+- Add fallback signed requests for legacy collector tokens and license endpoint variants.
+- Add safe license diagnostics for heartbeat URL, license URL, and collector token fingerprint.
+- Prevent empty license notes from being sent as `null` to NexaMonitor.
+
 = 2.3.0 =
 **System Monitoring — Real-Time Health Monitor Enhancements**
 - Add CPU Load (1m) metric card with live progress bar and color-coded indicator (green / yellow / red).

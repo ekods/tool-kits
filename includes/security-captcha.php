@@ -22,10 +22,13 @@ function tk_captcha_init() {
 
 function tk_captcha_custom_ajax_handler_init() {
     if (isset($_GET['tk_captcha_action'])) {
-        if ($_GET['tk_captcha_action'] === 'refresh') {
+        $action = sanitize_key((string) wp_unslash($_GET['tk_captcha_action']));
+        if ($action === 'refresh') {
             tk_captcha_refresh_ajax();
-        } else {
+        } elseif ($action === 'verify_click') {
             tk_captcha_verify_click_ajax();
+        } else {
+            wp_send_json_error('invalid_action');
         }
         exit;
     }
@@ -33,10 +36,13 @@ function tk_captcha_custom_ajax_handler_init() {
 
 function tk_captcha_custom_ajax_handler() {
     if (isset($_GET['tk_captcha_action'])) {
-        if ($_GET['tk_captcha_action'] === 'refresh') {
+        $action = sanitize_key((string) wp_unslash($_GET['tk_captcha_action']));
+        if ($action === 'refresh') {
             tk_captcha_refresh_ajax();
-        } else {
+        } elseif ($action === 'verify_click') {
             tk_captcha_verify_click_ajax();
+        } else {
+            wp_send_json_error('invalid_action');
         }
         exit;
     }
@@ -125,15 +131,105 @@ function tk_captcha_field_names(): array {
     ];
 }
 
-function tk_captcha_create_challenge(): array {
-    $type = tk_get_option('captcha_type', 'text');
+function tk_captcha_normalize_type($type = ''): string {
+    $type = sanitize_key((string) $type);
+    if (in_array($type, array('robot', 'checkbox'), true)) {
+        return 'checkbox';
+    }
+    if (in_array($type, array('classic', 'clasic', 'text'), true)) {
+        return 'text';
+    }
+    return 'text';
+}
+
+function tk_captcha_current_type(): string {
+    return tk_captcha_normalize_type(tk_get_option('captcha_type', 'text'));
+}
+
+function tk_captcha_type_from_shortcode_atts(array $atts): string {
+    $atts = shortcode_atts(
+        array(
+            'type' => '',
+            'mode' => '',
+            'robot' => '',
+            'classic' => '',
+            'clasic' => '',
+        ),
+        $atts,
+        'toolkits_captcha'
+    );
+
+    if (tk_truthy_shortcode_value($atts['robot'])) {
+        return 'checkbox';
+    }
+
+    if (tk_truthy_shortcode_value($atts['classic']) || tk_truthy_shortcode_value($atts['clasic'])) {
+        return 'text';
+    }
+
+    $type = $atts['type'] !== '' ? $atts['type'] : $atts['mode'];
+    if ($type !== '') {
+        return tk_captcha_normalize_type($type);
+    }
+
+    return tk_captcha_current_type();
+}
+
+function tk_truthy_shortcode_value($value): bool {
+    if (is_bool($value)) {
+        return $value;
+    }
+
+    $value = strtolower(trim((string) $value));
+    return $value !== '' && !in_array($value, array('0', 'false', 'no', 'off'), true);
+}
+
+function tk_captcha_text(string $key): string {
+    $locale = function_exists('determine_locale') ? determine_locale() : (function_exists('get_locale') ? get_locale() : 'en_US');
+    $language = strtolower(substr((string) $locale, 0, 2));
+    $strings = array(
+        'en' => array(
+            'enter_code' => 'Enter the code below',
+            'type_captcha' => 'Type the captcha',
+            'exact_case' => 'Type the code exactly as shown, including uppercase and lowercase letters.',
+            'expires' => 'The code expires in 5 minutes.',
+            'not_robot' => "I'm not a robot",
+            'refresh_failed' => 'Failed to refresh captcha. Please reload the page.',
+            'required' => 'Captcha is required.',
+            'incorrect' => 'Captcha incorrect.',
+        ),
+        'id' => array(
+            'enter_code' => 'Masukkan kode di bawah ini',
+            'type_captcha' => 'Ketik kode captcha',
+            'exact_case' => 'Ketik kode persis seperti yang ditampilkan, termasuk huruf besar dan kecil.',
+            'expires' => 'Kode akan kedaluwarsa dalam 5 menit.',
+            'not_robot' => 'Saya bukan robot',
+            'refresh_failed' => 'Captcha gagal dimuat ulang. Silakan muat ulang halaman.',
+            'required' => 'Captcha wajib diisi.',
+            'incorrect' => 'Captcha tidak sesuai.',
+        ),
+    );
+
+    $dictionary = $strings[$language] ?? $strings['en'];
+    return $dictionary[$key] ?? ($strings['en'][$key] ?? $key);
+}
+
+function tk_captcha_create_challenge(string $type = ''): array {
+    $type = $type !== '' ? tk_captcha_normalize_type($type) : tk_captcha_current_type();
     $code = tk_captcha_make_code();
     if ($type === 'checkbox') {
         $code = wp_generate_password(12, false, false);
     }
     $token = wp_generate_password(18, false, false) . '_' . rand(1000, 9999);
     $hash = wp_hash_password($code);
-    set_transient('tk_captcha_' . $token, $hash, MINUTE_IN_SECONDS * 5);
+    set_transient(
+        'tk_captcha_' . $token,
+        array(
+            'hash' => $hash,
+            'type' => $type,
+        ),
+        MINUTE_IN_SECONDS * 5
+    );
     return ['code' => $code, 'token' => $token];
 }
 
@@ -144,8 +240,9 @@ function tk_captcha_render_field() {
     echo tk_captcha_render_markup();
 }
 
-function tk_captcha_render_markup(): string {
-    $challenge = tk_captcha_create_challenge();
+function tk_captcha_render_markup(string $type = ''): string {
+    $type = $type !== '' ? tk_captcha_normalize_type($type) : tk_captcha_current_type();
+    $challenge = tk_captcha_create_challenge($type);
     $names = tk_captcha_field_names();
 
     $gradient = tk_captcha_random_gradient();
@@ -181,10 +278,11 @@ function tk_captcha_render_markup(): string {
     gap:16px;
     background:#fff;
     border-radius:14px;
-    padding:14px;
+    width: 100%;
+    max-width: 300px;
   }
   .tk-captcha-codebox{
-    width: 100%;
+    width: fit-content;
     max-width: 100%;
     display:flex;
     flex-wrap:wrap;
@@ -199,13 +297,11 @@ function tk_captcha_render_markup(): string {
     box-sizing: border-box;
   }
   .tk-captcha-input{
-    flex:1;
     width: 100%;
     padding:12px 16px;
     border-radius:10px;
     border:1px solid rgba(148,163,184,0.4);
-    background:#030712;
-    color:#f8fafc;
+    color:#000;
     font-weight:600;
     outline:none;
     box-sizing: border-box;
@@ -409,7 +505,6 @@ function tk_captcha_render_markup(): string {
 }';
     }
 
-    $type = tk_get_option('captcha_type', 'text');
     $html = $css !== '' ? '<style' . tk_csp_nonce_attr() . '>' . $css . '</style>' : '';
     
     if ($type === 'checkbox') {
@@ -421,7 +516,7 @@ function tk_captcha_render_markup(): string {
             <polyline points="20 6 9 17 4 12"></polyline>
           </svg>
         </div>';
-        $html .= '    <span class="tk-captcha-checkbox-text">I\'m not a robot</span>';
+        $html .= '    <span class="tk-captcha-checkbox-text">' . esc_html(tk_captcha_text('not_robot')) . '</span>';
         $html .= '  </div>';
         $html .= '  <div class="tk-captcha-checkbox-right">';
         $html .= '    <div class="tk-captcha-logo-box">';
@@ -440,20 +535,20 @@ function tk_captcha_render_markup(): string {
         $html .= '<div class="tk-robot-honeypot-wrap"><input type="text" name="tk_robot_honeypot" value="" tabindex="-1" autocomplete="off"></div>';
         $html .= '</div>';
     } else {
-        $html .= '<div class="tk-captcha-field">';
-        $html .= '<label class="tk-captcha-label">Enter the code below</label>';
+        $html .= '<div class="tk-captcha-field" data-type="text">';
+        $html .= '<label class="tk-captcha-label">' . esc_html(tk_captcha_text('enter_code')) . '</label>';
         $html .= '<div class="tk-captcha-panel">';
         $html .= '<div class="tk-captcha-code-wrapper">';
         $html .= '<div class="tk-captcha-codebox">';
         $html .= $charSpans;
         $html .= '</div>';
         $html .= '<button type="button" class="tk-captcha-refresh" aria-label="Refresh captcha">
-            <svg class="tk-captcha-refresh-icon" viewBox="0 0 24 24" fill="none">
-                <path d="M4 12a8 8 0 0 1 13.66-5.66L20 4v6h-6l2.22-2.22A6 6 0 1 0 18 12"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"/>
+            <svg class="tk-captcha-refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 12a9 9 0 0 0-15.74-6.74L3 8"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3 12a9 9 0 0 0 15.74 6.74L21 16"/>
+                <path d="M16 16h5v5"/>
             </svg>
             </button>';
         $html .= '</div>'; // code wrapper
@@ -461,12 +556,12 @@ function tk_captcha_render_markup(): string {
             class="tk-captcha-input"
             name="' . esc_attr($names['answer']) . '"
             autocomplete="off"
-            placeholder="Type the captcha"
-            aria-label="Captcha code">';
+            placeholder="' . esc_attr(tk_captcha_text('type_captcha')) . '"
+            aria-label="' . esc_attr(tk_captcha_text('type_captcha')) . '">';
         $html .= '</div>'; // panel
         $html .= '<div class="tk-captcha-help">';
-        $html .= '<span>Typing the code exactly, including case, is required.</span>';
-        $html .= '<small>Codes expire in 5 minutes to keep brute-force attackers at bay.</small>';
+        $html .= '<span>' . esc_html(tk_captcha_text('exact_case')) . '</span>';
+        $html .= '<small>' . esc_html(tk_captcha_text('expires')) . '</small>';
         $html .= '</div>';
         $html .= '<input type="hidden" name="' . esc_attr($names['token']) . '" value="' . esc_attr($challenge['token']) . '">';
         $html .= '</div>';
@@ -482,7 +577,7 @@ function tk_captcha_shortcode($atts) {
     if (!tk_get_option('captcha_enabled')) {
         return '';
     }
-    return tk_captcha_render_markup();
+    return tk_captcha_render_markup(tk_captcha_type_from_shortcode_atts((array) $atts));
 }
 
 function tk_captcha_register_wpcf7_tag() {
@@ -495,11 +590,33 @@ function tk_captcha_wpcf7_tag_handler($tag) {
     if (!tk_get_option('captcha_enabled')) {
         return '';
     }
-    return tk_captcha_render_markup();
+    return tk_captcha_render_markup(tk_captcha_type_from_wpcf7_tag($tag));
+}
+
+function tk_captcha_type_from_wpcf7_tag($tag): string {
+    $atts = array();
+    $items = array();
+
+    foreach (array('options', 'raw_values', 'values') as $property) {
+        if (is_object($tag) && isset($tag->{$property}) && is_array($tag->{$property})) {
+            $items = array_merge($items, $tag->{$property});
+        } elseif (is_array($tag) && isset($tag[$property]) && is_array($tag[$property])) {
+            $items = array_merge($items, $tag[$property]);
+        }
+    }
+
+    foreach ($items as $item) {
+        $item = trim((string) $item);
+        if (preg_match('/^(type|mode|robot|classic|clasic)(?::|=)(.*)$/i', $item, $match)) {
+            $atts[strtolower($match[1])] = trim($match[2], " \t\n\r\0\x0B\"'");
+        }
+    }
+
+    return tk_captcha_type_from_shortcode_atts($atts);
 }
 
 function tk_captcha_refresh_ajax() {
-    $nonce = isset($_POST['nonce']) ? sanitize_text_field(wp_unslash($_POST['nonce'])) : '';
+    $nonce = isset($_REQUEST['nonce']) ? sanitize_text_field(wp_unslash($_REQUEST['nonce'])) : '';
     if (!wp_verify_nonce($nonce, 'tk_captcha_refresh')) {
         wp_send_json_error('invalid_nonce');
     }
@@ -507,11 +624,12 @@ function tk_captcha_refresh_ajax() {
     if (!tk_get_option('captcha_enabled')) {
         wp_send_json_error('disabled');
     }
-    wp_send_json_success(array('markup' => tk_captcha_render_markup()));
+    $type = isset($_REQUEST['type']) ? sanitize_key((string) wp_unslash($_REQUEST['type'])) : '';
+    wp_send_json_success(array('markup' => tk_captcha_render_markup($type)));
 }
 
 function tk_captcha_verify_click_ajax() {
-    $nonce = isset($_POST['nonce']) ? sanitize_text_field(wp_unslash($_POST['nonce'])) : '';
+    $nonce = isset($_REQUEST['nonce']) ? sanitize_text_field(wp_unslash($_REQUEST['nonce'])) : '';
     if (!wp_verify_nonce($nonce, 'tk_captcha_verify_click')) {
         wp_send_json_error('invalid_nonce');
     }
@@ -520,7 +638,7 @@ function tk_captcha_verify_click_ajax() {
         wp_send_json_error('disabled');
     }
 
-    $token = isset($_POST['token']) ? sanitize_text_field(wp_unslash($_POST['token'])) : '';
+    $token = isset($_REQUEST['token']) ? sanitize_text_field(wp_unslash($_REQUEST['token'])) : '';
     if ($token === '') {
         wp_send_json_error('missing_token');
     }
@@ -547,13 +665,13 @@ function tk_captcha_refresh_script() {
     }
     $printed = true;
 
-    $ajax_url = home_url('/?tk_captcha_action=verify');
+    $verify_url = home_url('/?tk_captcha_action=verify_click');
     $nonce_refresh = wp_create_nonce('tk_captcha_refresh');
     $nonce_verify = wp_create_nonce('tk_captcha_verify_click');
     
     tk_csp_print_inline_script(
         "(function(){
-            var ajaxUrl = '" . esc_js($ajax_url) . "';
+            var verifyUrl = '" . esc_js($verify_url) . "';
             var nonceRefresh = '" . esc_js($nonce_refresh) . "';
             var nonceVerify = '" . esc_js($nonce_verify) . "';
             
@@ -568,55 +686,61 @@ function tk_captcha_refresh_script() {
             if (window.tkCaptchaRefreshBound) return;
             window.tkCaptchaRefreshBound = true;
 
+            function verifyCheckbox(target, event) {
+                var field = target.closest('.tk-captcha-field');
+                if (!field || field.getAttribute('data-type') !== 'checkbox') return;
+
+                if (event) event.preventDefault();
+
+                var realBox = field.querySelector('.tk-captcha-checkbox-box');
+                if (!realBox || realBox.classList.contains('is-checked') || realBox.classList.contains('is-loading')) return;
+
+                var tokenInput = field.querySelector('input[name=\"tk_captcha_token\"]');
+                if (!tokenInput || !tokenInput.value) return;
+
+                realBox.classList.add('is-loading');
+                realBox.setAttribute('aria-busy', 'true');
+
+                fetch(verifyUrl, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: new URLSearchParams({
+                        nonce: nonceVerify,
+                        token: tokenInput.value,
+                        interact: interactions,
+                        timing: Date.now() - startTime
+                    })
+                }).then(function(resp){
+                    if (!resp.ok) throw new Error('Network response was not ok');
+                    return resp.json();
+                }).then(function(data){
+                    if (data.success && data.data.answer) {
+                        setTimeout(function(){
+                            realBox.classList.remove('is-loading');
+                            realBox.classList.add('is-checked');
+                            realBox.removeAttribute('aria-busy');
+                            realBox.setAttribute('aria-checked', 'true');
+                            var ans = field.querySelector('.tk-captcha-answer-field');
+                            if (ans) ans.value = data.data.answer;
+                        }, 600);
+                    } else {
+                        throw new Error(data.data || 'Verification failed');
+                    }
+                }).catch(function(){
+                    realBox.classList.remove('is-loading');
+                    realBox.removeAttribute('aria-busy');
+                    alert('Verification failed. Please try again.');
+                });
+            }
+
             document.addEventListener('click', function(e){
                 var box = e.target.closest('.tk-captcha-checkbox-box');
                 var text = e.target.closest('.tk-captcha-checkbox-text');
+                var left = e.target.closest('.tk-captcha-checkbox-left');
                 
-                if (box || text) {
-                    var field = e.target.closest('.tk-captcha-field');
-                    var realBox = field.querySelector('.tk-captcha-checkbox-box');
-                    if (realBox.classList.contains('is-checked') || realBox.classList.contains('is-loading')) return;
-                    
-                    var tokenInput = field.querySelector('input[name=\"tk_captcha_token\"]');
-                    if (!tokenInput) return;
-
-                    // Strong validation: Check if time on page is too low (< 500ms) or no interaction
-                    if (Date.now() - startTime < 500 && interactions === 0) {
-                        console.warn('ToolKits: Bot detected (fast click / no interaction)');
-                        // Still allow but we can flag it or just be more strict later
-                    }
-
-                    realBox.classList.add('is-loading');
-                    
-                    fetch(ajaxUrl, {
-                        method: 'POST',
-                        credentials: 'same-origin',
-                        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                        body: new URLSearchParams({
-                            action: 'tk_captcha_verify_click',
-                            nonce: nonceVerify,
-                            token: tokenInput.value,
-                            interact: interactions,
-                            timing: Date.now() - startTime
-                        })
-                    }).then(function(resp){ 
-                        return resp.json(); 
-                    }).then(function(data){
-                        if (data.success && data.data.answer) {
-                            setTimeout(function(){
-                                realBox.classList.remove('is-loading');
-                                realBox.classList.add('is-checked');
-                                realBox.setAttribute('aria-checked', 'true');
-                                var ans = field.querySelector('.tk-captcha-answer-field');
-                                if (ans) ans.value = data.data.answer;
-                            }, 600); // Artificial delay for premium feel
-                        } else {
-                            throw new Error(data.data || 'Verification failed');
-                        }
-                    }).catch(function(err){
-                        realBox.classList.remove('is-loading');
-                        alert('Verification failed. Please try again.');
-                    });
+                if (box || text || left) {
+                    verifyCheckbox(e.target, e);
                     return;
                 }
 
@@ -629,6 +753,7 @@ function tk_captcha_refresh_script() {
                 if (!field) {
                     return;
                 }
+                var captchaType = field.getAttribute('data-type') || '';
                 btn.disabled = true;
                 btn.classList.add('is-refreshing');
                 btn.setAttribute('aria-busy', 'true');
@@ -638,7 +763,8 @@ function tk_captcha_refresh_script() {
                     credentials: 'same-origin',
                     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
                     body: new URLSearchParams({
-                        nonce: nonceRefresh
+                        nonce: nonceRefresh,
+                        type: captchaType
                     })
                 }).then(function(resp){ 
                     if (!resp.ok) throw new Error('Network response was not ok');
@@ -649,12 +775,11 @@ function tk_captcha_refresh_script() {
                     } else {
                         throw new Error('Invalid response from server');
                     }
-                }).catch(function(err){
-                    console.error('Captcha Refresh Error:', err);
+                }).catch(function(){
                     btn.disabled = false;
                     btn.classList.remove('is-refreshing');
                     btn.removeAttribute('aria-busy');
-                    alert('Failed to refresh captcha. Please reload the page.');
+                    alert('" . esc_js(tk_captcha_text('refresh_failed')) . "');
                 }).finally(function(){
                     if (document.body.contains(btn)) {
                         btn.disabled = false;
@@ -662,6 +787,13 @@ function tk_captcha_refresh_script() {
                         btn.removeAttribute('aria-busy');
                     }
                 });
+            });
+
+            document.addEventListener('keydown', function(e){
+                var box = e.target.closest('.tk-captcha-checkbox-box');
+                if (box && (e.key === 'Enter' || e.key === ' ')) {
+                    verifyCheckbox(box, e);
+                }
             });
         })();",
         array('id' => 'tk-captcha-refresh')
@@ -672,12 +804,15 @@ function tk_captcha_validate($user) {
     if (!tk_get_option('captcha_enabled') || !tk_get_option('captcha_on_login')) {
         return $user;
     }
+    if (!isset($_POST['log'], $_POST['pwd'])) {
+        return $user;
+    }
     $validation = tk_captcha_validate_request();
     if (!$validation['present']) {
-        return new WP_Error('captcha_missing', 'Captcha is required.');
+        return new WP_Error('captcha_missing', tk_captcha_text('required'));
     }
     if (!$validation['valid']) {
-        return new WP_Error('captcha_invalid', 'Captcha incorrect.');
+        return new WP_Error('captcha_invalid', tk_captcha_text('incorrect'));
     }
     return $user;
 }
@@ -701,7 +836,11 @@ function tk_captcha_validate_request(): array {
         return array('present' => true, 'valid' => false);
     }
 
-    if (tk_get_option('captcha_type') === 'checkbox') {
+    $challenge = get_transient('tk_captcha_' . $token);
+    $hash = is_array($challenge) && isset($challenge['hash']) ? (string) $challenge['hash'] : (string) $challenge;
+    $type = is_array($challenge) && isset($challenge['type']) ? tk_captcha_normalize_type($challenge['type']) : tk_captcha_current_type();
+
+    if ($type === 'checkbox') {
         if ($answer !== 'VERIFIED_CLICK') {
             return array('present' => true, 'valid' => false);
         }
@@ -711,7 +850,6 @@ function tk_captcha_validate_request(): array {
         return array('present' => true, 'valid' => (bool)$verified);
     }
 
-    $hash = get_transient('tk_captcha_' . $token);
     delete_transient('tk_captcha_' . $token);
 
     return array(
@@ -731,7 +869,7 @@ function tk_captcha_validate_cf7($result, $tags) {
     }
 
     if (!$validation['valid']) {
-        $result->invalidate(null, __('Captcha incorrect.', 'tool-kits'));
+        $result->invalidate(null, tk_captcha_text('incorrect'));
     }
 
     return $result;
@@ -763,7 +901,7 @@ function tk_render_captcha_panel() {
     ?>
     <div class="tk-card">
         <h2>Captcha</h2>
-        <p>Protect login screens or any other form with a lightweight random challenge. Use <code>[toolkits_captcha]</code> to render the same challenge in contact forms or custom blocks.</p>
+        <p>Protect login screens or any other form with a lightweight random challenge. Use <code>[toolkits_captcha]</code>, <code>[toolkits_captcha robot="1"]</code>, or <code>[toolkits_captcha clasic="1"]</code> in contact forms or custom blocks.</p>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
             <?php tk_nonce_field('tk_captcha_save'); ?>
             <input type="hidden" name="action" value="tk_captcha_save">

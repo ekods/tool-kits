@@ -1,5 +1,6 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
+require_once __DIR__ . '/seo-rendered-audit.php';
 
 function tk_seo_opt_init() {
     add_action('admin_post_tk_seo_opt_save', 'tk_seo_opt_save');
@@ -16,9 +17,46 @@ function tk_seo_opt_init() {
 
     add_action('init', 'tk_seo_sitemap_maybe_render', 1);
     add_action('template_redirect', 'tk_seo_redirect_maybe_handle', 1);
+    add_action('add_meta_boxes', 'tk_seo_add_geo_meta_boxes');
+    add_action('save_post', 'tk_seo_save_geo_meta_box', 10, 2);
+    add_action('admin_enqueue_scripts', 'tk_seo_enqueue_faq_editor');
+    add_action('admin_post_tk_seo_post_rendered_audit', 'tk_seo_post_rendered_audit');
 
     add_action('wp_head', 'tk_seo_render_head_tags', 2);
     add_filter('wp_robots', 'tk_seo_filter_robots');
+}
+
+function tk_seo_editor_post_types(): array {
+    $types = get_post_types(array('show_ui' => true), 'objects');
+    unset($types['attachment']);
+    return $types;
+}
+
+function tk_seo_selected_post_types(): array {
+    $types = tk_seo_editor_post_types();
+    $saved = tk_get_option('seo_geo_post_types', null);
+    if (is_array($saved)) {
+        return array_values(array_intersect(array_keys($types), $saved));
+    }
+    return array_keys(array_filter($types, function ($type) {
+        return is_post_type_viewable($type);
+    }));
+}
+
+function tk_seo_post_feature_enabled(string $feature, int $post_id = 0): bool {
+    if (!in_array($feature, array('seo', 'geo'), true)) {
+        return false;
+    }
+    if ($post_id <= 0) {
+        if (is_admin() || !is_singular()) {
+            return true;
+        }
+        $post_id = (int) get_queried_object_id();
+    }
+    if ($post_id > 0 && !in_array(get_post_type($post_id), tk_seo_selected_post_types(), true)) {
+        return false;
+    }
+    return $post_id <= 0 || (string) get_post_meta($post_id, '_tk_' . $feature . '_enabled', true) !== '0';
 }
 
 function tk_seo_tools_enabled() {
@@ -35,7 +73,13 @@ function tk_seo_opt_enabled() {
     if (!tk_seo_tools_enabled()) {
         return false;
     }
+    if (!tk_seo_post_feature_enabled('seo')) {
+        return false;
+    }
     if (tk_seo_has_third_party_plugin()) {
+        return false;
+    }
+    if (tk_seo_has_theme_managed_seo()) {
         return false;
     }
     return true;
@@ -43,6 +87,32 @@ function tk_seo_opt_enabled() {
 
 function tk_seo_has_third_party_plugin() {
     return defined('WPSEO_VERSION') || defined('RANK_MATH_VERSION') || defined('AIOSEO_VERSION') || defined('SEOPRESS_VERSION');
+}
+
+function tk_seo_has_theme_managed_seo(): bool {
+    $managed = function_exists('cst_seo') || function_exists('cst_geo_canonical_url');
+    if (!$managed && function_exists('wp_get_theme')) {
+        $theme = wp_get_theme();
+        $values = array();
+        if (is_object($theme)) {
+            $values[] = (string) $theme->get_stylesheet();
+            $values[] = (string) $theme->get_template();
+            $values[] = (string) $theme->get('Name');
+            $values[] = (string) $theme->get('TextDomain');
+        }
+        foreach ($values as $value) {
+            if (stripos($value, 'egghead') !== false) {
+                $managed = true;
+                break;
+            }
+        }
+    }
+
+    return (bool) apply_filters('tk_seo_theme_managed_seo', $managed);
+}
+
+function tk_seo_has_theme_managed_canonical(): bool {
+    return tk_seo_has_theme_managed_seo();
 }
 
 function tk_seo_filter_robots($robots) {
@@ -77,7 +147,7 @@ function tk_seo_render_head_tags() {
     $title = wp_get_document_title();
     $description = tk_seo_generate_description();
 
-    if ((int) tk_get_option('seo_canonical_enabled', 1) === 1 && $url !== '' && !is_singular()) {
+    if ((int) tk_get_option('seo_canonical_enabled', 1) === 1 && $url !== '' && !is_singular() && !tk_seo_has_theme_managed_canonical()) {
         echo '<link rel="canonical" href="' . esc_url($url) . '">' . "\n";
     }
 
@@ -102,22 +172,16 @@ function tk_seo_render_head_tags() {
         }
     }
 
-    if ((int) tk_get_option('seo_schema_enabled', 1) === 1) {
-        $schema = tk_seo_build_schema_graph($url, $title, $description);
-        if (!empty($schema)) {
-            echo '<script type="application/ld+json"' . tk_csp_nonce_attr() . '>' . wp_json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . '</script>' . "\n";
-        }
-    }
 }
 
 function tk_seo_generate_description() {
     $description = '';
     if (is_singular()) {
-        $description = trim(wp_strip_all_tags(get_the_excerpt()));
+        $description = trim(wp_strip_all_tags(strip_shortcodes(get_the_excerpt())));
         if ($description === '') {
             $post = get_post();
             if (is_object($post) && !empty($post->post_content)) {
-                $description = trim(wp_strip_all_tags((string) $post->post_content));
+                $description = trim(wp_strip_all_tags(strip_shortcodes((string) $post->post_content)));
             }
         }
     } elseif (is_home() || is_front_page()) {
@@ -163,16 +227,481 @@ function tk_seo_current_url() {
     return home_url($uri);
 }
 
+function tk_seo_enqueue_faq_editor(): void {
+    $screen = get_current_screen();
+    if (!$screen || $screen->base !== 'post' || !tk_is_admin_user()
+        || !in_array($screen->post_type, tk_seo_selected_post_types(), true)) {
+        return;
+    }
+    wp_enqueue_style('tk-post-faq', TK_URL . 'assets/post-faq.css', array(), tk_asset_version('assets/post-faq.css'));
+    wp_enqueue_script('tk-post-faq', TK_URL . 'assets/post-faq.js', array(), tk_asset_version('assets/post-faq.js'), true);
+}
+
+function tk_seo_add_geo_meta_boxes(): void {
+    if (!tk_is_admin_user()) {
+        return;
+    }
+
+    foreach (tk_seo_selected_post_types() as $post_type) {
+        add_meta_box(
+            'tk-seo-geo-signals',
+            'Tool Kits SEO / GEO',
+            'tk_seo_render_geo_meta_box',
+            $post_type,
+            'side',
+            'default'
+        );
+    }
+}
+
+function tk_seo_render_geo_meta_box($post): void {
+    $post_id = is_object($post) ? (int) $post->ID : 0;
+    $references = get_post_meta($post_id, '_tk_geo_reference_urls', true);
+    $related_ids = get_post_meta($post_id, '_tk_geo_related_posts', true);
+    $references = is_array($references) ? $references : array();
+    $related_ids = is_array($related_ids) ? array_map('intval', $related_ids) : array();
+    $post_types = get_post_types(array('public' => true), 'names');
+    unset($post_types['attachment']);
+    $choices = get_posts(array(
+        'post_type' => array_values($post_types),
+        'post_status' => 'publish',
+        'posts_per_page' => 80,
+        'post__not_in' => array($post_id),
+        'orderby' => 'modified',
+        'order' => 'DESC',
+        'no_found_rows' => true,
+    ));
+
+    wp_nonce_field('tk_seo_geo_meta_box', 'tk_seo_geo_meta_nonce');
+    ?>
+    <?php if (is_object($post) && $post->post_status !== 'auto-draft') : ?>
+        <?php
+        $score_report = tk_seo_run_content_audit($post_id);
+        $score_item = $score_report['items'][0] ?? null;
+        ?>
+        <?php if (is_array($score_item)) : ?>
+            <p><strong>SEO Score: <?php echo esc_html((string) $score_item['score']); ?>/100</strong>
+                <span><?php echo esc_html(ucfirst($score_item['priority'])); ?></span>
+            </p>
+            <meter min="0" max="100" low="50" high="85" optimum="100" value="<?php echo esc_attr((string) $score_item['score']); ?>" aria-label="SEO content score" style="width:100%;height:16px;"></meter>
+            <p class="description">Saved content audit. Page-builder fields and rendered GEO/schema require separate review.</p>
+            <details>
+                <summary>Temuan (<?php echo esc_html((string) count($score_item['issues'])); ?>)</summary>
+                <ul>
+                    <?php foreach ($score_item['issues'] as $issue) : ?>
+                        <li><?php echo esc_html($issue); ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </details>
+        <?php endif; ?>
+    <?php else : ?>
+        <p><strong>SEO Score: -</strong></p>
+        <p class="description">Simpan draft untuk menghitung skor.</p>
+    <?php endif; ?>
+    <?php tk_seo_render_public_audit_panel($post); ?>
+    <?php foreach (array('seo' => 'SEO', 'geo' => 'GEO') as $feature => $label) : ?>
+        <p>
+            <input type="hidden" name="tk_<?php echo esc_attr($feature); ?>_enabled" value="0">
+            <label>
+                <input type="checkbox" role="switch" name="tk_<?php echo esc_attr($feature); ?>_enabled" value="1" <?php checked(tk_seo_post_feature_enabled($feature, $post_id)); ?>>
+                <strong><?php echo esc_html($label); ?></strong>
+            </label>
+        </p>
+    <?php endforeach; ?>
+    <?php $faq_items = tk_geo_normalize_faq_items(get_post_meta($post_id, '_tk_geo_faq_items', true)); ?>
+    <div class="tk-post-faq">
+        <input type="hidden" name="tk_geo_post_faq" value="<?php echo esc_attr(wp_json_encode($faq_items)); ?>" disabled>
+        <p><button type="button" class="button tk-faq-open"><span class="dashicons dashicons-editor-help" aria-hidden="true"></span> FAQ GEO <span class="tk-faq-count"><?php echo esc_html((string) count($faq_items)); ?></span></button></p>
+        <dialog class="tk-faq-dialog" aria-labelledby="tk-faq-title">
+            <div class="tk-faq-header"><h2 id="tk-faq-title">FAQ GEO</h2><button type="button" class="button tk-faq-cancel" aria-label="Close" title="Close"><span class="dashicons dashicons-no-alt" aria-hidden="true"></span></button></div>
+            <div class="tk-faq-rows"></div>
+            <p class="tk-faq-error" role="alert" hidden></p>
+            <div class="tk-faq-footer">
+                <button type="button" class="button tk-faq-add"><span class="dashicons dashicons-plus-alt2" aria-hidden="true"></span> Tambah FAQ</button>
+                <button type="button" class="button tk-faq-cancel">Batal</button>
+                <button type="button" class="button button-primary tk-faq-apply">Terapkan</button>
+            </div>
+        </dialog>
+    </div>
+    <p><label for="tk-seo-keyword"><strong>Focus Keyword</strong></label></p>
+    <input id="tk-seo-keyword" name="tk_seo_focus_keyword" type="text" style="width:100%;" value="<?php echo esc_attr((string) get_post_meta($post_id, '_tk_seo_focus_keyword', true)); ?>">
+    <p><label for="tk-seo-location"><strong>Target Location</strong></label></p>
+    <select id="tk-seo-location" name="tk_seo_target_location" style="width:100%;">
+        <?php foreach (array('' => 'Not location-specific', 'jakarta' => 'Jakarta', 'singapore' => 'Singapore') as $value => $label) : ?>
+            <option value="<?php echo esc_attr($value); ?>" <?php selected(get_post_meta($post_id, '_tk_seo_target_location', true), $value); ?>><?php echo esc_html($label); ?></option>
+        <?php endforeach; ?>
+    </select>
+    <p><strong>References / Sources</strong></p>
+    <textarea name="tk_geo_reference_urls" rows="5" style="width:100%;" placeholder="One source URL per line"><?php echo esc_textarea(implode("\n", $references)); ?></textarea>
+    <p class="description">Used for GEO audit and Schema.org <code>citation</code>.</p>
+
+    <p><strong>Related Content</strong></p>
+    <select name="tk_geo_related_posts[]" multiple size="6" style="width:100%;">
+        <?php foreach ($choices as $choice) : ?>
+            <option value="<?php echo esc_attr((string) $choice->ID); ?>" <?php selected(in_array((int) $choice->ID, $related_ids, true)); ?>>
+                <?php echo esc_html(get_the_title($choice) ?: ('#' . $choice->ID)); ?>
+            </option>
+        <?php endforeach; ?>
+    </select>
+    <p class="description">Manual related content for audit and Schema.org <code>relatedLink</code>.</p>
+    <?php
+}
+
+function tk_seo_save_geo_meta_box($post_id, $post): void {
+    if (!is_object($post) || wp_is_post_revision((int) $post_id) || wp_is_post_autosave((int) $post_id)) {
+        return;
+    }
+    if (!isset($_POST['tk_seo_geo_meta_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash((string) $_POST['tk_seo_geo_meta_nonce'])), 'tk_seo_geo_meta_box')) {
+        return;
+    }
+    if (!current_user_can('edit_post', (int) $post_id)) {
+        return;
+    }
+    if (!in_array(get_post_type((int) $post_id), tk_seo_selected_post_types(), true)) {
+        return;
+    }
+
+    foreach (array('seo', 'geo') as $feature) {
+        $field = 'tk_' . $feature . '_enabled';
+        if (isset($_POST[$field]) && is_string($_POST[$field])) {
+            $value = wp_unslash($_POST[$field]);
+            if (in_array($value, array('0', '1'), true)) {
+                update_post_meta((int) $post_id, '_tk_' . $feature . '_enabled', $value);
+            }
+        }
+    }
+
+    if (isset($_POST['tk_geo_post_faq']) && is_string($_POST['tk_geo_post_faq'])) {
+        $faq = json_decode(wp_unslash($_POST['tk_geo_post_faq']), true);
+        if (is_array($faq)) {
+            update_post_meta((int) $post_id, '_tk_geo_faq_items', tk_geo_normalize_faq_items($faq));
+        }
+    }
+
+    if (isset($_POST['tk_seo_focus_keyword']) && is_string($_POST['tk_seo_focus_keyword'])) {
+        update_post_meta((int) $post_id, '_tk_seo_focus_keyword', sanitize_text_field(wp_unslash($_POST['tk_seo_focus_keyword'])));
+    }
+    if (isset($_POST['tk_seo_target_location']) && is_string($_POST['tk_seo_target_location'])) {
+        $location = sanitize_key(wp_unslash($_POST['tk_seo_target_location']));
+        if (in_array($location, array('', 'jakarta', 'singapore'), true)) {
+            update_post_meta((int) $post_id, '_tk_seo_target_location', $location);
+        }
+    }
+
+    $raw_refs = isset($_POST['tk_geo_reference_urls']) ? (string) wp_unslash($_POST['tk_geo_reference_urls']) : '';
+    $refs = array();
+    foreach (preg_split('/\r\n|\r|\n/', $raw_refs) ?: array() as $line) {
+        $url = esc_url_raw(trim((string) $line));
+        if ($url !== '' && (strpos($url, 'http://') === 0 || strpos($url, 'https://') === 0)) {
+            $refs[] = $url;
+        }
+    }
+    $refs = array_values(array_unique($refs));
+    if (!empty($refs)) {
+        update_post_meta((int) $post_id, '_tk_geo_reference_urls', $refs);
+    } else {
+        delete_post_meta((int) $post_id, '_tk_geo_reference_urls');
+    }
+
+    $related = isset($_POST['tk_geo_related_posts']) && is_array($_POST['tk_geo_related_posts']) ? $_POST['tk_geo_related_posts'] : array();
+    $related = array_slice(array_values(array_unique(array_filter(array_map('intval', $related)))), 0, 10);
+    if (!empty($related)) {
+        update_post_meta((int) $post_id, '_tk_geo_related_posts', $related);
+    } else {
+        delete_post_meta((int) $post_id, '_tk_geo_related_posts');
+    }
+}
+
+function tk_seo_collect_urls_from_value($value): array {
+    $urls = array();
+    $value = maybe_unserialize($value);
+
+    if (is_array($value)) {
+        foreach ($value as $item) {
+            $urls = array_merge($urls, tk_seo_collect_urls_from_value($item));
+        }
+        return $urls;
+    }
+
+    if (!is_scalar($value)) {
+        return $urls;
+    }
+
+    $value = trim((string) $value);
+    if ($value === '') {
+        return $urls;
+    }
+
+    if (filter_var($value, FILTER_VALIDATE_URL)) {
+        $urls[] = $value;
+    }
+    if (preg_match_all('~https?://[^\s<>"\']+~i', $value, $matches)) {
+        $urls = array_merge($urls, $matches[0]);
+    }
+
+    return $urls;
+}
+
+function tk_seo_reference_urls($post_id): array {
+    $post_id = (int) $post_id;
+    if ($post_id <= 0) {
+        return array();
+    }
+
+    $keys = array(
+        '_tk_geo_reference_urls',
+        '_source_url',
+        'source_url',
+        'source',
+        'sources',
+        'reference_url',
+        'reference',
+        'references',
+        'citation',
+        'citations',
+    );
+
+    $urls = array();
+    foreach ($keys as $key) {
+        foreach (get_post_meta($post_id, $key, false) as $value) {
+            $urls = array_merge($urls, tk_seo_collect_urls_from_value($value));
+        }
+    }
+
+    $urls = array_filter(array_map('esc_url_raw', $urls));
+    $urls = array_filter($urls, function($url) {
+        return strpos((string) $url, 'http://') === 0 || strpos((string) $url, 'https://') === 0;
+    });
+
+    return array_values(array_unique($urls));
+}
+
+function tk_seo_author_data($post): array {
+    $post = is_object($post) ? $post : get_post((int) $post);
+    $author_id = is_object($post) ? (int) $post->post_author : 0;
+    $site_name = (string) get_bloginfo('name');
+    $name = $author_id > 0 ? (string) get_the_author_meta('display_name', $author_id) : '';
+    if ($name === '') {
+        $name = $site_name;
+    }
+
+    $description = $author_id > 0 ? (string) get_the_author_meta('description', $author_id) : '';
+    if ($description === '') {
+        $description = (string) get_bloginfo('description');
+    }
+
+    return array(
+        'type' => $author_id > 0 ? 'Person' : 'Organization',
+        'name' => $name,
+        'description' => trim(wp_strip_all_tags($description)),
+        'url' => $author_id > 0 ? get_author_posts_url($author_id) : home_url('/'),
+    );
+}
+
+function tk_seo_theme_option($key, $fallback = '') {
+    if (function_exists('myprefix_get_theme_option')) {
+        $value = myprefix_get_theme_option($key);
+        if (is_scalar($value) && trim((string) $value) !== '') {
+            return $value;
+        }
+    }
+    return $fallback;
+}
+
+function tk_seo_option_lines($key, $limit = 20): array {
+    $value = tk_seo_theme_option($key, '');
+    $lines = is_array($value) ? $value : preg_split('/[\r\n,]+/', (string) $value);
+    $lines = array_filter(array_map(function($line) {
+        return trim(wp_strip_all_tags((string) $line));
+    }, is_array($lines) ? $lines : array()));
+
+    return array_slice(array_values(array_unique($lines)), 0, (int) $limit);
+}
+
+function tk_seo_organization_data(): array {
+    $logo = tk_seo_theme_option('themes_logo_color', '');
+    if ($logo === '') {
+        $logo = tk_seo_theme_option('themes_logo_secondary', '');
+    }
+    if ($logo === '') {
+        $logo = tk_seo_theme_option('themes_favicon', '');
+    }
+    if ($logo === '') {
+        $logo = tk_seo_og_image_url();
+    }
+
+    $same_as = array_filter(array_map('esc_url_raw', array(
+        tk_seo_theme_option('themes_linkedin', ''),
+        tk_seo_theme_option('themes_instagram', ''),
+        tk_seo_theme_option('themes_facebook', ''),
+        tk_seo_theme_option('themes_x', ''),
+        tk_seo_theme_option('themes_youtube', ''),
+        tk_seo_theme_option('themes_tiktok', ''),
+    )));
+
+    $telephone = array_filter(array_map('trim', explode(',', (string) tk_seo_theme_option('themes_telephone', ''))));
+    $email = sanitize_email((string) tk_seo_theme_option('themes_email', get_option('admin_email')));
+    $address = trim(wp_strip_all_tags((string) tk_seo_theme_option('themes_address', '')));
+    $expertise = tk_seo_option_lines('themes_expertise', 20);
+    $service_name = trim(wp_strip_all_tags((string) tk_seo_theme_option('themes_service_name', get_bloginfo('name'))));
+
+    if ($service_name !== '') {
+        array_unshift($expertise, $service_name);
+    }
+
+    return array(
+        'name' => (string) get_bloginfo('name'),
+        'description' => trim(wp_strip_all_tags((string) tk_seo_theme_option('themes_description', get_bloginfo('description')))),
+        'url' => home_url('/'),
+        'contact_url' => home_url('/contact/'),
+        'logo' => esc_url_raw((string) $logo),
+        'same_as' => array_values(array_unique($same_as)),
+        'telephone' => array_values($telephone),
+        'email' => is_email($email) ? $email : '',
+        'address' => $address,
+        'founders' => tk_seo_option_lines('themes_founder', 8),
+        'team' => tk_seo_option_lines('themes_team', 12),
+        'expertise' => array_values(array_unique(array_filter($expertise))),
+        'service_name' => $service_name,
+        'service_description' => trim(wp_strip_all_tags((string) tk_seo_theme_option('themes_service_description', get_bloginfo('description')))),
+    );
+}
+
+function tk_seo_related_urls($post_id, $limit = 3): array {
+    $post_id = (int) $post_id;
+    $post_type = $post_id > 0 ? (string) get_post_type($post_id) : '';
+    if ($post_id <= 0 || $post_type === '') {
+        return array();
+    }
+
+    $manual_related = get_post_meta($post_id, '_tk_geo_related_posts', true);
+    if (is_array($manual_related) && !empty($manual_related)) {
+        $urls = array();
+        foreach (array_slice(array_map('intval', $manual_related), 0, (int) $limit) as $related_id) {
+            if ($related_id <= 0 || get_post_status($related_id) !== 'publish') {
+                continue;
+            }
+            $url = get_permalink($related_id);
+            if (is_string($url) && $url !== '') {
+                $urls[] = $url;
+            }
+        }
+        if (!empty($urls)) {
+            return array_values(array_unique($urls));
+        }
+    }
+
+    $taxonomies = get_object_taxonomies($post_type);
+    $taxonomy = in_array('category', $taxonomies, true) ? 'category' : '';
+    if ($taxonomy === '' && !empty($taxonomies)) {
+        $taxonomy = (string) reset($taxonomies);
+    }
+    if ($taxonomy === '') {
+        return array();
+    }
+
+    $terms = wp_get_post_terms($post_id, $taxonomy, array('fields' => 'ids'));
+    if (is_wp_error($terms) || empty($terms)) {
+        return array();
+    }
+
+    $related = get_posts(array(
+        'post_type' => $post_type,
+        'post_status' => 'publish',
+        'posts_per_page' => (int) $limit,
+        'post__not_in' => array($post_id),
+        'tax_query' => array(
+            array(
+                'taxonomy' => $taxonomy,
+                'field' => 'term_id',
+                'terms' => $terms,
+            ),
+        ),
+        'fields' => 'ids',
+        'no_found_rows' => true,
+    ));
+
+    $urls = array();
+    foreach ($related as $related_id) {
+        $url = get_permalink((int) $related_id);
+        if (is_string($url) && $url !== '') {
+            $urls[] = $url;
+        }
+    }
+
+    return $urls;
+}
+
 function tk_seo_build_schema_graph($url, $title, $description) {
     $site_name = (string) get_bloginfo('name');
+    $org_id = trailingslashit(home_url('/')) . '#organization';
+    $website_id = trailingslashit(home_url('/')) . '#website';
+    $entity = tk_seo_organization_data();
     $graph = array();
+
+    $organization = array(
+        '@type' => 'Organization',
+        '@id' => $org_id,
+        'url' => $entity['url'],
+        'name' => $entity['name'],
+        'description' => $entity['description'],
+    );
+    if ($entity['logo'] !== '') {
+        $organization['logo'] = array(
+            '@type' => 'ImageObject',
+            'url' => $entity['logo'],
+        );
+    }
+    if (!empty($entity['same_as'])) {
+        $organization['sameAs'] = $entity['same_as'];
+    }
+    if (!empty($entity['telephone']) || $entity['email'] !== '' || $entity['contact_url'] !== '') {
+        $contact_point = array(
+            '@type' => 'ContactPoint',
+            'contactType' => 'customer support',
+            'areaServed' => 'ID',
+            'availableLanguage' => array('en', 'id'),
+        );
+        if ($entity['contact_url'] !== '') {
+            $contact_point['url'] = $entity['contact_url'];
+        }
+        if (!empty($entity['telephone'])) {
+            $contact_point['telephone'] = reset($entity['telephone']);
+        }
+        if ($entity['email'] !== '') {
+            $contact_point['email'] = $entity['email'];
+        }
+        $organization['contactPoint'] = array($contact_point);
+    }
+    if ($entity['address'] !== '') {
+        $organization['address'] = array(
+            '@type' => 'PostalAddress',
+            'streetAddress' => $entity['address'],
+        );
+        $organization['location'] = $organization['address'];
+    }
+    if (!empty($entity['founders'])) {
+        $organization['founder'] = array_map(function($name) {
+            return array('@type' => 'Person', 'name' => $name);
+        }, $entity['founders']);
+    }
+    if (!empty($entity['team'])) {
+        $organization['employee'] = array_map(function($name) {
+            return array('@type' => 'Person', 'name' => $name);
+        }, $entity['team']);
+    }
+    if (!empty($entity['expertise'])) {
+        $organization['knowsAbout'] = $entity['expertise'];
+    }
+    $graph[] = $organization;
 
     $graph[] = array(
         '@type' => 'WebSite',
-        '@id' => trailingslashit(home_url('/')) . '#website',
+        '@id' => $website_id,
         'url' => home_url('/'),
         'name' => $site_name,
         'description' => (string) get_bloginfo('description'),
+        'publisher' => array('@id' => $org_id),
     );
 
     $webpage = array(
@@ -180,7 +709,8 @@ function tk_seo_build_schema_graph($url, $title, $description) {
         '@id' => $url !== '' ? $url . '#webpage' : trailingslashit(home_url('/')) . '#webpage',
         'url' => $url,
         'name' => (string) $title,
-        'isPartOf' => array('@id' => trailingslashit(home_url('/')) . '#website'),
+        'isPartOf' => array('@id' => $website_id),
+        'about' => array('@id' => $org_id),
     );
     if ($description !== '') {
         $webpage['description'] = $description;
@@ -190,6 +720,9 @@ function tk_seo_build_schema_graph($url, $title, $description) {
     if (is_singular()) {
         $post = get_post();
         if (is_object($post)) {
+            $author = tk_seo_author_data($post);
+            $references = tk_seo_reference_urls((int) $post->ID);
+            $related = tk_seo_related_urls((int) $post->ID);
             $article = array(
                 '@type' => 'Article',
                 '@id' => $url !== '' ? $url . '#article' : '',
@@ -197,20 +730,44 @@ function tk_seo_build_schema_graph($url, $title, $description) {
                 'datePublished' => get_the_date(DATE_W3C, $post),
                 'dateModified' => get_the_modified_date(DATE_W3C, $post),
                 'mainEntityOfPage' => array('@id' => $url !== '' ? $url . '#webpage' : ''),
+                'author' => array(
+                    '@type' => $author['type'],
+                    'name' => $author['name'],
+                    'url' => $author['url'],
+                    'description' => $author['description'],
+                ),
+                'publisher' => array('@id' => $org_id),
             );
-            $author_id = (int) $post->post_author;
-            if ($author_id > 0) {
-                $article['author'] = array(
-                    '@type' => 'Person',
-                    'name' => get_the_author_meta('display_name', $author_id),
-                );
-            }
             $image = tk_seo_og_image_url();
             if ($image !== '') {
                 $article['image'] = array($image);
             }
+            if (!empty($references)) {
+                $article['citation'] = $references;
+            }
+            if (!empty($related)) {
+                $article['relatedLink'] = $related;
+            }
             $graph[] = $article;
         }
+    }
+
+    if ($entity['service_name'] !== '') {
+        $service = array(
+            '@type' => 'Service',
+            '@id' => trailingslashit(home_url('/')) . '#service',
+            'name' => $entity['service_name'],
+            'description' => $entity['service_description'],
+            'provider' => array('@id' => $org_id),
+            'areaServed' => array(
+                '@type' => 'Country',
+                'name' => 'Indonesia',
+            ),
+        );
+        if (!empty($entity['expertise'])) {
+            $service['serviceType'] = $entity['expertise'];
+        }
+        $graph[] = $service;
     }
 
     return array(
@@ -339,7 +896,7 @@ function tk_seo_redirect_add() {
     }
 
     if ($from === '' || ($to === '' && $status !== 410)) {
-        wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_redirect_error' => 1), admin_url('admin.php')));
+        wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_redirect_error' => 1), admin_url('admin.php')) . '#redirects');
         exit;
     }
 
@@ -359,7 +916,7 @@ function tk_seo_redirect_add() {
     );
     tk_update_option('seo_redirect_rules', $rules);
 
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_redirect_added' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_redirect_added' => 1), admin_url('admin.php')) . '#redirects');
     exit;
 }
 
@@ -383,7 +940,7 @@ function tk_seo_redirect_delete() {
     }
     tk_update_option('seo_redirect_rules', $filtered);
 
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_redirect_deleted' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_redirect_deleted' => 1), admin_url('admin.php')) . '#redirects');
     exit;
 }
 
@@ -648,7 +1205,7 @@ function tk_seo_links_scan() {
     $report = tk_seo_scan_internal_links();
     tk_update_option('seo_broken_links_report', $report);
 
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_links_scanned' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_links_scanned' => 1), admin_url('admin.php')) . '#broken-links');
     exit;
 }
 
@@ -658,7 +1215,7 @@ function tk_seo_links_clear() {
     }
     tk_check_nonce('tk_seo_links_clear');
     tk_update_option('seo_broken_links_report', array());
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_links_cleared' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_links_cleared' => 1), admin_url('admin.php')) . '#broken-links');
     exit;
 }
 
@@ -669,7 +1226,7 @@ function tk_seo_canonical_scan() {
     tk_check_nonce('tk_seo_canonical_scan');
     $report = tk_seo_run_canonical_audit();
     tk_update_option('seo_canonical_audit_report', $report);
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_canonical_scanned' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_canonical_scanned' => 1), admin_url('admin.php')) . '#canonical');
     exit;
 }
 
@@ -679,7 +1236,7 @@ function tk_seo_canonical_clear() {
     }
     tk_check_nonce('tk_seo_canonical_clear');
     tk_update_option('seo_canonical_audit_report', array());
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_canonical_cleared' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_canonical_cleared' => 1), admin_url('admin.php')) . '#canonical');
     exit;
 }
 
@@ -880,7 +1437,7 @@ function tk_seo_index_add() {
         $status = 'unknown';
     }
     if ($url === '') {
-        wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_index_error' => 1), admin_url('admin.php')));
+        wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_index_error' => 1), admin_url('admin.php')) . '#indexing');
         exit;
     }
 
@@ -894,7 +1451,7 @@ function tk_seo_index_add() {
     );
     tk_update_option('seo_index_monitor', $items);
 
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_index_added' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_index_added' => 1), admin_url('admin.php')) . '#indexing');
     exit;
 }
 
@@ -913,7 +1470,7 @@ function tk_seo_index_delete() {
         $filtered[] = $item;
     }
     tk_update_option('seo_index_monitor', $filtered);
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_index_deleted' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_index_deleted' => 1), admin_url('admin.php')) . '#indexing');
     exit;
 }
 
@@ -924,7 +1481,7 @@ function tk_seo_content_audit_scan() {
     tk_check_nonce('tk_seo_content_audit_scan');
     $report = tk_seo_run_content_audit();
     tk_update_option('seo_content_audit_report', $report);
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_audit_scanned' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_audit_scanned' => 1), admin_url('admin.php')) . '#content-audit');
     exit;
 }
 
@@ -934,25 +1491,384 @@ function tk_seo_content_audit_clear() {
     }
     tk_check_nonce('tk_seo_content_audit_clear');
     tk_update_option('seo_content_audit_report', array());
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_seo_audit_cleared' => 1), admin_url('admin.php')));
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_seo_audit_cleared' => 1), admin_url('admin.php')) . '#content-audit');
     exit;
 }
 
-function tk_seo_run_content_audit() {
+function tk_seo_geo_audit_scan() {
+    if (!tk_is_admin_user()) {
+        wp_die('Forbidden');
+    }
+    tk_check_nonce('tk_seo_geo_audit_scan');
+    tk_update_option('seo_geo_audit_report', tk_seo_run_geo_audit());
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-geo', 'tk_seo_geo_audit_scanned' => 1), admin_url('admin.php')) . '#geo-audit');
+    exit;
+}
+
+function tk_seo_geo_audit_clear() {
+    if (!tk_is_admin_user()) {
+        wp_die('Forbidden');
+    }
+    tk_check_nonce('tk_seo_geo_audit_clear');
+    tk_update_option('seo_geo_audit_report', array());
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-geo', 'tk_seo_geo_audit_cleared' => 1), admin_url('admin.php')) . '#geo-audit');
+    exit;
+}
+
+function tk_seo_run_geo_audit(): array {
+    $urls = array(home_url('/'));
+    $ids = get_posts(array(
+        'post_type' => array_values(array_diff(get_post_types(array('public' => true), 'names'), array('attachment'))),
+        'post_status' => 'publish',
+        'numberposts' => 12,
+        'fields' => 'ids',
+        'orderby' => 'modified',
+        'order' => 'DESC',
+    ));
+    foreach ($ids as $post_id) {
+        $url = get_permalink((int) $post_id);
+        if (is_string($url) && $url !== '') {
+            $urls[] = $url;
+        }
+    }
+
+    $items = array();
+    $targets = array_slice(array_values(array_unique($urls)), 0, 12);
+    $deadline = microtime(true) + 25;
+    foreach ($targets as $url) {
+        $remaining = (int) floor($deadline - microtime(true));
+        if ($remaining < 1) { break; }
+        $item = tk_seo_geo_audit_url($url, min(20, $remaining));
+        $items[] = $item;
+        if ((int) $item['status'] === 0) { break; }
+    }
+
+    $summary = tk_seo_geo_audit_summary($items);
+    return array(
+        'scanned_at' => time(),
+        'checked_urls' => count($items),
+        'requested_urls' => count($targets),
+        'incomplete' => count($items) < count($targets),
+        'average_score' => (int) ($summary['average_score'] ?? 0),
+        'issue_count' => (int) ($summary['issue_count'] ?? 0),
+        'items' => $items,
+    );
+}
+
+function tk_seo_geo_audit_url($url, int $timeout = 20, bool $retry = false): array {
+    if (!$retry && function_exists('tk_get_option')) {
+        $report = (array) tk_get_option('seo_geo_audit_report', array());
+        foreach (($report['items'] ?? array()) as $item) {
+            if (is_array($item) && ($item['url'] ?? '') === $url) { return $item; }
+        }
+    }
+    $timeout = max(1, min(20, $timeout));
+    $response = wp_remote_get($url, array(
+        'timeout' => $timeout,
+        'redirection' => 3,
+        'sslverify' => false,
+        'headers' => array('User-Agent' => 'Tool Kits GEO Audit'),
+    ));
+    if (is_wp_error($response)) {
+        $message = $response->get_error_message();
+        if (strpos($message, 'cURL error 28:') !== false) {
+            $message = 'Connection timed out after ' . $timeout . ' seconds. Page not verified; review server loopback connectivity and CDN/firewall access. Transport error: ' . $message;
+        }
+        return array(
+            'url' => $url,
+            'status' => 0,
+            'score' => null,
+            'grade' => '-',
+            'issues' => array($message),
+            'schema' => array('valid' => false, 'types' => array(), 'entity_ok' => false),
+            'semantic' => array(),
+            'freshness' => array(),
+        );
+    }
+
+    $body = (string) wp_remote_retrieve_body($response);
+    $schema = tk_seo_geo_validate_schema($body);
+    $semantic = tk_seo_geo_scan_semantic_html($body);
+    $freshness = tk_seo_geo_scan_freshness($body);
+    $issues = array_merge($schema['issues'], $semantic['issues'], $freshness['issues']);
+    $score = 100;
+    $score -= min(35, count($schema['issues']) * 8);
+    $score -= min(30, count($semantic['issues']) * 6);
+    $score -= min(20, count($freshness['issues']) * 10);
+    if ((int) wp_remote_retrieve_response_code($response) >= 400) {
+        $issues[] = 'HTTP status is not successful.';
+        $score -= 20;
+    }
+    $score = max(0, min(100, $score));
+
+    return array(
+        'url' => $url,
+        'status' => (int) wp_remote_retrieve_response_code($response),
+        'score' => $score,
+        'grade' => tk_seo_geo_grade($score),
+        'issues' => array_values(array_unique($issues)),
+        'schema' => $schema,
+        'semantic' => $semantic,
+        'freshness' => $freshness,
+    );
+}
+
+function tk_seo_geo_validate_schema($html): array {
+    $issues = array();
+    $types = array();
+    $entity_ok = false;
+    $schema_count = 0;
+    $invalid_count = 0;
+    $required_entity = array('name', 'description', 'url', 'logo', 'sameAs', 'contactPoint', 'address', 'knowsAbout');
+    $entity_fields = array();
+
+    if (preg_match_all('/<script\b[^>]*type=("|\')application\/ld\+json\1[^>]*>(.*?)<\/script>/is', (string) $html, $matches)) {
+        foreach ($matches[2] as $json) {
+            $schema_count++;
+            $decoded = json_decode(trim(html_entity_decode((string) $json)), true);
+            if (!is_array($decoded)) {
+                $invalid_count++;
+                continue;
+            }
+            $nodes = isset($decoded['@graph']) && is_array($decoded['@graph']) ? $decoded['@graph'] : array($decoded);
+            foreach ($nodes as $node) {
+                if (!is_array($node)) {
+                    continue;
+                }
+                $type = $node['@type'] ?? '';
+                $node_types = is_array($type) ? $type : array($type);
+                foreach ($node_types as $node_type) {
+                    if (is_string($node_type) && $node_type !== '') {
+                        $types[] = $node_type;
+                    }
+                }
+                if (in_array('Organization', $node_types, true)) {
+                    foreach ($required_entity as $field) {
+                        $entity_fields[$field] = !empty($node[$field]);
+                    }
+                }
+            }
+        }
+    }
+
+    $types = array_values(array_unique($types));
+    if ($schema_count === 0) {
+        $issues[] = 'Missing JSON-LD schema.';
+    }
+    if ($invalid_count > 0) {
+        $issues[] = 'Invalid JSON-LD detected.';
+    }
+    foreach (array('Organization', 'WebSite', 'WebPage') as $required_type) {
+        if (!in_array($required_type, $types, true)) {
+            $issues[] = 'Missing ' . $required_type . ' schema.';
+        }
+    }
+    foreach ($required_entity as $field) {
+        if (empty($entity_fields[$field])) {
+            $issues[] = 'Organization missing ' . $field . '.';
+        }
+    }
+    $entity_ok = !empty($entity_fields) && !in_array(false, $entity_fields, true);
+
+    return array(
+        'valid' => $schema_count > 0 && $invalid_count === 0,
+        'count' => $schema_count,
+        'types' => $types,
+        'entity_ok' => $entity_ok,
+        'entity_fields' => $entity_fields,
+        'issues' => $issues,
+    );
+}
+
+function tk_seo_geo_scan_semantic_html($html): array {
+    $issues = array();
+    $h1_count = preg_match_all('/<h1\b[^>]*>/i', (string) $html);
+    $has_main = (bool) preg_match('/<main\b/i', (string) $html);
+    $has_header = (bool) preg_match('/<header\b/i', (string) $html);
+    $has_footer = (bool) preg_match('/<footer\b/i', (string) $html);
+    $has_nav = (bool) preg_match('/<nav\b/i', (string) $html);
+    $has_article_or_section = (bool) preg_match('/<(article|section)\b/i', (string) $html);
+    $has_meta_desc = (bool) preg_match('/<meta\b[^>]*name=("|\')description\1[^>]*content=("|\')[^"\']{50,}\2/i', (string) $html);
+
+    if ((int) $h1_count === 0) {
+        $issues[] = 'Missing H1.';
+    } elseif ((int) $h1_count > 1) {
+        $issues[] = 'Multiple H1 headings.';
+    }
+    if (!$has_main) {
+        $issues[] = 'Missing semantic main element.';
+    }
+    if (!$has_header) {
+        $issues[] = 'Missing semantic header element.';
+    }
+    if (!$has_footer) {
+        $issues[] = 'Missing semantic footer element.';
+    }
+    if (!$has_nav) {
+        $issues[] = 'Missing semantic nav element.';
+    }
+    if (!$has_article_or_section) {
+        $issues[] = 'Missing article/section structure.';
+    }
+    if (!$has_meta_desc) {
+        $issues[] = 'Missing or short meta description.';
+    }
+
+    return array(
+        'h1_count' => (int) $h1_count,
+        'main' => $has_main,
+        'header' => $has_header,
+        'footer' => $has_footer,
+        'nav' => $has_nav,
+        'article_or_section' => $has_article_or_section,
+        'meta_description' => $has_meta_desc,
+        'issues' => $issues,
+    );
+}
+
+function tk_seo_geo_scan_freshness($html): array {
+    $issues = array();
+    $published = '';
+    $modified = '';
+    if (preg_match('/property=("|\')article:published_time\1[^>]*content=("|\')(.*?)\2/i', (string) $html, $match)) {
+        $published = (string) $match[3];
+    }
+    if (preg_match('/property=("|\')article:modified_time\1[^>]*content=("|\')(.*?)\2/i', (string) $html, $match)) {
+        $modified = (string) $match[3];
+    }
+    if ($published === '' && preg_match('/"datePublished"\s*:\s*"([^"]+)"/i', (string) $html, $match)) {
+        $published = (string) $match[1];
+    }
+    if ($modified === '' && preg_match('/"dateModified"\s*:\s*"([^"]+)"/i', (string) $html, $match)) {
+        $modified = (string) $match[1];
+    }
+
+    $modified_ts = $modified !== '' ? strtotime($modified) : false;
+    if ($published === '') {
+        $issues[] = 'Missing published date.';
+    }
+    if ($modified === '') {
+        $issues[] = 'Missing modified date.';
+    } elseif ($modified_ts !== false && $modified_ts < strtotime('-12 months')) {
+        $issues[] = 'Content is stale over 12 months.';
+    }
+
+    return array(
+        'published' => $published,
+        'modified' => $modified,
+        'issues' => $issues,
+    );
+}
+
+function tk_seo_geo_grade($score): string {
+    $score = (int) $score;
+    if ($score >= 90) {
+        return 'A';
+    }
+    if ($score >= 80) {
+        return 'B';
+    }
+    if ($score >= 70) {
+        return 'C';
+    }
+    if ($score >= 50) {
+        return 'D';
+    }
+    return 'F';
+}
+
+function tk_seo_geo_audit_summary($items): array {
+    $sum = 0;
+    $count = 0;
+    $issue_count = 0;
+    foreach ($items as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        if (!isset($item['score'])) {
+            $issue_count += count($item['issues'] ?? array());
+            continue;
+        }
+        $sum += (int) ($item['score'] ?? 0);
+        $issue_count += isset($item['issues']) && is_array($item['issues']) ? count($item['issues']) : 0;
+        $count++;
+    }
+    return array(
+        'average_score' => $count > 0 ? (int) round($sum / $count) : 0,
+        'issue_count' => $issue_count,
+    );
+}
+
+function tk_seo_content_strategy_checks($post, array $duplicates, bool $duplicate_checked = true): array {
+    $plain = trim(preg_replace('/\s+/u', ' ', wp_strip_all_tags(strip_shortcodes($post->post_content))) ?? '');
+    $title = (string) get_the_title($post->ID);
+    $keyword = trim((string) get_post_meta($post->ID, '_tk_seo_focus_keyword', true));
+    $location = (string) get_post_meta($post->ID, '_tk_seo_target_location', true);
+    $url = (string) get_permalink($post->ID);
+    $checks = array();
+    $add = function ($category, $status, $finding, $action, $target = '') use (&$checks) {
+        $checks[] = compact('category', 'status', 'finding', 'action', 'target');
+    };
+    $add('Content SEO', $plain === '' ? 'warning' : 'review', $plain === '' ? 'No text in stored content.' : 'Stored content available; see structure and trust checks below.', 'Review rendered title, description, headings, and image alternatives.', get_edit_post_link($post->ID));
+    $missing = array();
+    if ($keyword !== '') {
+        foreach (array('title' => $title, 'content' => $plain, 'slug' => rawurldecode(str_replace('-', ' ', $post->post_name))) as $field => $value) {
+            if (mb_stripos($value, $keyword) === false) {
+                $missing[] = $field;
+            }
+        }
+    }
+    $add('Keyword targeting', $keyword === '' || $missing ? 'warning' : 'pass', $keyword === '' ? 'Focus keyword not set.' : ($missing ? 'Keyword absent from: ' . implode(', ', $missing) . '.' : 'Keyword present in title, content, and slug.'), 'Set one relevant focus keyword and align wording with search intent; review slug changes with redirects.', get_edit_post_link($post->ID));
+    $home = wp_parse_url(home_url('/'));
+    $parts = wp_parse_url($url);
+    $consistent = is_array($home) && is_array($parts) && ($home['host'] ?? '') === ($parts['host'] ?? '') && ($home['scheme'] ?? '') === ($parts['scheme'] ?? '') && empty($parts['query']);
+    $add('URL consistency', $consistent ? 'review' : 'warning', $consistent ? 'Permalink matches site origin; redirects and canonical need live verification.' : 'Permalink origin or query differs from site URL.', 'Run Canonical Audit and configure redirects for alternate URLs.', tk_admin_url('tool-kits-seo'));
+    $hash = $plain !== '' ? hash('sha256', mb_strtolower($plain)) : '';
+    $peers = $hash !== '' ? array_values(array_diff($duplicates[$hash] ?? array(), array((int) $post->ID))) : array();
+    $add('Duplicate content', $peers ? 'warning' : 'review', !$duplicate_checked ? 'Not checked in editor; run Content Audit for cross-page comparison.' : ($peers ? 'Identical stored text also found in post IDs: ' . implode(', ', $peers) . '.' : 'No exact text duplicate in this sample; near-duplicates not checked.'), 'Differentiate repeated pages or consolidate with a reviewed canonical/redirect.', get_edit_post_link($post->ID));
+    $placeholder = preg_match('/\b(lorem ipsum|dolor sit amet|coming soon|under construction|placeholder|sample text)\b/i', $plain . ' ' . $title);
+    $add('Placeholder content', $placeholder ? 'warning' : 'review', $placeholder ? 'Potential placeholder phrase detected.' : 'No known placeholder phrase in stored text.', 'Review flagged wording and replace unfinished copy with approved content.', get_edit_post_link($post->ID));
+    $portfolio = preg_match('/portfolio|project|case.?stud|^work[s]?$/i', $post->post_type) || preg_match('/\b(portfolio|case study)\b/i', $title);
+    $portfolio_complete = preg_match('/\b(client|klien)\b/i', $plain) && preg_match('/\b(result|outcome|hasil|impact)\b/i', $plain);
+    $add('Portfolio SEO', !$portfolio ? 'not-applicable' : ($portfolio_complete ? 'review' : 'warning'), !$portfolio ? 'Not identified as a portfolio page.' : ($portfolio_complete ? 'Client and outcome wording found.' : 'Client or outcome wording missing from stored text.'), 'Add verified client context, scope, outcomes, and relevant service links.', get_edit_post_link($post->ID));
+    $local_found = $location !== '' && mb_stripos($plain . ' ' . $title, $location) !== false;
+    $add('Local SEO Jakarta/Singapore', $location === '' ? 'not-applicable' : ($local_found ? 'review' : 'warning'), $location === '' ? 'No target location selected.' : ($local_found ? 'Target city mentioned; business details need verification.' : 'Selected city absent from title and stored text.'), 'Add accurate city-specific service details and verify business name, address, phone, and service area.', get_edit_post_link($post->ID));
+    $add('GEO / AI readability', 'review', 'Stored content cannot verify crawler-visible structure.', 'Run GEO Audit and Crawler Preview; review concise answers, headings, citations, and content access.', tk_admin_url('tool-kits-geo'));
+    $add('Entity signals', 'review', 'Organization identity requires rendered schema and visible business information.', 'Review organization name, URL, logo, contact details, and verified profile links in GEO.', tk_admin_url('tool-kits-geo'));
+    $add('Structured data/schema', 'review', 'Rendered JSON-LD validity is checked by GEO Audit.', 'Run GEO Audit and schema validation; resolve duplicates and use types that match visible content.', tk_admin_url('tool-kits-geo'));
+    return $checks;
+}
+
+function tk_seo_run_content_audit(int $only_post_id = 0) {
     $post_types = get_post_types(array('public' => true), 'names');
     unset($post_types['attachment']);
-    $ids = get_posts(array(
-        'post_type' => array_values($post_types),
+    $post_types = array_values(array_intersect($post_types, tk_seo_selected_post_types()));
+    $ids = $only_post_id > 0 ? array($only_post_id) : ($post_types ? get_posts(array(
+        'post_type' => $post_types,
         'post_status' => 'publish',
         'numberposts' => 200,
         'fields' => 'ids',
         'orderby' => 'date',
         'order' => 'DESC',
-    ));
+    )) : array());
 
     $home_host = (string) wp_parse_url(home_url('/'), PHP_URL_HOST);
+    $duplicates = array();
+    foreach ($only_post_id > 0 ? array() : $ids as $id) {
+        $candidate = get_post((int) $id);
+        if (!is_object($candidate)) {
+            continue;
+        }
+        $text = trim(preg_replace('/\s+/u', ' ', wp_strip_all_tags(strip_shortcodes($candidate->post_content))) ?? '');
+        if ($text !== '') {
+            $duplicates[hash('sha256', mb_strtolower($text))][] = (int) $id;
+        }
+    }
     $items = array();
     foreach ($ids as $post_id) {
+        if ($only_post_id > 0 && (int) $post_id !== $only_post_id) {
+            continue;
+        }
         $post = get_post((int) $post_id);
         if (!is_object($post)) {
             continue;
@@ -1009,6 +1925,16 @@ function tk_seo_run_content_audit() {
             }
         }
 
+        $author = tk_seo_author_data($post);
+        $has_author = trim((string) ($author['name'] ?? '')) !== '';
+        $has_author_bio = trim((string) ($author['description'] ?? '')) !== '';
+        $has_published_date = !empty($post->post_date_gmt) && $post->post_date_gmt !== '0000-00-00 00:00:00';
+        $has_modified_date = !empty($post->post_modified_gmt) && $post->post_modified_gmt !== '0000-00-00 00:00:00';
+        $reference_urls = tk_seo_reference_urls((int) $post_id);
+        $related_urls = tk_seo_related_urls((int) $post_id);
+        $has_references = !empty($reference_urls) || $external_links > 0;
+        $has_related = !empty($related_urls) || $internal_links >= 2;
+
         $score = 100;
         $issues = array();
         $priority = 'low';
@@ -1045,8 +1971,35 @@ function tk_seo_run_content_audit() {
             $issues[] = 'Missing manual excerpt';
             $score -= 8;
         }
+        if (!$has_author) {
+            $issues[] = 'Missing author signal';
+            $score -= 12;
+        }
+        if (!$has_author_bio) {
+            $issues[] = 'Missing author bio';
+            $score -= 8;
+        }
+        if (!$has_published_date || !$has_modified_date) {
+            $issues[] = 'Missing published/modified date signal';
+            $score -= 8;
+        }
+        if (!$has_references && $post->post_type === 'post') {
+            $issues[] = 'Missing reference/source signal';
+            $score -= 8;
+        }
+        if (!$has_related) {
+            $issues[] = 'Missing related content signal';
+            $score -= 8;
+        }
 
         $score = max(0, min(100, (int) round($score)));
+        $strategy_checks = tk_seo_content_strategy_checks($post, $duplicates, $only_post_id === 0);
+        foreach ($strategy_checks as $check) {
+            if ($check['status'] === 'warning') {
+                $issues[] = $check['category'] . ': ' . $check['finding'];
+                $score = max(0, $score - 5);
+            }
+        }
         $priority = tk_seo_audit_priority_from_score($score);
 
         $items[] = array(
@@ -1055,6 +2008,15 @@ function tk_seo_run_content_audit() {
             'words' => (int) $words,
             'internal_links' => (int) $internal_links,
             'external_links' => (int) $external_links,
+            'trust_signals' => array(
+                'author' => $has_author,
+                'author_bio' => $has_author_bio,
+                'published_date' => $has_published_date,
+                'modified_date' => $has_modified_date,
+                'references' => $has_references,
+                'related_content' => $has_related,
+            ),
+            'strategy_checks' => $strategy_checks,
             'issues' => $issues,
             'score' => $score,
             'priority' => $priority,
@@ -1076,7 +2038,7 @@ function tk_seo_run_content_audit() {
 
     return array(
         'scanned_at' => time(),
-        'checked_posts' => is_array($ids) ? count($ids) : 0,
+        'checked_posts' => count($items),
         'flagged_count' => count(array_filter($items, function($item) {
             return !empty($item['issues']);
         })),
@@ -1139,12 +2101,12 @@ function tk_render_seo_opt_panel() {
     $meta_desc = (int) tk_get_option('seo_meta_desc_enabled', 1);
     $canonical = (int) tk_get_option('seo_canonical_enabled', 1);
     $og = (int) tk_get_option('seo_og_enabled', 1);
-    $schema = (int) tk_get_option('seo_schema_enabled', 1);
     $noindex_search = (int) tk_get_option('seo_noindex_search', 1);
     $noindex_404 = (int) tk_get_option('seo_noindex_404', 1);
     $noindex_paged = (int) tk_get_option('seo_noindex_paged_archives', 1);
 
     $has_third_party = tk_seo_has_third_party_plugin();
+    $has_theme_managed = tk_seo_has_theme_managed_seo();
     $rules = tk_seo_get_redirect_rules();
     $suggestions = tk_seo_redirect_suggestions();
     $report = tk_get_option('seo_broken_links_report', array());
@@ -1197,14 +2159,26 @@ function tk_render_seo_opt_panel() {
     if (isset($_GET['tk_seo_audit_cleared']) && sanitize_key((string) $_GET['tk_seo_audit_cleared']) === '1') {
         tk_notice('Content SEO audit report cleared.', 'success');
     }
-
+    if ($has_third_party) {
+        tk_notice('Third-party SEO plugin detected. Tool Kits meta output is auto-disabled to avoid duplicate tags. JSON-LD Schema is managed from GEO.', 'warning');
+    }
+    if ($has_theme_managed) {
+        tk_notice('Active theme manages SEO head output. Tool Kits meta, Open Graph, and canonical tags are not printed on the frontend.', 'warning');
+    }
     ?>
-    <div class="tk-card">
-        <h2>SEO Optimization</h2>
+    <div class="tk-tabs tk-seo-tabs">
+        <div class="tk-tabs-nav">
+            <button type="button" class="tk-tabs-nav-button is-active" data-panel="settings">Settings</button>
+            <button type="button" class="tk-tabs-nav-button" data-panel="redirects">Redirects</button>
+            <button type="button" class="tk-tabs-nav-button" data-panel="canonical">Canonical</button>
+            <button type="button" class="tk-tabs-nav-button" data-panel="indexing">Indexing</button>
+            <button type="button" class="tk-tabs-nav-button" data-panel="broken-links">Broken Links</button>
+            <button type="button" class="tk-tabs-nav-button" data-panel="content-audit">Content Audit</button>
+        </div>
+        <div class="tk-tabs-content">
+    <div class="tk-card tk-tab-panel is-active" data-panel-id="settings">
+        <h3>Settings</h3>
         <p>Technical SEO toolkit: metadata, redirects, sitemap, and broken link checker.</p>
-        <?php if ($has_third_party) : ?>
-            <?php tk_notice('Third-party SEO plugin detected. Tool Kits meta/schema output is auto-disabled to avoid duplicate tags.', 'warning'); ?>
-        <?php endif; ?>
 
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
             <?php tk_nonce_field('tk_seo_opt_save'); ?>
@@ -1215,16 +2189,29 @@ function tk_render_seo_opt_panel() {
                 <?php tk_render_switch('seo_enabled', 'Enable SEO Toolkit', 'Unlock metadata management, redirects, and content auditing.', $enabled); ?>
             </div>
 
+            <fieldset style="margin-bottom:24px;">
+                <legend><strong>SEO / GEO Content Types</strong></legend>
+                <input type="hidden" name="tk_seo_post_types_present" value="1">
+                <?php $selected_types = tk_seo_selected_post_types(); ?>
+                <?php foreach (tk_seo_editor_post_types() as $slug => $type) : ?>
+                    <p><label>
+                        <input type="checkbox" name="seo_geo_post_types[]" value="<?php echo esc_attr($slug); ?>" <?php checked(in_array($slug, $selected_types, true)); ?>>
+                        <?php echo esc_html($type->labels->name); ?> <code><?php echo esc_html($slug); ?></code>
+                        <?php if (!is_post_type_viewable($type)) : ?><span> — Section / non-public</span><?php endif; ?>
+                    </label></p>
+                <?php endforeach; ?>
+            </fieldset>
+
             <div class="tk-grid tk-grid-2" style="gap:24px;">
                 <div style="background:var(--tk-bg-soft); padding:20px; border-radius:16px; border:1px solid var(--tk-border-soft);">
-                    <h4 style="margin-top:0; color:var(--tk-primary); font-size:14px; margin-bottom:16px;">Meta & Schema Markup</h4>
+                    <h4 style="margin-top:0; color:var(--tk-primary); font-size:14px; margin-bottom:16px;">Meta Markup</h4>
                     <div style="display:flex; flex-direction:column; gap:16px;">
                         <?php 
                         tk_render_switch('seo_meta_desc_enabled', 'Auto Meta Description', 'Generate meta tags from content excerpts.', $meta_desc);
                         tk_render_switch('seo_canonical_enabled', 'Canonical Tags', 'Prevent duplicate content issues.', $canonical);
                         tk_render_switch('seo_og_enabled', 'Open Graph (Social)', 'Enable rich previews for Facebook/Twitter.', $og);
-                        tk_render_switch('seo_schema_enabled', 'JSON-LD Schema', 'Improve search results with structured data.', $schema);
                         ?>
+                        <p class="description" style="margin:0;">JSON-LD Schema settings have moved to <a href="<?php echo esc_url(tk_admin_url('tool-kits-geo') . '#overview'); ?>">GEO Output</a>.</p>
                     </div>
                 </div>
 
@@ -1246,7 +2233,7 @@ function tk_render_seo_opt_panel() {
         </form>
     </div>
 
-    <div class="tk-card" style="margin-top:16px;">
+    <div class="tk-card tk-tab-panel" data-panel-id="redirects">
         <h3>Redirect Manager</h3>
         <p>Create 301/302/410 redirects and use 404 logs as quick suggestions.</p>
 
@@ -1319,10 +2306,10 @@ function tk_render_seo_opt_panel() {
         <?php endif; ?>
     </div>
 
-    <div class="tk-card" style="margin-top:16px;">
+    <div class="tk-card tk-tab-panel" data-panel-id="canonical">
         <h3>Canonical Conflict Checker</h3>
         <p>Scan homepage and recent content for missing or duplicate canonical tags.</p>
-        <p>
+        <div class="tk-seo-audit-actions">
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-block; margin-right:8px;">
                 <?php tk_nonce_field('tk_seo_canonical_scan'); ?>
                 <input type="hidden" name="action" value="tk_seo_canonical_scan">
@@ -1333,7 +2320,7 @@ function tk_render_seo_opt_panel() {
                 <input type="hidden" name="action" value="tk_seo_canonical_clear">
                 <button class="button">Clear Audit</button>
             </form>
-        </p>
+        </div>
         <?php if (!empty($canonical_report)) : ?>
             <p class="description">
                 Last scan: <?php echo !empty($canonical_report['scanned_at']) ? esc_html(wp_date('Y-m-d H:i:s', (int) $canonical_report['scanned_at'])) : '-'; ?> |
@@ -1369,7 +2356,7 @@ function tk_render_seo_opt_panel() {
         <?php endif; ?>
     </div>
 
-    <div class="tk-card" style="margin-top:16px;">
+    <div class="tk-card tk-tab-panel" data-panel-id="indexing">
         <h3>Indexing Monitor</h3>
         <p>Track index status per URL and use quick links to inspect in Google tools.</p>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:14px;">
@@ -1427,10 +2414,10 @@ function tk_render_seo_opt_panel() {
         <?php endif; ?>
     </div>
 
-    <div class="tk-card" style="margin-top:16px;">
+    <div class="tk-card tk-tab-panel" data-panel-id="broken-links">
         <h3>Broken Link Checker</h3>
         <p>Scan internal links from latest published content and report HTTP errors.</p>
-        <p>
+        <div class="tk-seo-audit-actions">
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-block; margin-right:8px;">
                 <?php tk_nonce_field('tk_seo_links_scan'); ?>
                 <input type="hidden" name="action" value="tk_seo_links_scan">
@@ -1441,7 +2428,7 @@ function tk_render_seo_opt_panel() {
                 <input type="hidden" name="action" value="tk_seo_links_clear">
                 <button class="button">Clear Report</button>
             </form>
-        </p>
+        </div>
 
         <?php if (!empty($report)) : ?>
             <p class="description">
@@ -1484,10 +2471,10 @@ function tk_render_seo_opt_panel() {
         <?php endif; ?>
     </div>
 
-    <div class="tk-card" style="margin-top:16px;">
+    <div class="tk-card tk-tab-panel" data-panel-id="content-audit">
         <h3>Content SEO Audit</h3>
-        <p>Audit recent content for basic on-page SEO issues: structure, length, links, and image alt text.</p>
-        <p>
+        <p class="description">Latest 200 published entries. Stored-content checks may omit page-builder fields and theme output. Review statuses require live verification.</p>
+        <div class="tk-seo-audit-actions">
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-block; margin-right:8px;">
                 <?php tk_nonce_field('tk_seo_content_audit_scan'); ?>
                 <input type="hidden" name="action" value="tk_seo_content_audit_scan">
@@ -1498,7 +2485,7 @@ function tk_render_seo_opt_panel() {
                 <input type="hidden" name="action" value="tk_seo_content_audit_clear">
                 <button class="button">Clear Audit</button>
             </form>
-        </p>
+        </div>
 
         <?php if (!empty($audit_report)) : ?>
             <?php
@@ -1531,17 +2518,21 @@ function tk_render_seo_opt_panel() {
                 Low: <strong><?php echo esc_html((string) $low_count); ?></strong>
             </p>
             <?php if ($critical_count > 0 || $high_count > 0) : ?>
-                <?php tk_notice('Priority action: focus on Critical and High pages first, then rerun audit after updates.', 'warning'); ?>
+                <div class="tk-seo-priority-notice" role="status">
+                    <span class="dashicons dashicons-warning" aria-hidden="true"></span>
+                    <p><strong>Priority action:</strong> focus on Critical and High pages first, then rerun audit after updates.</p>
+                </div>
             <?php endif; ?>
             <?php $audit_items = isset($audit_report['items']) && is_array($audit_report['items']) ? $audit_report['items'] : array(); ?>
             <?php if (!empty($audit_items)) : ?>
                 <table class="widefat striped">
-                    <thead><tr><th>Post</th><th>Score</th><th>Priority</th><th>Words</th><th>Links (Int/Ext)</th><th>Issues</th></tr></thead>
+                    <thead><tr><th>Post</th><th>Score</th><th>Priority</th><th>Words</th><th>Links (Int/Ext)</th><th>Trust Signals</th><th>Issues</th></tr></thead>
                     <tbody>
                     <?php foreach ($audit_items as $item) : ?>
                         <?php $pid = (int) ($item['post_id'] ?? 0); ?>
                         <?php $score = (int) ($item['score'] ?? 0); ?>
                         <?php $priority = (string) ($item['priority'] ?? 'low'); ?>
+                        <?php $trust = is_array($item['trust_signals'] ?? null) ? $item['trust_signals'] : array(); ?>
                         <?php $priority_class = 'tk-priority-low'; ?>
                         <?php if ($priority === 'critical') { $priority_class = 'tk-priority-critical'; } ?>
                         <?php if ($priority === 'high') { $priority_class = 'tk-priority-high'; } ?>
@@ -1559,10 +2550,34 @@ function tk_render_seo_opt_panel() {
                             <td><?php echo esc_html((string) ((int) ($item['words'] ?? 0))); ?></td>
                             <td><?php echo esc_html((string) ((int) ($item['internal_links'] ?? 0))); ?> / <?php echo esc_html((string) ((int) ($item['external_links'] ?? 0))); ?></td>
                             <td>
+                                <span class="tk-badge <?php echo !empty($trust['author']) ? 'tk-on' : 'tk-off'; ?>">Author</span>
+                                <span class="tk-badge <?php echo !empty($trust['author_bio']) ? 'tk-on' : 'tk-off'; ?>">Bio</span>
+                                <span class="tk-badge <?php echo (!empty($trust['published_date']) && !empty($trust['modified_date'])) ? 'tk-on' : 'tk-off'; ?>">Dates</span>
+                                <span class="tk-badge <?php echo !empty($trust['references']) ? 'tk-on' : 'tk-off'; ?>">Refs</span>
+                                <span class="tk-badge <?php echo !empty($trust['related_content']) ? 'tk-on' : 'tk-off'; ?>">Related</span>
+                            </td>
+                            <td>
                                 <?php
                                 $issues = is_array($item['issues'] ?? null) ? $item['issues'] : array();
                                 echo empty($issues) ? 'OK' : esc_html(implode('; ', $issues));
                                 ?>
+                                <?php if (!empty($item['strategy_checks'])) : ?>
+                                    <details>
+                                        <summary>SEO checks &amp; optimization</summary>
+                                        <ul>
+                                        <?php foreach ($item['strategy_checks'] as $check) : ?>
+                                            <li>
+                                                <strong><?php echo esc_html($check['category']); ?></strong>
+                                                (<?php echo esc_html($check['status']); ?>): <?php echo esc_html($check['finding']); ?>
+                                                <br><?php echo esc_html($check['action']); ?>
+                                                <?php if (!empty($check['target'])) : ?>
+                                                    <a href="<?php echo esc_url($check['target']); ?>">Review</a>
+                                                <?php endif; ?>
+                                            </li>
+                                        <?php endforeach; ?>
+                                        </ul>
+                                    </details>
+                                <?php endif; ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -1575,20 +2590,55 @@ function tk_render_seo_opt_panel() {
             <p class="description">No audit report yet.</p>
         <?php endif; ?>
     </div>
+        </div>
+    </div>
+    <script>
+    (function(){
+        var wrapper = document.querySelector('.tk-seo-tabs');
+        if (!wrapper) { return; }
+        function activateTab(panelId) {
+            wrapper.querySelectorAll('.tk-tab-panel').forEach(function(panel){
+                panel.classList.toggle('is-active', panel.getAttribute('data-panel-id') === panelId);
+            });
+            wrapper.querySelectorAll('.tk-tabs-nav-button').forEach(function(button){
+                button.classList.toggle('is-active', button.getAttribute('data-panel') === panelId);
+            });
+        }
+        wrapper.querySelectorAll('.tk-tabs-nav-button').forEach(function(button){
+            button.addEventListener('click', function(){
+                var panelId = button.getAttribute('data-panel');
+                if (panelId) {
+                    activateTab(panelId);
+                    if (history.replaceState) {
+                        history.replaceState(null, '', '#' + panelId);
+                    }
+                }
+            });
+        });
+        var initial = window.location.hash ? window.location.hash.substring(1) : '';
+        if (initial && wrapper.querySelector('.tk-tab-panel[data-panel-id="' + initial + '"]')) {
+            activateTab(initial);
+        }
+    })();
+    </script>
     <?php
 }
 
 function tk_seo_opt_save() {
     tk_require_admin_post('tk_seo_opt_save');
+    if (isset($_POST['tk_seo_post_types_present'])) {
+        $requested = isset($_POST['seo_geo_post_types']) && is_array($_POST['seo_geo_post_types']) ? wp_unslash($_POST['seo_geo_post_types']) : array();
+        $requested = array_map('sanitize_key', array_filter($requested, 'is_string'));
+        tk_update_option('seo_geo_post_types', array_values(array_intersect(array_keys(tk_seo_editor_post_types()), $requested)));
+    }
     tk_update_option('seo_enabled', !empty($_POST['seo_enabled']) ? 1 : 0);
     tk_update_option('seo_meta_desc_enabled', !empty($_POST['seo_meta_desc_enabled']) ? 1 : 0);
     tk_update_option('seo_canonical_enabled', !empty($_POST['seo_canonical_enabled']) ? 1 : 0);
     tk_update_option('seo_og_enabled', !empty($_POST['seo_og_enabled']) ? 1 : 0);
-    tk_update_option('seo_schema_enabled', !empty($_POST['seo_schema_enabled']) ? 1 : 0);
     tk_update_option('seo_noindex_search', !empty($_POST['seo_noindex_search']) ? 1 : 0);
     tk_update_option('seo_noindex_404', !empty($_POST['seo_noindex_404']) ? 1 : 0);
     tk_update_option('seo_noindex_paged_archives', !empty($_POST['seo_noindex_paged_archives']) ? 1 : 0);
 
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'seo', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_saved' => 1), admin_url('admin.php')) . '#settings');
     exit;
 }

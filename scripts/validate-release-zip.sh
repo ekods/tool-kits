@@ -46,6 +46,21 @@ if ! grep -qx 'tool-kits/includes/general.php' <<<"$LISTING"; then
   exit 1
 fi
 
+if ! grep -qx 'tool-kits/includes/role-management.php' <<<"$LISTING"; then
+  echo "Missing required include: tool-kits/includes/role-management.php" >&2
+  exit 1
+fi
+
+if ! grep -qx 'tool-kits/includes/security-firewall.php' <<<"$LISTING"; then
+  echo "Missing required include: tool-kits/includes/security-firewall.php" >&2
+  exit 1
+fi
+
+if ! grep -qx 'tool-kits/includes/malware-scanner.php' <<<"$LISTING"; then
+  echo "Missing required include: tool-kits/includes/malware-scanner.php" >&2
+  exit 1
+fi
+
 if grep -q '^__MACOSX/' <<<"$LISTING"; then
   echo "Archive contains unexpected __MACOSX metadata." >&2
   exit 1

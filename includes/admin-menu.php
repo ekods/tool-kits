@@ -17,6 +17,7 @@ function tk_admin_menu_init() {
     add_action('admin_post_tk_heartbeat_manual', 'tk_heartbeat_manual_send');
     add_action('admin_post_tk_monitoring_save', 'tk_monitoring_save');
     add_action('tk_monitoring_cron', 'tk_monitoring_cron_run');
+    add_action('tk_monitoring_deferred_checks', 'tk_monitoring_cron_run');
     add_action('init', 'tk_monitoring_schedule_cron');
 }
 
@@ -24,11 +25,17 @@ function tk_monitoring_maybe_enqueue_assets($hook_suffix) {
     if ($hook_suffix !== 'tool-kits_page_tool-kits-monitoring') {
         return;
     }
-    $asset_url  = TK_URL . 'assets/monitoring-tabs.js';
-    $asset_path = TK_PATH . 'assets/monitoring-tabs.js';
-    $ver = file_exists($asset_path) ? filemtime($asset_path) : TK_VERSION;
-    wp_enqueue_script('tk-monitoring-tabs', $asset_url, array(), $ver, true);
-    wp_localize_script('tk-monitoring-tabs', 'tkMonitoringData', array(
+    $asset_url  = TK_URL . 'assets/health-monitor-chart.js';
+    $ver = function_exists('tk_asset_version') ? tk_asset_version('assets/health-monitor-chart.js') : TK_VERSION;
+    wp_enqueue_script(
+        'tk-chart-js-451',
+        TK_URL . 'assets/vendor/chart.js/chart.umd.min.js',
+        array(),
+        '4.5.1',
+        true
+    );
+    wp_enqueue_script('tk-health-monitor-chart-v2', $asset_url, array('tk-chart-js-451'), $ver, true);
+    wp_localize_script('tk-health-monitor-chart-v2', 'tkMonitoringData', array(
         'nonce'   => wp_create_nonce('tk_realtime_health'),
         'ajaxurl' => admin_url('admin-ajax.php'),
     ));
@@ -39,7 +46,7 @@ function tk_register_admin_menus() {
     $license_key = (string) tk_get_option('license_key', '');
     $license_reset = isset($_GET['tk_reset_license']) ? sanitize_key($_GET['tk_reset_license']) : '';
     if ($license_key !== '' && $license_reset !== '1' && (int) get_option('tk_license_reset_skip_validate', 0) !== 1) {
-        tk_license_validate(true);
+        tk_license_validate();
     }
     $license_status = (string) tk_get_option('license_status', 'inactive');
     $license_missing = $license_key === '';
@@ -49,7 +56,6 @@ function tk_register_admin_menus() {
     $allow_full = $license_valid && !$license_limited;
 
     if ($license_valid) {
-        // Parent
         add_menu_page(
             __('Tool Kits', 'tool-kits'),
             __('Tool Kits', 'tool-kits'),
@@ -57,49 +63,61 @@ function tk_register_admin_menus() {
             'tool-kits',
             'tk_render_overview_page',
             'dashicons-admin-tools',
-            99
+            3
         );
+        add_submenu_page('tool-kits', __('Overview', 'tool-kits'), __('Overview', 'tool-kits'), tk_toolkits_capability(), 'tool-kits', 'tk_render_overview_page');
+        add_submenu_page('tool-kits', __('Monitoring', 'tool-kits'), __('Monitoring', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-monitoring', 'tk_render_monitoring_page');
+        add_submenu_page('tool-kits', __('Settings', 'tool-kits'), __('Settings', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-settings', 'tk_render_settings_overview_page');
+        add_submenu_page('tool-kits', __('General Settings', 'tool-kits'), __('General Settings', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-general', 'tk_render_general_page');
+        add_submenu_page('tool-kits', __('Access & License', 'tool-kits'), __('Access & License', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-access', 'tk_render_toolkits_access_page');
 
         if ($allow_full) {
-            // DB
-            add_submenu_page('tool-kits', __('General', 'tool-kits'), __('General', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-general', 'tk_render_general_page');
-            add_submenu_page('tool-kits', __('Database', 'tool-kits'), __('Database', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
-
-            // Security modules now live under the main Tool Kits menu.
-            add_submenu_page('tool-kits', __('Optimization', 'tool-kits'), __('Optimization', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-optimization', 'tk_render_optimization_page');
+            add_submenu_page('tool-kits', __('Security', 'tool-kits'), __('Security', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security', 'tk_render_security_overview_page');
+            add_submenu_page('tool-kits', __('Hardening', 'tool-kits'), __('Hardening', 'tool-kits'), 'manage_options', tk_hardening_page_slug(), 'tk_render_hardening_page');
+            add_submenu_page('tool-kits', __('Hide Login', 'tool-kits'), __('Hide Login', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-hide-login', 'tk_render_hide_login_page');
             add_submenu_page('tool-kits', __('Spam Protection', 'tool-kits'), __('Spam Protection', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-spam', 'tk_render_spam_protection_page');
             add_submenu_page('tool-kits', __('Rate Limit', 'tool-kits'), __('Rate Limit', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-rate-limit', 'tk_render_rate_limit_page');
+            add_submenu_page('tool-kits', __('OTP Login', 'tool-kits'), __('OTP Login', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-otp', 'tk_render_otp_page');
             add_submenu_page('tool-kits', __('Login Log', 'tool-kits'), __('Login Log', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-login-log', 'tk_render_login_log_page');
-            add_submenu_page('tool-kits', __('Hardening', 'tool-kits'), __('Hardening', 'tool-kits'), 'manage_options', tk_hardening_page_slug(), 'tk_render_hardening_page');
-            add_submenu_page('tool-kits', __('SMTP', 'tool-kits'), __('SMTP', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-smtp', 'tk_render_smtp_page');
-            add_submenu_page('tool-kits', __('Monitoring', 'tool-kits'), __('Monitoring', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-monitoring', 'tk_render_monitoring_page');
-            add_submenu_page('tool-kits', __('Cache', 'tool-kits'), __('Cache', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-cache', 'tk_render_cache_page');
-            add_submenu_page('tool-kits', __('Themes Checker', 'tool-kits'), __('Themes Checker', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-theme-checker', 'tk_render_theme_checker_page');
-        } else {
-            add_submenu_page('tool-kits', __('General', 'tool-kits'), __('General', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-general', 'tk_render_general_page');
-            add_submenu_page('tool-kits', __('Database', 'tool-kits'), __('Database', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
-            add_submenu_page('tool-kits', __('Optimization', 'tool-kits'), __('Optimization', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-optimization', 'tk_render_optimization_page');
-            add_submenu_page('tool-kits', __('SMTP', 'tool-kits'), __('SMTP', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-smtp', 'tk_render_smtp_page');
-            add_submenu_page('tool-kits', __('Monitoring', 'tool-kits'), __('Monitoring', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-monitoring', 'tk_render_monitoring_page');
-            add_submenu_page('tool-kits', __('Cache', 'tool-kits'), __('Cache', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-cache', 'tk_render_cache_page');
         }
-    }
 
-    add_submenu_page('tools.php', __('Tool Kits Access', 'tool-kits'), __('Tool Kits Access', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-access', 'tk_render_toolkits_access_page');
-    if (!$license_valid) {
-        add_submenu_page('tools.php', __('Database', 'tool-kits'), __('Database', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
-    }
-    // Hidden legacy pages for direct links.
-    if ($allow_full) {
-        add_submenu_page(null, __('Hide Login', 'tool-kits'), __('Hide Login', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-security-hide-login', 'tk_render_hide_login_page');
-        add_submenu_page(null, __('Minify', 'tool-kits'), __('Minify', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-minify', 'tk_render_minify_page');
-        add_submenu_page(null, __('Auto WebP', 'tool-kits'), __('Auto WebP', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-webp', 'tk_render_webp_page');
-    } elseif ($license_valid && $license_limited) {
-        add_submenu_page(null, __('Minify', 'tool-kits'), __('Minify', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-minify', 'tk_render_minify_page');
-        add_submenu_page(null, __('Auto WebP', 'tool-kits'), __('Auto WebP', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-webp', 'tk_render_webp_page');
-    }
+        add_submenu_page('tool-kits', __('Performance', 'tool-kits'), __('Performance', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-performance', 'tk_render_performance_overview_page');
+        add_submenu_page('tool-kits', __('Cache', 'tool-kits'), __('Cache', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-cache', 'tk_render_cache_page');
+        add_submenu_page('tool-kits', __('Diagnostics', 'tool-kits'), __('Diagnostics', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-optimization', 'tk_render_optimization_page');
+        add_submenu_page('tool-kits', __('Minify', 'tool-kits'), __('Minify', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-minify', 'tk_render_minify_page');
+        add_submenu_page('tool-kits', __('Auto WebP', 'tool-kits'), __('Auto WebP', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-webp', 'tk_render_webp_page');
+        add_submenu_page('tool-kits', __('Images', 'tool-kits'), __('Images', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-image-opt', 'tk_render_image_opt_page');
+        add_submenu_page('tool-kits', __('Lazy Load', 'tool-kits'), __('Lazy Load', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-lazy-load', 'tk_render_lazy_load_page');
+        add_submenu_page('tool-kits', __('Assets', 'tool-kits'), __('Assets', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-assets', 'tk_render_assets_page');
 
-    if (tk_get_option('hide_toolkits_menu', 0) || !$license_valid) {
+        if ($allow_full) {
+            add_submenu_page('tool-kits', __('SEO', 'tool-kits'), __('SEO', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-seo', 'tk_render_seo_page');
+            add_submenu_page('tool-kits', __('GEO', 'tool-kits'), __('GEO', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-geo', 'tk_render_geo_page');
+            add_submenu_page('tool-kits', __('External Authority', 'tool-kits'), __('External Authority', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-authority', 'tk_render_authority_page');
+        }
+
+        add_submenu_page('tool-kits', __('System Tools', 'tool-kits'), __('System Tools', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-system', 'tk_render_system_tools_page');
+        add_submenu_page('tool-kits', __('Database Tools', 'tool-kits'), __('Database Tools', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
+        add_submenu_page('tool-kits', __('SMTP Delivery', 'tool-kits'), __('SMTP Delivery', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-smtp', 'tk_render_smtp_page');
+        if ($allow_full) {
+            add_submenu_page('tool-kits', __('User ID', 'tool-kits'), __('User ID', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-user-id', 'tk_render_user_id_change_page');
+            add_submenu_page('tool-kits', __('Theme Audit', 'tool-kits'), __('Theme Audit', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-theme-checker', 'tk_render_theme_checker_page');
+            add_submenu_page('tool-kits', __('System Diagnostics', 'tool-kits'), __('Diagnostics', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-diagnostics', 'tk_render_diagnostics_page');
+        }
+    } elseif (tk_toolkits_can_manage()) {
+        add_menu_page(
+            __('Tool Kits', 'tool-kits'),
+            __('Tool Kits', 'tool-kits'),
+            tk_toolkits_capability(),
+            'tool-kits',
+            'tk_render_toolkits_access_page',
+            'dashicons-admin-tools',
+            3
+        );
+        add_submenu_page('tool-kits', __('Access & License', 'tool-kits'), __('Access & License', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-access', 'tk_render_toolkits_access_page');
+        add_submenu_page('tool-kits', __('Database Tools', 'tool-kits'), __('Database Tools', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
+    }
+    if (tk_get_option('hide_toolkits_menu', 0)) {
         remove_menu_page('tool-kits');
     }
     if (tk_get_option('hide_cff_menu', 0)) {
@@ -118,8 +136,10 @@ function tk_render_monitoring_page() {
     $server_status = tk_hardening_server_rule_status();
     $noncore_root = tk_hardening_noncore_root_entries();
     
-    tk_monitoring_maybe_send_alert($noncore_root);
-    tk_tamper_maybe_alert();
+    // File hashing and alert delivery must not block the admin page response.
+    if (!get_transient('tk_monitoring_checks_recent') && !wp_next_scheduled('tk_monitoring_deferred_checks')) {
+        wp_schedule_single_event(time(), 'tk_monitoring_deferred_checks');
+    }
 
     $monitor_email = (string) tk_get_option('monitoring_alert_email', '');
     $log = tk_get_option('monitoring_404_log', array());
@@ -172,13 +192,449 @@ function tk_render_overview_page() {
     $score_data = tk_hardening_calculate_score();
     $score = $score_data['score'];
     $score_color = ($score >= 80) ? '#27ae60' : (($score >= 50) ? '#f39c12' : '#e74c3c');
+    $seo_score_data = tk_overview_calculate_seo_score();
+    $geo_score_data = tk_overview_calculate_geo_score();
 
     tk_get_template('overview', array(
         'score' => $score,
         'score_color' => $score_color,
         'score_data' => $score_data,
+        'seo_score_data' => $seo_score_data,
+        'geo_score_data' => $geo_score_data,
         'opts' => $opts
     ));
+}
+
+function tk_overview_score_color(int $score): string {
+    return $score >= 80 ? '#27ae60' : ($score >= 50 ? '#f39c12' : '#e74c3c');
+}
+
+function tk_overview_calculate_seo_score(): array {
+    $checks = array(
+        array('label' => 'SEO module enabled', 'ok' => (int) tk_get_option('seo_enabled', 0) === 1, 'weight' => 20, 'link' => tk_admin_url('tool-kits-seo')),
+        array('label' => 'XML sitemap enabled', 'ok' => (int) tk_get_option('seo_sitemap_enabled', 1) === 1, 'weight' => 15, 'link' => tk_admin_url('tool-kits-seo') . '#settings'),
+        array('label' => 'Canonical handling enabled', 'ok' => (int) tk_get_option('seo_canonical_enabled', 1) === 1, 'weight' => 15, 'link' => tk_admin_url('tool-kits-seo') . '#canonical'),
+        array('label' => 'Meta description enabled', 'ok' => (int) tk_get_option('seo_meta_desc_enabled', 1) === 1, 'weight' => 15, 'link' => tk_admin_url('tool-kits-seo') . '#settings'),
+        array('label' => 'Open Graph enabled', 'ok' => (int) tk_get_option('seo_og_enabled', 1) === 1, 'weight' => 10, 'link' => tk_admin_url('tool-kits-seo') . '#settings'),
+        array('label' => 'Schema output enabled', 'ok' => (int) tk_get_option('seo_schema_enabled', 1) === 1, 'weight' => 10, 'link' => tk_admin_url('tool-kits-geo') . '#overview'),
+        array('label' => 'Search visibility enabled', 'ok' => trim((string) get_option('blog_public')) === '1', 'weight' => 15, 'link' => admin_url('options-reading.php')),
+    );
+
+    $score = 0;
+    foreach ($checks as $check) {
+        if (!empty($check['ok'])) {
+            $score += (int) $check['weight'];
+        }
+    }
+
+    return array(
+        'score' => max(0, min(100, $score)),
+        'color' => tk_overview_score_color($score),
+        'checks' => $checks,
+        'link' => tk_admin_url('tool-kits-seo'),
+    );
+}
+
+function tk_overview_calculate_geo_score(): array {
+    $ai_report = tk_get_option('geo_ai_access_report', array());
+    $ai_score = is_array($ai_report) && isset($ai_report['score']) ? (int) $ai_report['score'] : null;
+    $schema_docs = function_exists('tk_geo_build_schema_documents') ? tk_geo_build_schema_documents() : array();
+    $faq_items = function_exists('tk_geo_normalize_faq_items') ? tk_geo_normalize_faq_items(tk_get_option('geo_faq_items', array())) : array();
+    $item_ids = function_exists('tk_geo_selected_itemlist_ids') ? tk_geo_selected_itemlist_ids() : array();
+
+    $checks = array(
+        array('label' => 'GEO output enabled', 'ok' => (int) tk_get_option('geo_enabled', 0) === 1, 'weight' => 20, 'link' => tk_admin_url('tool-kits-geo') . '#overview'),
+        array('label' => 'Structured data configured', 'ok' => !empty($schema_docs), 'weight' => 20, 'link' => tk_admin_url('tool-kits-geo') . '#preview'),
+        array('label' => 'FAQPage content available', 'ok' => (int) tk_get_option('geo_faq_enabled', 0) === 1 && !empty($faq_items), 'weight' => 15, 'link' => tk_admin_url('tool-kits-geo') . '#faqpage'),
+        array('label' => 'ItemList curated or fallback configured', 'ok' => (int) tk_get_option('geo_itemlist_enabled', 0) === 1 && (!empty($item_ids) || (int) tk_get_option('geo_itemlist_limit', 10) > 0), 'weight' => 15, 'link' => tk_admin_url('tool-kits-geo') . '#itemlist'),
+        array('label' => 'llms.txt enabled', 'ok' => (int) tk_get_option('geo_llms_enabled', 0) === 1, 'weight' => 15, 'link' => tk_admin_url('tool-kits-geo') . '#llms'),
+        array('label' => 'AI crawler review passed', 'ok' => $ai_score !== null && $ai_score >= 70, 'weight' => 15, 'link' => tk_admin_url('tool-kits-geo') . '#ai-access'),
+    );
+
+    $score = 0;
+    foreach ($checks as $check) {
+        if (!empty($check['ok'])) {
+            $score += (int) $check['weight'];
+        }
+    }
+
+    return array(
+        'score' => max(0, min(100, $score)),
+        'color' => tk_overview_score_color($score),
+        'checks' => $checks,
+        'link' => tk_admin_url('tool-kits-geo'),
+    );
+}
+
+function tk_render_settings_overview_page() {
+    if (!tk_is_admin_user()) return;
+    ?>
+    <div class="wrap tk-wrap">
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('Tool Kits Settings', 'Global configuration for branding, editor behavior, admin menus, consent, uploads, and maintenance.', 'dashicons-admin-generic'); ?>
+
+        <div class="tk-grid tk-grid-3" style="margin-top:24px;">
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-general')); ?>">
+                <span class="dashicons dashicons-admin-generic"></span>
+                <h2>General Settings</h2>
+                <p class="description">Configure login branding, maintenance, admin menu visibility, cookie consent, uploads, and site defaults.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-access')); ?>">
+                <span class="dashicons dashicons-admin-network"></span>
+                <h2>Access & License</h2>
+                <p class="description">Manage license activation, collector connection, access control, and audit logs.</p>
+            </a>
+        </div>
+    </div>
+    <?php
+}
+
+function tk_render_security_overview_page() {
+    if (!tk_is_admin_user()) return;
+    ?>
+    <div class="wrap tk-wrap">
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('Security', 'Hardening, firewall, login protection, spam defense, malware scanning, and security logs.', 'dashicons-shield'); ?>
+
+        <div class="tk-grid tk-grid-3" style="margin-top:24px;">
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url(tk_hardening_page_slug())); ?>">
+                <span class="dashicons dashicons-shield-alt"></span>
+                <h2>Hardening</h2>
+                <p class="description">Strengthen WordPress core, headers, file access, comments, API exposure, and login surface.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-firewall')); ?>">
+                <span class="dashicons dashicons-superhero"></span>
+                <h2>Firewall</h2>
+                <p class="description">Block malicious patterns, bad agents, unsafe methods, IPs, and request abuse.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-security-spam')); ?>">
+                <span class="dashicons dashicons-email-alt2"></span>
+                <h2>Spam Protection</h2>
+                <p class="description">Manage captcha, anti-spam contact protection, honeypots, and form guard rules.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-security-rate-limit')); ?>">
+                <span class="dashicons dashicons-clock"></span>
+                <h2>Rate Limit</h2>
+                <p class="description">Limit repeated login attempts and unblock legitimate users when needed.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-security-otp')); ?>">
+                <span class="dashicons dashicons-email-alt"></span>
+                <h2>OTP Login</h2>
+                <p class="description">Require email verification codes after valid username and password authentication.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-brute-force')); ?>">
+                <span class="dashicons dashicons-lock"></span>
+                <h2>Brute Force Protection</h2>
+                <p class="description">Protect login endpoints with progressive lockouts, attacker username blocking, honey traps, and scanner traps.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-security-login-log')); ?>">
+                <span class="dashicons dashicons-list-view"></span>
+                <h2>Login Log</h2>
+                <p class="description">Review login attempts, filter suspicious entries, and inspect authentication activity.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-malware-scanner')); ?>">
+                <span class="dashicons dashicons-search"></span>
+                <h2>Malware Scanner</h2>
+                <p class="description">Scan plugin, theme, and upload files for suspicious signatures and risky code patterns.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-vulnerability-scanner')); ?>">
+                <span class="dashicons dashicons-shield-alt"></span>
+                <h2>Vulnerability Scanner</h2>
+                <p class="description">Review outdated core, plugins, themes, inactive components, and security-sensitive configuration.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-incident-response')); ?>">
+                <span class="dashicons dashicons-sos"></span>
+                <h2>Incident Response</h2>
+                <p class="description">Track malware investigation, removal evidence, blocklist delisting, and search engine cleanup.</p>
+            </a>
+        </div>
+    </div>
+    <?php
+}
+
+function tk_render_performance_overview_page() {
+    if (!tk_is_admin_user()) return;
+    ?>
+    <div class="wrap tk-wrap">
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('Performance', 'Caching, asset loading, minification, image optimization, WebP conversion, and speed diagnostics.', 'dashicons-performance'); ?>
+
+        <div class="tk-grid tk-grid-3" style="margin-top:24px;">
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-cache')); ?>">
+                <span class="dashicons dashicons-database-view"></span>
+                <h2>Cache</h2>
+                <p class="description">Manage page cache, object cache actions, preloading, fragments, and purge controls.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-optimization')); ?>">
+                <span class="dashicons dashicons-dashboard"></span>
+                <h2>Diagnostics</h2>
+                <p class="description">Run speed diagnostics and review optimization recommendations.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-assets')); ?>">
+                <span class="dashicons dashicons-media-code"></span>
+                <h2>Assets</h2>
+                <p class="description">Tune CSS, JavaScript, critical CSS, delayed scripts, and third-party asset behavior.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-minify')); ?>">
+                <span class="dashicons dashicons-editor-code"></span>
+                <h2>Minify</h2>
+                <p class="description">Minify frontend output and related assets where appropriate.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-lazy-load')); ?>">
+                <span class="dashicons dashicons-images-alt2"></span>
+                <h2>Lazy Load</h2>
+                <p class="description">Defer offscreen images and embeds to improve page load behavior.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-image-opt')); ?>">
+                <span class="dashicons dashicons-format-image"></span>
+                <h2>Images & WebP</h2>
+                <p class="description">Optimize uploaded images and configure automatic WebP generation.</p>
+            </a>
+        </div>
+    </div>
+    <?php
+}
+
+function tk_render_image_opt_page() {
+    if (!tk_is_admin_user()) return;
+    ?>
+    <div class="wrap tk-wrap">
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('Image Optimizer', 'Image quality, optimized delivery, and media library maintenance.', 'dashicons-format-image'); ?>
+        <?php if (isset($_GET['tk_saved']) && sanitize_key((string) $_GET['tk_saved']) === '1') : ?>
+            <?php tk_notice('Settings saved.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_image_report']) && sanitize_key((string) $_GET['tk_image_report']) === '1') : ?>
+            <?php tk_notice('Compression report generated.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_image_queue']) && sanitize_key((string) $_GET['tk_image_queue']) === 'started') : ?>
+            <?php tk_notice('Background optimization queue started.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_image_queue']) && sanitize_key((string) $_GET['tk_image_queue']) === 'stopped') : ?>
+            <?php tk_notice('Background optimization queue stopped.', 'success'); ?>
+        <?php endif; ?>
+        <?php tk_render_image_opt_panel(); ?>
+    </div>
+    <?php
+}
+
+function tk_render_lazy_load_page() {
+    if (!tk_is_admin_user()) return;
+    ?>
+    <div class="wrap tk-wrap">
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('Lazy Load', 'Defer offscreen media and selected scripts to reduce initial page weight.', 'dashicons-images-alt2'); ?>
+        <?php if (isset($_GET['tk_saved']) && sanitize_key((string) $_GET['tk_saved']) === '1') : ?>
+            <?php tk_notice('Settings saved.', 'success'); ?>
+        <?php endif; ?>
+        <?php tk_render_lazy_load_panel(); ?>
+    </div>
+    <?php
+}
+
+function tk_render_assets_page() {
+    if (!tk_is_admin_user()) return;
+    ?>
+    <div class="wrap tk-wrap">
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('Asset Optimization', 'Tune CSS, JavaScript, font loading, CLS protection, and LCP delivery.', 'dashicons-media-code'); ?>
+        <?php if (isset($_GET['tk_saved']) && sanitize_key((string) $_GET['tk_saved']) === '1') : ?>
+            <?php tk_notice('Settings saved.', 'success'); ?>
+        <?php endif; ?>
+        <?php tk_render_assets_panel(); ?>
+    </div>
+    <?php
+}
+
+function tk_render_seo_page() {
+    if (!tk_is_admin_user()) return;
+
+    ob_start();
+    tk_render_seo_opt_panel();
+    $seo_html = (string) ob_get_clean();
+
+    $cards = array();
+    if (preg_match_all('/<div class="tk-card"[^>]*>.*?(?=\n    <div class="tk-card"|\s*$)/s', $seo_html, $matches) && !empty($matches[0])) {
+        $cards = $matches[0];
+    }
+    $notices = '';
+    if (!empty($cards)) {
+        $first_pos = strpos($seo_html, $cards[0]);
+        if ($first_pos !== false && $first_pos > 0) {
+            $notices = substr($seo_html, 0, $first_pos);
+        }
+    }
+
+    $tabs = array(
+        'settings' => array('label' => 'Settings', 'html' => $cards[0] ?? ''),
+        'redirects' => array('label' => 'Redirects', 'html' => $cards[1] ?? ''),
+        'canonical' => array('label' => 'Canonical', 'html' => $cards[2] ?? ''),
+        'indexing' => array('label' => 'Indexing', 'html' => $cards[3] ?? ''),
+        'broken-links' => array('label' => 'Broken Links', 'html' => $cards[4] ?? ''),
+        'content-audit' => array('label' => 'Content Audit', 'html' => $cards[5] ?? ''),
+    );
+    $tabs = array_filter($tabs, function ($tab) {
+        return trim((string) $tab['html']) !== '';
+    });
+    ?>
+    <div class="wrap tk-wrap">
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('SEO Optimization', 'Technical SEO controls for metadata, indexing, redirects, canonical checks, broken links, and content audits.', 'dashicons-search'); ?>
+        <?php echo $notices; ?>
+
+        <?php if (!empty($tabs)) : ?>
+            <div class="tk-tabs tk-seo-tabs">
+                <div class="tk-tabs-nav">
+                    <?php $first = true; ?>
+                    <?php foreach ($tabs as $id => $tab) : ?>
+                        <button type="button" class="tk-tabs-nav-button<?php echo $first ? ' is-active' : ''; ?>" data-panel="<?php echo esc_attr($id); ?>"><?php echo esc_html((string) $tab['label']); ?></button>
+                        <?php $first = false; ?>
+                    <?php endforeach; ?>
+                </div>
+                <div class="tk-tabs-content">
+                    <?php $first = true; ?>
+                    <?php foreach ($tabs as $id => $tab) : ?>
+                        <div class="tk-tab-panel<?php echo $first ? ' is-active' : ''; ?>" data-panel-id="<?php echo esc_attr($id); ?>">
+                            <?php echo $tab['html']; ?>
+                        </div>
+                        <?php $first = false; ?>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <script>
+            (function(){
+                var wrapper = document.querySelector('.tk-seo-tabs');
+                if (!wrapper) { return; }
+                function activateTab(panelId) {
+                    wrapper.querySelectorAll('.tk-tab-panel').forEach(function(panel){
+                        panel.classList.toggle('is-active', panel.getAttribute('data-panel-id') === panelId);
+                    });
+                    wrapper.querySelectorAll('.tk-tabs-nav-button').forEach(function(button){
+                        button.classList.toggle('is-active', button.getAttribute('data-panel') === panelId);
+                    });
+                }
+                wrapper.querySelectorAll('.tk-tabs-nav-button').forEach(function(button){
+                    button.addEventListener('click', function(){
+                        var panelId = button.getAttribute('data-panel');
+                        if (panelId) {
+                            window.location.hash = panelId;
+                            activateTab(panelId);
+                        }
+                    });
+                });
+                var initial = (window.location.hash || '').replace('#', '');
+                if (initial && wrapper.querySelector('.tk-tab-panel[data-panel-id="' + initial + '"]')) {
+                    activateTab(initial);
+                }
+            })();
+            </script>
+        <?php else : ?>
+            <?php echo $seo_html; ?>
+        <?php endif; ?>
+    </div>
+    <?php
+}
+
+function tk_render_geo_page() {
+    if (!tk_is_admin_user()) return;
+    ?>
+    <div class="wrap tk-wrap">
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('GEO', 'Manage JSON-LD, FAQPage, and ItemList schema for generative engine optimization.', 'dashicons-editor-code'); ?>
+        <?php if (isset($_GET['tk_saved']) && sanitize_key((string) $_GET['tk_saved']) === '1') : ?>
+            <?php tk_notice('GEO settings saved.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_geo_faq_imported'])) : ?>
+            <?php $faq_imported = max(0, (int) $_GET['tk_geo_faq_imported']); ?>
+            <?php tk_notice(sprintf(_n('%d FAQ item imported with its locale.', '%d FAQ items imported with their locales.', $faq_imported, 'tool-kits'), $faq_imported), 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_geo_ai_access_scanned']) && sanitize_key((string) $_GET['tk_geo_ai_access_scanned']) === '1') : ?>
+            <?php tk_notice('AI crawler accessibility review completed.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_geo_ai_access_cleared']) && sanitize_key((string) $_GET['tk_geo_ai_access_cleared']) === '1') : ?>
+            <?php tk_notice('AI crawler accessibility review cleared.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_geo_schema_duplicates']) && sanitize_key((string) $_GET['tk_geo_schema_duplicates']) === '1') : ?>
+            <?php tk_notice('Schema duplicate detector completed.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_geo_crawler_preview']) && sanitize_key((string) $_GET['tk_geo_crawler_preview']) === '1') : ?>
+            <?php tk_notice('Crawler preview completed.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_seo_geo_audit_scanned']) && sanitize_key((string) $_GET['tk_seo_geo_audit_scanned']) === '1') : ?>
+            <?php tk_notice('GEO audit completed.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_seo_geo_audit_cleared']) && sanitize_key((string) $_GET['tk_seo_geo_audit_cleared']) === '1') : ?>
+            <?php tk_notice('GEO audit report cleared.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_geo_error']) && sanitize_key((string) $_GET['tk_geo_error']) === 'json') : ?>
+            <?php tk_notice('Custom JSON-LD is not valid JSON. Settings were not saved.', 'error'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_geo_error']) && sanitize_key((string) $_GET['tk_geo_error']) === 'faq-import') : ?>
+            <?php $faq_import_error = isset($_GET['tk_geo_error_message']) ? sanitize_text_field(wp_unslash((string) $_GET['tk_geo_error_message'])) : 'FAQPage import failed.'; ?>
+            <?php tk_notice($faq_import_error, 'error'); ?>
+        <?php endif; ?>
+        <?php tk_render_geo_panel(); ?>
+    </div>
+    <?php
+}
+
+function tk_render_system_tools_page() {
+    if (!tk_is_admin_user()) return;
+    $license_valid = (string) tk_get_option('license_status', 'inactive') === 'valid';
+    $license_limited = (string) tk_get_option('license_type', '') === 'local';
+    $allow_full = $license_valid && !$license_limited;
+    ?>
+    <div class="wrap tk-wrap">
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('System Tools', 'Administrative tools for database work, user management, mail delivery, theme audits, and diagnostics.', 'dashicons-admin-settings'); ?>
+
+        <div class="tk-grid tk-grid-3" style="margin-top:24px;">
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-db')); ?>">
+                <span class="dashicons dashicons-database"></span>
+                <h2>Database Tools</h2>
+                <p class="description">Export, import, migrate, cleanup, and run serialized-safe replacements.</p>
+            </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-smtp')); ?>">
+                <span class="dashicons dashicons-email-alt"></span>
+                <h2>SMTP Delivery</h2>
+                <p class="description">Configure mail delivery, OAuth transport, and test outbound email.</p>
+            </a>
+            <?php if ($allow_full) : ?>
+                <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-role-management')); ?>">
+                    <span class="dashicons dashicons-groups"></span>
+                    <h2>Role Management</h2>
+                    <p class="description">Create managed roles and adjust admin menu visibility by role.</p>
+                </a>
+                <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-user-id')); ?>">
+                    <span class="dashicons dashicons-id"></span>
+                    <h2>User ID</h2>
+                    <p class="description">Change administrator user IDs when a hardening workflow requires it.</p>
+                </a>
+                <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-theme-checker')); ?>">
+                    <span class="dashicons dashicons-admin-appearance"></span>
+                    <h2>Theme Audit</h2>
+                    <p class="description">Inspect active theme structure, template usage, and common risks.</p>
+                </a>
+                <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-diagnostics')); ?>">
+                    <span class="dashicons dashicons-analytics"></span>
+                    <h2>Diagnostics</h2>
+                    <p class="description">Review collector, license, updater, and environment troubleshooting data.</p>
+                </a>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php
+}
+
+function tk_render_user_id_change_page() {
+    if (!tk_is_admin_user()) return;
+    ?>
+    <div class="wrap tk-wrap">
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('User ID', 'Change administrator user IDs as part of a controlled hardening workflow.', 'dashicons-id'); ?>
+        <?php tk_render_user_id_change_panel(); ?>
+    </div>
+    <?php
 }
 
 function tk_render_diagnostics_page() {
@@ -437,7 +893,7 @@ function tk_render_security_table() {
                 <?php endif; ?>
             </div>
             <div class="tk-module-footer">
-                <a href="<?php echo esc_url(tk_admin_url('tool-kits-optimization') . '#hide-login'); ?>" class="button button-small">Configure</a>
+                <a href="<?php echo esc_url(tk_admin_url('tool-kits-security-hide-login')); ?>" class="button button-small">Configure</a>
             </div>
         </div>
 
@@ -783,6 +1239,12 @@ function tk_render_toolkits_access_page() {
                         tk_render_switch('toolkits_mask_sensitive_fields', 'Mask Sensitive Data', 'Hide license keys and tokens in the admin UI.', $mask);
                         
                         tk_render_switch('toolkits_owner_only_enabled', 'Owner-Only Mode', 'Restrict access to the primary site owner (UID: ' . $owner_id . ') only.', $owner_only);
+
+                        echo '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--tk-border-soft);">';
+                        tk_render_switch('hide_toolkits_menu', 'Hide Tool Kits Menus', 'Remove all Tool Kits parent menus from the main sidebar while keeping direct access controls active.', $hidden);
+                        tk_render_switch('toolkits_shield_stealth_enabled', 'Shield Mode (Stealth)', 'Hide Tool Kits from the standard Plugins list for non-owners.', (int) tk_get_option('toolkits_shield_stealth_enabled', 0));
+                        tk_render_switch('toolkits_shield_lock_enabled', 'Shield Lock (Anti-Deactivation)', 'Prevent the plugin from being deactivated or deleted by anyone except the owner.', (int) tk_get_option('toolkits_shield_lock_enabled', 0));
+                        echo '</div>';
                         ?>
 
                         <div style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px;">
@@ -858,7 +1320,6 @@ function tk_render_toolkits_access_page() {
                         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                             <?php tk_nonce_field('tk_license_activate'); ?>
                             <input type="hidden" name="action" value="tk_toolkits_license_activate">
-                            <input type="hidden" name="license_key" value="<?php echo esc_attr($license_key); ?>">
                             <button type="submit" class="button button-primary button-hero">Re-activate License</button>
                         </form>
                         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return window.confirm('Reset license data?');">
@@ -908,7 +1369,6 @@ function tk_render_toolkits_access_page() {
                                 $collector_mask = $collector_key ? str_repeat('*', max(0, strlen($collector_key) - 4)) . substr($collector_key, -4) : '';
                                 ?>
                                 <input class="regular-text" type="text" name="heartbeat_auth_key_display" value="<?php echo esc_attr($collector_mask); ?>" placeholder="Enter token..." style="width:100%; border-radius:8px;">
-                                <input type="hidden" name="heartbeat_auth_key" value="<?php echo esc_attr($collector_key); ?>">
                             </div>
                             <div>
                                 <label style="display:block; font-weight:600; margin-bottom:8px;">License Key</label>
@@ -916,7 +1376,6 @@ function tk_render_toolkits_access_page() {
                                 $license_mask = $license_key ? str_repeat('*', max(0, strlen($license_key) - 4)) . substr($license_key, -4) : '';
                                 ?>
                                 <input class="regular-text" type="text" name="license_key_display" value="<?php echo esc_attr($license_mask); ?>" placeholder="Enter key..." style="width:100%; border-radius:8px;">
-                                <input type="hidden" name="license_key" value="<?php echo esc_attr($license_key); ?>">
                             </div>
                         </div>
 
@@ -1176,6 +1635,9 @@ function tk_toolkits_access_save() {
         tk_update_option('toolkits_ip_allowlist', (string) tk_post('toolkits_ip_allowlist', ''));
         tk_update_option('toolkits_lock_enabled', !empty($_POST['toolkits_lock_enabled']) ? 1 : 0);
         tk_update_option('toolkits_mask_sensitive_fields', !empty($_POST['toolkits_mask_sensitive_fields']) ? 1 : 0);
+        tk_update_option('hide_toolkits_menu', !empty($_POST['hide_toolkits_menu']) ? 1 : 0);
+        tk_update_option('toolkits_shield_stealth_enabled', !empty($_POST['toolkits_shield_stealth_enabled']) ? 1 : 0);
+        tk_update_option('toolkits_shield_lock_enabled', !empty($_POST['toolkits_shield_lock_enabled']) ? 1 : 0);
     } elseif ($tab === 'license' || $tab === 'license-status') {
         $collector_url = isset($_POST['heartbeat_collector_url']) ? esc_url_raw(wp_unslash($_POST['heartbeat_collector_url'])) : '';
         tk_update_option('heartbeat_collector_url', $collector_url);
@@ -1210,7 +1672,7 @@ function tk_toolkits_access_save() {
         if ($connection_test === 'heartbeat') {
             $result = tk_heartbeat_send();
             tk_heartbeat_record_result($result);
-            wp_redirect(admin_url('tools.php?page=tool-kits-access&tk_saved=1&tk_test=heartbeat&tk_test_status=' . (!empty($result['ok']) ? 'ok' : 'fail') . '#' . $tab));
+            wp_redirect(admin_url('admin.php?page=tool-kits-access&tk_saved=1&tk_test=heartbeat&tk_test_status=' . (!empty($result['ok']) ? 'ok' : 'fail') . '#' . $tab));
             exit;
         }
         if ($connection_test === 'license') {
@@ -1221,7 +1683,7 @@ function tk_toolkits_access_save() {
             } elseif (isset($result['status']) && (string) $result['status'] === 'reachable') {
                 $test_status = 'warn';
             }
-            wp_redirect(admin_url('tools.php?page=tool-kits-access&tk_saved=1&tk_test=license&tk_test_status=' . $test_status . '#' . $tab));
+            wp_redirect(admin_url('admin.php?page=tool-kits-access&tk_saved=1&tk_test=license&tk_test_status=' . $test_status . '#' . $tab));
             exit;
         }
         tk_license_validate(true);
@@ -1247,7 +1709,7 @@ function tk_toolkits_access_save() {
         tk_update_option('toolkits_alert_admin_login_new_ip', !empty($_POST['toolkits_alert_admin_login_new_ip']) ? 1 : 0);
     }
     tk_toolkits_audit_log('access_update', array('user' => wp_get_current_user()->user_login));
-    wp_redirect(admin_url('tools.php?page=tool-kits-access&tk_saved=1#' . $tab));
+    wp_redirect(admin_url('admin.php?page=tool-kits-access&tk_saved=1#' . $tab));
     exit;
 }
 
@@ -1267,7 +1729,7 @@ function tk_toolkits_license_activate() {
     }
     tk_toolkits_prepare_license_server_url();
     tk_license_validate(true);
-    wp_redirect(admin_url('tools.php?page=tool-kits-access&tk_license=1'));
+    wp_redirect(admin_url('admin.php?page=tool-kits-access&tk_license=1'));
     exit;
 }
 
@@ -1278,7 +1740,7 @@ function tk_toolkits_license_reset() {
     tk_check_nonce('tk_license_reset');
     tk_license_reset();
     update_option('tk_license_reset_skip_validate', 1, false);
-    wp_redirect(admin_url('tools.php?page=tool-kits-access&tk_license=1&tk_reset_license=1'));
+    wp_redirect(admin_url('admin.php?page=tool-kits-access&tk_license=1&tk_reset_license=1'));
     exit;
 }
 
@@ -1287,7 +1749,7 @@ function tk_toolkits_audit_clear() {
     tk_check_nonce('tk_toolkits_audit_clear');
     tk_update_option('toolkits_audit_log', array());
     tk_toolkits_audit_log('audit_clear', array('user' => wp_get_current_user()->user_login));
-    wp_redirect(admin_url('tools.php?page=tool-kits-access&tk_cleared=1'));
+    wp_redirect(admin_url('admin.php?page=tool-kits-access&tk_cleared=1'));
     exit;
 }
 
@@ -1332,6 +1794,7 @@ function tk_monitoring_schedule_cron() {
 }
 
 function tk_monitoring_cron_run() {
+    set_transient('tk_monitoring_checks_recent', 1, HOUR_IN_SECONDS);
     $noncore_root = tk_hardening_noncore_root_entries();
     tk_monitoring_maybe_send_alert($noncore_root);
     tk_tamper_maybe_alert();
@@ -1454,5 +1917,3 @@ function tk_preflight_check() {
     }
 }
 add_action('wp_ajax_tk_preflight_check', 'tk_preflight_check');
-
-

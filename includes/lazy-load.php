@@ -37,7 +37,7 @@ function tk_lazy_html_buffer($html) {
     $eager = max(0, (int) tk_get_option('lazy_load_eager_images', 2));
     return preg_replace_callback('/<img\b[^>]*>/i', function($m) use (&$count, $eager) {
         $tag = (string) $m[0];
-        if (stripos($tag, 'data:') !== false || stripos($tag, ' loading=') !== false || stripos($tag, ' loading =') !== false) {
+        if (stripos($tag, 'data:') !== false || stripos($tag, ' loading=') !== false || stripos($tag, ' loading =') !== false || preg_match('/\sfetchpriority\s*=\s*(?:["\']high["\']|high(?=\s|\/?>))/i', $tag)) {
             return $tag;
         }
         $count++;
@@ -70,6 +70,11 @@ function tk_lazy_image_attributes($attr, $attachment, $size) {
     static $count = 0;
     $count++;
     $eager = max(0, (int) tk_get_option('lazy_load_eager_images', 2));
+    if (($attr['loading'] ?? '') === 'eager' || ($attr['fetchpriority'] ?? '') === 'high') {
+        $attr['loading'] = 'eager';
+        $attr['decoding'] = $attr['decoding'] ?? 'async';
+        return $attr;
+    }
     if ($count <= $eager) {
         $attr['loading'] = 'eager';
         $attr['fetchpriority'] = 'high';
@@ -89,6 +94,9 @@ function tk_lazy_oembed_iframe($html, $url, $attr, $post_id) {
         return $html;
     }
     if (!is_string($html) || stripos($html, '<iframe') === false) {
+        return $html;
+    }
+    if (preg_match('/<iframe\b[^>]*\sloading\s*=\s*(?:["\']eager["\']|eager(?=\s|\/?>))/i', $html)) {
         return $html;
     }
     $html = preg_replace('/\sloading=(["\']).*?\1/i', '', $html);
@@ -152,6 +160,10 @@ function tk_lazy_frontend_script() {
     wp_enqueue_script('tool-kits-lazy');
     $script = <<<'JS'
 (function(){
+    if (window.tkLazyMediaInitialized) { return; }
+    window.tkLazyMediaInitialized = true;
+    function initialize() {
+    var selector = '[data-tk-lazy-src], [data-tk-lazy-srcset]';
     function loadNode(node) {
         var src = node.getAttribute('data-tk-lazy-src');
         var srcset = node.getAttribute('data-tk-lazy-srcset');
@@ -163,24 +175,57 @@ function tk_lazy_frontend_script() {
             node.setAttribute('srcset', srcset);
             node.removeAttribute('data-tk-lazy-srcset');
         }
+    }
+    function loadMedia(node) {
+        loadNode(node);
+        node.querySelectorAll(selector).forEach(loadNode);
         if (node.tagName === 'VIDEO') {
             try { node.load(); } catch (e) {}
         }
     }
-
-    var lazyNodes = [].slice.call(document.querySelectorAll('[data-tk-lazy-src], [data-tk-lazy-srcset]'));
+    var observer;
+    var observed = new WeakSet();
     if ('IntersectionObserver' in window) {
-        var observer = new IntersectionObserver(function(entries){
+        observer = new IntersectionObserver(function(entries){
             entries.forEach(function(entry){
                 if (entry.isIntersecting) {
-                    loadNode(entry.target);
+                    loadMedia(entry.target);
                     observer.unobserve(entry.target);
+                    observed.delete(entry.target);
                 }
             });
-        }, { rootMargin: '200px 0px' });
-        lazyNodes.forEach(function(node){ observer.observe(node); });
-    } else {
-        lazyNodes.forEach(loadNode);
+        }, { rootMargin: '200px 0px', threshold: 0 });
+    }
+    function register(node) {
+        // SOURCE has no layout box; observe its rendered media container instead.
+        var target = node.tagName === 'SOURCE' ? node.closest('video, picture') : node;
+        if (!target) { loadNode(node); return; }
+        if (!observer || target.getAttribute('loading') === 'eager' || target.getAttribute('fetchpriority') === 'high') {
+            loadMedia(target);
+        } else if (!observed.has(target)) {
+            observed.add(target);
+            observer.observe(target);
+        }
+    }
+    function scan(container) {
+        if (container.nodeType !== 1 && container !== document) { return; }
+        if (container.matches && container.matches(selector)) { register(container); }
+        container.querySelectorAll(selector).forEach(register);
+    }
+    scan(document);
+    if ('MutationObserver' in window) {
+        new MutationObserver(function(records) {
+            records.forEach(function(record) {
+                if (record.type === 'attributes') { scan(record.target); }
+                else { record.addedNodes.forEach(scan); }
+                record.removedNodes && record.removedNodes.forEach(function(node) {
+                    if (node.nodeType !== 1 || node.isConnected) { return; }
+                    [node].concat([].slice.call(node.querySelectorAll('video, picture, iframe'))).forEach(function(target) {
+                        if (observer && observed.has(target)) { observer.unobserve(target); observed.delete(target); }
+                    });
+                });
+            });
+        }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-tk-lazy-src', 'data-tk-lazy-srcset'] });
     }
 
     var delayed = [].slice.call(document.querySelectorAll('script[data-tk-delay="1"]'));
@@ -202,6 +247,9 @@ function tk_lazy_frontend_script() {
             window.addEventListener(evt, activate, { once: true, passive: true });
         });
     }
+    }
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', initialize, { once: true }); }
+    else { initialize(); }
 })();
 JS;
     wp_add_inline_script('tool-kits-lazy', $script);
@@ -274,6 +322,6 @@ function tk_lazy_load_save() {
     tk_update_option('lazy_load_iframe_video', !empty($_POST['lazy_load_iframe_video']) ? 1 : 0);
     tk_update_option('lazy_load_script_defer', sanitize_text_field((string) tk_post('lazy_load_script_defer', '')));
     tk_update_option('lazy_load_script_delay', sanitize_text_field((string) tk_post('lazy_load_script_delay', '')));
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'lazy-load', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-lazy-load', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }

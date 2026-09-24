@@ -5,14 +5,11 @@ if (!defined('ABSPATH')) { exit; }
 
 function tk_render_page_hero($title, $description, $icon = 'dashicons-admin-tools', $action_html = '') {
     ?>
-    <div class="tk-hero">
-        <div class="tk-hero-bg-1"></div>
-        <div class="tk-hero-bg-2"></div>
-        
-        <div class="tk-hero-content" style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
-            <div style="display: flex; align-items: center; gap: 20px;">
-                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 16px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2);">
-                    <span class="dashicons <?php echo esc_attr($icon); ?>" style="color: #fff; font-size: 32px; width: 32px; height: 32px;"></span>
+    <div class="tk-hero tk-page-heading tk-card">
+        <div class="tk-hero-content">
+            <div class="tk-page-heading-main">
+                <div class="tk-page-icon">
+                    <span class="dashicons <?php echo esc_attr($icon); ?>" aria-hidden="true"></span>
                 </div>
                 <div>
                     <h1 class="tk-hero-title"><?php echo esc_html($title); ?></h1>
@@ -33,12 +30,12 @@ function tk_render_header_branding() {
     ?>
     <div class="tk-header-branding">
         <div class="tk-header-brand">
-            <span class="dashicons dashicons-admin-tools"></span>
+            <img class="tk-brand-logo" src="<?php echo esc_url(TK_URL . 'assets/icon-128x128.png'); ?>" width="32" height="32" alt="">
             <span>Tool Kits Pro</span>
             <span class="tk-header-version">v<?php echo TK_VERSION; ?></span>
         </div>
 
-        <div style="display:flex; align-items:center; gap:20px;">
+        <div class="tk-header-statuses">
             <?php 
             $ga_id = tk_get_option('google_analytics_gtag_id', '');
             if ($ga_id) : ?>
@@ -66,39 +63,57 @@ function tk_render_header_branding() {
             </div>
         </div>
     </div>
+    <div class="tk-external-notices is-empty" data-tk-external-notices></div>
     <style>
         .tk-header-branding {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: #fff;
-            padding: 12px 20px;
-            border-radius: 12px;
-            border: 1px solid var(--tk-border-soft);
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,250,252,0.94));
+            gap: 16px;
+            padding: 16px 18px;
+            border-radius: 14px;
+            border: 1px solid rgba(202, 213, 226, 0.8);
             margin-bottom: 24px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            box-shadow: 0 1px 2px rgba(16,24,40,0.04), 0 16px 42px rgba(15,23,42,0.07);
         }
         .tk-header-brand {
             display: flex;
             align-items: center;
-            gap: 8px;
-            font-weight: 700;
-            font-size: 14px;
-            color: #1e293b;
+            gap: 12px;
+            font-weight: 760;
+            font-size: 16px;
+            color: #172033;
+            white-space: nowrap;
         }
         .tk-header-brand .dashicons {
-            color: var(--tk-primary);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            background: linear-gradient(135deg, #2457e6, #0891b2);
+            border-radius: 11px;
             font-size: 18px;
-            width: 18px;
-            height: 18px;
+            width: 36px;
+            height: 36px;
+            box-shadow: 0 10px 22px rgba(36, 87, 230, 0.24);
         }
         .tk-header-version {
-            font-weight: 400;
+            font-weight: 700;
             color: var(--tk-muted);
-            font-size: 11px;
-            background: var(--tk-bg-soft);
-            padding: 2px 6px;
-            border-radius: 4px;
+            font-size: 12px;
+            background: #eef2f7;
+            padding: 4px 8px;
+            border-radius: 999px;
+        }
+        .tk-header-statuses {
+            display:flex;
+            align-items:center;
+            justify-content:flex-end;
+            gap:10px;
+            min-width:0;
+            flex-wrap:wrap;
         }
         .tk-header-status {
             display: flex;
@@ -106,10 +121,12 @@ function tk_render_header_branding() {
             gap: 8px;
             font-size: 12px;
             color: var(--tk-muted);
-            background: #f0fdf4;
-            padding: 6px 12px;
-            border-radius: 20px;
-            border: 1px solid #dcfce7;
+            background: rgba(255, 255, 255, 0.78);
+            padding: 8px 12px;
+            border-radius: 999px;
+            border: 1px solid #e2e8f0;
+            white-space: nowrap;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
         }
         .tk-status-dot {
             width: 8px;
@@ -119,12 +136,90 @@ function tk_render_header_branding() {
             box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
             animation: tk-pulse 2s infinite;
         }
+        .tk-external-notices {
+            margin: 0 0 24px;
+        }
+        .tk-external-notices.is-empty {
+            display: none;
+        }
+        .tk-external-notices .notice,
+        .tk-external-notices .updated,
+        .tk-external-notices .error,
+        .tk-external-notices .update-nag {
+            box-sizing: border-box;
+            width: 100%;
+            margin: 0 0 12px;
+            border-radius: 10px;
+            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+        }
         @keyframes tk-pulse {
             0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
             70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
             100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
         }
+        @media (max-width: 782px) {
+            .tk-header-branding {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+            .tk-header-statuses {
+                justify-content: flex-start;
+            }
+        }
     </style>
+    <script>
+    (function(){
+        var moving = false;
+        var noticeSelector = '.notice, .updated, .error, .update-nag';
+        var heroSelector = '.tk-hero, .tk-overview-hero';
+
+        function findTarget(hero) {
+            var wrap = hero.closest('.tk-wrap, .tk-overview-wrap') || document;
+            return wrap.querySelector('[data-tk-external-notices]') || wrap.querySelector('[data-tk-overview-external-notices]');
+        }
+
+        function syncTargetState(target) {
+            if (!target) { return; }
+            target.classList.toggle('is-empty', target.children.length === 0);
+        }
+
+        function moveHeroNotices() {
+            if (moving) { return; }
+            moving = true;
+
+            document.querySelectorAll(heroSelector).forEach(function(hero){
+                var target = findTarget(hero);
+                if (!target) { return; }
+
+                hero.querySelectorAll(noticeSelector).forEach(function(notice){
+                    if (notice.closest('[data-tk-external-notices], [data-tk-overview-external-notices]')) {
+                        return;
+                    }
+                    target.appendChild(notice);
+                });
+
+                syncTargetState(target);
+            });
+
+            moving = false;
+        }
+
+        moveHeroNotices();
+        document.addEventListener('DOMContentLoaded', moveHeroNotices);
+        window.setTimeout(moveHeroNotices, 100);
+        window.setTimeout(moveHeroNotices, 500);
+        window.setTimeout(moveHeroNotices, 1500);
+
+        if (window.MutationObserver && document.body) {
+            var observer = new MutationObserver(moveHeroNotices);
+            observer.observe(document.body, { childList: true, subtree: true });
+            window.setTimeout(function(){
+                observer.disconnect();
+                moveHeroNotices();
+            }, 4000);
+        }
+    })();
+    </script>
     <?php
 }
 
@@ -180,6 +275,11 @@ function tk_clear_all_caches(): array {
         }
     }
 
+    if (function_exists('tk_page_cache_purge')) {
+        $purged = tk_page_cache_purge();
+        $actions[] = 'Tool Kits page cache cleared: ' . tk_page_cache_summary_text($purged) . '.';
+    }
+
     if (isset($wpdb->options)) {
         $deleted = $wpdb->query(
             "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_%' OR option_name LIKE '_site_transient_%'"
@@ -202,49 +302,14 @@ function tk_clear_all_caches(): array {
         }
     }
 
-    if (function_exists('rocket_clean_domain')) {
-        rocket_clean_domain();
-        $actions[] = 'WP Rocket cache cleared.';
-    }
-    if (function_exists('w3tc_flush_all')) {
-        w3tc_flush_all();
-        $actions[] = 'W3 Total Cache cleared.';
-    }
-    if (function_exists('wp_cache_clear_cache')) {
-        wp_cache_clear_cache();
-        $actions[] = 'WP Super Cache cleared.';
-    }
-    if (function_exists('litespeed_purge_all')) {
-        litespeed_purge_all();
-        $actions[] = 'LiteSpeed cache cleared.';
-    }
-    if (has_action('litespeed_purge_all')) {
-        do_action('litespeed_purge_all');
-        $actions[] = 'LiteSpeed purge triggered.';
-    }
-    if (class_exists('WpeCommon')) {
-        if (method_exists('WpeCommon', 'purge_memcached')) {
-            WpeCommon::purge_memcached();
+    if (function_exists('tk_server_cache_purge_layers')) {
+        $external = tk_server_cache_purge_layers();
+        if (!empty($external['actions']) && is_array($external['actions'])) {
+            $actions = array_merge($actions, $external['actions']);
         }
-        if (method_exists('WpeCommon', 'purge_varnish_cache')) {
-            WpeCommon::purge_varnish_cache();
+        if (!empty($external['errors']) && is_array($external['errors'])) {
+            $errors = array_merge($errors, $external['errors']);
         }
-        $actions[] = 'WP Engine cache cleared.';
-    }
-    if (class_exists('autoptimizeCache')) {
-        autoptimizeCache::clearall();
-        $actions[] = 'Autoptimize cache cleared.';
-    }
-    if (class_exists('Cache_Enabler')) {
-        Cache_Enabler::clear_total_cache();
-        $actions[] = 'Cache Enabler cleared.';
-    }
-    if (class_exists('WpFastestCache')) {
-        $wpf = new WpFastestCache();
-        if (method_exists($wpf, 'deleteCache')) {
-            $wpf->deleteCache();
-        }
-        $actions[] = 'WP Fastest Cache cleared.';
     }
 
     if (empty($actions)) {
@@ -368,7 +433,7 @@ function tk_license_admin_notice() {
     if (!current_user_can('manage_options')) return;
 
     $screen = get_current_screen();
-    if ($screen && $screen->id === 'tools_page_tool-kits-access') {
+    if ($screen && in_array($screen->id, array('tools_page_tool-kits-access', 'tool-kits-settings_page_tool-kits-access', 'toplevel_page_tool-kits-settings', 'tool-kits_page_tool-kits-access'), true)) {
         return;
     }
 
@@ -379,8 +444,8 @@ function tk_license_admin_notice() {
         ?>
         <div class="notice notice-warning is-dismissible">
             <p>
-                <strong>Tool Kits:</strong> Lisensi Anda belum aktif. Silakan masukkan kunci lisensi untuk mengaktifkan fitur premium dan pembaruan otomatis.
-                <a href="<?php echo esc_url(tk_admin_url('tool-kits-access') . '#license'); ?>" class="button button-secondary" style="margin-left:10px;">Aktifkan Sekarang</a>
+                <strong>Tool Kits:</strong> Your license is not active yet. Enter your license key to enable premium features and automatic updates.
+                <a href="<?php echo esc_url(tk_admin_url('tool-kits-access') . '#license'); ?>" class="button button-secondary" style="margin-left:10px;">Activate Now</a>
             </p>
         </div>
         <?php
@@ -598,6 +663,9 @@ function tk_tamper_detect_security(): array {
         'hardening_disable_xmlrpc' => 'XML-RPC disabled',
         'hardening_xmlrpc_block_methods' => 'XML-RPC dangerous methods blocked',
         'hardening_disable_rest_user_enum' => 'REST user enumeration disabled',
+        'hardening_reduce_wp_fingerprint' => 'WP fingerprint reduced',
+        'hardening_remove_query_ver' => 'Script versions removed',
+        'hardening_clean_wp_head' => 'WP head cleaned',
         'hardening_security_headers' => 'Security headers',
         'hardening_csp_lite_enabled' => 'CSP lite',
         'hardening_csp_balanced_enabled' => 'CSP balanced',
@@ -684,6 +752,9 @@ function tk_hardening_active_items(): array {
     if (tk_get_option('hardening_disable_rest_user_enum', 1)) {
         $items[] = array('label' => 'REST user enumeration disabled', 'link' => $base_url . '#section-rest_user_enum');
     }
+    if (tk_get_option('hardening_reduce_wp_fingerprint', 1)) {
+        $items[] = array('label' => 'WP fingerprint reduced', 'link' => $base_url . '#section-reduce_wp_fingerprint');
+    }
     if (tk_get_option('hardening_disable_comments', 0)) {
         $items[] = array('label' => 'Comments disabled', 'link' => $base_url . '#general');
     }
@@ -692,6 +763,18 @@ function tk_hardening_active_items(): array {
     }
     if (tk_get_option('hardening_auto_toggle', 1)) {
         $items[] = array('label' => 'Auto hardening', 'link' => $base_url . '#general');
+    }
+    if (tk_get_option('security_login_error_obfuscation_enabled', 1)) {
+        $items[] = array('label' => 'Login errors hidden', 'link' => tk_admin_url('tool-kits-security-rate-limit'));
+    }
+    if (tk_get_option('security_block_bad_usernames_enabled', 1)) {
+        $items[] = array('label' => 'Common attacker usernames blocked', 'link' => tk_admin_url('tool-kits-security-rate-limit'));
+    }
+    if (tk_get_option('security_login_origin_guard_enabled', 1)) {
+        $items[] = array('label' => 'Login origin guard', 'link' => tk_admin_url('tool-kits-security-rate-limit'));
+    }
+    if (tk_get_option('security_404_scanner_trap_enabled', 1)) {
+        $items[] = array('label' => '404 scanner trap', 'link' => tk_admin_url('tool-kits-security-rate-limit'));
     }
     if (tk_get_option('hardening_security_headers', 1)) {
         $items[] = array('label' => 'Security headers', 'link' => $base_url . '#section-headers');
@@ -748,7 +831,7 @@ function tk_hardening_active_items(): array {
     if (tk_get_option('hardening_hide_wp_version', 1)) {
         $items[] = array('label' => 'Hide WP version', 'link' => $base_url . '#section-hide_wp_version');
     }
-    if (tk_get_option('hardening_clean_wp_head', 0)) {
+    if (tk_get_option('hardening_clean_wp_head', 1)) {
         $items[] = array('label' => 'Clean WP head', 'link' => $base_url . '#general');
     }
     if (tk_get_option('hardening_waf_enabled', 0)) {
@@ -774,6 +857,15 @@ function tk_option_init_defaults() {
         'hide_login_enabled' => 0,
         'hide_login_slug' => 'secure-login',
         'hide_login_redirect' => home_url('/'),
+        'login_branding_enabled' => 0,
+        'login_logo_id' => 0,
+        'login_background_id' => 0,
+        'login_logo_width' => 240,
+        'login_logo_height' => 96,
+        'login_overlay_color' => '#0f172a',
+        'login_overlay_opacity' => 46,
+        'login_form_background_color' => '#ffffff',
+        'login_form_text_color' => '#1f2937',
         // Captcha
         'captcha_enabled' => 1,
         'captcha_on_login' => 0,
@@ -813,6 +905,10 @@ function tk_option_init_defaults() {
         'rate_limit_window_minutes' => 10,
         'rate_limit_max_attempts' => 5,
         'rate_limit_lockout_minutes' => 30,
+        'rate_limit_progressive_enabled' => 1,
+        'rate_limit_progressive_steps' => '15, 60, 360, 1440',
+        'rate_limit_honey_trap_enabled' => 1,
+        'rate_limit_honey_trap_paths' => "/wp-login.php\n/login\n/admin\n/wp-admin.php\n/administrator\n/user/login",
         'rate_limit_block_on_fail' => 0,
         'rate_limit_whitelist' => '',
         'rate_limit_blocked_ips' => array(),
@@ -828,6 +924,19 @@ function tk_option_init_defaults() {
         'smtp_from_name' => '',
         'smtp_force_from' => 1,
         'smtp_return_path' => 1,
+        'smtp_gmail_client_id' => '',
+        'smtp_gmail_client_secret' => '',
+        'smtp_gmail_access_token' => '',
+        'smtp_gmail_refresh_token' => '',
+        'smtp_gmail_token_expires_at' => 0,
+        'smtp_gmail_email' => '',
+        'smtp_microsoft_client_id' => '',
+        'smtp_microsoft_client_secret' => '',
+        'smtp_microsoft_tenant_id' => 'common',
+        'smtp_microsoft_access_token' => '',
+        'smtp_microsoft_refresh_token' => '',
+        'smtp_microsoft_token_expires_at' => 0,
+        'smtp_microsoft_email' => '',
         'smtp_test_log' => array(),
         // Login log
         'login_log_enabled' => 1,
@@ -836,6 +945,11 @@ function tk_option_init_defaults() {
         'hardening_disable_file_editor' => 1,
         'hardening_disable_xmlrpc' => 1,
         'hardening_disable_rest_user_enum' => 1,
+        'hardening_reduce_wp_fingerprint' => 1,
+        'hardening_block_author_enumeration' => 1,
+        'hardening_remove_query_ver' => 1,
+        'hardening_disable_emojis' => 1,
+        'hardening_clean_wp_head' => 1,
         'hardening_security_headers' => 1,
         'hardening_disable_pingbacks' => 1,
         'hardening_cors_allowed_origins' => '',
@@ -860,6 +974,20 @@ function tk_option_init_defaults() {
         'hardening_waf_log_compress_min_kb' => 256,
         'hardening_waf_log_keep_days' => 14,
         'hardening_waf_log_schedule' => 'daily',
+        'firewall_ip_allowlist' => '',
+        'firewall_ip_blocklist' => '',
+        'firewall_blocked_user_agents' => "sqlmap\nmasscan",
+        'firewall_log_enabled' => 1,
+        'firewall_event_log' => array(),
+        'malware_scan_max_files' => 15000,
+        'malware_scan_max_file_kb' => 2048,
+        'malware_scan_code_files_only' => 1,
+        'malware_scan_report' => array(),
+        'malware_scan_schedule_enabled' => 0,
+        'malware_scan_schedule' => 'daily',
+        'malware_scan_alert_email_enabled' => 1,
+        'malware_scan_last_scheduled_run' => 0,
+        'malware_scan_last_scheduled_status' => '',
         'hardening_httpauth_enabled' => 0,
         'hardening_httpauth_user' => '',
         'hardening_httpauth_pass' => '',
@@ -894,7 +1022,7 @@ function tk_option_init_defaults() {
         'hardening_dangerous_methods_allow_paths' => "/wp-json/\n/wp-admin/admin-ajax.php\n/wp-cron.php",
         'hardening_robots_txt_hardened' => 0,
         'hardening_block_unwanted_files_enabled' => 1,
-        'hardening_unwanted_file_names' => '.ds_store, thumbs.db, phpinfo.php, error_log, debug.log',
+        'hardening_unwanted_file_names' => '.ds_store, thumbs.db, phpinfo.php, error_log, debug.log, readme.html, license.txt, wp-config-sample.php, composer.json, composer.lock, package.json, package-lock.json, yarn.lock',
         'hardening_mysql_exposure_check_enabled' => 1,
         'hardening_mysql_allow_public_host' => 0,
         'hardening_core_auto_updates' => 1,
@@ -923,14 +1051,27 @@ function tk_option_init_defaults() {
         'page_cache_ttl' => 3600,
         'page_cache_exclude_paths' => "/wp-login.php\n/wp-admin\n",
         'page_cache_preload_urls' => '',
+        'page_cache_auto_preload_after_purge' => 0,
         'fragment_cache_keys' => array(),
         'webp_convert_enabled' => 0,
         'webp_serve_enabled' => 0,
-        'webp_quality' => 82,
+        'webp_quality' => 90,
         'image_opt_enabled' => 0,
         'image_opt_frontend_to_webp' => 0,
         'image_opt_rewrite_all_assets' => 0,
-        'image_opt_quality' => 78,
+        'image_opt_quality' => 95,
+        'image_opt_preserve_hires' => 1,
+        'image_opt_safe_derivatives' => 1,
+        'image_opt_frontend_optimize' => 0,
+        'image_opt_srcset_original_only' => 1,
+        'image_opt_max_width' => 0,
+        'image_opt_max_height' => 0,
+        'image_opt_target_dpi' => 72,
+        'image_opt_strip_metadata' => 1,
+        'image_opt_sharpen_enabled' => 1,
+        'image_opt_compression_report' => array(),
+        'image_opt_cleanup_report' => array(),
+        'image_opt_queue' => array(),
         'seo_enabled' => 0,
         'seo_meta_desc_enabled' => 1,
         'seo_canonical_enabled' => 1,
@@ -946,11 +1087,39 @@ function tk_option_init_defaults() {
         'seo_sitemap_include_images' => 1,
         'seo_sitemap_changefreq' => 'weekly',
         'seo_sitemap_priority' => 0.8,
+        'sitemap_google_property' => '',
+        'sitemap_google_access_token' => '',
+        'sitemap_bing_access_token' => '',
+        'sitemap_submission_last_result' => array(),
         'seo_sitemap_exclude_paths' => '',
         'seo_broken_links_report' => array(),
         'seo_canonical_audit_report' => array(),
         'seo_index_monitor' => array(),
         'seo_content_audit_report' => array(),
+        'geo_enabled' => 0,
+        'geo_custom_jsonld' => '',
+        'geo_faq_enabled' => 0,
+        'geo_faq_items' => array(),
+        'geo_itemlist_enabled' => 0,
+        'geo_itemlist_name' => '',
+        'geo_itemlist_description' => '',
+        'geo_itemlist_post_type' => 'post',
+        'geo_itemlist_post_ids' => array(),
+        'geo_itemlist_limit' => 10,
+        'geo_itemlist_language_mode' => 'single',
+        'geo_ai_access_report' => array(),
+        'geo_schema_duplicate_report' => array(),
+        'geo_schema_duplicate_fix_report' => array(),
+        'geo_crawler_preview' => array(),
+        'geo_visibility_report' => array(),
+        'geo_prompt_preview_report' => array(),
+        'geo_post_schema_report' => array(),
+        'geo_llms_enabled' => 0,
+        'geo_llms_mode' => 'auto',
+        'geo_llms_manual' => '',
+        'geo_llms_sections' => array(),
+        'geo_llms_include_faq' => 1,
+        'geo_llms_include_itemlist' => 1,
         'lazy_load_enabled' => 0,
         'lazy_load_eager_images' => 2,
         'lazy_load_html_images' => 1,
@@ -959,6 +1128,7 @@ function tk_option_init_defaults() {
         'lazy_load_script_delay' => '',
         'classic_editor_enabled' => 0,
         'classic_widgets_enabled' => 0,
+        'duplicate_content_enabled' => 0,
         'monitoring_404_enabled' => 1,
         'monitoring_404_redirect_home' => 0,
         'monitoring_404_exclude_paths' => "/wp-admin\n/wp-login.php\n/wp-cron.php\n",
@@ -985,6 +1155,8 @@ function tk_option_init_defaults() {
         'upload_images_limit_enabled' => 1,
         'upload_images_default_mb' => 2,
         'upload_images_max_mb' => 10,
+        'upload_documents_max_mb' => 25,
+        'upload_videos_max_mb' => 200,
         // Access control
         'toolkits_allowed_roles' => array('administrator'),
         'toolkits_ip_allowlist' => '',
@@ -996,6 +1168,30 @@ function tk_option_init_defaults() {
         'toolkits_alert_admin_created' => 1,
         'toolkits_alert_role_change' => 1,
         'toolkits_alert_admin_login_new_ip' => 1,
+        'security_auto_block_enabled' => 1,
+        'security_auto_block_threshold' => 10,
+        'security_auto_block_window_minutes' => 10,
+        'security_auto_block_user_agents' => "python-requests\ncurl\nwget\nsqlmap\nmasscan\nnikto\nacunetix\nwpscan",
+        'security_login_error_obfuscation_enabled' => 1,
+        'security_block_bad_usernames_enabled' => 1,
+        'security_bad_usernames' => "admin\nadministrator\nroot\ntest\ndemo\nuser\nwpadmin\nwebmaster",
+        'security_login_origin_guard_enabled' => 1,
+        'security_login_origin_require_header' => 0,
+        'otp_login_enabled' => 0,
+        'otp_login_roles' => array('administrator'),
+        'otp_login_expiry_minutes' => 5,
+        'otp_login_max_attempts' => 5,
+        'otp_login_resend_cooldown' => 60,
+        'otp_login_trusted_days' => 0,
+        'otp_login_email_subject' => 'Your {site_name} login code',
+        'otp_login_email_message' => "Your login verification code is: {code}\n\nThis code expires in {expires_minutes} minutes.",
+        'otp_login_audit_log' => array(),
+        'security_404_scanner_trap_enabled' => 1,
+        'security_404_scanner_threshold' => 4,
+        'security_404_scanner_window_minutes' => 10,
+        'security_404_scanner_paths' => "/.env\n/wp-config.php.bak\n/wp-config.php.save\n/wp-config.old\n/vendor/phpunit\n/phpunit\n/backup.zip\n/backup.sql\n/database.sql\n/wp-content/debug.log\n/.git\n/.svn\n/adminer.php\n/phpinfo.php",
+        'security_events_retention_days' => 90,
+        'security_events_backfilled' => 0,
         'toolkits_owner_only_enabled' => 0,
         'toolkits_owner_user_id' => 1,
         'toolkits_install_id' => '',
@@ -1023,12 +1219,53 @@ function tk_option_init_defaults() {
 
 function tk_run_versioned_upgrades(): void {
     $stored_version = (string) get_option('tk_version', '');
+    $current_version = defined('TK_VERSION') ? (string) TK_VERSION : '0.0.0';
     tk_option_init_defaults();
     tk_upgrade_antispam_duplicate_window_default();
     if ($stored_version === '' || version_compare($stored_version, '2.2.0', '<')) {
         tk_upgrade_to_220();
     }
-    update_option('tk_version', defined('TK_VERSION') ? (string) TK_VERSION : '0.0.0', false);
+    if ($stored_version === '' || version_compare($stored_version, '2.5.8', '<')) {
+        tk_upgrade_to_258_stealth_hardening();
+    }
+    if ($stored_version === '' || version_compare($stored_version, '2.5.27', '<')) {
+        tk_upgrade_to_2527_image_sharpness();
+    }
+    if ($stored_version === '' || version_compare($stored_version, '2.5.28', '<')) {
+        tk_upgrade_to_2528_image_no_resize_default();
+    }
+    if ($stored_version === '' || version_compare($stored_version, '2.5.34', '<')) {
+        tk_upgrade_to_2534_image_quality_srcset();
+    }
+    update_option('tk_version', $current_version, false);
+}
+
+function tk_force_relogin_after_update(string $stored_version, string $current_version): void {
+    if ($stored_version === '' || $current_version === '' || version_compare($current_version, $stored_version, '<=')) {
+        return;
+    }
+    if (defined('WP_CLI') && WP_CLI) {
+        return;
+    }
+
+    tk_invalidate_all_user_sessions();
+    update_option('tk_sessions_invalidated_for_version', $current_version, false);
+}
+
+function tk_invalidate_all_user_sessions(): void {
+    if (defined('WP_CLI') && WP_CLI) {
+        return;
+    }
+
+    if (class_exists('WP_Session_Tokens') && method_exists('WP_Session_Tokens', 'destroy_all_for_all_users')) {
+        WP_Session_Tokens::destroy_all_for_all_users();
+    } else {
+        delete_metadata('user', 0, 'session_tokens', '', true);
+    }
+
+    if (function_exists('wp_clear_auth_cookie')) {
+        wp_clear_auth_cookie();
+    }
 }
 
 function tk_upgrade_antispam_duplicate_window_default(): void {
@@ -1041,6 +1278,32 @@ function tk_upgrade_antispam_duplicate_window_default(): void {
     }
 
     tk_update_option('antispam_duplicate_window_default_5_migrated', 1);
+}
+
+function tk_upgrade_to_2527_image_sharpness(): void {
+    if ((int) tk_get_option('image_opt_quality', 86) === 78) {
+        tk_update_option('image_opt_quality', 86);
+    }
+    tk_update_option('image_opt_sharpen_enabled', 1);
+}
+
+function tk_upgrade_to_2528_image_no_resize_default(): void {
+    if ((int) tk_get_option('image_opt_max_width', 0) === 2560) {
+        tk_update_option('image_opt_max_width', 0);
+    }
+    if ((int) tk_get_option('image_opt_max_height', 0) === 2560) {
+        tk_update_option('image_opt_max_height', 0);
+    }
+}
+
+function tk_upgrade_to_2534_image_quality_srcset(): void {
+    if ((int) tk_get_option('image_opt_quality', 92) <= 86) {
+        tk_update_option('image_opt_quality', 92);
+    }
+    if ((int) tk_get_option('webp_quality', 90) <= 82) {
+        tk_update_option('webp_quality', 90);
+    }
+    tk_update_option('image_opt_srcset_original_only', 1);
 }
 
 function tk_upgrade_to_220(): void {
@@ -1089,6 +1352,23 @@ function tk_upgrade_to_220(): void {
     }
 }
 
+function tk_upgrade_to_258_stealth_hardening(): void {
+    if (!tk_get_option('hardening_auto_toggle', 1)) {
+        return;
+    }
+
+    tk_update_option('hardening_reduce_wp_fingerprint', 1);
+    tk_update_option('hardening_block_author_enumeration', 1);
+    tk_update_option('hardening_remove_query_ver', 1);
+    tk_update_option('hardening_disable_emojis', 1);
+    tk_update_option('hardening_clean_wp_head', 1);
+    tk_update_option('hardening_hide_wp_version', 1);
+    tk_update_option('hardening_disable_rest_user_enum', 1);
+    tk_update_option('hardening_disable_xmlrpc', 1);
+    tk_update_option('hardening_disable_pingbacks', 1);
+    tk_update_option('hardening_block_unwanted_files_enabled', 1);
+}
+
 /**
  * Admin UI helpers
  */
@@ -1127,9 +1407,12 @@ function tk_nonce_field($action) {
 function tk_check_nonce($action) {
     $nonce = '';
     if (isset($_POST['_tk_nonce'])) {
-        $nonce = (string) $_POST['_tk_nonce'];
+        $nonce = sanitize_text_field(wp_unslash((string) $_POST['_tk_nonce']));
     } elseif (isset($_REQUEST['_tk_nonce'])) {
-        $nonce = (string) $_REQUEST['_tk_nonce'];
+        $nonce = sanitize_text_field(wp_unslash((string) $_REQUEST['_tk_nonce']));
+    } elseif (isset($_REQUEST['_wpnonce'])) {
+        // WordPress uses _wpnonce by default for links generated by wp_nonce_url().
+        $nonce = sanitize_text_field(wp_unslash((string) $_REQUEST['_wpnonce']));
     }
     if ($nonce === '' || !wp_verify_nonce($nonce, $action)) {
         wp_die(__('Security check failed.', 'tool-kits'));
@@ -1279,6 +1562,255 @@ function tk_get_ip() {
     return '0.0.0.0';
 }
 
+function tk_security_events_table(): string {
+    global $wpdb;
+    return $wpdb->prefix . 'tk_security_events';
+}
+
+function tk_security_events_install_table(): void {
+    global $wpdb;
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+    $sql = "CREATE TABLE " . tk_security_events_table() . " (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        time DATETIME NOT NULL,
+        event_type VARCHAR(40) NOT NULL,
+        category VARCHAR(40) NOT NULL,
+        ip VARCHAR(64),
+        country VARCHAR(100),
+        location VARCHAR(191),
+        user_agent VARCHAR(255),
+        reason VARCHAR(191),
+        request_method VARCHAR(12),
+        request_uri VARCHAR(500),
+        username VARCHAR(60),
+        user_id BIGINT,
+        PRIMARY KEY (id),
+        KEY time (time),
+        KEY event_type (event_type),
+        KEY category (category),
+        KEY ip (ip),
+        KEY event_time (event_type, time),
+        KEY category_time (category, time),
+        KEY ip_time (ip, time),
+        KEY country_time (country, time)
+    ) {$wpdb->get_charset_collate()};";
+
+    dbDelta($sql);
+}
+
+function tk_security_events_table_exists(): bool {
+    static $exists = null;
+    if ($exists !== null) {
+        return $exists;
+    }
+
+    global $wpdb;
+    $table = tk_security_events_table();
+    $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+    $exists = is_string($found) && $found === $table;
+    return $exists;
+}
+
+function tk_security_events_country_from_location(string $location): string {
+    $location = trim($location);
+    if ($location === '' || $location === 'Unknown' || $location === 'Private/local IP') {
+        return '';
+    }
+
+    $parts = array_values(array_filter(array_map('trim', explode(',', $location))));
+    return !empty($parts) ? (string) end($parts) : '';
+}
+
+function tk_security_events_record(array $event): void {
+    if (!tk_security_events_table_exists()) {
+        tk_security_events_install_table();
+    }
+
+    global $wpdb;
+    $location = isset($event['location']) ? sanitize_text_field((string) $event['location']) : '';
+    if ($location === '' && !empty($event['ip']) && function_exists('tk_security_alert_ip_location')) {
+        $location = sanitize_text_field(tk_security_alert_ip_location((string) $event['ip']));
+    }
+    $country = isset($event['country']) ? sanitize_text_field((string) $event['country']) : '';
+    if ($country === '') {
+        $country = tk_security_events_country_from_location($location);
+    }
+
+    $wpdb->insert(tk_security_events_table(), array(
+        'time' => isset($event['time']) ? sanitize_text_field((string) $event['time']) : current_time('mysql', 1),
+        'event_type' => sanitize_key((string) ($event['event_type'] ?? 'blocked')),
+        'category' => sanitize_key((string) ($event['category'] ?? 'complex')),
+        'ip' => substr(sanitize_text_field((string) ($event['ip'] ?? '')), 0, 64),
+        'country' => substr($country, 0, 100),
+        'location' => substr($location, 0, 191),
+        'user_agent' => substr(sanitize_text_field((string) ($event['user_agent'] ?? tk_user_agent())), 0, 255),
+        'reason' => substr(sanitize_text_field((string) ($event['reason'] ?? '')), 0, 191),
+        'request_method' => substr(sanitize_key((string) ($event['request_method'] ?? ($_SERVER['REQUEST_METHOD'] ?? ''))), 0, 12),
+        'request_uri' => substr(sanitize_text_field((string) ($event['request_uri'] ?? ($_SERVER['REQUEST_URI'] ?? ''))), 0, 500),
+        'username' => substr(sanitize_text_field((string) ($event['username'] ?? '')), 0, 60),
+        'user_id' => isset($event['user_id']) ? (int) $event['user_id'] : 0,
+    ));
+}
+
+function tk_security_events_schedule_maintenance(): void {
+    if (!wp_next_scheduled('tk_security_events_maintenance')) {
+        wp_schedule_event(time() + HOUR_IN_SECONDS, 'daily', 'tk_security_events_maintenance');
+    }
+}
+
+function tk_security_events_clear_maintenance(): void {
+    $timestamp = wp_next_scheduled('tk_security_events_maintenance');
+    if ($timestamp) {
+        wp_unschedule_event($timestamp, 'tk_security_events_maintenance');
+    }
+}
+
+function tk_security_events_maintenance(): void {
+    tk_security_events_install_table();
+    tk_security_events_backfill();
+    tk_security_events_backfill_geo();
+    tk_security_events_cleanup();
+}
+
+function tk_security_events_cleanup(): int {
+    if (!tk_security_events_table_exists()) {
+        return 0;
+    }
+
+    $days = max(7, (int) tk_get_option('security_events_retention_days', 90));
+    $before = gmdate('Y-m-d H:i:s', time() - ($days * DAY_IN_SECONDS));
+    global $wpdb;
+    $result = $wpdb->query($wpdb->prepare(
+        'DELETE FROM ' . tk_security_events_table() . ' WHERE time < %s',
+        $before
+    ));
+    return is_numeric($result) ? (int) $result : 0;
+}
+
+function tk_security_events_backfill_geo(): int {
+    if (!tk_security_events_table_exists() || !function_exists('tk_security_alert_ip_location')) {
+        return 0;
+    }
+
+    global $wpdb;
+    $table = tk_security_events_table();
+    $rows = $wpdb->get_results(
+        "SELECT DISTINCT ip FROM {$table} WHERE ip <> '' AND (location IS NULL OR location = '' OR country IS NULL OR country = '') ORDER BY id DESC LIMIT 100"
+    );
+    if (!is_array($rows) || empty($rows)) {
+        return 0;
+    }
+
+    $updated = 0;
+    foreach ($rows as $row) {
+        $ip = isset($row->ip) ? trim((string) $row->ip) : '';
+        if ($ip === '') {
+            continue;
+        }
+
+        $location = tk_security_alert_ip_location($ip);
+        $country = tk_security_events_country_from_location($location);
+        $result = $wpdb->query($wpdb->prepare(
+            "UPDATE {$table} SET location = %s, country = %s WHERE ip = %s AND (location IS NULL OR location = '' OR country IS NULL OR country = '')",
+            substr($location, 0, 191),
+            substr($country, 0, 100),
+            substr($ip, 0, 64)
+        ));
+        if (is_numeric($result)) {
+            $updated += (int) $result;
+        }
+    }
+
+    return $updated;
+}
+
+function tk_security_events_backfill(): int {
+    if ((int) tk_get_option('security_events_backfilled', 0) === 1) {
+        return 0;
+    }
+    if (!tk_security_events_table_exists()) {
+        tk_security_events_install_table();
+    }
+
+    $inserted = 0;
+    $inserted += tk_security_events_backfill_login_log();
+    $inserted += tk_security_events_backfill_firewall_log();
+    tk_update_option('security_events_backfilled', 1);
+    tk_update_option('security_events_last_backfill_count', $inserted);
+    tk_update_option('security_events_last_backfill_time', time());
+    return $inserted;
+}
+
+function tk_security_events_backfill_login_log(): int {
+    if (!function_exists('tk_login_log_table')) {
+        return 0;
+    }
+
+    global $wpdb;
+    $login_table = tk_login_log_table();
+    $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $login_table));
+    if (!is_string($found) || $found !== $login_table) {
+        return 0;
+    }
+
+    $columns = $wpdb->get_col('DESC ' . $login_table, 0);
+    $has_reason = is_array($columns) && in_array('reason', $columns, true);
+    $reason_select = $has_reason ? 'reason' : "'' AS reason";
+    $rows = $wpdb->get_results(
+        "SELECT time, username, user_id, ip, location, agent, status, {$reason_select} FROM {$login_table} WHERE status = 'failed' ORDER BY time ASC LIMIT 5000"
+    );
+    if (!is_array($rows)) {
+        return 0;
+    }
+
+    $inserted = 0;
+    foreach ($rows as $row) {
+        tk_security_events_record(array(
+            'time' => (string) ($row->time ?? current_time('mysql', 1)),
+            'event_type' => 'blocked',
+            'category' => 'brute_force',
+            'ip' => (string) ($row->ip ?? ''),
+            'location' => (string) ($row->location ?? ''),
+            'user_agent' => (string) ($row->agent ?? ''),
+            'reason' => (string) ($row->reason ?? 'Backfilled failed login'),
+            'request_method' => 'post',
+            'request_uri' => '/wp-login.php',
+            'username' => (string) ($row->username ?? ''),
+            'user_id' => (int) ($row->user_id ?? 0),
+        ));
+        $inserted++;
+    }
+    return $inserted;
+}
+
+function tk_security_events_backfill_firewall_log(): int {
+    $events = tk_get_option('firewall_event_log', array());
+    if (!is_array($events) || empty($events)) {
+        return 0;
+    }
+
+    $inserted = 0;
+    foreach (array_reverse($events) as $event) {
+        $ip = isset($event['ip']) ? trim((string) $event['ip']) : '';
+        $reason = isset($event['reason']) ? (string) $event['reason'] : '';
+        $is_blocklist = stripos($reason, 'Blocked IP/CIDR') !== false || stripos($reason, 'Blocked user agent') !== false;
+        tk_security_events_record(array(
+            'time' => gmdate('Y-m-d H:i:s', isset($event['time']) ? (int) $event['time'] : time()),
+            'event_type' => 'blocked',
+            'category' => $is_blocklist ? 'blocklist' : 'complex',
+            'ip' => $ip,
+            'location' => $ip !== '' && function_exists('tk_security_alert_ip_location') ? tk_security_alert_ip_location($ip) : '',
+            'user_agent' => '',
+            'reason' => $reason !== '' ? $reason : 'Backfilled firewall event',
+            'request_method' => (string) ($event['method'] ?? ''),
+            'request_uri' => (string) ($event['uri'] ?? ''),
+        ));
+        $inserted++;
+    }
+    return $inserted;
+}
+
 function tk_toolkits_allowed_roles(): array {
     $roles = tk_get_option('toolkits_allowed_roles', array('administrator'));
     if (!is_array($roles)) {
@@ -1386,6 +1918,9 @@ function tk_toolkits_can_manage(): bool {
     if (!$user) {
         return false;
     }
+    if (current_user_can(tk_toolkits_capability())) {
+        return true;
+    }
     if (tk_toolkits_user_allowed($user)) {
         return true;
     }
@@ -1424,43 +1959,96 @@ function tk_toolkits_collector_url(): string {
     if ($url === '' && defined('TK_HEARTBEAT_URL') && TK_HEARTBEAT_URL !== '') {
         $url = trim((string) TK_HEARTBEAT_URL);
     }
-    if ($url !== '' && $url !== (string) tk_get_option('heartbeat_collector_url', '')) {
-        tk_update_option('heartbeat_collector_url', $url);
+    if ($url === '') {
+        $url = (string) tk_get_option('collector_url', '');
+    }
+    if ($url === '') {
+        $url = 'https://nexamonitor.theteamtheteam.com/api/toolkits/heartbeat';
     }
     return $url;
 }
 
+function tk_heartbeat_auth_key(): string {
+    if (defined('TK_HEARTBEAT_AUTH_KEY') && TK_HEARTBEAT_AUTH_KEY !== '') {
+        return (string) TK_HEARTBEAT_AUTH_KEY;
+    }
+    return (string) tk_get_option('heartbeat_auth_key', '');
+}
+
+function tk_heartbeat_auth_keys(): array {
+    $keys = array();
+    if (defined('TK_HEARTBEAT_AUTH_KEY') && TK_HEARTBEAT_AUTH_KEY !== '') {
+        $keys[] = trim((string) TK_HEARTBEAT_AUTH_KEY);
+    }
+    if (defined('TK_HEARTBEAT_LEGACY_AUTH_KEY') && TK_HEARTBEAT_LEGACY_AUTH_KEY !== '') {
+        $keys[] = trim((string) TK_HEARTBEAT_LEGACY_AUTH_KEY);
+    }
+    $keys[] = trim((string) tk_get_option('heartbeat_auth_key', ''));
+    return array_values(array_unique(array_filter($keys, static function ($key) {
+        return is_string($key) && $key !== '';
+    })));
+}
+
 function tk_toolkits_heartbeat_url_for_license_server(string $license_url): string {
-    $license_url = trim($license_url);
-    if ($license_url === '') {
-        return '';
-    }
-    if (substr($license_url, -11) === 'license.php') {
-        return substr($license_url, 0, -11) . 'heartbeat.php';
-    }
-    return rtrim($license_url, '/') . '/heartbeat.php';
+    return trim($license_url);
+}
+
+function tk_toolkits_default_collector_url(): string {
+    return 'https://nexamonitor.theteamtheteam.com/api/toolkits/heartbeat';
 }
 
 function tk_heartbeat_collector_url(): string {
     if (defined('TK_HEARTBEAT_URL') && TK_HEARTBEAT_URL !== '') {
         return TK_HEARTBEAT_URL;
     }
-    return 'https://nexamonitor.theteamtheteam.com/api/toolkits/heartbeat';
+    return tk_toolkits_default_collector_url();
 }
 
+function tk_toolkits_url_host(string $url): string {
+    $parts = wp_parse_url(trim($url));
+    return is_array($parts) && !empty($parts['host']) ? strtolower((string) $parts['host']) : '';
+}
 
-function tk_heartbeat_auth_key(): string {
-    $secret = trim((string) tk_get_option('heartbeat_auth_key', ''));
-    if ($secret === '' && defined('TK_HEARTBEAT_AUTH_KEY') && TK_HEARTBEAT_AUTH_KEY !== '') {
-        $secret = trim((string) TK_HEARTBEAT_AUTH_KEY);
+function tk_toolkits_license_server_is_trusted(string $url): bool {
+    if (defined('TK_ALLOW_CUSTOM_LICENSE_SERVER') && TK_ALLOW_CUSTOM_LICENSE_SERVER) {
+        return true;
     }
-    return $secret;
+
+    $host = tk_toolkits_url_host($url);
+    if ($host === '') {
+        return false;
+    }
+
+    $trusted_urls = array(
+        tk_toolkits_default_collector_url(),
+        tk_heartbeat_collector_url(),
+    );
+    if (defined('TK_LICENSE_SERVER_URL') && TK_LICENSE_SERVER_URL !== '') {
+        $trusted_urls[] = (string) TK_LICENSE_SERVER_URL;
+    }
+    if (defined('TK_HEARTBEAT_URL') && TK_HEARTBEAT_URL !== '') {
+        $trusted_urls[] = (string) TK_HEARTBEAT_URL;
+    }
+
+    foreach ($trusted_urls as $trusted_url) {
+        if ($host === tk_toolkits_url_host((string) $trusted_url)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function tk_license_server_url(): string {
     $url = trim((string) tk_get_option('license_server_url', ''));
     if ($url === '' && defined('TK_LICENSE_SERVER_URL') && TK_LICENSE_SERVER_URL !== '') {
         $url = trim((string) TK_LICENSE_SERVER_URL);
+    }
+    if ($url !== '' && ($url === tk_heartbeat_collector_url() || preg_match('~/heartbeat/license\.php$~i', $url))) {
+        $url = '';
+    }
+    if ($url !== '' && !tk_toolkits_license_server_is_trusted($url)) {
+        $url = '';
     }
     if ($url === '') {
         $url = tk_toolkits_license_server_url_for_collector(tk_heartbeat_collector_url());
@@ -1472,14 +2060,7 @@ function tk_license_server_url(): string {
 }
 
 function tk_license_server_url_from_collector($collector_url): string {
-    $collector_url = is_string($collector_url) ? trim($collector_url) : '';
-    if ($collector_url === '') {
-        return '';
-    }
-    if (substr($collector_url, -13) === 'heartbeat.php') {
-        return substr($collector_url, 0, -13) . 'license.php';
-    }
-    return rtrim($collector_url, '/') . '/license.php';
+    return is_string($collector_url) ? tk_toolkits_license_server_url_for_collector($collector_url) : '';
 }
 
 function tk_toolkits_license_server_url_for_collector(string $collector_url = ''): string {
@@ -1489,7 +2070,14 @@ function tk_toolkits_license_server_url_for_collector(string $collector_url = ''
     if ($collector_url === '') {
         $collector_url = tk_toolkits_collector_url();
     }
-    return tk_license_server_url_from_collector($collector_url);
+    $collector_url = trim($collector_url);
+    if ($collector_url === '') {
+        return '';
+    }
+    if (preg_match('~/license\.php$~i', $collector_url)) {
+        return $collector_url;
+    }
+    return preg_replace('~/heartbeat/?$~i', '/license', rtrim($collector_url, '/')) ?: rtrim($collector_url, '/') . '/license';
 }
 
 function tk_license_normalize_expires_at($value): string {
@@ -1513,6 +2101,69 @@ function tk_toolkits_missing_config_message(string $field): string {
     return isset($messages[$field]) ? $messages[$field] : 'Required configuration is missing.';
 }
 
+function tk_toolkits_signed_post(string $url, string $body, int $timestamp, array $args = array()) {
+    $timeout = isset($args['timeout']) ? (int) $args['timeout'] : 10;
+    $headers = array(
+        'Content-Type' => 'application/json',
+        'X-Auth-Timestamp' => (string) $timestamp,
+    );
+    $http_user = (string) tk_get_option('heartbeat_http_user', '');
+    $http_pass = (string) tk_get_option('heartbeat_http_pass', '');
+    if ($http_user === '' && $http_pass === '' && defined('TK_HEARTBEAT_HTTP_USER') && defined('TK_HEARTBEAT_HTTP_PASS')) {
+        $http_user = (string) TK_HEARTBEAT_HTTP_USER;
+        $http_pass = (string) TK_HEARTBEAT_HTTP_PASS;
+    }
+    if ($http_user !== '' || $http_pass !== '') {
+        $headers['Authorization'] = 'Basic ' . base64_encode($http_user . ':' . $http_pass);
+    }
+
+    $request_args = array(
+        'timeout' => $timeout,
+        'headers' => $headers,
+        'body' => $body,
+    );
+    if (array_key_exists('sslverify', $args)) {
+        $request_args['sslverify'] = (bool) $args['sslverify'];
+    }
+
+    $urls = array($url);
+    if (!empty($args['license_request'])) {
+        $collector = tk_heartbeat_collector_url();
+        $urls[] = preg_replace('~/heartbeat/?$~i', '/license.php', rtrim($collector, '/')) ?: '';
+        $urls[] = rtrim($collector, '/') . '/license.php';
+    }
+    $urls = array_values(array_unique(array_filter($urls)));
+
+    $last_response = null;
+    foreach ($urls as $target_url) {
+        foreach (tk_heartbeat_auth_keys() as $secret) {
+            $request_args['headers']['X-Auth-Signature'] = hash_hmac('sha256', $body, $secret);
+            $response = wp_remote_post($target_url, $request_args);
+            $last_response = $response;
+            if (is_wp_error($response)) {
+                return $response;
+            }
+            $code = (int) wp_remote_retrieve_response_code($response);
+            $raw = (string) wp_remote_retrieve_body($response);
+            if ($code === 401 && stripos($raw, 'Security signature invalid') !== false) {
+                continue;
+            }
+            if (!empty($args['license_request']) && $code === 404) {
+                break;
+            }
+            if (!empty($args['license_request']) && $code >= 500) {
+                $decoded = json_decode($raw, true);
+                if (!is_array($decoded)) {
+                    continue 2;
+                }
+            }
+            return $response;
+        }
+    }
+
+    return $last_response;
+}
+
 function tk_toolkits_license_validation_message(string $detail = ''): string {
     $detail = trim($detail);
     if ($detail === '') {
@@ -1522,6 +2173,80 @@ function tk_toolkits_license_validation_message(string $detail = ''): string {
         return $detail;
     }
     return 'License validation failed: ' . $detail;
+}
+
+function tk_toolkits_license_http_error_message(int $code, string $raw): string {
+    $decoded = json_decode($raw, true);
+    if (is_array($decoded) && isset($decoded['message'])) {
+        return tk_toolkits_license_validation_message((string) $decoded['message']);
+    }
+
+    if ($code >= 500) {
+        return tk_toolkits_license_validation_message('license server returned HTTP ' . $code . '. Check the NexaMonitor license API logs.');
+    }
+
+    $detail = trim(strip_tags($raw));
+    $detail = preg_replace('/\s+/', ' ', $detail) ?: '';
+    if ($detail !== '') {
+        return tk_toolkits_license_validation_message('HTTP ' . $code . ': ' . substr($detail, 0, 160));
+    }
+
+    return tk_toolkits_license_validation_message('HTTP ' . $code . '.');
+}
+
+function tk_license_signature_payload(string $status = ''): string {
+    if ($status === '') {
+        $status = (string) tk_get_option('license_status', 'inactive');
+    }
+
+    $payload = array(
+        'key' => (string) tk_get_option('license_key', ''),
+        'status' => $status,
+        'site_url' => tk_license_normalize_site_url((string) tk_get_option('license_site_url', '')),
+        'license_type' => (string) tk_get_option('license_type', ''),
+        'expires_at' => (string) tk_get_option('license_expires_at', ''),
+        'install_id' => function_exists('tk_toolkits_install_id') ? tk_toolkits_install_id() : '',
+    );
+
+    return wp_json_encode($payload) ?: '';
+}
+
+function tk_license_expected_signature(string $status = ''): string {
+    if (!defined('AUTH_KEY') || AUTH_KEY === '') {
+        return '';
+    }
+
+    $payload = tk_license_signature_payload($status);
+    if ($payload === '') {
+        return '';
+    }
+
+    return hash_hmac('sha256', $payload, AUTH_KEY);
+}
+
+function tk_license_has_valid_signature(): bool {
+    $status = (string) tk_get_option('license_status', 'inactive');
+    if ($status !== 'valid') {
+        return true;
+    }
+
+    $saved_sig = (string) tk_get_option('license_signature', '');
+    $current_sig = tk_license_expected_signature($status);
+    if ($saved_sig !== '' && $current_sig !== '' && hash_equals($current_sig, $saved_sig)) {
+        return true;
+    }
+
+    $legacy_sig = '';
+    if (defined('AUTH_KEY') && AUTH_KEY !== '') {
+        $legacy_sig = hash_hmac('sha256', (string) tk_get_option('license_key', '') . '|' . $status, AUTH_KEY);
+    }
+
+    if ($saved_sig !== '' && $legacy_sig !== '' && hash_equals($legacy_sig, $saved_sig)) {
+        tk_update_option('license_signature', $current_sig);
+        return true;
+    }
+
+    return false;
 }
 
 function tk_toolkits_license_reachability_message(int $code, string $detail = ''): string {
@@ -1598,6 +2323,13 @@ function tk_license_update_state(array $state): void {
     if ($old_status !== $new_status) {
         tk_license_maybe_notify($old_status, $new_status, $message);
     }
+
+    // Generate signature for tamper protection.
+    $final_status = (string) tk_get_option('license_status', 'inactive');
+    $signature = tk_license_expected_signature($final_status);
+    if ($signature !== '') {
+        tk_update_option('license_signature', $signature);
+    }
 }
 
 function tk_heartbeat_record_diagnostic_result(array $result, string $endpoint = ''): void {
@@ -1631,6 +2363,7 @@ function tk_license_record_diagnostic_result(array $result, string $endpoint = '
 function tk_license_reset(): void {
     tk_update_option('license_key', '');
     tk_update_option('license_server_url', '');
+    tk_update_option('license_signature', '');
     tk_update_option('heartbeat_auth_key', '');
     tk_update_option('heartbeat_last_checked', 0);
     tk_update_option('heartbeat_last_success', 0);
@@ -1652,11 +2385,66 @@ function tk_license_reset(): void {
     ));
 }
 
+function tk_license_normalize_site_url(string $site_url): string {
+    $site_url = trim($site_url);
+    if ($site_url === '') {
+        return '';
+    }
+
+    $parts = wp_parse_url($site_url);
+    if (!is_array($parts) || empty($parts['host'])) {
+        return untrailingslashit(strtolower($site_url));
+    }
+
+    $scheme = isset($parts['scheme']) && $parts['scheme'] !== '' ? strtolower((string) $parts['scheme']) : 'https';
+    $host = strtolower((string) $parts['host']);
+    $port = isset($parts['port']) ? ':' . (string) $parts['port'] : '';
+    $path = '';
+    if (isset($parts['path']) && trim((string) $parts['path'], '/') !== '') {
+        $path = '/' . trim((string) $parts['path'], '/');
+    }
+
+    return $scheme . '://' . $host . $port . $path;
+}
+
+function tk_license_site_matches_current(): bool {
+    $licensed_site_url = tk_license_normalize_site_url((string) tk_get_option('license_site_url', ''));
+    if ($licensed_site_url === '') {
+        return true;
+    }
+
+    return $licensed_site_url === tk_license_normalize_site_url(home_url('/'));
+}
+
+function tk_license_site_mismatch_message(): string {
+    return 'License validation failed: this license is assigned to a different website URL.';
+}
+
+function tk_license_integrity_violation_message(): string {
+    return 'License integrity violation detected. Please re-activate.';
+}
+
 function tk_license_validate(bool $force = false): array {
     $status = (string) tk_get_option('license_status', 'inactive');
     $message = (string) tk_get_option('license_message', '');
     $last_checked = (int) tk_get_option('license_last_checked', 0);
     $ttl = 6 * HOUR_IN_SECONDS;
+    if ($status === 'valid' && !tk_license_has_valid_signature()) {
+        $message = tk_license_integrity_violation_message();
+        tk_update_option('license_status', 'inactive');
+        tk_update_option('license_message', $message);
+        tk_update_option('license_signature', '');
+        return array('status' => 'integrity_violation', 'message' => $message);
+    }
+    if ($status === 'valid' && !tk_license_site_matches_current()) {
+        $message = tk_license_site_mismatch_message();
+        tk_license_update_state(array(
+            'license_status' => 'site_mismatch',
+            'license_message' => $message,
+            'license_last_checked' => time(),
+        ));
+        return array('status' => 'site_mismatch', 'message' => $message);
+    }
     if (!$force && $last_checked > 0 && (time() - $last_checked) < $ttl) {
         return array('status' => $status, 'message' => $message);
     }
@@ -1719,6 +2507,7 @@ function tk_license_validate(bool $force = false): array {
         'site_url' => home_url('/'),
         'site_id' => tk_toolkits_install_id(),
         'env' => tk_license_env(),
+        'plugin' => 'tool-kits',
         'action' => 'activate',
         'timestamp' => time(),
     );
@@ -1733,27 +2522,14 @@ function tk_license_validate(bool $force = false): array {
         tk_license_record_diagnostic_result($result, $url);
         return $result;
     }
-    $signature = hash_hmac('sha256', $body, $secret);
-    $headers = array(
-        'Content-Type' => 'application/json',
-        'X-Auth-Signature' => $signature,
-        'X-Auth-Timestamp' => (string) $payload['timestamp'],
-    );
-    $http_user = (string) tk_get_option('heartbeat_http_user', '');
-    $http_pass = (string) tk_get_option('heartbeat_http_pass', '');
-    if ($http_user === '' && $http_pass === '' && defined('TK_HEARTBEAT_HTTP_USER') && defined('TK_HEARTBEAT_HTTP_PASS')) {
-        $http_user = (string) TK_HEARTBEAT_HTTP_USER;
-        $http_pass = (string) TK_HEARTBEAT_HTTP_PASS;
+    $ssl_verify = true;
+    if (defined('TK_ALLOW_INSECURE_LICENSE_SSL') && TK_ALLOW_INSECURE_LICENSE_SSL) {
+        $ssl_verify = (bool) tk_get_option('license_ssl_verify', 1);
     }
-    if ($http_user !== '' || $http_pass !== '') {
-        $headers['Authorization'] = 'Basic ' . base64_encode($http_user . ':' . $http_pass);
-    }
-    $ssl_verify = (bool) tk_get_option('license_ssl_verify', 1);
-    $response = wp_remote_post($url, array(
+    $response = tk_toolkits_signed_post($url, $body, (int) $payload['timestamp'], array(
         'timeout' => 15,
-        'headers' => $headers,
-        'body' => $body,
         'sslverify' => $ssl_verify,
+        'license_request' => true,
     ));
     if (is_wp_error($response)) {
         $result = array('status' => 'error', 'message' => tk_toolkits_license_validation_message($response->get_error_message()));
@@ -1775,12 +2551,7 @@ function tk_license_validate(bool $force = false): array {
     if (is_array($data) && isset($data['message'])) {
         $new_message = (string) $data['message'];
     } elseif (!$ok) {
-        $detail = trim(strip_tags($raw));
-        if ($detail !== '') {
-            $new_message = tk_toolkits_license_validation_message('HTTP ' . $code . ': ' . substr($detail, 0, 200));
-        } else {
-            $new_message = tk_toolkits_license_validation_message();
-        }
+        $new_message = tk_toolkits_license_http_error_message($code, $raw);
     }
     if (!$ok && $new_message !== '') {
         $new_message = tk_toolkits_license_validation_message($new_message);
@@ -1848,25 +2619,9 @@ function tk_license_test_connection(): array {
         return $result;
     }
 
-    $headers = array(
-        'Content-Type' => 'application/json',
-        'X-Auth-Signature' => hash_hmac('sha256', $body, $secret),
-        'X-Auth-Timestamp' => (string) $payload['timestamp'],
-    );
-    $http_user = (string) tk_get_option('heartbeat_http_user', '');
-    $http_pass = (string) tk_get_option('heartbeat_http_pass', '');
-    if ($http_user === '' && $http_pass === '' && defined('TK_HEARTBEAT_HTTP_USER') && defined('TK_HEARTBEAT_HTTP_PASS')) {
-        $http_user = (string) TK_HEARTBEAT_HTTP_USER;
-        $http_pass = (string) TK_HEARTBEAT_HTTP_PASS;
-    }
-    if ($http_user !== '' || $http_pass !== '') {
-        $headers['Authorization'] = 'Basic ' . base64_encode($http_user . ':' . $http_pass);
-    }
-
-    $response = wp_remote_post($url, array(
+    $response = tk_toolkits_signed_post($url, $body, (int) $payload['timestamp'], array(
         'timeout' => 10,
-        'headers' => $headers,
-        'body' => $body,
+        'license_request' => true,
     ));
     if (is_wp_error($response)) {
         $result = array('status' => 'error', 'message' => tk_toolkits_license_validation_message($response->get_error_message()));
@@ -1887,19 +2642,24 @@ function tk_license_test_connection(): array {
         tk_license_record_diagnostic_result($result, $url);
         return $result;
     }
-    if ($code >= 200 && $code < 400) {
+    if ($code >= 200 && $code < 300) {
         tk_license_record_diagnostic_result($result, $url);
         return $result;
     }
 
     $detail = trim((string) wp_remote_retrieve_response_message($response));
     $raw = trim((string) wp_remote_retrieve_body($response));
-    if ($raw !== '') {
-        $detail = $detail !== '' ? $detail . ' ' . substr(strip_tags($raw), 0, 160) : substr(strip_tags($raw), 0, 160);
+    if ($raw !== '' && $code < 500) {
+        $body_detail = preg_replace('/\s+/', ' ', trim(strip_tags($raw))) ?: '';
+        if ($body_detail !== '') {
+            $detail = $detail !== '' ? $detail . ' ' . substr($body_detail, 0, 160) : substr($body_detail, 0, 160);
+        }
     }
     $result = array(
-        'status' => 'reachable',
-        'message' => tk_toolkits_license_reachability_message($code, $detail),
+        'status' => 'error',
+        'message' => $code >= 500
+            ? tk_toolkits_license_validation_message('license server returned HTTP ' . $code . '. Check the NexaMonitor license API logs.')
+            : tk_toolkits_license_validation_message(tk_toolkits_license_reachability_message($code, $detail)),
     );
     tk_license_record_diagnostic_result($result, $url);
     return $result;
@@ -1908,11 +2668,11 @@ function tk_license_test_connection(): array {
 function tk_license_is_valid(): bool {
     $status = (string) tk_get_option('license_status', 'inactive');
     $last_checked = (int) tk_get_option('license_last_checked', 0);
-    return $status === 'valid' && $last_checked > 0 && (time() - $last_checked) < DAY_IN_SECONDS;
+    return $status === 'valid' && tk_license_has_valid_signature() && tk_license_site_matches_current() && $last_checked > 0 && (time() - $last_checked) < DAY_IN_SECONDS;
 }
 
 function tk_license_features_enabled(): bool {
-    return (string) tk_get_option('license_status', 'inactive') === 'valid';
+    return (string) tk_get_option('license_status', 'inactive') === 'valid' && tk_license_has_valid_signature() && tk_license_site_matches_current();
 }
 
 function tk_toolkits_is_locked(): bool {
@@ -2001,10 +2761,12 @@ function tk_toolkits_guard(): void {
         'tk_db_export',
         'tk_db_run_replace',
         'tk_db_download_temp_export',
+        'tk_db_local_prod',
+        'tk_db_export_local_prod',
         'tk_db_change_prefix',
         'tk_db_import',
-        'tk_toolkits_license_activate',
-        'tk_toolkits_license_reset',
+        'tk_db_live_replace',
+        'tk_db_cleanup_run',
     );
     $license_setup_actions = array(
         'tk_toolkits_access_save',
@@ -2016,15 +2778,21 @@ function tk_toolkits_guard(): void {
         return;
     }
     if (!tk_toolkits_can_manage()) {
-        $message = '<h1>Access Restricted</h1><p>Tool Kits access is restricted for your account.</p><p><a href="' . esc_url(admin_url('tools.php?page=tool-kits-access')) . '">Go to Tool Kits Access</a></p>';
+        $message = '<h1>Access Restricted</h1><p>Tool Kits access is restricted for your account.</p><p><a href="' . esc_url(admin_url('admin.php?page=tool-kits-access')) . '">Go to Tool Kits Access</a></p>';
         wp_die($message, 'Tool Kits', array('response' => 403));
+    }
+    if ($is_license_exempt) {
+        if (tk_toolkits_is_locked() && $is_toolkits_action) {
+            wp_die('Tool Kits settings are locked.', 'Tool Kits', array('response' => 403));
+        }
+        return;
     }
     $collector_key = tk_heartbeat_auth_key();
     if ($collector_key === '' && $page !== 'tool-kits-access' && !in_array($action, $license_setup_actions, true)) {
-        $message = '<h1>Collector Token Required</h1><p>Please set the collector token in Tool Kits Access.</p><p><a href="' . esc_url(admin_url('tools.php?page=tool-kits-access')) . '">Open Tool Kits Access</a></p>';
+        $message = '<h1>Collector Token Required</h1><p>Please set the collector token in Tool Kits Access.</p><p><a href="' . esc_url(admin_url('admin.php?page=tool-kits-access')) . '">Open Tool Kits Access</a></p>';
         wp_die($message, 'Tool Kits', array('response' => 403));
     }
-    if ($page === 'tool-kits-access' || in_array($action, $license_setup_actions, true) || $is_license_exempt) {
+    if ($page === 'tool-kits-access' || in_array($action, $license_setup_actions, true)) {
         $license_reset = isset($_GET['tk_reset_license']) ? sanitize_key((string) $_GET['tk_reset_license']) : '';
         if ($license_reset === '1' || (int) get_option('tk_license_reset_skip_validate', 0) === 1) {
             delete_option('tk_license_reset_skip_validate');
@@ -2036,9 +2804,9 @@ function tk_toolkits_guard(): void {
     $license = tk_license_validate(true);
     if (!tk_license_is_valid()) {
         $detail = isset($license['message']) && $license['message'] !== '' ? $license['message'] : 'License invalid.';
-        $message = '<h1>License Required</h1><p>' . esc_html($detail) . '</p><p><a href="' . esc_url(admin_url('tools.php?page=tool-kits-access&tk_license=1')) . '">Open License Settings</a></p>';
+        $message = '<h1>License Required</h1><p>' . esc_html($detail) . '</p><p><a href="' . esc_url(admin_url('admin.php?page=tool-kits-access')) . '">Open License Settings</a></p>';
         if (!$is_toolkits_action) {
-            $target = admin_url('tools.php?page=tool-kits-access&tk_license=1');
+            $target = admin_url('admin.php?page=tool-kits-access');
             wp_safe_redirect($target);
             exit;
         }
@@ -2114,6 +2882,109 @@ function tk_toolkits_confirm_actions_script(): void {
     );
 }
 
+function tk_toolkits_persist_tabs_script(): void {
+    if (!is_admin()) {
+        return;
+    }
+
+    $page = isset($_GET['page']) ? sanitize_key((string) $_GET['page']) : '';
+    if ($page === '' || strpos($page, 'tool-kits') !== 0) {
+        return;
+    }
+
+    tk_csp_print_inline_script(
+        "(function(){
+            if (!window.sessionStorage || !window.URLSearchParams) {
+                return;
+            }
+
+            var page = new URLSearchParams(window.location.search).get('page') || window.location.pathname;
+            var storageKey = 'tk-active-tab:' + page;
+
+            function currentTab(wrapper) {
+                var activeButton = wrapper.querySelector('.tk-tabs-nav-button.is-active[data-panel]');
+                if (activeButton) {
+                    return activeButton.getAttribute('data-panel') || '';
+                }
+                var activePanel = wrapper.querySelector('.tk-tab-panel.is-active[data-panel-id]');
+                return activePanel ? (activePanel.getAttribute('data-panel-id') || '') : '';
+            }
+
+            function activate(wrapper, panelId) {
+                if (!panelId) {
+                    return;
+                }
+                var found = false;
+                wrapper.querySelectorAll('.tk-tab-panel[data-panel-id]').forEach(function(panel){
+                    var active = panel.getAttribute('data-panel-id') === panelId;
+                    panel.classList.toggle('is-active', active);
+                    if (active) {
+                        found = true;
+                    }
+                });
+                if (!found) {
+                    return;
+                }
+                wrapper.querySelectorAll('.tk-tabs-nav-button[data-panel]').forEach(function(button){
+                    button.classList.toggle('is-active', button.getAttribute('data-panel') === panelId);
+                });
+                var activeInput = wrapper.querySelector('input[name=\"tk_geo_active_tab\"]') || document.getElementById('tk-geo-active-tab');
+                if (activeInput) {
+                    activeInput.value = panelId;
+                }
+            }
+
+            function remember(wrapper) {
+                var tab = currentTab(wrapper);
+                if (tab) {
+                    sessionStorage.setItem(storageKey, tab);
+                }
+            }
+
+            function bind() {
+                document.querySelectorAll('.tk-tabs').forEach(function(wrapper){
+                    if (wrapper.getAttribute('data-tk-tabs-managed') === '1') {
+                        return;
+                    }
+                    if (wrapper.getAttribute('data-tk-tabs-persist-bound') === '1') {
+                        return;
+                    }
+                    wrapper.setAttribute('data-tk-tabs-persist-bound', '1');
+
+                    wrapper.querySelectorAll('.tk-tabs-nav-button[data-panel]').forEach(function(button){
+                        button.addEventListener('click', function(){
+                            var panelId = button.getAttribute('data-panel') || '';
+                            if (panelId) {
+                                sessionStorage.setItem(storageKey, panelId);
+                            }
+                        });
+                    });
+
+                    wrapper.querySelectorAll('form').forEach(function(form){
+                        form.addEventListener('submit', function(){ remember(wrapper); });
+                    });
+
+                    wrapper.querySelectorAll('a[href], button[type=\"submit\"], input[type=\"submit\"]').forEach(function(control){
+                        control.addEventListener('click', function(){ remember(wrapper); });
+                    });
+                });
+
+                var initial = window.location.hash ? window.location.hash.substring(1) : sessionStorage.getItem(storageKey);
+                if (initial) {
+                    document.querySelectorAll('.tk-tabs').forEach(function(wrapper){
+                        activate(wrapper, initial);
+                    });
+                }
+            }
+
+            bind();
+            document.addEventListener('DOMContentLoaded', bind);
+            window.setTimeout(bind, 250);
+        })();",
+        array('id' => 'tk-persist-tabs')
+    );
+}
+
 function tk_user_agent() {
     return !empty($_SERVER['HTTP_USER_AGENT']) ? substr(sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])), 0, 255) : '';
 }
@@ -2129,7 +3000,7 @@ function tk_toolkits_access_denied_page(): void {
     if ($page === '' || strpos($page, 'tool-kits') !== 0) {
         return;
     }
-    $message = '<h1>Access Restricted</h1><p>You do not have permission to access Tool Kits.</p><p><a href="' . esc_url(admin_url('tools.php?page=tool-kits-access')) . '">Go to Tool Kits Access</a></p>';
+    $message = '<h1>Access Restricted</h1><p>You do not have permission to access Tool Kits.</p><p><a href="' . esc_url(admin_url('admin.php?page=tool-kits-access')) . '">Go to Tool Kits Access</a></p>';
     wp_die($message, 'Tool Kits', array('response' => 403));
 }
 add_action('admin_page_access_denied', 'tk_toolkits_access_denied_page');
@@ -2200,6 +3071,10 @@ function tk_get_debug_info(): string {
     $info[] = 'cURL Version: ' . (function_exists('curl_version') ? (string) curl_version()['version'] : 'Disabled');
     $info[] = 'OpenSSL Version: ' . (defined('OPENSSL_VERSION_TEXT') ? (string) OPENSSL_VERSION_TEXT : 'Unknown');
     $info[] = 'Tool Kits Version: ' . (defined('TK_VERSION') ? (string) TK_VERSION : 'Unknown');
+    $auth_key = tk_heartbeat_auth_key();
+    $info[] = 'Heartbeat URL: ' . tk_heartbeat_collector_url();
+    $info[] = 'License URL: ' . tk_license_server_url();
+    $info[] = 'Collector Token Fingerprint: ' . ($auth_key !== '' ? substr(hash('sha256', $auth_key), 0, 12) : 'missing');
     $info[] = 'License Status: ' . (string) tk_get_option('license_status', 'inactive');
     
     $heartbeat_err = (string) tk_get_option('heartbeat_last_error_message', '');
@@ -2284,5 +3159,104 @@ function tk_render_switch($name, $label, $description, $checked, $confirm = '') 
             <span class="tk-slider"></span>
         </label>
     </div>
+    <?php
+}
+
+function tk_toolkits_nested_admin_menu_script(): void {
+    if (!is_admin() || !tk_toolkits_can_manage()) {
+        return;
+    }
+    ?>
+    <script>
+    (function(){
+        var root = document.querySelector('#toplevel_page_tool-kits');
+        if (!root || root.classList.contains('tk-nested-menu-ready')) { return; }
+
+        var groups = {
+            'tool-kits-settings': ['tool-kits-general', 'tool-kits-access'],
+            'tool-kits-security': ['tool-kits-guard', 'tool-kits-firewall', 'tool-kits-security-hide-login', 'tool-kits-security-spam', 'tool-kits-security-rate-limit', 'tool-kits-security-otp', 'tool-kits-brute-force', 'tool-kits-security-login-log', 'tool-kits-malware-scanner', 'tool-kits-vulnerability-scanner', 'tool-kits-incident-response'],
+            'tool-kits-performance': ['tool-kits-cache', 'tool-kits-optimization', 'tool-kits-minify', 'tool-kits-webp', 'tool-kits-image-opt', 'tool-kits-lazy-load', 'tool-kits-assets'],
+            'tool-kits-seo': [],
+            'tool-kits-system': ['tool-kits-db', 'tool-kits-role-management', 'tool-kits-user-id', 'tool-kits-smtp', 'tool-kits-theme-checker', 'tool-kits-diagnostics']
+        };
+        var closeTimer = null;
+
+        function pageFromAnchor(anchor) {
+            try {
+                var url = new URL(anchor.href, window.location.origin);
+                return url.searchParams.get('page') || '';
+            } catch (e) {
+                var match = anchor.href.match(/[?&]page=([^&#]+)/);
+                return match ? decodeURIComponent(match[1]) : '';
+            }
+        }
+
+        var anchors = Array.prototype.slice.call(root.querySelectorAll('.wp-submenu > li > a'));
+        var byPage = {};
+        anchors.forEach(function(anchor){
+            var page = pageFromAnchor(anchor);
+            if (page) {
+                byPage[page] = anchor.parentElement;
+            }
+        });
+
+        Object.keys(groups).forEach(function(groupPage){
+            var groupItem = byPage[groupPage];
+            if (!groupItem) { return; }
+
+            groupItem.classList.add('tk-submenu-group');
+            var nested = document.createElement('ul');
+            nested.className = 'wp-submenu tk-submenu-flyout';
+            nested.setAttribute('aria-label', groupItem.textContent.trim());
+            nested.setAttribute('role', 'menu');
+
+            groups[groupPage].forEach(function(childPage){
+                var childItem = byPage[childPage];
+                if (!childItem || childItem === groupItem) { return; }
+                childItem.classList.add('tk-submenu-child');
+                if (childItem.classList.contains('current')) {
+                    groupItem.classList.add('tk-submenu-current');
+                }
+                nested.appendChild(childItem);
+            });
+
+            if (nested.children.length) {
+                groupItem.appendChild(nested);
+                groupItem.classList.add('has-tk-submenu');
+
+                groupItem.addEventListener('mouseenter', function(){
+                    window.clearTimeout(closeTimer);
+                    root.querySelectorAll('.tk-submenu-group.is-open').forEach(function(item){
+                        if (item !== groupItem) {
+                            item.classList.remove('is-open');
+                        }
+                    });
+                    groupItem.classList.add('is-open');
+                });
+
+                groupItem.addEventListener('mouseleave', function(){
+                    closeTimer = window.setTimeout(function(){
+                        groupItem.classList.remove('is-open');
+                    }, 140);
+                });
+
+                groupItem.addEventListener('focusin', function(){
+                    window.clearTimeout(closeTimer);
+                    groupItem.classList.add('is-open');
+                });
+
+                groupItem.addEventListener('focusout', function(event){
+                    if (!groupItem.contains(event.relatedTarget)) {
+                        closeTimer = window.setTimeout(function(){
+                            groupItem.classList.remove('is-open');
+                        }, 140);
+                    }
+                });
+            }
+        });
+
+        root.classList.add('tk-nested-menu-ready');
+    })();
+    </script>
     <?php
 }

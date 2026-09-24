@@ -6,6 +6,7 @@ function tk_db_migrate_init() {
     add_action('admin_post_tk_db_run_replace', 'tk_db_run_find_replace_handler');
     add_action('admin_post_tk_db_download_temp_export', 'tk_db_download_temp_export_handler');
     add_action('admin_post_tk_db_local_prod', 'tk_db_export_local_prod_handler');
+    add_action('admin_post_tk_db_export_local_prod', 'tk_db_export_local_prod_handler');
     add_action('admin_post_tk_db_change_prefix', 'tk_db_change_prefix_handler');
     add_action('admin_post_tk_db_import', 'tk_db_import_handler');
     add_action('admin_post_tk_db_live_replace', 'tk_db_live_replace_handler');
@@ -225,11 +226,40 @@ function tk_db_apply_pairs_to_value($value, array $pairs, string $column = '', a
  * Decide whether replacement should be skipped for a row/column pair.
  */
 function tk_db_should_skip_replacement(string $column, array $row): bool {
+    if (tk_db_is_email_column($column)) {
+        return true;
+    }
+
     if ($column !== 'option_value') {
         return false;
     }
     $name = isset($row['option_name']) ? (string) $row['option_name'] : '';
-    return $name === 'permalink_structure';
+    if ($name === 'permalink_structure') {
+        return true;
+    }
+
+    return tk_db_is_email_option_name($name);
+}
+
+function tk_db_is_email_column(string $column): bool {
+    $column = strtolower($column);
+    if ($column === 'user_email') {
+        return true;
+    }
+
+    return $column === 'email' || substr($column, -6) === '_email';
+}
+
+function tk_db_is_email_option_name(string $name): bool {
+    $name = strtolower($name);
+    if ($name === '') {
+        return false;
+    }
+
+    return $name === 'admin_email'
+        || substr($name, -6) === '_email'
+        || strpos($name, 'email_') === 0
+        || strpos($name, '_email_') !== false;
 }
 
 function tk_db_register_temp_export(string $path): string {
@@ -759,7 +789,7 @@ function tk_render_db_tools_page() {
                         <?php tk_notice($export_error_notice, 'error'); ?>
                     <?php endif; ?>
                     <?php if ($export_token && $export_name) : ?>
-                        <?php $download_url = admin_url('admin-post.php?action=tk_db_download_temp_export&token=' . urlencode($export_token)); ?>
+                        <?php $download_url = wp_nonce_url(admin_url('admin-post.php?action=tk_db_download_temp_export&token=' . urlencode($export_token)), 'tk_db_download_temp_export'); ?>
                         <p class="description">
                             Preload ready: <code><?php echo esc_html($export_name); ?></code>. <a href="<?php echo esc_url($download_url); ?>">Download the prepared SQL file</a>.
                         </p>
@@ -785,7 +815,7 @@ function tk_render_db_tools_page() {
 
                     <?php if ($local_prod_export_token && $local_prod_export_name) : ?>
                         <div style="background:var(--tk-bg-soft); padding:16px; border-radius:12px; border:1px solid var(--tk-border-soft); margin-bottom:24px;">
-                            <?php $download_local_prod = admin_url('admin-post.php?action=tk_db_download_temp_export&token=' . urlencode($local_prod_export_token)); ?>
+                            <?php $download_local_prod = wp_nonce_url(admin_url('admin-post.php?action=tk_db_download_temp_export&token=' . urlencode($local_prod_export_token)), 'tk_db_download_temp_export'); ?>
                             <p style="margin:0; display:flex; align-items:center; justify-content:space-between;">
                                 <span>Prepared: <code><?php echo esc_html($local_prod_export_name); ?></code></span>
                                 <a href="<?php echo esc_url($download_local_prod); ?>" class="button button-primary"><?php _e('Download SQL', 'tool-kits'); ?></a>
@@ -886,7 +916,7 @@ function tk_render_db_tools_page() {
 
                     <?php if ($backup_token && $backup_name) : ?>
                         <div style="background:var(--tk-bg-soft); padding:16px; border-radius:12px; border:1px solid var(--tk-border-soft); margin-bottom:24px;">
-                            <?php $download_url = admin_url('admin-post.php?action=tk_db_download_temp_export&token=' . urlencode($backup_token)); ?>
+                            <?php $download_url = wp_nonce_url(admin_url('admin-post.php?action=tk_db_download_temp_export&token=' . urlencode($backup_token)), 'tk_db_download_temp_export'); ?>
                             <p style="margin:0; display:flex; align-items:center; justify-content:space-between;">
                                 <span>Backup created: <code><?php echo esc_html($backup_name); ?></code></span>
                                 <a href="<?php echo esc_url($download_url); ?>" class="button button-small"><?php _e('Download Backup', 'tool-kits'); ?></a>
@@ -1124,6 +1154,18 @@ function tk_db_import_handler() {
         exit;
     }
 
+    $max_bytes = defined('TK_DB_IMPORT_MAX_BYTES') ? (int) TK_DB_IMPORT_MAX_BYTES : 64 * 1024 * 1024;
+    $uploaded_size = isset($file['size']) ? (int) $file['size'] : 0;
+    if ($max_bytes > 0 && $uploaded_size > $max_bytes) {
+        wp_safe_redirect(add_query_arg(array(
+            'page' => 'tool-kits-db',
+            'tk_tab' => 'import-db',
+            'tk_import_status' => 'fail',
+            'tk_import_msg' => 'Upload is too large.',
+        ), admin_url('admin.php')));
+        exit;
+    }
+
     $mimes = array(
         'sql' => 'application/sql',
         'gz' => 'application/gzip',
@@ -1252,6 +1294,7 @@ function tk_db_import_sql_file(string $path): array {
 
 function tk_db_download_temp_export_handler() {
     if (!tk_is_admin_user()) wp_die('Forbidden');
+    tk_check_nonce('tk_db_download_temp_export');
     $token = isset($_GET['token']) ? sanitize_text_field($_GET['token']) : '';
     $path = tk_db_get_temp_export_path($token);
     if (!$path) {

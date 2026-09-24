@@ -43,10 +43,10 @@ function tk_db_cleanup_status_message(): string {
     delete_transient('tk_db_cleanup_last_summary');
 
     if (empty($parts)) {
-        return 'Cleanup selesai, tetapi tidak ada perubahan yang dilaporkan.';
+        return 'Cleanup completed, but no changes were reported.';
     }
 
-    return 'Cleanup selesai: ' . implode('; ', $parts) . '.';
+    return 'Cleanup completed: ' . implode('; ', $parts) . '.';
 }
 
 function tk_render_db_cleanup_panel() {
@@ -73,7 +73,7 @@ function tk_render_db_cleanup_panel() {
     if (isset($_GET['tk_done'])) {
         $message = tk_db_cleanup_status_message();
         if ($message === '') {
-            $message = 'Cleanup selesai.';
+            $message = 'Cleanup completed.';
         }
         tk_notice($message, 'success');
     }

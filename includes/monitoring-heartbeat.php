@@ -60,6 +60,8 @@ function tk_heartbeat_send(): array {
     $payload = array(
         'action' => 'heartbeat',
         'license_key' => trim((string) tk_get_option('license_key', '')),
+        'license_status' => (string) tk_get_option('license_status', 'inactive'),
+        'license_site_url' => (string) tk_get_option('license_site_url', ''),
         'site_url' => $site_url,
         'url' => $site_url,
         'domain' => (string) parse_url($site_url, PHP_URL_HOST),
@@ -81,31 +83,20 @@ function tk_heartbeat_send(): array {
     if ($body === false) {
         return array('ok' => false, 'message' => 'Failed to encode heartbeat payload.');
     }
-    $signature = hash_hmac('sha256', $body, $secret);
-    $headers = array(
-        'Content-Type' => 'application/json',
-        'X-Auth-Signature' => $signature,
-        'X-Auth-Timestamp' => (string) $payload['timestamp'],
-    );
-    $http_user = (string) tk_get_option('heartbeat_http_user', '');
-    $http_pass = (string) tk_get_option('heartbeat_http_pass', '');
-    if ($http_user === '' && $http_pass === '') {
-        $http_user = TK_HEARTBEAT_HTTP_USER;
-        $http_pass = TK_HEARTBEAT_HTTP_PASS;
-    }
-    if ($http_user !== '' || $http_pass !== '') {
-        $headers['Authorization'] = 'Basic ' . base64_encode($http_user . ':' . $http_pass);
-    }
-    $response = wp_remote_post($url, array(
+    $response = tk_toolkits_signed_post($url, $body, (int) $payload['timestamp'], array(
         'timeout' => 10,
-        'headers' => $headers,
-        'body' => $body,
     ));
     if (is_wp_error($response)) {
         return array('ok' => false, 'message' => $response->get_error_message());
     }
     $code = (int) wp_remote_retrieve_response_code($response);
     if ($code >= 200 && $code < 300) {
+        $data = json_decode((string) wp_remote_retrieve_body($response), true);
+        if (is_array($data) && array_key_exists('ok', $data) && empty($data['ok'])) {
+            $message = isset($data['message']) ? (string) $data['message'] : 'Heartbeat accepted with license warning.';
+            $status = isset($data['license_status']) ? (string) $data['license_status'] : 'warning';
+            return array('ok' => false, 'message' => $status . ': ' . $message);
+        }
         return array('ok' => true, 'message' => 'Heartbeat accepted.');
     }
     $resp_message = wp_remote_retrieve_response_message($response);

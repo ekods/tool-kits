@@ -6,7 +6,10 @@ if (!defined('ABSPATH')) exit;
  */
 
 function tk_login_log_init() {
-    add_action('wp_login_failed', 'tk_login_log_failed');
+    add_filter('authenticate', 'tk_login_log_auto_block_authenticate', 5, 3);
+    add_filter('authenticate', 'tk_login_security_guard_authenticate', 8, 3);
+    add_filter('login_errors', 'tk_login_security_obfuscate_errors', 999);
+    add_action('wp_login_failed', 'tk_login_log_failed', 10, 2);
     add_action('wp_login', 'tk_login_log_success', 10, 2);
     add_action('admin_post_tk_login_log_save', 'tk_login_log_save');
     add_action('admin_post_tk_login_log_clear', 'tk_login_log_clear');
@@ -30,6 +33,7 @@ function tk_login_log_install_table() {
         ip VARCHAR(64),
         location VARCHAR(191),
         agent VARCHAR(255),
+        reason VARCHAR(191),
         status VARCHAR(20),
         PRIMARY KEY (id)
     ) {$wpdb->get_charset_collate()};";
@@ -37,21 +41,174 @@ function tk_login_log_install_table() {
     dbDelta($sql);
 }
 
-function tk_login_log_insert($username, $user_id, $status) {
+function tk_login_log_insert($username, $user_id, $status, $reason = '') {
     if (!tk_get_option('login_log_enabled', 1)) return;
 
     global $wpdb;
     $ip = tk_get_ip();
     $location = tk_login_log_location_for_ip($ip);
+    $agent = tk_user_agent();
+    $reason = sanitize_text_field((string) $reason);
     $wpdb->insert(tk_login_log_table(), [
         'time'     => current_time('mysql', 1),
         'username' => $username,
         'user_id'  => $user_id,
         'ip'       => $ip,
         'location' => $location,
-        'agent'    => tk_user_agent(),
+        'agent'    => $agent,
+        'reason'   => $reason,
         'status'   => $status,
     ]);
+
+    if (function_exists('tk_security_events_record')) {
+        tk_security_events_record(array(
+            'event_type' => $status === 'failed' ? 'blocked' : 'login',
+            'category' => $status === 'failed' ? 'brute_force' : 'login_success',
+            'ip' => $ip,
+            'location' => $location,
+            'user_agent' => $agent,
+            'reason' => $reason,
+            'username' => (string) $username,
+            'user_id' => (int) $user_id,
+            'request_method' => 'post',
+            'request_uri' => isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '',
+        ));
+    }
+
+    if ($status === 'failed') {
+        tk_login_log_auto_block_maybe($ip, $agent);
+    }
+}
+
+function tk_login_security_bad_usernames(): array {
+    $raw = (string) tk_get_option('security_bad_usernames', "admin\nadministrator\nroot\ntest\ndemo\nuser\nwpadmin\nwebmaster");
+    $lines = preg_split('/\r\n|\r|\n/', $raw);
+    $lines = is_array($lines) ? $lines : array();
+    $items = array();
+    foreach ($lines as $line) {
+        $line = strtolower(trim((string) $line));
+        if ($line !== '') {
+            $items[] = $line;
+        }
+    }
+    return array_values(array_unique($items));
+}
+
+function tk_login_security_request_host(): string {
+    $host = isset($_SERVER['HTTP_HOST']) ? strtolower(trim((string) $_SERVER['HTTP_HOST'])) : '';
+    return preg_replace('/:\d+$/', '', $host) ?: '';
+}
+
+function tk_login_security_origin_allowed(): bool {
+    $origin = isset($_SERVER['HTTP_ORIGIN']) ? trim((string) $_SERVER['HTTP_ORIGIN']) : '';
+    $referer = isset($_SERVER['HTTP_REFERER']) ? trim((string) $_SERVER['HTTP_REFERER']) : '';
+    $source = $origin !== '' ? $origin : $referer;
+    if ($source === '') {
+        return (int) tk_get_option('security_login_origin_require_header', 0) !== 1;
+    }
+
+    $source_host = wp_parse_url($source, PHP_URL_HOST);
+    $home_host = wp_parse_url(home_url('/'), PHP_URL_HOST);
+    $site_host = wp_parse_url(site_url('/'), PHP_URL_HOST);
+    $request_host = tk_login_security_request_host();
+    $allowed_hosts = array_filter(array_map('strtolower', array($home_host, $site_host, $request_host)));
+
+    return is_string($source_host) && in_array(strtolower($source_host), $allowed_hosts, true);
+}
+
+function tk_login_security_record_block(string $reason, string $username = ''): void {
+    if (!function_exists('tk_security_events_record')) {
+        return;
+    }
+    $ip = function_exists('tk_get_ip') ? tk_get_ip() : '';
+    tk_security_events_record(array(
+        'event_type' => 'blocked',
+        'category' => 'brute_force',
+        'ip' => $ip,
+        'location' => function_exists('tk_login_log_location_for_ip') ? tk_login_log_location_for_ip($ip) : '',
+        'user_agent' => function_exists('tk_user_agent') ? tk_user_agent() : '',
+        'reason' => $reason,
+        'username' => $username,
+        'request_method' => isset($_SERVER['REQUEST_METHOD']) ? (string) $_SERVER['REQUEST_METHOD'] : '',
+        'request_uri' => isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '',
+    ));
+}
+
+function tk_login_security_guard_authenticate($user, $username, $password) {
+    if (!isset($_POST['log'], $_POST['pwd'])) {
+        return $user;
+    }
+
+    $username = strtolower(trim((string) $username));
+    if (
+        (int) tk_get_option('security_block_bad_usernames_enabled', 1) === 1
+        && in_array($username, tk_login_security_bad_usernames(), true)
+        && function_exists('username_exists')
+        && !username_exists($username)
+    ) {
+        if (function_exists('tk_rate_limit_block_ip')) {
+            tk_rate_limit_block_ip(function_exists('tk_get_ip') ? tk_get_ip() : '');
+        }
+        tk_login_security_record_block('blocked_bad_username', $username);
+        return new WP_Error('tk_blocked_bad_username', __('Login failed.', 'tool-kits'));
+    }
+
+    if ((int) tk_get_option('security_login_origin_guard_enabled', 1) === 1 && !tk_login_security_origin_allowed()) {
+        $minutes = function_exists('tk_rate_limit_next_lock_minutes') ? tk_rate_limit_next_lock_minutes() : max(1, (int) tk_get_option('rate_limit_lockout_minutes', 30));
+        if (function_exists('tk_rate_limit_lock_current_ip')) {
+            tk_rate_limit_lock_current_ip($minutes, 'blocked_login_origin');
+        }
+        tk_login_security_record_block('blocked_login_origin', $username);
+        return new WP_Error('tk_blocked_login_origin', __('Login failed.', 'tool-kits'));
+    }
+
+    return $user;
+}
+
+function tk_login_security_is_login_post(): bool {
+    return isset($_POST['log'], $_POST['pwd']);
+}
+
+function tk_login_security_is_non_auth_error($error): bool {
+    $text = trim(wp_strip_all_tags((string) $error));
+    if ($text === '') {
+        return true;
+    }
+
+    $non_auth_fragments = array(
+        'cookies are blocked',
+        'cookies are not enabled',
+        'session has expired',
+        'you are now logged out',
+        'please log in again',
+        'check your email',
+        'password reset',
+        'registration confirmation',
+    );
+    $lower = strtolower($text);
+    foreach ($non_auth_fragments as $fragment) {
+        if (strpos($lower, $fragment) !== false) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function tk_login_security_obfuscate_errors($error) {
+    if ((int) tk_get_option('security_login_error_obfuscation_enabled', 1) !== 1) {
+        return $error;
+    }
+
+    // Never turn informational GET-state messages into failed-login errors.
+    if (!tk_login_security_is_login_post()) {
+        return $error;
+    }
+
+    if (tk_login_security_is_non_auth_error($error)) {
+        return $error;
+    }
+    return __('Login failed.', 'tool-kits');
 }
 
 function tk_login_log_location_for_ip($ip): string {
@@ -74,12 +231,103 @@ function tk_login_log_row_location($row): string {
     return tk_login_log_location_for_ip($ip);
 }
 
-function tk_login_log_failed($username) {
-    tk_login_log_insert($username, 0, 'failed');
+function tk_login_log_failed($username, $error = null) {
+    tk_login_log_insert($username, 0, 'failed', tk_login_log_failed_reason($error));
 }
 
 function tk_login_log_success($username, $user) {
     tk_login_log_insert($username, $user->ID, 'success');
+}
+
+function tk_login_log_failed_reason($error): string {
+    if (is_wp_error($error)) {
+        $codes = $error->get_error_codes();
+        if (!empty($codes)) {
+            return implode(', ', array_map('sanitize_key', $codes));
+        }
+    }
+    if (empty($_POST['log'])) {
+        return 'empty_username';
+    }
+    if (empty($_POST['pwd'])) {
+        return 'empty_password';
+    }
+    return 'invalid_credentials';
+}
+
+function tk_login_log_auto_block_agents(): array {
+    $raw = (string) tk_get_option('security_auto_block_user_agents', '');
+    $lines = preg_split('/\r\n|\r|\n/', $raw);
+    $lines = is_array($lines) ? $lines : array();
+    return array_values(array_filter(array_map('trim', $lines)));
+}
+
+function tk_login_log_auto_block_authenticate($user, $username, $password) {
+    if ((int) tk_get_option('security_auto_block_enabled', 1) !== 1) {
+        return $user;
+    }
+    if (!isset($_POST['log'], $_POST['pwd'])) {
+        return $user;
+    }
+
+    $ip = tk_get_ip();
+    if (function_exists('tk_rate_limit_is_whitelisted') && tk_rate_limit_is_whitelisted($ip)) {
+        return $user;
+    }
+    if (function_exists('tk_rate_limit_is_blocked') && tk_rate_limit_is_blocked($ip)) {
+        return new WP_Error('tk_auto_blocked_ip', __('Your IP is blocked. Please contact the site administrator.', 'tool-kits'));
+    }
+
+    $agent = strtolower(tk_user_agent());
+    foreach (tk_login_log_auto_block_agents() as $blocked_agent) {
+        if ($blocked_agent !== '' && strpos($agent, strtolower($blocked_agent)) !== false) {
+            if (function_exists('tk_rate_limit_block_ip')) {
+                tk_rate_limit_block_ip($ip);
+            }
+            return new WP_Error('tk_auto_blocked_user_agent', __('Login blocked by security policy.', 'tool-kits'));
+        }
+    }
+
+    return $user;
+}
+
+function tk_login_log_auto_block_maybe(string $ip, string $agent): void {
+    if ((int) tk_get_option('security_auto_block_enabled', 1) !== 1) {
+        return;
+    }
+    if (function_exists('tk_rate_limit_is_whitelisted') && tk_rate_limit_is_whitelisted($ip)) {
+        return;
+    }
+    if (!function_exists('tk_security_events_table_exists') || !tk_security_events_table_exists() || !function_exists('tk_rate_limit_block_ip')) {
+        return;
+    }
+
+    global $wpdb;
+    $threshold = max(2, (int) tk_get_option('security_auto_block_threshold', 10));
+    $window = max(1, (int) tk_get_option('security_auto_block_window_minutes', 10));
+    $since = gmdate('Y-m-d H:i:s', time() - ($window * MINUTE_IN_SECONDS));
+    $count = (int) $wpdb->get_var($wpdb->prepare(
+        'SELECT COUNT(*) FROM ' . tk_security_events_table() . ' WHERE event_type = %s AND category = %s AND ip = %s AND time >= %s',
+        'blocked',
+        'brute_force',
+        $ip,
+        $since
+    ));
+    if ($count >= $threshold) {
+        tk_rate_limit_block_ip($ip);
+        if (function_exists('tk_security_events_record')) {
+            tk_security_events_record(array(
+                'event_type' => 'blocked',
+                'category' => 'auto_block',
+                'ip' => $ip,
+                'location' => tk_login_log_location_for_ip($ip),
+                'user_agent' => $agent,
+                'reason' => 'Auto-blocked after ' . $count . ' failed login attempts in ' . $window . ' minutes',
+                'request_method' => 'post',
+                'request_uri' => isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '',
+            ));
+        }
+    }
 }
 
 function tk_render_login_log_page() {
@@ -181,6 +429,12 @@ function tk_render_login_log_page() {
                                                 <td style="font-weight:700; width:80px; padding:4px 0; color:#1e293b;">Agent:</td>
                                                 <td style="padding:4px 0; color:#64748b; font-size:10px;"><?php echo esc_html($row->agent); ?></td>
                                             </tr>
+                                            <?php if (!empty($row->reason)) : ?>
+                                            <tr>
+                                                <td style="font-weight:700; width:80px; padding:4px 0; color:#1e293b;">Reason:</td>
+                                                <td style="padding:4px 0; color:#64748b;"><?php echo esc_html($row->reason); ?></td>
+                                            </tr>
+                                            <?php endif; ?>
                                             <?php if ($row->user_id > 0) : ?>
                                             <tr>
                                                 <td style="font-weight:700; width:80px; padding:4px 0; color:#1e293b;">User ID:</td>

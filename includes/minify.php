@@ -325,14 +325,14 @@ function tk_minify_inline_js($js) {
 }
 
 function tk_render_minify_page() {
-    if (function_exists('tk_render_optimization_page')) {
-        tk_render_optimization_page('minify');
-        return;
-    }
     if (!tk_is_admin_user()) return;
     ?>
     <div class="wrap tk-wrap">
-        <h1>Optimization</h1>
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('Minify', 'Reduce frontend HTML, inline CSS, inline JavaScript, and local asset payload where safe.', 'dashicons-editor-code'); ?>
+        <?php if (isset($_GET['tk_saved']) && sanitize_key((string) $_GET['tk_saved']) === '1') : ?>
+            <?php tk_notice('Settings saved.', 'success'); ?>
+        <?php endif; ?>
         <?php tk_render_minify_panel(); ?>
     </div>
     <?php
@@ -386,6 +386,6 @@ function tk_minify_save() {
     tk_update_option('minify_inline_js', !empty($_POST['minify_inline_js']) ? 1 : 0);
     tk_update_option('minify_assets_enabled', !empty($_POST['minify_assets_enabled']) ? 1 : 0);
 
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'minify', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-minify', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }

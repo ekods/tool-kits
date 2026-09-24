@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.3.0
+ * Version: 2.5.74
  * GitHub Plugin URI: https://github.com/ekods/tool-kits
  * Update URI: https://github.com/ekods/tool-kits
  * Author: Eko Dwi Saputro
@@ -12,12 +12,26 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-define('TK_VERSION', '2.3.0');
+define('TK_VERSION', '2.5.74');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
 define('TK_GITHUB_REPO', 'ekods/tool-kits');
 define('TK_GITHUB_REPO_URL', 'https://github.com/' . TK_GITHUB_REPO);
+
+/**
+ * Return a cache-busting version for local plugin assets.
+ */
+function tk_asset_version($relative_path) {
+    $relative_path = ltrim((string) $relative_path, '/');
+    $path = TK_PATH . $relative_path;
+
+    if ($relative_path !== '' && file_exists($path)) {
+        return (string) filemtime($path);
+    }
+
+    return TK_VERSION;
+}
 
 if (!defined('TK_HEARTBEAT_URL')) {
     define('TK_HEARTBEAT_URL', '');
@@ -36,6 +50,8 @@ add_action('init', 'tk_load_textdomain');
 add_action('plugins_loaded', 'tk_killswitch_init', 1);
 add_action('admin_init', 'tk_debug_deprecated_init');
 add_action('admin_init', 'tk_toolkits_guard', 0);
+add_action('init', 'tk_security_events_schedule_maintenance');
+add_action('tk_security_events_maintenance', 'tk_security_events_maintenance');
 
 /**
  * Module Registry
@@ -53,8 +69,13 @@ $tk_modules = array(
     'security-form-guard.php'   => 'tk_form_guard_init',
     'security-spam.php'         => false,
     'security-rate-limit.php'   => 'tk_rate_limit_init',
+    'security-otp.php'          => 'tk_otp_init',
     'security-login-log.php'    => 'tk_login_log_init',
     'security-hardening.php'    => 'tk_hardening_init',
+    'security-firewall.php'     => 'tk_firewall_init',
+    'malware-scanner.php'       => 'tk_malware_scanner_init',
+    'vulnerability-scanner.php' => 'tk_vulnerability_scanner_init',
+    'incident-response.php'     => 'tk_incident_response_init',
     'smtp.php'                  => 'tk_smtp_init',
     'monitoring-heartbeat.php'  => 'tk_heartbeat_init',
     'minify.php'                => 'tk_minify_init',
@@ -62,6 +83,8 @@ $tk_modules = array(
     'webp.php'                  => 'tk_webp_init',
     'image-optimizer.php'       => 'tk_image_opt_init',
     'seo-optimization.php'      => 'tk_seo_opt_init',
+    'geo.php'                   => 'tk_geo_init',
+    'external-authority.php'    => 'tk_authority_init',
     'monitoring-404-health.php' => 'tk_monitoring_404_health_init',
     'optimization.php'          => false,
     'lazy-load.php'             => 'tk_lazy_load_init',
@@ -76,7 +99,11 @@ $tk_modules = array(
     'github-update-check.php'   => false,
     'security-fim.php'          => 'tk_fim_init',
     'analytics.php'             => 'tk_analytics_init',
+    'cookie-consent.php'        => 'tk_cookie_consent_init',
     'dashboard-widget.php'      => 'tk_dashboard_widget_init',
+    'admin-menu-cleaner.php'    => 'tk_admin_menu_cleaner_init',
+    'role-management.php'       => 'tk_role_management_init',
+    'plugin-shield.php'         => 'tk_plugin_shield_init',
 );
 
 // Require all modules dynamically
@@ -94,6 +121,8 @@ function tk_activate() {
 
     // Create login log table
     tk_login_log_install_table();
+    tk_security_events_install_table();
+    tk_security_events_schedule_maintenance();
 
     // Hide login rewrite rules
     tk_hide_login_flush_rewrite(true);
@@ -108,6 +137,8 @@ register_activation_hook(__FILE__, 'tk_activate');
 function tk_deactivate() {
     // Flush rewrite rules so custom login slug is removed cleanly
     tk_hide_login_flush_rewrite(false);
+    tk_security_events_clear_maintenance();
+    wp_clear_scheduled_hook('tk_monitoring_deferred_checks');
 
 }
 register_deactivation_hook(__FILE__, 'tk_deactivate');
@@ -125,6 +156,9 @@ register_uninstall_hook(__FILE__, 'tk_uninstall');
 add_action('plugins_loaded', function() {
     global $tk_modules;
     tk_run_versioned_upgrades();
+    if (function_exists('tk_security_events_install_table')) {
+        tk_security_events_install_table();
+    }
 
     foreach ($tk_modules as $file => $init_func) {
         if ($init_func && function_exists($init_func)) {
@@ -137,10 +171,23 @@ add_action('plugins_loaded', function() {
  * Load admin assets
  */
 add_action('admin_enqueue_scripts', function($hook) {
-    if (strpos($hook, 'tool-kits') !== false) {
-        wp_enqueue_style('tool-kits-admin', TK_URL . 'assets/admin.css', array(), TK_VERSION);
-        wp_enqueue_style('tool-kits-overview', TK_URL . 'assets/overview.css', array('tool-kits-admin'), TK_VERSION);
+    $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+    $is_toolkits_area = strpos($hook, 'tool-kits') !== false;
+    $is_toolkits_menu = $screen && isset($screen->id) && strpos((string) $screen->id, 'tool-kits') !== false;
+    if (function_exists('tk_toolkits_can_manage') && tk_toolkits_can_manage()) {
+        wp_enqueue_style('tool-kits-admin', TK_URL . 'assets/admin.css', array(), tk_asset_version('assets/admin.css'));
+    }
+    if ($is_toolkits_area || $is_toolkits_menu) {
+        wp_enqueue_style('tool-kits-overview', TK_URL . 'assets/overview.css', array('tool-kits-admin'), tk_asset_version('assets/overview.css'));
+        wp_enqueue_style('tool-kits-admin-ui-v2', TK_URL . 'assets/tool-kits-admin-ui.css', array('tool-kits-overview'), tk_asset_version('assets/tool-kits-admin-ui.css'));
+        wp_enqueue_script('tool-kits-image-optimizer', TK_URL . 'assets/image-optimizer.js', array(), tk_asset_version('assets/image-optimizer.js'), true);
+    }
+    if ($hook === 'tool-kits_page_tool-kits-geo') {
+        wp_enqueue_style('select2', 'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css', array(), '4.1.0-rc.0');
+        wp_enqueue_script('select2', 'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js', array('jquery'), '4.1.0-rc.0', true);
     }
 });
 add_action('admin_footer', 'tk_toolkits_mask_fields_script');
 add_action('admin_footer', 'tk_toolkits_confirm_actions_script');
+add_action('admin_footer', 'tk_toolkits_nested_admin_menu_script');
+add_action('admin_footer', 'tk_toolkits_persist_tabs_script');

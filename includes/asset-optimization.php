@@ -2,6 +2,9 @@
 if (!defined('ABSPATH')) { exit; }
 
 function tk_assets_opt_init() {
+    // Restore content hashes after hardening removes platform version strings.
+    add_filter('style_loader_src', 'tk_assets_theme_asset_version', 10000);
+    add_filter('script_loader_src', 'tk_assets_theme_asset_version', 10000);
     add_action('admin_post_tk_assets_opt_save', 'tk_assets_opt_save');
     add_action('admin_post_tk_assets_opt_scan_fonts', 'tk_assets_opt_scan_fonts');
     add_action('admin_post_tk_assets_opt_generate_critical', 'tk_assets_opt_generate_critical');
@@ -15,6 +18,73 @@ function tk_assets_opt_init() {
     add_action('template_redirect', 'tk_assets_start_perf_buffer', 2);
     add_action('wp_enqueue_scripts', 'tk_assets_cleanup_bloat', 99);
     add_action('wp_footer', 'tk_assets_instant_page', 99);
+}
+
+function tk_assets_theme_asset_version($src) {
+    if (is_admin() || !is_string($src) || $src === '') {
+        return $src;
+    }
+
+    $parts = wp_parse_url($src);
+    if (!is_array($parts) || empty($parts['path'])) {
+        return $src;
+    }
+    $extension = strtolower(pathinfo($parts['path'], PATHINFO_EXTENSION));
+    if (!in_array($extension, array('css', 'js'), true)) {
+        return $src;
+    }
+
+    $roots = array(
+        array(get_stylesheet_directory_uri(), get_stylesheet_directory()),
+        array(get_template_directory_uri(), get_template_directory()),
+    );
+    foreach ($roots as $root) {
+        $root_parts = wp_parse_url($root[0]);
+        if (!is_array($root_parts) || empty($root_parts['path'])) {
+            continue;
+        }
+        if (!empty($parts['host']) && strcasecmp($parts['host'], $root_parts['host'] ?? '') !== 0) {
+            continue;
+        }
+        $prefix = rtrim($root_parts['path'], '/') . '/';
+        if (strpos($parts['path'], $prefix) !== 0) {
+            continue;
+        }
+        $directory = realpath($root[1]);
+        $file = realpath($root[1] . '/' . rawurldecode(substr($parts['path'], strlen($prefix))));
+        if ($directory === false || $file === false || !is_file($file)
+            || strpos($file, $directory . DIRECTORY_SEPARATOR) !== 0) {
+            return $src;
+        }
+
+        static $versions = array();
+        if (!array_key_exists($file, $versions)) {
+            $versions[$file] = tk_assets_cached_file_hash($file);
+        }
+        if ($versions[$file] === false) {
+            return $src;
+        }
+        return add_query_arg('ver', substr($versions[$file], 0, 16), $src);
+    }
+    return $src;
+}
+
+function tk_assets_cached_file_hash(string $file) {
+    $stat = stat($file);
+    if ($stat === false) {
+        return false;
+    }
+    $signature = $file . ':' . $stat['mtime'] . ':' . $stat['ctime'] . ':' . $stat['size'];
+    $key = 'tk_asset_hash_' . md5($signature);
+    $hash = get_transient($key);
+    if (is_string($hash) && preg_match('/^[a-f0-9]{64}$/', $hash)) {
+        return $hash;
+    }
+    $hash = hash_file('sha256', $file);
+    if ($hash !== false) {
+        set_transient($key, $hash, 60);
+    }
+    return $hash;
 }
 
 function tk_assets_opt_enabled(): bool {
@@ -573,8 +643,7 @@ function tk_assets_opt_generate_critical() {
         if (is_wp_error($resp)) {
             set_transient('tk_assets_critical_error', $message, MINUTE_IN_SECONDS * 5);
             wp_redirect(add_query_arg(array(
-                'page' => 'tool-kits-optimization',
-                'tk_tab' => 'assets',
+                'page' => 'tool-kits-assets',
                 'tk_critical_error' => 1,
             ), admin_url('admin.php')));
             exit;
@@ -584,8 +653,7 @@ function tk_assets_opt_generate_critical() {
     if ($code < 200 || $code >= 300) {
         set_transient('tk_assets_critical_error', 'HTTP status ' . $code, MINUTE_IN_SECONDS * 5);
         wp_redirect(add_query_arg(array(
-            'page' => 'tool-kits-optimization',
-            'tk_tab' => 'assets',
+            'page' => 'tool-kits-assets',
             'tk_critical_error' => 1,
         ), admin_url('admin.php')));
         exit;
@@ -646,8 +714,7 @@ function tk_assets_opt_generate_critical() {
     tk_update_option('assets_critical_css_enabled', $css !== '' ? 1 : 0);
 
     wp_redirect(add_query_arg(array(
-        'page' => 'tool-kits-optimization',
-        'tk_tab' => 'assets',
+        'page' => 'tool-kits-assets',
         'tk_critical_generated' => strlen($css),
         'tk_critical_files' => $file_count,
     ), admin_url('admin.php')));
@@ -884,8 +951,7 @@ function tk_assets_opt_scan_fonts() {
     tk_update_option('assets_preload_fonts', implode("\n", $fonts));
     $count = count($fonts);
     wp_redirect(add_query_arg(array(
-        'page' => 'tool-kits-optimization',
-        'tk_tab' => 'assets',
+        'page' => 'tool-kits-assets',
         'tk_fonts_scanned' => $count,
     ), admin_url('admin.php')));
     exit;
@@ -1094,6 +1160,6 @@ function tk_assets_opt_save() {
     tk_update_option('assets_instant_page_enabled', !empty($_POST['assets_instant_page_enabled']) ? 1 : 0);
     tk_update_option('assets_cls_guard_enabled', 1);
     tk_update_option('assets_lcp_boost_enabled', 1);
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-optimization', 'tk_tab' => 'assets', 'tk_saved' => 1), admin_url('admin.php')));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-assets', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }
