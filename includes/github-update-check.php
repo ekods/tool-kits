@@ -51,6 +51,8 @@ function tk_github_allow_auto_update($update, $item) {
     return $update;
 }
 
+$GLOBALS['tk_github_updating_this_plugin'] = false;
+
 function tk_github_plugin_update_check($transient) {
     if (!tk_github_updater_enabled()) {
         if (is_object($transient)) {
