@@ -670,6 +670,12 @@ function tk_geo_render_head_jsonld(): void {
 
 function tk_geo_ai_crawler_agents(): array {
     return array(
+        'Googlebot' => array(
+            'label' => 'Google Search',
+            'purpose' => 'Google Search index; gates AI Overviews eligibility',
+            'recommended' => 'allow',
+            'note' => 'AI Overviews and AI Mode are grounded from the regular Google Search index, so Googlebot is the crawler that decides eligibility. There is no separate AI Overviews crawler.',
+        ),
         'OAI-SearchBot' => array(
             'label' => 'OpenAI Search',
             'purpose' => 'ChatGPT search visibility',
@@ -707,8 +713,9 @@ function tk_geo_ai_crawler_agents(): array {
         ),
         'Google-Extended' => array(
             'label' => 'Google Extended',
-            'purpose' => 'Gemini training and grounding control token',
+            'purpose' => 'Gemini and Vertex AI training/grounding control token',
             'recommended' => 'policy',
+            'note' => 'Blocking Google-Extended does NOT remove the site from Google AI Overviews or AI Mode. It only limits Gemini and Vertex AI training and grounding. To opt out of AI Overviews, use Search Console > Settings > Search generative AI.',
         ),
         'CCBot' => array(
             'label' => 'Common Crawl',
@@ -1033,6 +1040,7 @@ function tk_geo_run_ai_access_review(): array {
                 'agent' => (string) $agent,
                 'label' => (string) ($info['label'] ?? $agent),
                 'purpose' => (string) ($info['purpose'] ?? ''),
+                'note' => (string) ($info['note'] ?? ''),
                 'recommended' => $recommended,
                 'allowed' => $allowed,
                 'status' => $status,
@@ -2484,6 +2492,12 @@ function tk_render_geo_panel(): void {
         <div class="tk-card tk-tab-panel" data-panel-id="ai-access" id="ai-access">
             <h3>AI Crawler Accessibility Review</h3>
             <p>Review whether AI search and assistant crawlers can access public content, read robots.txt, discover sitemap URLs, and consume structured data.</p>
+            <div class="notice notice-info inline" style="margin:12px 0;padding:10px 12px;">
+                <p style="margin:0 0 6px;"><strong>About Google AI Overviews</strong></p>
+                <p style="margin:0 0 6px;">AI Overviews and AI Mode are grounded from the regular Google Search index via <code>Googlebot</code>. There is no dedicated AI Overviews crawler and no robots.txt token that opts a site in or out of them.</p>
+                <p style="margin:0 0 6px;">Blocking <code>Google-Extended</code> only limits Gemini and Vertex AI training and grounding &mdash; it does <strong>not</strong> remove the site from AI Overviews.</p>
+                <p style="margin:0;">To opt out, use the property-level control in <a href="https://search.google.com/search-console/settings" target="_blank" rel="noopener noreferrer">Search Console &rsaquo; Settings &rsaquo; Search generative AI</a>, or limit on-page snippet usage with <code>nosnippet</code> / <code>max-snippet</code> (note: those also remove ordinary search snippets).</p>
+            </div>
             <p>
                 <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tk_geo_ai_access_scan'), 'tk_geo_ai_access_scan')); ?>">Run AI Access Review</a>
                 <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tk_geo_ai_access_clear'), 'tk_geo_ai_access_clear')); ?>">Clear Review</a>
@@ -2567,7 +2581,12 @@ function tk_render_geo_panel(): void {
                             ?>
                             <tr>
                                 <td><strong><?php echo esc_html((string) ($result['agent'] ?? '')); ?></strong><br><span class="description"><?php echo esc_html((string) ($result['label'] ?? '')); ?></span></td>
-                                <td><?php echo esc_html((string) ($result['purpose'] ?? '')); ?></td>
+                                <td>
+                                    <?php echo esc_html((string) ($result['purpose'] ?? '')); ?>
+                                    <?php if (!empty($result['note'])) : ?>
+                                        <br><span class="description"><?php echo esc_html((string) $result['note']); ?></span>
+                                    <?php endif; ?>
+                                </td>
                                 <td><span class="tk-badge <?php echo esc_attr($class); ?>"><?php echo !empty($result['allowed']) ? 'Allowed' : 'Blocked'; ?></span></td>
                                 <td><code><?php echo esc_html((string) ($result['matched'] ?? '')); ?></code></td>
                             </tr>

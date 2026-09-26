@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.5.74
+Stable tag: 2.5.75
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,13 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.5.75 =
+**Google AI Overviews Clarity in GEO**
+- Add `Googlebot` to the AI crawler accessibility review, since AI Overviews and AI Mode are grounded from the regular Google Search index and have no dedicated crawler.
+- Flag a blocked `Googlebot` as an issue so the crawler that actually gates AI Overviews eligibility is not overlooked.
+- Correct the `Google-Extended` expectation: blocking it limits Gemini and Vertex AI training and grounding only, and does not remove the site from AI Overviews.
+- Explain the real opt-out paths in the AI Access panel, linking Search Console > Settings > Search generative AI and noting the `nosnippet` / `max-snippet` trade-off.
+
 = 2.5.74 =
 **SEO Optimization Tabs**
 - Organize the SEO Optimization page into Settings, Redirects, Canonical, Indexing, Broken Links, and Content Audit tabs, matching other Tool Kits screens.
