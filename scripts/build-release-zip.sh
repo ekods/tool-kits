@@ -9,6 +9,7 @@ if [[ "$OUTPUT_PATH" != /* ]]; then
 fi
 VALIDATE_SCRIPT="$ROOT_DIR/scripts/validate-release-zip.sh"
 METADATA_SCRIPT="$ROOT_DIR/scripts/check-release-metadata.sh"
+SYNC_SCRIPT="$ROOT_DIR/scripts/sync-to-release-repo.sh"
 TEMP_DIR="$(mktemp -d)"
 
 cleanup() {
@@ -31,6 +32,13 @@ if [[ ! -x "$VALIDATE_SCRIPT" && ! -f "$VALIDATE_SCRIPT" ]]; then
   exit 1
 fi
 
+# Push the edited source into the git/release repo first, so the packaged ZIP
+# and the commit always come from the same tree. Set TK_SKIP_SYNC=1 to skip.
+if [[ "${TK_SKIP_SYNC:-0}" != "1" && -f "$SYNC_SCRIPT" ]]; then
+  bash "$SYNC_SCRIPT"
+  echo
+fi
+
 bash "$METADATA_SCRIPT"
 
 mkdir -p "$(dirname "$OUTPUT_PATH")"
@@ -46,6 +54,7 @@ rsync -a "$ROOT_DIR/" "$TEMP_DIR/$PLUGIN_SLUG/" \
   --exclude '.DS_Store' \
   --exclude 'README.md' \
   --exclude 'ROADMAP.md' \
+  --exclude 'CLAUDE.md' \
   --exclude 'scripts' \
   --exclude 'tool-kits.zip'
 
