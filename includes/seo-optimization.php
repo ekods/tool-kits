@@ -331,6 +331,14 @@ function tk_seo_render_geo_meta_box($post): void {
             <option value="<?php echo esc_attr($value); ?>" <?php selected(get_post_meta($post_id, '_tk_seo_target_location', true), $value); ?>><?php echo esc_html($label); ?></option>
         <?php endforeach; ?>
     </select>
+    <p><label for="tk-schema-type"><strong>Schema Type</strong></label></p>
+    <select id="tk-schema-type" name="tk_schema_type" style="width:100%;">
+        <?php $selected_schema_type = (string) get_post_meta($post_id, '_tk_schema_type', true); ?>
+        <?php foreach (tk_seo_schema_type_choices() as $value => $label) : ?>
+            <option value="<?php echo esc_attr($value); ?>" <?php selected($selected_schema_type !== '' ? $selected_schema_type : 'auto', $value); ?>><?php echo esc_html($label); ?></option>
+        <?php endforeach; ?>
+    </select>
+    <p class="description">Override the post-type mapping only when this content needs a different schema.</p>
     <p><strong>References / Sources</strong></p>
     <textarea name="tk_geo_reference_urls" rows="5" style="width:100%;" placeholder="One source URL per line"><?php echo esc_textarea(implode("\n", $references)); ?></textarea>
     <p class="description">Used for GEO audit and Schema.org <code>citation</code>.</p>
@@ -385,6 +393,13 @@ function tk_seo_save_geo_meta_box($post_id, $post): void {
         $location = sanitize_key(wp_unslash($_POST['tk_seo_target_location']));
         if (in_array($location, array('', 'jakarta', 'singapore'), true)) {
             update_post_meta((int) $post_id, '_tk_seo_target_location', $location);
+        }
+    }
+    if (isset($_POST['tk_schema_type']) && is_string($_POST['tk_schema_type'])) {
+        $schema_type = sanitize_text_field(wp_unslash($_POST['tk_schema_type']));
+        $schema_choices = tk_seo_schema_type_choices();
+        if (isset($schema_choices[$schema_type])) {
+            update_post_meta((int) $post_id, '_tk_schema_type', $schema_type);
         }
     }
 
@@ -632,6 +647,55 @@ function tk_seo_related_urls($post_id, $limit = 3): array {
     return $urls;
 }
 
+function tk_seo_schema_type_choices(): array {
+    return array(
+        'auto' => 'Auto detect',
+        'WebPage' => 'WebPage',
+        'Article' => 'Article',
+        'BlogPosting' => 'BlogPosting',
+        'NewsArticle' => 'NewsArticle',
+        'Service' => 'Service',
+        'Product' => 'Product',
+        'CreativeWork' => 'CreativeWork / Case Study',
+        'none' => 'WebPage only',
+    );
+}
+
+function tk_seo_schema_type_for_post($post): string {
+    $post = is_object($post) ? $post : get_post((int) $post);
+    if (!is_object($post)) {
+        return 'none';
+    }
+    $choices = tk_seo_schema_type_choices();
+    $override = (string) get_post_meta((int) $post->ID, '_tk_schema_type', true);
+    if ($override !== '' && $override !== 'auto' && isset($choices[$override])) {
+        return $override;
+    }
+    $map = tk_get_option('seo_schema_post_type_map', array());
+    $map = is_array($map) ? $map : array();
+    $mapped = isset($map[$post->post_type]) ? (string) $map[$post->post_type] : 'auto';
+    if ($mapped !== 'auto' && isset($choices[$mapped])) {
+        return $mapped;
+    }
+    if ($post->post_type === 'post') {
+        return 'BlogPosting';
+    }
+    if ($post->post_type === 'page') {
+        return 'none';
+    }
+    $slug = strtolower((string) $post->post_type);
+    if (preg_match('/product|shop/', $slug)) {
+        return 'Product';
+    }
+    if (preg_match('/service/', $slug)) {
+        return 'Service';
+    }
+    if (preg_match('/work|portfolio|project|case/', $slug)) {
+        return 'CreativeWork';
+    }
+    return 'CreativeWork';
+}
+
 function tk_seo_build_schema_graph($url, $title, $description) {
     $site_name = (string) get_bloginfo('name');
     $org_id = trailingslashit(home_url('/')) . '#organization';
@@ -720,39 +784,77 @@ function tk_seo_build_schema_graph($url, $title, $description) {
     if (is_singular()) {
         $post = get_post();
         if (is_object($post)) {
+            $schema_type = tk_seo_schema_type_for_post($post);
             $author = tk_seo_author_data($post);
             $references = tk_seo_reference_urls((int) $post->ID);
             $related = tk_seo_related_urls((int) $post->ID);
-            $article = array(
-                '@type' => 'Article',
-                '@id' => $url !== '' ? $url . '#article' : '',
-                'headline' => (string) get_the_title($post),
-                'datePublished' => get_the_date(DATE_W3C, $post),
-                'dateModified' => get_the_modified_date(DATE_W3C, $post),
-                'mainEntityOfPage' => array('@id' => $url !== '' ? $url . '#webpage' : ''),
-                'author' => array(
-                    '@type' => $author['type'],
-                    'name' => $author['name'],
-                    'url' => $author['url'],
-                    'description' => $author['description'],
-                ),
-                'publisher' => array('@id' => $org_id),
+            $author_node = array(
+                '@type' => $author['type'],
+                'name' => $author['name'],
+                'url' => $author['url'],
+                'description' => $author['description'],
             );
-            $image = tk_seo_og_image_url();
-            if ($image !== '') {
-                $article['image'] = array($image);
+            $content_node = array();
+            if (in_array($schema_type, array('Article', 'BlogPosting', 'NewsArticle'), true)) {
+                $content_node = array(
+                    '@type' => $schema_type,
+                    '@id' => $url !== '' ? $url . '#article' : '',
+                    'headline' => (string) get_the_title($post),
+                    'description' => (string) $description,
+                    'datePublished' => get_the_date(DATE_W3C, $post),
+                    'dateModified' => get_the_modified_date(DATE_W3C, $post),
+                    'mainEntityOfPage' => array('@id' => $url !== '' ? $url . '#webpage' : ''),
+                    'author' => $author_node,
+                    'publisher' => array('@id' => $org_id),
+                );
+            } elseif ($schema_type === 'Service') {
+                $content_node = array(
+                    '@type' => 'Service',
+                    '@id' => $url !== '' ? $url . '#service' : '',
+                    'url' => $url,
+                    'name' => (string) get_the_title($post),
+                    'description' => (string) $description,
+                    'provider' => array('@id' => $org_id),
+                );
+            } elseif ($schema_type === 'Product') {
+                $content_node = array(
+                    '@type' => 'Product',
+                    '@id' => $url !== '' ? $url . '#product' : '',
+                    'url' => $url,
+                    'name' => (string) get_the_title($post),
+                    'description' => (string) $description,
+                    'brand' => array('@id' => $org_id),
+                );
+            } elseif ($schema_type === 'CreativeWork') {
+                $content_node = array(
+                    '@type' => 'CreativeWork',
+                    '@id' => $url !== '' ? $url . '#creative-work' : '',
+                    'url' => $url,
+                    'name' => (string) get_the_title($post),
+                    'description' => (string) $description,
+                    'dateCreated' => get_the_date(DATE_W3C, $post),
+                    'dateModified' => get_the_modified_date(DATE_W3C, $post),
+                    'creator' => $author_node,
+                    'publisher' => array('@id' => $org_id),
+                );
             }
-            if (!empty($references)) {
-                $article['citation'] = $references;
+            if (!empty($content_node)) {
+                $image = tk_seo_og_image_url();
+                if ($image !== '') {
+                    $content_node['image'] = array($image);
+                }
+                if (!empty($references)) {
+                    $content_node['citation'] = $references;
+                }
+                if (!empty($related)) {
+                    $content_node['relatedLink'] = $related;
+                }
+                $graph[] = $content_node;
             }
-            if (!empty($related)) {
-                $article['relatedLink'] = $related;
-            }
-            $graph[] = $article;
         }
     }
 
-    if ($entity['service_name'] !== '') {
+    if ($entity['service_name'] !== '' && (is_front_page() || is_home())) {
         $service = array(
             '@type' => 'Service',
             '@id' => trailingslashit(home_url('/')) . '#service',
@@ -2174,6 +2276,7 @@ function tk_render_seo_opt_panel() {
             <button type="button" class="tk-tabs-nav-button" data-panel="indexing">Indexing</button>
             <button type="button" class="tk-tabs-nav-button" data-panel="broken-links">Broken Links</button>
             <button type="button" class="tk-tabs-nav-button" data-panel="content-audit">Content Audit</button>
+            <button type="button" class="tk-tabs-nav-button" data-panel="indexnow">IndexNow</button>
         </div>
         <div class="tk-tabs-content">
     <div class="tk-card tk-tab-panel is-active" data-panel-id="settings">
@@ -2590,6 +2693,7 @@ function tk_render_seo_opt_panel() {
             <p class="description">No audit report yet.</p>
         <?php endif; ?>
     </div>
+    <?php if (function_exists('tk_indexnow_render_panel')) { tk_indexnow_render_panel(); } ?>
         </div>
     </div>
     <script>

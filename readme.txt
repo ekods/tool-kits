@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.5.75
+Stable tag: 2.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,18 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.6.0 =
+**Lightweight SEO/GEO Delivery**
+- Add background IndexNow delivery with a bounded queue and no remote requests during frontend page loads.
+- Add schema mapping by public post type so pages no longer default to Article markup.
+- Include cached SEO/GEO health summaries in NexaMonitor heartbeat payloads without running audits during heartbeat.
+
+= 2.5.76 =
+**Schema Duplicate Auto Fix Refresh**
+- Force a fresh duplicate-schema scan after Auto Fix instead of reusing the saved report.
+- Clear frontend caches before verification so disabled Tool Kits schema is no longer read from stale HTML.
+- Make the manual duplicate detector always perform a new scan.
+
 = 2.5.75 =
 **Google AI Overviews Clarity in GEO**
 - Add `Googlebot` to the AI crawler accessibility review, since AI Overviews and AI Mode are grounded from the regular Google Search index and have no dedicated crawler.

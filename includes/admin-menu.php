@@ -472,6 +472,7 @@ function tk_render_seo_page() {
         'indexing' => array('label' => 'Indexing', 'html' => $cards[3] ?? ''),
         'broken-links' => array('label' => 'Broken Links', 'html' => $cards[4] ?? ''),
         'content-audit' => array('label' => 'Content Audit', 'html' => $cards[5] ?? ''),
+        'indexnow' => array('label' => 'IndexNow', 'html' => $cards[6] ?? ''),
     );
     $tabs = array_filter($tabs, function ($tab) {
         return trim((string) $tab['html']) !== '';

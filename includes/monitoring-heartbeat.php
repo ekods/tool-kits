@@ -46,6 +46,26 @@ function tk_heartbeat_unschedule() {
     }
 }
 
+function tk_heartbeat_seo_geo_summary(): array {
+    $seo = tk_get_option('seo_content_audit_report', array());
+    $geo = tk_get_option('seo_geo_audit_report', array());
+    $duplicates = tk_get_option('geo_schema_duplicate_report', array());
+    $seo = is_array($seo) ? $seo : array();
+    $geo = is_array($geo) ? $geo : array();
+    $duplicates = is_array($duplicates) ? $duplicates : array();
+
+    return array(
+        'seo_score' => isset($seo['average_score']) ? max(0, min(100, (int) $seo['average_score'])) : null,
+        'geo_score' => isset($geo['average_score']) ? max(0, min(100, (int) $geo['average_score'])) : null,
+        'seo_flagged' => max(0, (int) ($seo['flagged_count'] ?? 0)),
+        'geo_issues' => max(0, (int) ($geo['issue_count'] ?? 0)),
+        'schema_issues' => max(0, (int) ($duplicates['issue_count'] ?? 0)),
+        'indexnow_queue' => function_exists('tk_indexnow_queue') ? count(tk_indexnow_queue()) : 0,
+        'last_seo_audit' => max(0, (int) ($seo['scanned_at'] ?? 0)),
+        'last_geo_audit' => max(0, (int) ($geo['scanned_at'] ?? 0)),
+    );
+}
+
 function tk_heartbeat_send(): array {
     $url = tk_heartbeat_collector_url();
     $secret = tk_heartbeat_auth_key();
@@ -78,6 +98,7 @@ function tk_heartbeat_send(): array {
         'hide_login_enabled' => $hide_login_enabled,
         'hide_login_slug' => $hide_login_enabled ? tk_hide_login_slug() : '',
         'hide_login_url' => $hide_login_enabled ? tk_hide_login_custom_url() : '',
+        'seo_geo' => tk_heartbeat_seo_geo_summary(),
     );
     $body = wp_json_encode($payload);
     if ($body === false) {
