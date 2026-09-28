@@ -1565,6 +1565,7 @@ function tk_geo_toolkits_seo_schema_types(): array {
     return array(
         'Article',
         'BlogPosting',
+        'BreadcrumbList',
         'ContactPoint',
         'Country',
         'CreativeWork',
@@ -1593,6 +1594,12 @@ function tk_geo_schema_duplicate_fix(): void {
     $seo_conflicts = array_values(array_intersect($duplicate_types, tk_geo_toolkits_seo_schema_types()));
     $actions = array();
     $remaining = array();
+
+    if ((int) tk_get_option('seo_breadcrumb_enabled', 1) === 1 && in_array('BreadcrumbList', $seo_conflicts, true)) {
+        tk_update_option('seo_breadcrumb_enabled', 0);
+        $seo_conflicts = array_values(array_diff($seo_conflicts, array('BreadcrumbList')));
+        $actions[] = 'Disabled Tool Kits BreadcrumbList schema because another source already provides it.';
+    }
 
     if ((int) tk_get_option('seo_schema_enabled', 1) === 1 && !empty($seo_conflicts)) {
         tk_update_option('seo_schema_enabled', 0);
@@ -1785,6 +1792,7 @@ function tk_geo_save(): void {
 
     tk_update_option('geo_enabled', !empty($_POST['geo_enabled']) ? 1 : 0);
     tk_update_option('seo_schema_enabled', !empty($_POST['seo_schema_enabled']) ? 1 : 0);
+    tk_update_option('seo_breadcrumb_enabled', !empty($_POST['seo_breadcrumb_enabled']) ? 1 : 0);
     $schema_choices = function_exists('tk_seo_schema_type_choices') ? tk_seo_schema_type_choices() : array('auto' => 'Auto detect');
     $schema_map_input = isset($_POST['seo_schema_post_type_map']) && is_array($_POST['seo_schema_post_type_map']) ? $_POST['seo_schema_post_type_map'] : array();
     $schema_map = array();
@@ -1841,6 +1849,7 @@ function tk_render_geo_panel(): void {
 
     $enabled = (int) tk_get_option('geo_enabled', 0);
     $seo_schema = (int) tk_get_option('seo_schema_enabled', 1);
+    $seo_breadcrumb = (int) tk_get_option('seo_breadcrumb_enabled', 1);
     $seo_schema_post_type_map = tk_get_option('seo_schema_post_type_map', array());
     $seo_schema_post_type_map = is_array($seo_schema_post_type_map) ? $seo_schema_post_type_map : array();
     $custom_json = (string) tk_get_option('geo_custom_jsonld', '');
@@ -1950,6 +1959,7 @@ function tk_render_geo_panel(): void {
             <?php tk_render_switch('geo_enabled', 'Enable GEO JSON-LD Output', 'Print enabled custom JSON-LD, FAQPage, and ItemList documents on public pages.', $enabled); ?>
             <div style="margin-top:16px;">
                 <?php tk_render_switch('seo_schema_enabled', 'SEO JSON-LD Schema', 'Generate WebSite, Organization, WebPage, Article, and Service schema through GEO output.', $seo_schema); ?>
+                <?php tk_render_switch('seo_breadcrumb_enabled', 'BreadcrumbList Schema', 'Generate a hierarchy-aware breadcrumb graph and connect it to WebPage.', $seo_breadcrumb); ?>
                 <p class="description">This setting was moved from SEO so all JSON-LD output is managed from GEO.</p>
                 <?php if (function_exists('tk_seo_schema_type_choices')) : ?>
                     <h3 style="margin-top:20px;">Schema by Post Type</h3>

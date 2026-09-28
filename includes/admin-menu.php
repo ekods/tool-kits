@@ -164,6 +164,7 @@ function tk_render_monitoring_page() {
     }
 
     $healthcheck = tk_healthcheck_data();
+    $operations_health = function_exists('tk_operations_health_report') ? tk_operations_health_report() : array();
     $connection_summary = tk_toolkits_connection_summary();
     $core_auto = tk_get_option('hardening_core_auto_updates', 1) ? true : (defined('WP_AUTO_UPDATE_CORE') && WP_AUTO_UPDATE_CORE === true);
     $wp_config_path = tk_hardening_wp_config_path();
@@ -180,6 +181,7 @@ function tk_render_monitoring_page() {
         'health_url' => $health_url,
         'health_key' => $health_key,
         'healthcheck' => $healthcheck,
+        'operations_health' => $operations_health,
         'connection_summary' => $connection_summary,
         'core_auto' => $core_auto,
         'wp_config_path' => $wp_config_path

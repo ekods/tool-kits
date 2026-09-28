@@ -66,6 +66,23 @@ function tk_heartbeat_seo_geo_summary(): array {
     );
 }
 
+function tk_heartbeat_operations_summary(): array {
+    $operations = tk_get_option('operations_health_report', array());
+    $delivery = tk_get_option('smtp_dns_report', array());
+    $operations = is_array($operations) ? $operations : array();
+    $delivery = is_array($delivery) ? $delivery : array();
+
+    return array(
+        'operations_score' => isset($operations['score']) ? max(0, min(100, (int) $operations['score'])) : null,
+        'overdue_jobs' => max(0, (int) ($operations['overdue_count'] ?? 0)),
+        'missing_workers' => isset($operations['missing_workers']) && is_array($operations['missing_workers']) ? count($operations['missing_workers']) : 0,
+        'delivery_score' => isset($delivery['score']) ? max(0, min(100, (int) $delivery['score'])) : null,
+        'delivery_domain' => sanitize_text_field((string) ($delivery['domain'] ?? '')),
+        'last_operations_scan' => max(0, (int) ($operations['scanned_at'] ?? 0)),
+        'last_delivery_scan' => max(0, (int) ($delivery['scanned_at'] ?? 0)),
+    );
+}
+
 function tk_heartbeat_send(): array {
     $url = tk_heartbeat_collector_url();
     $secret = tk_heartbeat_auth_key();
@@ -99,6 +116,7 @@ function tk_heartbeat_send(): array {
         'hide_login_slug' => $hide_login_enabled ? tk_hide_login_slug() : '',
         'hide_login_url' => $hide_login_enabled ? tk_hide_login_custom_url() : '',
         'seo_geo' => tk_heartbeat_seo_geo_summary(),
+        'operations' => tk_heartbeat_operations_summary(),
     );
     $body = wp_json_encode($payload);
     if ($body === false) {

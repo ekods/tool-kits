@@ -12,6 +12,7 @@ if (!defined('ABSPATH')) { exit; }
  * @var string $health_url
  * @var string $health_key
  * @var array $healthcheck
+ * @var array $operations_health
  * @var array $connection_summary
  * @var bool $core_auto
  * @var string $wp_config_path
@@ -62,6 +63,8 @@ if (!defined('ABSPATH')) { exit; }
     if (isset($_GET['tk_404_updated']) && $_GET['tk_404_updated'] === '1') tk_notice(__('404 monitor settings saved.', 'tool-kits'), 'success');
     if (isset($_GET['tk_404_cleared']) && $_GET['tk_404_cleared'] === '1') tk_notice(__('404 log cleared.', 'tool-kits'), 'success');
     if (isset($_GET['tk_health_updated']) && $_GET['tk_health_updated'] === '1') tk_notice(__('Healthcheck settings saved.', 'tool-kits'), 'success');
+    if (isset($_GET['tk_operations']) && sanitize_key((string) $_GET['tk_operations']) === 'refreshed') tk_notice(__('Background operations report refreshed.', 'tool-kits'), 'success');
+    if (isset($_GET['tk_operations']) && sanitize_key((string) $_GET['tk_operations']) === 'repaired') tk_notice(__('Tool Kits background schedules repaired and rechecked.', 'tool-kits'), 'success');
 
     $image_report = tk_get_option('image_opt_compression_report', array());
     $image_report = is_array($image_report) ? $image_report : array();
@@ -127,6 +130,7 @@ if (!defined('ABSPATH')) { exit; }
             <button type="button" class="tk-tabs-nav-button" data-panel="filesystem"><?php _e('Filesystem', 'tool-kits'); ?></button>
             <button type="button" class="tk-tabs-nav-button" data-panel="missing"><?php _e('404 Monitor', 'tool-kits'); ?></button>
             <button type="button" class="tk-tabs-nav-button" data-panel="health"><?php _e('Healthcheck', 'tool-kits'); ?></button>
+            <button type="button" class="tk-tabs-nav-button" data-panel="operations"><?php _e('Background Jobs', 'tool-kits'); ?></button>
             <button type="button" class="tk-tabs-nav-button" data-panel="integrity"><?php _e('Integrity', 'tool-kits'); ?></button>
         </div>
         <div class="tk-tabs-content" id="tk-monitoring-tabs-content">
@@ -228,6 +232,8 @@ if (!defined('ABSPATH')) { exit; }
                     </tbody>
                 </table>
             </div>
+
+            <?php if (function_exists('tk_operations_health_render_panel')) { tk_operations_health_render_panel(is_array($operations_health ?? null) ? $operations_health : array()); } ?>
 
             <div class="tk-card tk-tab-panel" data-panel-id="actions">
                 <h2><?php _e('Quick Actions', 'tool-kits'); ?></h2>

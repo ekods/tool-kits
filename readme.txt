@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.6.0
+Stable tag: 2.7.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,13 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.0 =
+**Operations and Delivery Health**
+- Add cached WP-Cron and background queue diagnostics with safe schedule repair controls.
+- Add manual SPF, DKIM, DMARC, and MX checks for the configured sender domain.
+- Include cached operations and email-delivery summaries in NexaMonitor heartbeat payloads.
+- Add hierarchy-aware BreadcrumbList schema with duplicate-safe independent controls.
+
 = 2.6.0 =
 **Lightweight SEO/GEO Delivery**
 - Add background IndexNow delivery with a bounded queue and no remote requests during frontend page loads.

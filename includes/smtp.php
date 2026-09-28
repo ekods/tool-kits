@@ -5,6 +5,7 @@ function tk_smtp_init() {
     add_action('admin_post_tk_smtp_save', 'tk_smtp_save');
     add_action('admin_post_tk_smtp_test', 'tk_smtp_test_send');
     add_action('admin_post_tk_smtp_test_log_clear', 'tk_smtp_test_log_clear');
+    add_action('admin_post_tk_smtp_dns_scan', 'tk_smtp_dns_scan_handler');
     add_action('admin_post_tk_smtp_google_callback', 'tk_smtp_google_callback');
     add_action('admin_post_tk_smtp_google_disconnect', 'tk_smtp_google_disconnect');
     add_action('admin_post_tk_smtp_microsoft_callback', 'tk_smtp_microsoft_callback');
@@ -109,6 +110,106 @@ function tk_smtp_get_config() {
         'force_from' => $force_from,
         'return_path' => $return_path,
     );
+}
+
+function tk_smtp_sender_domain(): string {
+    $email = tk_smtp_force_from_address((string) get_option('admin_email'));
+    if (is_email($email) && strpos($email, '@') !== false) {
+        return strtolower((string) substr(strrchr($email, '@'), 1));
+    }
+    return strtolower((string) wp_parse_url(home_url('/'), PHP_URL_HOST));
+}
+
+function tk_smtp_dns_txt_values(string $name): array {
+    if (!function_exists('dns_get_record')) {
+        return array();
+    }
+    $records = @dns_get_record($name, defined('DNS_TXT') ? DNS_TXT : 32768);
+    if (!is_array($records)) {
+        return array();
+    }
+    $values = array();
+    foreach ($records as $record) {
+        if (!is_array($record)) { continue; }
+        $value = isset($record['txt']) ? (string) $record['txt'] : '';
+        if ($value === '' && isset($record['entries']) && is_array($record['entries'])) {
+            $value = implode('', array_map('strval', $record['entries']));
+        }
+        if ($value !== '') { $values[] = sanitize_text_field($value); }
+    }
+    return array_values(array_unique($values));
+}
+
+function tk_smtp_dns_scan(string $domain, string $selector = ''): array {
+    $domain = strtolower(trim($domain, ". \t\n\r\0\x0B"));
+    $selector = sanitize_key($selector);
+    if ($domain === '' || strlen($domain) > 253 || !preg_match('/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/', $domain)) {
+        return array('scanned_at' => time(), 'domain' => $domain, 'score' => 0, 'error' => 'Enter a valid sender domain.');
+    }
+    $root_txt = tk_smtp_dns_txt_values($domain);
+    $dmarc_txt = tk_smtp_dns_txt_values('_dmarc.' . $domain);
+    $dkim_txt = $selector !== '' ? tk_smtp_dns_txt_values($selector . '._domainkey.' . $domain) : array();
+    $dkim_cname = array();
+    if ($selector !== '' && function_exists('dns_get_record')) {
+        $dkim_cname = @dns_get_record($selector . '._domainkey.' . $domain, defined('DNS_CNAME') ? DNS_CNAME : 16);
+        $dkim_cname = is_array($dkim_cname) ? $dkim_cname : array();
+    }
+    $spf = array_values(array_filter($root_txt, function($value) { return stripos((string) $value, 'v=spf1') === 0; }));
+    $dmarc = array_values(array_filter($dmarc_txt, function($value) { return stripos((string) $value, 'v=DMARC1') === 0; }));
+    $dkim = array_values(array_filter($dkim_txt, function($value) { return stripos((string) $value, 'v=DKIM1') !== false || stripos((string) $value, 'p=') !== false; }));
+    $mx = function_exists('checkdnsrr') ? @checkdnsrr($domain, 'MX') : false;
+    $dkim_ok = !empty($dkim) || !empty($dkim_cname);
+    $score = ($mx ? 25 : 0) + (!empty($spf) ? 25 : 0) + (!empty($dmarc) ? 25 : 0) + ($dkim_ok ? 25 : 0);
+    return array(
+        'scanned_at' => time(),
+        'domain' => $domain,
+        'selector' => $selector,
+        'score' => $score,
+        'checks' => array(
+            array('label' => 'MX', 'ok' => (bool) $mx, 'detail' => $mx ? 'Mail exchange record found.' : 'No MX record found.'),
+            array('label' => 'SPF', 'ok' => !empty($spf), 'detail' => !empty($spf) ? reset($spf) : 'No v=spf1 TXT record found.'),
+            array('label' => 'DMARC', 'ok' => !empty($dmarc), 'detail' => !empty($dmarc) ? reset($dmarc) : 'No v=DMARC1 TXT record found.'),
+            array('label' => 'DKIM', 'ok' => $dkim_ok, 'detail' => $selector === '' ? 'Enter the selector supplied by your email provider.' : (!empty($dkim) ? reset($dkim) : (!empty($dkim_cname) ? 'DKIM selector delegates through CNAME.' : 'No DKIM key found for selector ' . $selector . '.'))),
+        ),
+    );
+}
+
+function tk_smtp_dns_scan_handler(): void {
+    tk_require_admin_post('tk_smtp_dns_scan');
+    $domain = isset($_POST['smtp_dns_domain']) ? sanitize_text_field(wp_unslash($_POST['smtp_dns_domain'])) : tk_smtp_sender_domain();
+    $selector = isset($_POST['smtp_dkim_selector']) ? sanitize_key(wp_unslash($_POST['smtp_dkim_selector'])) : '';
+    tk_update_option('smtp_dkim_selector', $selector);
+    tk_update_option('smtp_dns_report', tk_smtp_dns_scan($domain, $selector));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-smtp', 'tk_smtp_dns' => 'scanned'), admin_url('admin.php')) . '#deliverability');
+    exit;
+}
+
+function tk_smtp_render_dns_panel(array $report): void {
+    $domain = !empty($report['domain']) ? (string) $report['domain'] : tk_smtp_sender_domain();
+    $selector = !empty($report['selector']) ? (string) $report['selector'] : (string) tk_get_option('smtp_dkim_selector', '');
+    if ($selector === '') {
+        $provider = sanitize_key((string) tk_get_option('smtp_provider', 'custom'));
+        $selector = $provider === 'gmail' ? 'google' : ($provider === 'office365' ? 'selector1' : '');
+    }
+    ?>
+    <div class="tk-card tk-tab-panel" data-panel-id="deliverability">
+        <h2>Email Deliverability</h2>
+        <p class="description">Run an on-demand DNS review for the sender domain. No DNS checks run during mail delivery or frontend requests.</p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:grid;grid-template-columns:minmax(180px,1fr) minmax(160px,0.6fr) auto;gap:12px;align-items:end;max-width:820px;margin:18px 0;">
+            <?php tk_nonce_field('tk_smtp_dns_scan'); ?><input type="hidden" name="action" value="tk_smtp_dns_scan">
+            <label><strong>Sender domain</strong><input class="regular-text" style="display:block;width:100%;margin-top:6px;" name="smtp_dns_domain" value="<?php echo esc_attr($domain); ?>" required></label>
+            <label><strong>DKIM selector</strong><input class="regular-text" style="display:block;width:100%;margin-top:6px;" name="smtp_dkim_selector" value="<?php echo esc_attr($selector); ?>" placeholder="google or selector1"></label>
+            <button class="button button-primary">Run DNS Check</button>
+        </form>
+        <?php if (!empty($report['error'])) : ?><?php tk_notice((string) $report['error'], 'error'); ?><?php elseif (!empty($report)) : ?>
+            <p><strong>Delivery readiness:</strong> <span class="tk-badge <?php echo (int) ($report['score'] ?? 0) >= 75 ? 'tk-on' : 'tk-warn'; ?>"><?php echo esc_html((string) ((int) ($report['score'] ?? 0))); ?>%</span></p>
+            <table class="widefat striped"><thead><tr><th>Check</th><th>Status</th><th>DNS result</th></tr></thead><tbody>
+            <?php foreach (($report['checks'] ?? array()) as $check) : ?><tr><td><?php echo esc_html((string) ($check['label'] ?? '')); ?></td><td><span class="tk-badge <?php echo !empty($check['ok']) ? 'tk-on' : 'tk-warn'; ?>"><?php echo !empty($check['ok']) ? 'Found' : 'Review'; ?></span></td><td style="overflow-wrap:anywhere;"><?php echo esc_html((string) ($check['detail'] ?? '')); ?></td></tr><?php endforeach; ?>
+            </tbody></table>
+            <p class="description">DNS presence does not guarantee inbox placement. Review alignment and provider-specific policies when delivery still fails.</p>
+        <?php else : ?><p class="description">No DNS report yet.</p><?php endif; ?>
+    </div>
+    <?php
 }
 
 function tk_smtp_google_redirect_uri(): string {
@@ -598,6 +699,8 @@ function tk_render_smtp_page() {
     $google_auth_url = tk_smtp_google_auth_url();
     $microsoft_auth_status = isset($_GET['tk_microsoft_auth']) ? sanitize_key(wp_unslash($_GET['tk_microsoft_auth'])) : '';
     $microsoft_auth_url = tk_smtp_microsoft_auth_url();
+    $smtp_dns_report = tk_get_option('smtp_dns_report', array());
+    $smtp_dns_report = is_array($smtp_dns_report) ? $smtp_dns_report : array();
     ?>
     <div class="wrap tk-wrap">
         <?php tk_render_header_branding(); ?>
@@ -629,6 +732,7 @@ function tk_render_smtp_page() {
             <div class="tk-tabs-nav">
                 <button type="button" class="tk-tabs-nav-button is-active" data-panel="settings">Settings</button>
                 <button type="button" class="tk-tabs-nav-button" data-panel="test">Send test email</button>
+                <button type="button" class="tk-tabs-nav-button" data-panel="deliverability">Deliverability</button>
                 <button type="button" class="tk-tabs-nav-button" data-panel="log">Log</button>
             </div>
             <div class="tk-tabs-content">
@@ -839,6 +943,7 @@ Mail Service</textarea>
                         <?php endif; ?>
                     <?php endif; ?>
                 </div>
+                <?php tk_smtp_render_dns_panel($smtp_dns_report); ?>
                 <div class="tk-card tk-tab-panel" data-panel-id="log">
                     <h2>SMTP test log</h2>
                     <p><small>Recent test attempts (successes/failures) are recorded here.</small></p>

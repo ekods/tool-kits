@@ -696,6 +696,99 @@ function tk_seo_schema_type_for_post($post): string {
     return 'CreativeWork';
 }
 
+function tk_seo_breadcrumb_add_item(array &$items, string $name, string $url): void {
+    $name = trim(wp_strip_all_tags($name));
+    $url = esc_url_raw($url);
+    if ($name === '' || $url === '') {
+        return;
+    }
+    foreach ($items as $item) {
+        if (($item['item'] ?? '') === $url) {
+            return;
+        }
+    }
+    $items[] = array(
+        '@type' => 'ListItem',
+        'position' => count($items) + 1,
+        'name' => $name,
+        'item' => $url,
+    );
+}
+
+function tk_seo_breadcrumb_schema(string $url, string $title): array {
+    if ((int) tk_get_option('seo_breadcrumb_enabled', 1) !== 1 || is_front_page()) {
+        return array();
+    }
+    $items = array();
+    tk_seo_breadcrumb_add_item($items, (string) get_bloginfo('name'), home_url('/'));
+
+    if (is_singular()) {
+        $post = get_post();
+        if (is_object($post)) {
+            $post_type = get_post_type_object((string) $post->post_type);
+            if (is_post_type_hierarchical((string) $post->post_type)) {
+                foreach (array_reverse(get_post_ancestors($post)) as $ancestor_id) {
+                    tk_seo_breadcrumb_add_item($items, (string) get_the_title((int) $ancestor_id), (string) get_permalink((int) $ancestor_id));
+                }
+            } elseif ($post->post_type === 'post') {
+                $categories = get_the_category((int) $post->ID);
+                if (!empty($categories)) {
+                    usort($categories, function($a, $b) {
+                        return count(get_ancestors((int) $b->term_id, 'category', 'taxonomy')) <=> count(get_ancestors((int) $a->term_id, 'category', 'taxonomy'));
+                    });
+                    $category = reset($categories);
+                    foreach (array_reverse(get_ancestors((int) $category->term_id, 'category', 'taxonomy')) as $term_id) {
+                        $term = get_term((int) $term_id, 'category');
+                        $term_url = !is_wp_error($term) ? get_term_link($term) : '';
+                        if (is_object($term) && !is_wp_error($term_url)) {
+                            tk_seo_breadcrumb_add_item($items, (string) $term->name, (string) $term_url);
+                        }
+                    }
+                    $category_url = get_term_link($category);
+                    if (!is_wp_error($category_url)) {
+                        tk_seo_breadcrumb_add_item($items, (string) $category->name, (string) $category_url);
+                    }
+                }
+            } elseif ($post_type && $post_type->has_archive) {
+                $archive_url = get_post_type_archive_link((string) $post->post_type);
+                if (is_string($archive_url) && $archive_url !== '') {
+                    tk_seo_breadcrumb_add_item($items, (string) $post_type->labels->name, $archive_url);
+                }
+            }
+            $title = (string) get_the_title($post);
+        }
+    } elseif (is_category() || is_tax()) {
+        $term = get_queried_object();
+        if (is_object($term) && !empty($term->taxonomy) && is_taxonomy_hierarchical((string) $term->taxonomy)) {
+            foreach (array_reverse(get_ancestors((int) $term->term_id, (string) $term->taxonomy, 'taxonomy')) as $term_id) {
+                $ancestor = get_term((int) $term_id, (string) $term->taxonomy);
+                $ancestor_url = !is_wp_error($ancestor) ? get_term_link($ancestor) : '';
+                if (is_object($ancestor) && !is_wp_error($ancestor_url)) {
+                    tk_seo_breadcrumb_add_item($items, (string) $ancestor->name, (string) $ancestor_url);
+                }
+            }
+        }
+        if (is_object($term) && !empty($term->name)) {
+            $title = (string) $term->name;
+        }
+    } elseif (is_post_type_archive()) {
+        $post_type = get_queried_object();
+        if (is_object($post_type) && !empty($post_type->labels->name)) {
+            $title = (string) $post_type->labels->name;
+        }
+    }
+
+    tk_seo_breadcrumb_add_item($items, html_entity_decode(wp_strip_all_tags($title), ENT_QUOTES, get_bloginfo('charset') ?: 'UTF-8'), $url);
+    if (count($items) < 2) {
+        return array();
+    }
+    return array(
+        '@type' => 'BreadcrumbList',
+        '@id' => $url . '#breadcrumb',
+        'itemListElement' => $items,
+    );
+}
+
 function tk_seo_build_schema_graph($url, $title, $description) {
     $site_name = (string) get_bloginfo('name');
     $org_id = trailingslashit(home_url('/')) . '#organization';
@@ -779,7 +872,14 @@ function tk_seo_build_schema_graph($url, $title, $description) {
     if ($description !== '') {
         $webpage['description'] = $description;
     }
+    $breadcrumb = tk_seo_breadcrumb_schema((string) $url, (string) $title);
+    if (!empty($breadcrumb)) {
+        $webpage['breadcrumb'] = array('@id' => $breadcrumb['@id']);
+    }
     $graph[] = $webpage;
+    if (!empty($breadcrumb)) {
+        $graph[] = $breadcrumb;
+    }
 
     if (is_singular()) {
         $post = get_post();
