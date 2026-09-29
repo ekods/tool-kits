@@ -20,6 +20,129 @@ if (!defined('TK_LICENSE_SERVER_URL')) {
 function tk_heartbeat_init() {
     add_action('tk_heartbeat_cron', 'tk_heartbeat_cron_run');
     add_action('init', 'tk_heartbeat_schedule');
+    add_action('init', 'tk_heartbeat_register_cron_monitors', PHP_INT_MAX);
+}
+
+function tk_heartbeat_register_cron_monitors(): void {
+    if (!tk_heartbeat_enabled() || !defined('DOING_CRON') || !DOING_CRON || !function_exists('_get_cron_array')) {
+        return;
+    }
+
+    $hooks = array();
+    foreach ((array) _get_cron_array() as $events) {
+        foreach (array_keys((array) $events) as $hook) {
+            $hooks[(string) $hook] = true;
+        }
+    }
+
+    foreach (array_keys($hooks) as $hook) {
+        add_action($hook, 'tk_heartbeat_cron_monitor_start', -999999);
+        add_action($hook, 'tk_heartbeat_cron_monitor_end', 999999);
+    }
+}
+
+function tk_heartbeat_cron_monitor_start(): void {
+    global $tk_heartbeat_cron_starts;
+
+    $hook = (string) current_filter();
+    $tk_heartbeat_cron_starts[$hook] = array(
+        'time' => microtime(true),
+        'memory' => memory_get_usage(true),
+        'peak' => memory_get_peak_usage(true),
+    );
+}
+
+function tk_heartbeat_cron_monitor_end(): void {
+    global $tk_heartbeat_cron_starts;
+
+    $hook = (string) current_filter();
+    if (empty($tk_heartbeat_cron_starts[$hook])) {
+        return;
+    }
+
+    $start = $tk_heartbeat_cron_starts[$hook];
+    unset($tk_heartbeat_cron_starts[$hook]);
+    $metrics = get_option('tk_heartbeat_cron_metrics', array());
+    if (!is_array($metrics)) {
+        $metrics = array();
+    }
+
+    $memory_delta = max(
+        memory_get_usage(true) - (int) $start['memory'],
+        memory_get_peak_usage(true) - (int) $start['peak'],
+        0
+    );
+    $metrics[$hook] = array(
+        'last_run' => time(),
+        'last_duration_ms' => (int) round((microtime(true) - (float) $start['time']) * 1000),
+        'last_memory_mb' => round($memory_delta / 1048576, 2),
+    );
+
+    uasort($metrics, static function ($left, $right) {
+        return (int) ($right['last_run'] ?? 0) <=> (int) ($left['last_run'] ?? 0);
+    });
+    update_option('tk_heartbeat_cron_metrics', array_slice($metrics, 0, 100, true), false);
+}
+
+function tk_heartbeat_cron_source(string $hook): string {
+    $wordpress_hooks = array('wp_', 'delete_expired_transients', 'recovery_mode_', 'update_network_');
+    foreach ($wordpress_hooks as $prefix) {
+        if (strpos($hook, $prefix) === 0) {
+            return 'wordpress';
+        }
+    }
+
+    return strpos($hook, 'tk_') === 0 ? 'tool-kits' : 'plugin-or-theme';
+}
+
+function tk_heartbeat_cron_report(): array {
+    $now = time();
+    $metrics = get_option('tk_heartbeat_cron_metrics', array());
+    $events = array();
+    $due_now = 0;
+    $overdue = 0;
+
+    if (function_exists('_get_cron_array')) {
+        foreach ((array) _get_cron_array() as $timestamp => $hooks) {
+            foreach ((array) $hooks as $hook => $instances) {
+                foreach ((array) $instances as $instance) {
+                    $is_overdue = (int) $timestamp < ($now - MINUTE_IN_SECONDS * 5);
+                    if ((int) $timestamp <= $now) {
+                        $due_now++;
+                    }
+                    if ($is_overdue) {
+                        $overdue++;
+                    }
+                    $metric = is_array($metrics[$hook] ?? null) ? $metrics[$hook] : array();
+                    $events[] = array(
+                        'hook' => (string) $hook,
+                        'schedule' => !empty($instance['schedule']) ? (string) $instance['schedule'] : 'single',
+                        'source' => tk_heartbeat_cron_source((string) $hook),
+                        'next_run' => (int) $timestamp,
+                        'last_run' => (int) ($metric['last_run'] ?? 0),
+                        'last_duration_ms' => (int) ($metric['last_duration_ms'] ?? 0),
+                        'last_memory_mb' => (float) ($metric['last_memory_mb'] ?? 0),
+                        'overdue' => $is_overdue,
+                    );
+                }
+            }
+        }
+    }
+
+    usort($events, static function ($left, $right) {
+        $left_score = (!empty($left['overdue']) ? 1000000 : 0) + (int) $left['last_duration_ms'] + ((float) $left['last_memory_mb'] * 10);
+        $right_score = (!empty($right['overdue']) ? 1000000 : 0) + (int) $right['last_duration_ms'] + ((float) $right['last_memory_mb'] * 10);
+        return $right_score <=> $left_score;
+    });
+
+    return array(
+        'spawn_blocked' => defined('DISABLE_WP_CRON') && DISABLE_WP_CRON,
+        'total_events' => count($events),
+        'due_now' => $due_now,
+        'overdue' => $overdue,
+        'last_scan' => $now,
+        'events' => array_slice($events, 0, 25),
+    );
 }
 
 function tk_heartbeat_enabled(): bool {
@@ -93,6 +216,11 @@ function tk_heartbeat_send(): array {
         return array('ok' => false, 'message' => tk_toolkits_missing_config_message('collector_token'));
     }
     $hide_login_enabled = (int) tk_get_option('hide_login_enabled', 0) === 1;
+    $acf_cleanup = get_option('tk_db_cleanup_acf_last_run', array());
+    global $wpdb;
+    $revision_limit = function_exists('tk_db_cleanup_effective_revision_limit')
+        ? tk_db_cleanup_effective_revision_limit()
+        : 5;
     $site_url = home_url('/');
     $payload = array(
         'action' => 'heartbeat',
@@ -115,6 +243,21 @@ function tk_heartbeat_send(): array {
         'hide_login_enabled' => $hide_login_enabled,
         'hide_login_slug' => $hide_login_enabled ? tk_hide_login_slug() : '',
         'hide_login_url' => $hide_login_enabled ? tk_hide_login_custom_url() : '',
+        'maintenance' => array(
+            'revision_limit' => $revision_limit,
+            'revision_limit_source' => defined('WP_POST_REVISIONS') ? 'wp-config' : 'tool-kits-default',
+            'revisions_total' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'revision'"),
+            'last_revision_cleanup' => (int) get_option('tk_db_cleanup_revision_last_run', 0),
+            'acf_cleanup' => array(
+                'last_run' => isset($acf_cleanup['timestamp']) ? (int) $acf_cleanup['timestamp'] : 0,
+                'references_deleted' => isset($acf_cleanup['references']) ? (int) $acf_cleanup['references'] : 0,
+                'values_deleted' => isset($acf_cleanup['values']) ? (int) $acf_cleanup['values'] : 0,
+                'option_references_deleted' => isset($acf_cleanup['option_references']) ? (int) $acf_cleanup['option_references'] : 0,
+                'option_values_deleted' => isset($acf_cleanup['option_values']) ? (int) $acf_cleanup['option_values'] : 0,
+                'rows_deleted' => isset($acf_cleanup['rows_deleted']) ? (int) $acf_cleanup['rows_deleted'] : 0,
+            ),
+        ),
+        'wp_cron' => tk_heartbeat_cron_report(),
         'seo_geo' => tk_heartbeat_seo_geo_summary(),
         'operations' => tk_heartbeat_operations_summary(),
     );

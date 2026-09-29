@@ -3,13 +3,13 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.7.0
+Stable tag: 2.7.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 Tool Kits is an admin toolkit plugin for:
 - DB Migrate: SQL export, serialized-safe Find & Replace, and table prefix rename.
-- DB Cleanup: Clean revisions, trash, spam, transients, and optimize tables.
+- DB Cleanup: Clean revisions, trash, spam, transients, safely unused ACF data, and optimize tables.
 - Security: Hide Login, Captcha, Anti-spam Contact (CF7), login rate limiting, Login Log, and Hardening.
 - Vulnerability Scanner: review outdated WordPress core, plugins, themes, inactive components, and security-sensitive configuration.
 - Brute Force Protection: dedicated login protection workflow for rate limiting, progressive lockout, bad username blocking, origin guard, honey traps, and scanner traps.
@@ -65,6 +65,14 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.1 =
+**Database Maintenance and WP-Cron Monitoring**
+- Limit post revisions to five by default while respecting an explicit `WP_POST_REVISIONS` value.
+- Track scheduled WP-Cron duration and memory growth, then report heavy or overdue hooks to NexaMonitor.
+- Detect unused ACF postmeta and options while ACF is active by validating registered field keys.
+- Before removing inactive ACF data, scan active theme/plugin source, field groups, local JSON, blocks, and shortcodes; block cleanup if usage is found or the scan is incomplete.
+- Report revision and ACF cleanup results through the NexaMonitor heartbeat while preserving SEO/GEO, operations, and delivery summaries.
+
 = 2.7.0 =
 **Operations and Delivery Health**
 - Add cached WP-Cron and background queue diagnostics with safe schedule repair controls.

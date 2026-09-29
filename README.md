@@ -19,7 +19,7 @@ Tool Kits helps WordPress administrators manage five main areas:
 
 - Database export/import SQL.
 - Preload export with serialized-safe find/replace.
-- DB cleanup for revisions, trash, spam comments, transients, and table optimization.
+- DB cleanup for revisions, trash, spam comments, transients, conservatively verified unused ACF data, and table optimization.
 - Hide Login, Minify, Auto WebP, Lazy Load, Asset Optimization.
 - Upload limits and User ID changer.
 - Captcha and anti-spam Contact Form 7.
