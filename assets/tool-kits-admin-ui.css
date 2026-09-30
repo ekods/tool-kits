@@ -178,6 +178,14 @@
 .tk-wrap .tk-table th { font-size: 12px; font-weight: 600; background: #f6f7f9; }
 .tk-wrap .tk-table :is(th, td) { padding: 13px 16px; text-align: left; }
 .tk-wrap .tk-badge { border: 0; border-radius: 4px; padding: 3px 7px; font-size: 11px; font-weight: 500; letter-spacing: 0; }
+.tk-geo-overview-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 20px 0 24px; padding: 20px 0; border-block: 1px solid var(--tk-border-soft); }
+.tk-geo-overview-metrics > div { min-width: 0; padding: 0 24px; border-right: 1px solid var(--tk-border-soft); }
+.tk-geo-overview-metrics > div:first-child { padding-left: 0; }
+.tk-geo-overview-metrics > div:last-child { padding-right: 0; border-right: 0; }
+.tk-geo-overview-metrics dt { color: var(--tk-muted); font-size: 12px; }
+.tk-geo-overview-metrics dd { min-height: 34px; margin: 7px 0 4px; color: var(--tk-text); font-size: 24px; font-weight: 650; line-height: 1.4; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tk-geo-overview-metrics dd .tk-badge { vertical-align: middle; }
+.tk-geo-overview-metrics > div > span { color: var(--tk-muted); font-size: 11px; line-height: 1.45; }
 .tk-image-workspace { width: 100%; min-width: 0; }
 .tk-image-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 0 24px; padding: 20px 0; background: #fff; border-block: 1px solid var(--tk-border-soft); }
 .tk-image-metrics > div { padding: 0 24px; border-right: 1px solid var(--tk-border-soft); min-width: 0; }
@@ -255,6 +263,11 @@
 .tk-image-error { color: #b42318 !important; }
 .tk-image-timestamp { margin-top: 16px !important; }
 @media (max-width: 1050px) {
+    .tk-geo-overview-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 0; }
+    .tk-geo-overview-metrics > div { padding-inline: 20px; }
+    .tk-geo-overview-metrics > div:first-child { padding-left: 0; }
+    .tk-geo-overview-metrics > div:nth-child(2) { padding-right: 0; border-right: 0; }
+    .tk-geo-overview-metrics > div:nth-child(3) { padding-left: 0; }
     .tk-image-metrics > div { padding-inline: 16px; }
     .tk-image-metrics dd { font-size: 22px; }
     .tk-image-metrics dd.tk-image-protection { font-size: 15px; min-height: 29px; }

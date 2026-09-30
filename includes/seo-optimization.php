@@ -309,7 +309,8 @@ function tk_seo_render_geo_meta_box($post): void {
         </p>
     <?php endforeach; ?>
     <?php $faq_items = tk_geo_normalize_faq_items(get_post_meta($post_id, '_tk_geo_faq_items', true)); ?>
-    <div class="tk-post-faq">
+    <?php $faq_default_language = function_exists('tk_geo_normalize_language_tag') ? tk_geo_normalize_language_tag((string) get_bloginfo('language'), 'id') : 'id'; ?>
+    <div class="tk-post-faq" data-default-language="<?php echo esc_attr($faq_default_language ?: 'id'); ?>">
         <input type="hidden" name="tk_geo_post_faq" value="<?php echo esc_attr(wp_json_encode($faq_items)); ?>" disabled>
         <p><button type="button" class="button tk-faq-open"><span class="dashicons dashicons-editor-help" aria-hidden="true"></span> FAQ GEO <span class="tk-faq-count"><?php echo esc_html((string) count($faq_items)); ?></span></button></p>
         <dialog class="tk-faq-dialog" aria-labelledby="tk-faq-title">

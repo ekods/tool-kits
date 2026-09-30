@@ -211,6 +211,62 @@ function tk_geo_import_faqpage_json(string $json, string $fallback_language = ''
     return $items;
 }
 
+function tk_geo_faq_question_key(array $item): string {
+    $language = isset($item['language']) ? tk_geo_normalize_language_tag($item['language']) : '';
+    $question = isset($item['question']) ? trim(wp_strip_all_tags((string) $item['question'])) : '';
+    $question = function_exists('mb_strtolower') ? mb_strtolower($question, 'UTF-8') : strtolower($question);
+    return $language . '|' . preg_replace('/\s+/', ' ', $question);
+}
+
+function tk_geo_merge_faq_items(array $current_items, array $imported_items, string $mode = 'merge'): array {
+    $current_items = tk_geo_normalize_faq_items($current_items);
+    $imported_items = tk_geo_normalize_faq_items($imported_items);
+
+    if ($mode === 'replace') {
+        $replace_languages = array_values(array_unique(array_filter(array_map(function ($item) {
+            return isset($item['language']) ? tk_geo_normalize_language_tag($item['language']) : '';
+        }, $imported_items))));
+
+        if (count($replace_languages) === 1) {
+            $replace_language = $replace_languages[0];
+            $current_items = array_values(array_filter($current_items, function ($item) use ($replace_language) {
+                return tk_geo_normalize_language_tag($item['language'] ?? '') !== $replace_language;
+            }));
+            return array_slice(array_merge($current_items, $imported_items), 0, 50);
+        }
+
+        return array_slice($imported_items, 0, 50);
+    }
+
+    if ($mode === 'append') {
+        return array_slice(array_merge($current_items, $imported_items), 0, 50);
+    }
+
+    $merged = $current_items;
+    $indexes = array();
+    foreach ($merged as $index => $item) {
+        $key = tk_geo_faq_question_key($item);
+        if ($key !== '|') {
+            $indexes[$key] = $index;
+        }
+    }
+
+    foreach ($imported_items as $item) {
+        $key = tk_geo_faq_question_key($item);
+        if ($key !== '|' && isset($indexes[$key])) {
+            $merged[$indexes[$key]] = $item;
+            continue;
+        }
+        if (count($merged) >= 50) {
+            break;
+        }
+        $indexes[$key] = count($merged);
+        $merged[] = $item;
+    }
+
+    return array_slice($merged, 0, 50);
+}
+
 function tk_geo_selected_itemlist_ids(): array {
     $raw = tk_get_option('geo_itemlist_post_ids', array());
     if (!is_array($raw)) {
@@ -725,9 +781,9 @@ function tk_geo_ai_crawler_agents(): array {
     );
 }
 
-function tk_geo_fetch_url(string $url, string $user_agent = 'Tool Kits GEO AI Access Review') {
+function tk_geo_fetch_url(string $url, string $user_agent = 'Tool Kits GEO AI Access Review', int $timeout = 8) {
     return wp_remote_get($url, array(
-        'timeout' => 8,
+        'timeout' => max(1, min(60, $timeout)),
         'redirection' => 3,
         'sslverify' => false,
         'headers' => array(
@@ -1373,18 +1429,26 @@ function tk_geo_run_visibility_scan(string $url): array {
 
 function tk_geo_build_prompt_preview(string $url): array {
     $url = tk_geo_normalize_site_url($url);
-    $saved = tk_get_option('geo_prompt_preview_report', array());
-    if (is_array($saved) && ($saved['url'] ?? '') === $url) { return $saved; }
-    $response = tk_geo_fetch_url($url, 'Tool Kits GEO Prompt Preview');
+    $response = tk_geo_fetch_url($url, 'Tool Kits GEO Prompt Preview', 20);
     $status = is_wp_error($response) ? 0 : (int) wp_remote_retrieve_response_code($response);
     $html = is_wp_error($response) ? '' : (string) wp_remote_retrieve_body($response);
+    $error = is_wp_error($response) ? $response->get_error_message() : '';
     $snapshot = tk_geo_extract_page_snapshot($html);
     $schema = tk_geo_extract_jsonld_report($html, true);
     $types = isset($schema['types']) && is_array($schema['types']) ? array_keys($schema['types']) : array();
     $heading = !empty($snapshot['h1s']) ? (string) $snapshot['h1s'][0] : (string) $snapshot['title'];
-    $summary = trim($heading . '. ' . (string) $snapshot['description']);
-    if ($summary === '.') {
-        $summary = 'AI preview could not generate a confident summary because title and description are missing.';
+    $summary_parts = array_values(array_filter(array($heading, (string) $snapshot['description']), function($part) {
+        return trim((string) $part) !== '';
+    }));
+    $summary = implode('. ', array_map('trim', $summary_parts));
+    if ($error !== '') {
+        $summary = 'AI preview could not fetch this page: ' . $error;
+    } elseif ($status < 200 || $status >= 400) {
+        $summary = 'AI preview could not analyze this page because it returned HTTP ' . $status . '.';
+    } elseif (trim($html) === '') {
+        $summary = 'AI preview could not analyze this page because the response body was empty.';
+    } elseif ($summary === '') {
+        $summary = 'AI preview could not generate a confident summary because no usable title, description, or H1 was found.';
     }
 
     return array(
@@ -1398,7 +1462,7 @@ function tk_geo_build_prompt_preview(string $url): array {
         'summary' => $summary,
         'prompt' => 'How AI might summarize this page',
         'context_sample' => (string) $snapshot['text_sample'],
-        'error' => is_wp_error($response) ? $response->get_error_message() : '',
+        'error' => $error,
     );
 }
 
@@ -1521,6 +1585,7 @@ function tk_geo_run_schema_duplicate_detector(bool $force_refresh = false): arra
         $html = (string) wp_remote_retrieve_body($response);
         $report = tk_geo_extract_jsonld_report($html);
         $duplicates = isset($report['duplicates']) && is_array($report['duplicates']) ? $report['duplicates'] : array();
+        $duplicate_types = array_values(array_filter(array_keys($duplicates), 'is_string'));
         $invalid = (int) ($report['invalid'] ?? 0);
         if (!empty($duplicates) || $invalid > 0) {
             $issue_count++;
@@ -1532,7 +1597,7 @@ function tk_geo_run_schema_duplicate_detector(bool $force_refresh = false): arra
             'invalid' => $invalid,
             'types' => isset($report['types']) && is_array($report['types']) ? $report['types'] : array(),
             'duplicates' => $duplicates,
-            'issue' => !empty($duplicates) ? 'Duplicate schema types detected.' : ($invalid > 0 ? 'Invalid JSON-LD detected.' : ''),
+            'issue' => !empty($duplicate_types) ? 'Duplicate schema types detected: ' . implode(', ', $duplicate_types) . '.' : ($invalid > 0 ? 'Invalid JSON-LD detected.' : ''),
         );
     }
 
@@ -1542,6 +1607,22 @@ function tk_geo_run_schema_duplicate_detector(bool $force_refresh = false): arra
         'issue_count' => $issue_count,
         'items' => $items,
     );
+}
+
+function tk_geo_mark_remaining_schema_duplicates(array $report): array {
+    $items = isset($report['items']) && is_array($report['items']) ? $report['items'] : array();
+    foreach ($items as $index => $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        $duplicates = isset($item['duplicates']) && is_array($item['duplicates']) ? $item['duplicates'] : array();
+        $duplicate_types = array_values(array_filter(array_keys($duplicates), 'is_string'));
+        if (!empty($duplicate_types)) {
+            $items[$index]['issue'] = 'Duplicate schema remains outside Tool Kits automatic SEO/Breadcrumb fix: ' . implode(', ', $duplicate_types) . '.';
+        }
+    }
+    $report['items'] = $items;
+    return $report;
 }
 
 function tk_geo_schema_duplicate_types_from_report(array $report): array {
@@ -1613,7 +1694,7 @@ function tk_geo_schema_duplicate_fix(): void {
         }
     }
 
-    $new_report = tk_geo_run_schema_duplicate_detector(true);
+    $new_report = tk_geo_mark_remaining_schema_duplicates(tk_geo_run_schema_duplicate_detector(true));
     $new_duplicate_types = tk_geo_schema_duplicate_types_from_report($new_report);
     if (!empty($new_duplicate_types)) {
         $remaining[] = 'Remaining duplicate types may come from the active theme, custom JSON-LD, or another SEO/schema plugin: ' . implode(', ', $new_duplicate_types) . '.';
@@ -1768,7 +1849,21 @@ function tk_geo_save(): void {
     $faq_imported = 0;
     if (!empty($_POST['geo_faq_import_submit'])) {
         $import_json = isset($_POST['geo_faq_import_json']) ? (string) wp_unslash($_POST['geo_faq_import_json']) : '';
-        $imported_items = tk_geo_import_faqpage_json($import_json, (string) get_bloginfo('language'));
+        $default_faq_language = tk_geo_normalize_language_tag((string) get_bloginfo('language'), 'id');
+        $import_language_input = trim((string) tk_post('geo_faq_import_language_custom', ''));
+        if ($import_language_input === '') {
+            $import_language_input = (string) tk_post('geo_faq_import_language', '');
+        }
+        $import_target_language = tk_geo_normalize_language_tag($import_language_input, $default_faq_language);
+        if (trim((string) tk_post('geo_faq_import_language_custom', '')) !== '' && tk_geo_normalize_language_tag($import_language_input) === '') {
+            wp_safe_redirect(add_query_arg(array(
+                'page' => 'tool-kits-geo',
+                'tk_geo_error' => 'faq-import',
+                'tk_geo_error_message' => __('Use a valid locale code such as id, en, or en-sg.', 'tool-kits'),
+            ), admin_url('admin.php')) . '#faqpage');
+            exit;
+        }
+        $imported_items = tk_geo_import_faqpage_json($import_json, $import_target_language ?: $default_faq_language);
         if (is_wp_error($imported_items)) {
             wp_safe_redirect(add_query_arg(array(
                 'page' => 'tool-kits-geo',
@@ -1777,8 +1872,17 @@ function tk_geo_save(): void {
             ), admin_url('admin.php')) . '#faqpage');
             exit;
         }
-        $import_mode = sanitize_key((string) tk_post('geo_faq_import_mode', 'replace'));
-        $faq_items = $import_mode === 'append' ? array_merge($faq_items, $imported_items) : $imported_items;
+        if ($import_target_language !== '') {
+            $imported_items = array_map(function ($item) use ($import_target_language) {
+                $item['language'] = $import_target_language;
+                return $item;
+            }, $imported_items);
+        }
+        $import_mode = sanitize_key((string) tk_post('geo_faq_import_mode', 'merge'));
+        if (!in_array($import_mode, array('merge', 'append', 'replace'), true)) {
+            $import_mode = 'merge';
+        }
+        $faq_items = tk_geo_merge_faq_items($faq_items, $imported_items, $import_mode);
         $faq_imported = count($imported_items);
         $active_tab = 'faqpage';
     }
@@ -1855,6 +1959,15 @@ function tk_render_geo_panel(): void {
     $custom_json = (string) tk_get_option('geo_custom_jsonld', '');
     $faq_enabled = (int) tk_get_option('geo_faq_enabled', 0);
     $faq_items = tk_geo_normalize_faq_items(tk_get_option('geo_faq_items', array()));
+    $faq_default_language = tk_geo_normalize_language_tag((string) get_bloginfo('language'), 'id') ?: 'id';
+    $faq_languages = array($faq_default_language);
+    foreach ($faq_items as $faq_item) {
+        $faq_language = tk_geo_normalize_language_tag($faq_item['language'] ?? '');
+        if ($faq_language !== '') {
+            $faq_languages[] = $faq_language;
+        }
+    }
+    $faq_languages = array_values(array_unique($faq_languages));
     $itemlist_enabled = (int) tk_get_option('geo_itemlist_enabled', 0);
     $itemlist_name = (string) tk_get_option('geo_itemlist_name', '');
     $itemlist_description = (string) tk_get_option('geo_itemlist_description', '');
@@ -1903,6 +2016,13 @@ function tk_render_geo_panel(): void {
     $prompt_preview_report = is_array($prompt_preview_report) ? $prompt_preview_report : array();
     $post_schema_report = tk_get_option('geo_post_schema_report', array());
     $post_schema_report = is_array($post_schema_report) ? $post_schema_report : array();
+    $geo_audit_has_report = !empty($geo_report['scanned_at']) || !empty($geo_report['items']);
+    $geo_audit_score = (int) ($geo_report['average_score'] ?? 0);
+    $duplicate_has_report = !empty($schema_duplicate_report['scanned_at']);
+    $duplicate_issue_count = (int) ($schema_duplicate_report['issue_count'] ?? 0);
+    $configured_document_count = count($preview);
+    $faq_item_count = count($faq_items);
+    $faq_language_count = count($faq_languages);
     $schema_post_type = sanitize_key((string) tk_get_option('geo_itemlist_post_type', 'post'));
     if (!isset($post_types[$schema_post_type])) {
         $schema_post_type = 'post';
@@ -1956,6 +2076,28 @@ function tk_render_geo_panel(): void {
         <div class="tk-card tk-tab-panel is-active" data-panel-id="overview">
             <h2>GEO Output</h2>
             <p>Enable structured data for AI answer engines and search features. JSON-LD is printed in the frontend head.</p>
+            <dl class="tk-geo-overview-metrics">
+                <div>
+                    <dt>GEO Output</dt>
+                    <dd><span class="tk-badge <?php echo $enabled ? 'tk-on' : 'tk-off'; ?>"><?php echo $enabled ? 'Enabled' : 'Disabled'; ?></span></dd>
+                    <span><?php echo esc_html((string) $configured_document_count); ?> JSON-LD document<?php echo $configured_document_count === 1 ? '' : 's'; ?> configured</span>
+                </div>
+                <div>
+                    <dt>FAQ Content</dt>
+                    <dd><?php echo esc_html((string) $faq_item_count); ?></dd>
+                    <span><?php echo $faq_enabled ? 'Enabled' : 'Disabled'; ?> / <?php echo esc_html((string) $faq_language_count); ?> locale<?php echo $faq_language_count === 1 ? '' : 's'; ?></span>
+                </div>
+                <div>
+                    <dt>GEO Audit</dt>
+                    <dd><?php echo $geo_audit_has_report ? esc_html((string) $geo_audit_score) . '%' : 'Not run'; ?></dd>
+                    <span><?php echo $geo_audit_has_report ? esc_html((string) ((int) ($geo_report['issue_count'] ?? 0))) . ' issues in latest audit' : 'Run an audit to establish a baseline'; ?></span>
+                </div>
+                <div>
+                    <dt>Duplicate Schema</dt>
+                    <dd><?php echo $duplicate_has_report ? ($duplicate_issue_count > 0 ? esc_html((string) $duplicate_issue_count) : 'Clear') : 'Not run'; ?></dd>
+                    <span><?php echo $duplicate_has_report ? ($duplicate_issue_count > 0 ? 'URLs with duplicate or invalid schema' : 'No duplicate types detected') : 'Run Duplicate Detector to check'; ?></span>
+                </div>
+            </dl>
             <?php tk_render_switch('geo_enabled', 'Enable GEO JSON-LD Output', 'Print enabled custom JSON-LD, FAQPage, and ItemList documents on public pages.', $enabled); ?>
             <div style="margin-top:16px;">
                 <?php tk_render_switch('seo_schema_enabled', 'SEO JSON-LD Schema', 'Generate WebSite, Organization, WebPage, Article, and Service schema through GEO output.', $seo_schema); ?>
@@ -1999,23 +2141,145 @@ function tk_render_geo_panel(): void {
             <h3>FAQPage</h3>
             <?php tk_render_switch('geo_faq_enabled', 'Enable FAQPage Schema', 'Generate FAQPage JSON-LD from the question and answer rows below.', $faq_enabled); ?>
             <p class="description">Use shortcode <code>[tool_kits_geo_faq]</code> on a page to render the same FAQ as visible structured content.</p>
-            <details class="tk-geo-faq-import" style="margin-top:16px;">
+            <details class="tk-geo-faq-import" style="margin-top:16px;" data-current-faq="<?php echo esc_attr(wp_json_encode($faq_items)); ?>">
                 <summary><strong>Import FAQPage JSON-LD</strong></summary>
                 <div style="margin-top:12px;">
                     <textarea name="geo_faq_import_json" rows="8" style="width:100%;max-width:100%;font-family:monospace;" placeholder='{"@context":"https://schema.org","@type":"FAQPage","inLanguage":"id-ID","mainEntity":[]}'></textarea>
-                    <div class="tk-inline">
+                    <div class="tk-inline" style="align-items:end;">
                         <label>
-                            <span class="screen-reader-text">Import mode</span>
+                            Import to locale<br>
+                            <select name="geo_faq_import_language">
+                                <?php foreach ($faq_languages as $faq_language) : ?>
+                                    <option value="<?php echo esc_attr($faq_language); ?>" <?php selected($faq_language, $faq_default_language); ?>><?php echo esc_html(strtoupper($faq_language)); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <label>
+                            Custom locale<br>
+                            <input type="text" name="geo_faq_import_language_custom" placeholder="en-sg" style="width:90px;">
+                        </label>
+                        <label>
+                            Mode<br>
                             <select name="geo_faq_import_mode">
-                                <option value="replace">Replace existing FAQ</option>
-                                <option value="append">Append to existing FAQ</option>
+                                <option value="merge">Update same questions, add new</option>
+                                <option value="append">Append as new rows</option>
+                                <option value="replace">Replace target locale FAQ</option>
                             </select>
                         </label>
                         <button type="submit" class="button button-secondary" name="geo_faq_import_submit" value="1">Import FAQPage</button>
                     </div>
-                    <p class="description">Reads locale from <code>inLanguage</code> on each Question or FAQPage. Entries without a locale use the current WordPress locale.</p>
+                    <p class="description">Imported questions are saved to the selected locale. In update mode, the same question in that locale is replaced when the answer differs; missing questions are added.</p>
                 </div>
             </details>
+            <script>
+            (function(){
+                var importer = document.querySelector('.tk-geo-faq-import');
+                if (!importer) { return; }
+                var form = importer.closest('form');
+                var button = importer.querySelector('button[name="geo_faq_import_submit"]');
+                var textarea = importer.querySelector('textarea[name="geo_faq_import_json"]');
+                var mode = importer.querySelector('select[name="geo_faq_import_mode"]');
+                var language = importer.querySelector('select[name="geo_faq_import_language"]');
+                var customLanguage = importer.querySelector('input[name="geo_faq_import_language_custom"]');
+                function normalizeText(value) {
+                    return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                }
+                function normalizeLanguage(value) {
+                    return String(value || '').trim().toLowerCase().replace(/_/g, '-');
+                }
+                function isList(value) {
+                    return Array.isArray(value);
+                }
+                function collectFaqItems(node, fallback, items) {
+                    if (!node || typeof node !== 'object') { return; }
+                    if (Array.isArray(node)) {
+                        node.forEach(function(child){ collectFaqItems(child, fallback, items); });
+                        return;
+                    }
+                    var types = Array.isArray(node['@type']) ? node['@type'] : [node['@type']];
+                    if (types.indexOf('FAQPage') !== -1 && isList(node.mainEntity)) {
+                        var pageLanguage = normalizeLanguage(node.inLanguage || fallback);
+                        node.mainEntity.forEach(function(question){
+                            if (!question || typeof question !== 'object') { return; }
+                            var answer = question.acceptedAnswer || {};
+                            if (Array.isArray(answer)) { answer = answer[0] || {}; }
+                            var questionText = String(question.name || '').trim();
+                            var answerText = String(answer.text || '').trim();
+                            if (!questionText || !answerText) { return; }
+                            items.push({
+                                question: questionText,
+                                answer: answerText,
+                                language: normalizeLanguage(question.inLanguage || pageLanguage || fallback)
+                            });
+                        });
+                    }
+                    if (node['@graph']) { collectFaqItems(node['@graph'], fallback, items); }
+                }
+                function currentFormItems() {
+                    if (!form) { return []; }
+                    var questions = form.querySelectorAll('input[name="geo_faq_question[]"]');
+                    var answers = form.querySelectorAll('textarea[name="geo_faq_answer[]"]');
+                    var languages = form.querySelectorAll('input[name="geo_faq_language[]"]');
+                    return Array.prototype.map.call(questions, function(question, index) {
+                        return {
+                            question: question.value,
+                            answer: answers[index] ? answers[index].value : '',
+                            language: languages[index] ? languages[index].value : ''
+                        };
+                    }).filter(function(item) {
+                        return normalizeText(item.question) && String(item.answer || '').trim();
+                    });
+                }
+                button.addEventListener('click', function(event){
+                    var selectedMode = mode ? mode.value : 'merge';
+                    var targetLanguage = normalizeLanguage(customLanguage && customLanguage.value ? customLanguage.value : (language ? language.value : ''));
+                    if (selectedMode === 'replace') {
+                        if (!window.confirm('Replace FAQ items in locale ' + targetLanguage.toUpperCase() + '? Other locales will be kept.')) {
+                            event.preventDefault();
+                        }
+                        return;
+                    }
+
+                    var imported = [];
+                    try {
+                        collectFaqItems(JSON.parse(textarea.value || 'null'), targetLanguage, imported);
+                    } catch (error) {
+                        return;
+                    }
+                    imported = imported.map(function(item) {
+                        item.language = targetLanguage || normalizeLanguage(item.language);
+                        return item;
+                    });
+
+                    var current = currentFormItems();
+                    try { current = JSON.parse(importer.dataset.currentFaq || '[]') || []; } catch (error) {}
+                    current = currentFormItems().length ? currentFormItems() : current;
+                    var currentByQuestion = {};
+                    current.forEach(function(item) {
+                        var key = normalizeLanguage(item.language) + '|' + normalizeText(item.question);
+                        currentByQuestion[key] = String(item.answer || '').trim();
+                    });
+
+                    var changed = 0;
+                    var duplicates = 0;
+                    imported.forEach(function(item) {
+                        var key = normalizeLanguage(item.language) + '|' + normalizeText(item.question);
+                        if (!Object.prototype.hasOwnProperty.call(currentByQuestion, key)) { return; }
+                        duplicates++;
+                        if (String(currentByQuestion[key]).trim() !== String(item.answer || '').trim()) {
+                            changed++;
+                        }
+                    });
+
+                    if (selectedMode === 'merge' && changed > 0 && !window.confirm(changed + ' existing FAQ answer(s) in locale ' + targetLanguage.toUpperCase() + ' will be updated, and new questions will be added. Continue?')) {
+                        event.preventDefault();
+                    }
+                    if (selectedMode === 'append' && duplicates > 0 && !window.confirm(duplicates + ' imported question(s) already exist in locale ' + targetLanguage.toUpperCase() + '. Append them as additional rows anyway?')) {
+                        event.preventDefault();
+                    }
+                });
+            })();
+            </script>
             <div id="tk-geo-faq-rows" style="margin-top:16px;">
                 <?php foreach ($faq_items as $index => $item) : ?>
                     <div class="tk-geo-faq-row" style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) auto; gap:12px; margin-bottom:12px; align-items:start;">
@@ -2439,7 +2703,7 @@ function tk_render_geo_panel(): void {
                             <?php endforeach; ?>
                         </ul>
                     <?php else : ?>
-                        <p>No Tool Kits schema setting needed to be changed.</p>
+                        <p>No Tool Kits automatic SEO or Breadcrumb schema setting needed to be changed.</p>
                     <?php endif; ?>
                     <?php if (!empty($fix_remaining)) : ?>
                         <ul class="tk-list">

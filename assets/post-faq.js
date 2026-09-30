@@ -8,7 +8,11 @@
         var opener = root.querySelector('.tk-faq-open');
         var add = root.querySelector('.tk-faq-add');
         var sequence = 0;
-        var activeLanguage = 'id';
+        var defaultLanguage = (root.dataset.defaultLanguage || 'id').trim().toLowerCase().replace(/_/g, '-');
+        if (!/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(defaultLanguage)) {
+            defaultLanguage = 'id';
+        }
+        var activeLanguage = defaultLanguage;
         var languages = [];
         var tabs = document.createElement('div');
         tabs.className = 'tk-faq-language-tabs';
@@ -49,7 +53,7 @@
             button.className = 'button';
             button.setAttribute('role', 'tab');
             button.dataset.language = tag;
-            button.textContent = tag ? tag.toUpperCase() : 'Default';
+            button.textContent = tag ? tag.toUpperCase() : defaultLanguage.toUpperCase();
             button.addEventListener('click', function () { activateLanguage(tag); });
             button.addEventListener('keydown', function (event) {
                 if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') { return; }
@@ -127,9 +131,8 @@
             rows.replaceChildren();
             tabs.replaceChildren();
             languages = [];
-            addLanguage('id');
-            addLanguage('en');
-            activeLanguage = 'id';
+            addLanguage(defaultLanguage);
+            activeLanguage = defaultLanguage;
             languageInput.value = '';
             error.hidden = true;
             (Array.isArray(items) ? items : []).forEach(addRow);

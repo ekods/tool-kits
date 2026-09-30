@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.7.1
+Stable tag: 2.7.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,15 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.2 =
+**GEO FAQ Import and Reporting Improvements**
+- Use the WordPress default locale as the initial FAQ language and add other locales only when requested.
+- Add target-locale selection and merge, append, or locale-replace modes when importing FAQPage JSON-LD.
+- Update answers for matching locale and question pairs while preserving and adding previously unseen questions.
+- Retry Prompt Preview requests for the same URL, use a 20-second timeout, and distinguish fetch failures from missing metadata.
+- Clarify duplicate schema types that remain outside the automatic Tool Kits SEO/Breadcrumb fix.
+- Add GEO Output, FAQ locale, audit score, and duplicate-schema summary widgets to the GEO overview.
+
 = 2.7.1 =
 **Database Maintenance and WP-Cron Monitoring**
 - Limit post revisions to five by default while respecting an explicit `WP_POST_REVISIONS` value.

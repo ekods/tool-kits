@@ -61,6 +61,46 @@ const cases = [
     ]
   },
   {
+    "name": "geo-prompt-preview",
+    "runtime": "php",
+    "source": [
+      "<?php",
+      "define('ABSPATH', '/tmp/');",
+      "$calls = 0; $timeout = 0; $successful = false;",
+      "class WP_Error { private $message; function __construct($message) { $this->message = $message; } function get_error_message() { return $this->message; } }",
+      "function home_url($path = '/') { return 'https://example.com' . $path; }",
+      "function esc_url_raw($url) { return $url; }",
+      "function wp_parse_url($url, $component) { return parse_url($url, $component); }",
+      "function wp_remote_get($url, $args) { $GLOBALS['calls']++; $GLOBALS['timeout'] = $args['timeout']; return $GLOBALS['successful'] ? array('response' => array('code' => 200), 'body' => '<html><head><title>Fresh title</title><meta name=\"description\" content=\"Fresh description\"></head><body></body></html>') : new WP_Error('cURL error 28: timed out'); }",
+      "function is_wp_error($value) { return $value instanceof WP_Error; }",
+      "function wp_remote_retrieve_response_code($response) { return (int) ($response['response']['code'] ?? 0); }",
+      "function wp_remote_retrieve_body($response) { return (string) ($response['body'] ?? ''); }",
+      "function wp_strip_all_tags($value) { return strip_tags($value); }",
+      "function tk_get_option($key, $default = null) { return array('url' => 'https://example.com/', 'summary' => 'Stale result'); }",
+      "require dirname(__DIR__) . '/includes/geo.php';",
+      "$failed = tk_geo_build_prompt_preview('https://example.com/');",
+      "if ($calls !== 1 || $timeout !== 20 || strpos($failed['summary'], 'could not fetch') === false || strpos($failed['summary'], 'cURL error 28') === false) { throw new RuntimeException('Prompt timeout was reported as missing metadata'); }",
+      "$successful = true;",
+      "$fresh = tk_geo_build_prompt_preview('https://example.com/');",
+      "if ($calls !== 2 || $fresh['status'] !== 200 || $fresh['title'] !== 'Fresh title' || $fresh['summary'] !== 'Fresh title. Fresh description') { throw new RuntimeException('Prompt preview did not retry the same URL'); }",
+      "echo \"PASS: prompt preview retries with a 20-second timeout and reports fetch failures accurately\\n\";"
+    ]
+  },
+  {
+    "name": "geo-schema-duplicate-status",
+    "runtime": "php",
+    "source": [
+      "<?php",
+      "define('ABSPATH', '/tmp/');",
+      "require dirname(__DIR__) . '/includes/geo.php';",
+      "$report = array('issue_count' => 1, 'items' => array(array('duplicates' => array('WebSite' => 2, 'Organization' => 2), 'issue' => 'Duplicate schema types detected.')));",
+      "$marked = tk_geo_mark_remaining_schema_duplicates($report);",
+      "$issue = $marked['items'][0]['issue'];",
+      "if (strpos($issue, 'outside Tool Kits automatic SEO/Breadcrumb fix') === false || strpos($issue, 'WebSite, Organization') === false || $marked['issue_count'] !== 1) { throw new RuntimeException('Remaining duplicate status was not clarified'); }",
+      "echo \"PASS: duplicates remaining after auto-fix are labeled with their actual scope\\n\";"
+    ]
+  },
+  {
     "name": "duplicate-content",
     "runtime": "php",
     "source": [
