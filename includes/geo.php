@@ -152,6 +152,67 @@ function tk_geo_normalize_language_tag($language, string $fallback = ''): string
     return preg_match('/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/', $language) ? $language : '';
 }
 
+function tk_geo_bilingual_language_order(): array {
+    $languages = array();
+    if (function_exists('pll_languages_list')) {
+        $languages = pll_languages_list(array('fields' => 'locale'));
+        if (!is_array($languages) || empty($languages)) {
+            $languages = pll_languages_list(array('fields' => 'slug'));
+        }
+    } elseif (function_exists('has_filter') && has_filter('wpml_active_languages')) {
+        $wpml_languages = apply_filters('wpml_active_languages', null, array('skip_missing' => 0));
+        if (is_array($wpml_languages)) {
+            foreach ($wpml_languages as $code => $language) {
+                if (is_array($language)) {
+                    $languages[] = $language['default_locale'] ?? $language['code'] ?? $code;
+                } else {
+                    $languages[] = is_string($code) ? $code : '';
+                }
+            }
+        }
+    }
+
+    $normalized = array();
+    foreach (is_array($languages) ? $languages : array() as $language) {
+        $tag = tk_geo_normalize_language_tag($language);
+        if ($tag !== '') {
+            $normalized[] = $tag;
+        }
+    }
+    $normalized = array_values(array_unique($normalized));
+    if (function_exists('apply_filters')) {
+        $filtered = apply_filters('tk_geo_faq_language_order', $normalized);
+        if (is_array($filtered)) {
+            $normalized = array_values(array_unique(array_filter(array_map('tk_geo_normalize_language_tag', $filtered))));
+        }
+    }
+    return $normalized;
+}
+
+function tk_geo_sort_language_tags(array $languages, array $preferred_order = array()): array {
+    $languages = array_values(array_unique(array_filter(array_map('tk_geo_normalize_language_tag', $languages))));
+    $preferred_order = array_values(array_unique(array_filter(array_map('tk_geo_normalize_language_tag', $preferred_order))));
+    $rank = function(string $language) use ($preferred_order): int {
+        $exact = array_search($language, $preferred_order, true);
+        if ($exact !== false) {
+            return (int) $exact;
+        }
+        $base = explode('-', $language)[0];
+        foreach ($preferred_order as $index => $preferred) {
+            if (explode('-', $preferred)[0] === $base) {
+                return (int) $index;
+            }
+        }
+        return count($preferred_order) + 100;
+    };
+    $original_order = array_flip($languages);
+    usort($languages, function(string $left, string $right) use ($rank, $original_order): int {
+        $difference = $rank($left) <=> $rank($right);
+        return $difference !== 0 ? $difference : (($original_order[$left] ?? 0) <=> ($original_order[$right] ?? 0));
+    });
+    return $languages;
+}
+
 function tk_geo_array_is_list(array $value): bool {
     if (function_exists('array_is_list')) {
         return array_is_list($value);
@@ -1967,7 +2028,7 @@ function tk_render_geo_panel(): void {
             $faq_languages[] = $faq_language;
         }
     }
-    $faq_languages = array_values(array_unique($faq_languages));
+    $faq_languages = tk_geo_sort_language_tags($faq_languages, tk_geo_bilingual_language_order());
     $itemlist_enabled = (int) tk_get_option('geo_itemlist_enabled', 0);
     $itemlist_name = (string) tk_get_option('geo_itemlist_name', '');
     $itemlist_description = (string) tk_get_option('geo_itemlist_description', '');
@@ -2079,22 +2140,22 @@ function tk_render_geo_panel(): void {
             <dl class="tk-geo-overview-metrics">
                 <div>
                     <dt>GEO Output</dt>
-                    <dd><span class="tk-badge <?php echo $enabled ? 'tk-on' : 'tk-off'; ?>"><?php echo $enabled ? 'Enabled' : 'Disabled'; ?></span></dd>
+                    <dd class="<?php echo $enabled ? 'is-good' : 'is-muted'; ?>"><?php echo $enabled ? 'Enabled' : 'Disabled'; ?></dd>
                     <span><?php echo esc_html((string) $configured_document_count); ?> JSON-LD document<?php echo $configured_document_count === 1 ? '' : 's'; ?> configured</span>
                 </div>
                 <div>
                     <dt>FAQ Content</dt>
-                    <dd><?php echo esc_html((string) $faq_item_count); ?></dd>
+                    <dd class="<?php echo $faq_enabled && $faq_item_count > 0 ? 'is-good' : 'is-muted'; ?>"><?php echo esc_html((string) $faq_item_count); ?></dd>
                     <span><?php echo $faq_enabled ? 'Enabled' : 'Disabled'; ?> / <?php echo esc_html((string) $faq_language_count); ?> locale<?php echo $faq_language_count === 1 ? '' : 's'; ?></span>
                 </div>
                 <div>
                     <dt>GEO Audit</dt>
-                    <dd><?php echo $geo_audit_has_report ? esc_html((string) $geo_audit_score) . '%' : 'Not run'; ?></dd>
+                    <dd class="<?php echo !$geo_audit_has_report ? 'is-muted' : ($geo_audit_score >= 80 ? 'is-good' : ($geo_audit_score >= 60 ? 'is-warn' : 'is-danger')); ?>"><?php echo $geo_audit_has_report ? esc_html((string) $geo_audit_score) . '%' : 'Not run'; ?></dd>
                     <span><?php echo $geo_audit_has_report ? esc_html((string) ((int) ($geo_report['issue_count'] ?? 0))) . ' issues in latest audit' : 'Run an audit to establish a baseline'; ?></span>
                 </div>
                 <div>
                     <dt>Duplicate Schema</dt>
-                    <dd><?php echo $duplicate_has_report ? ($duplicate_issue_count > 0 ? esc_html((string) $duplicate_issue_count) : 'Clear') : 'Not run'; ?></dd>
+                    <dd class="<?php echo !$duplicate_has_report ? 'is-muted' : ($duplicate_issue_count > 0 ? 'is-danger' : 'is-good'); ?>"><?php echo $duplicate_has_report ? ($duplicate_issue_count > 0 ? esc_html((string) $duplicate_issue_count) : 'Clear') : 'Not run'; ?></dd>
                     <span><?php echo $duplicate_has_report ? ($duplicate_issue_count > 0 ? 'URLs with duplicate or invalid schema' : 'No duplicate types detected') : 'Run Duplicate Detector to check'; ?></span>
                 </div>
             </dl>
@@ -3001,12 +3062,21 @@ function tk_render_geo_panel(): void {
 
         var rows = document.getElementById('tk-geo-faq-rows');
         var add = document.getElementById('tk-geo-faq-add');
-        var faqLanguage = 'id';
+        var faqDefaultLanguage = <?php echo wp_json_encode($faq_default_language); ?>;
+        var faqPreferredLanguages = <?php echo wp_json_encode($faq_languages); ?>;
+        var faqLanguage = faqDefaultLanguage;
         var faqLanguages = [];
+        var removeLanguageButton = null;
         var faqTabs = document.createElement('div');
         faqTabs.setAttribute('role', 'tablist');
         faqTabs.setAttribute('aria-label', 'FAQ language');
         faqTabs.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin:16px 0;';
+        var updateFaqLanguageTools = function() {
+            if (removeLanguageButton) {
+                removeLanguageButton.disabled = faqLanguage === faqDefaultLanguage || faqLanguages.length <= 1;
+                removeLanguageButton.title = removeLanguageButton.disabled ? 'The default locale cannot be removed.' : 'Remove the active locale and all of its FAQ items.';
+            }
+        };
         var activateFaqLanguage = function(tag) {
             faqLanguage = tag;
             faqTabs.querySelectorAll('button').forEach(function(button) {
@@ -3021,6 +3091,7 @@ function tk_render_geo_panel(): void {
                 return row.querySelector('[name="geo_faq_language[]"]').value === tag;
             });
             if (!hasRows && rowCount() < 50) { add.click(); }
+            updateFaqLanguageTools();
         };
         var addFaqLanguage = function(tag) {
             if (faqLanguages.indexOf(tag) !== -1) { return; }
@@ -3033,13 +3104,16 @@ function tk_render_geo_panel(): void {
             button.textContent = tag ? tag.toUpperCase() : 'Default';
             button.addEventListener('click', function() { activateFaqLanguage(tag); });
             faqTabs.appendChild(button);
+            updateFaqLanguageTools();
         };
         if (rows && add) {
             rows.before(faqTabs);
-            addFaqLanguage('id');
-            addFaqLanguage('en');
+            faqPreferredLanguages.forEach(addFaqLanguage);
             rows.querySelectorAll('[name="geo_faq_language[]"]').forEach(function(field) {
                 field.value = field.value.trim().toLowerCase().replace(/_/g, '-');
+                if (!/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(field.value)) {
+                    field.value = faqDefaultLanguage;
+                }
                 field.type = 'hidden';
                 addFaqLanguage(field.value);
             });
@@ -3053,6 +3127,10 @@ function tk_render_geo_panel(): void {
             addLanguageButton.type = 'button';
             addLanguageButton.className = 'button';
             addLanguageButton.textContent = 'Add Language';
+            removeLanguageButton = document.createElement('button');
+            removeLanguageButton.type = 'button';
+            removeLanguageButton.className = 'button';
+            removeLanguageButton.textContent = 'Remove Locale';
             addLanguageButton.addEventListener('click', function() {
                 var tag = languageCode.value.trim().toLowerCase().replace(/_/g, '-');
                 if (!/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(tag)) {
@@ -3065,12 +3143,29 @@ function tk_render_geo_panel(): void {
                 activateFaqLanguage(tag);
                 languageCode.value = '';
             });
+            removeLanguageButton.addEventListener('click', function() {
+                if (faqLanguage === faqDefaultLanguage || faqLanguages.length <= 1) { return; }
+                var tag = faqLanguage;
+                var localeRows = Array.prototype.filter.call(rows.querySelectorAll('.tk-geo-faq-row'), function(row) {
+                    return row.querySelector('[name="geo_faq_language[]"]').value === tag;
+                });
+                if (!window.confirm('Remove locale ' + tag.toUpperCase() + ' and all ' + localeRows.length + ' FAQ item(s) in it?')) { return; }
+                localeRows.forEach(function(row) { row.remove(); });
+                var index = faqLanguages.indexOf(tag);
+                if (index !== -1) {
+                    faqLanguages.splice(index, 1);
+                    faqTabs.children[index].remove();
+                }
+                activateFaqLanguage(faqLanguages.indexOf(faqDefaultLanguage) !== -1 ? faqDefaultLanguage : faqLanguages[0]);
+                updateFaqLimit();
+            });
             languageCode.addEventListener('input', function() { languageCode.setCustomValidity(''); });
             languageCode.addEventListener('keydown', function(event) {
                 if (event.key === 'Enter') { event.preventDefault(); addLanguageButton.click(); }
             });
-            languageTools.append(languageCode, addLanguageButton);
+            languageTools.append(languageCode, addLanguageButton, removeLanguageButton);
             rows.before(languageTools);
+            updateFaqLanguageTools();
         }
         var rowCount = function() {
             return rows ? rows.querySelectorAll('.tk-geo-faq-row').length : 0;
@@ -3111,7 +3206,7 @@ function tk_render_geo_panel(): void {
                 updateFaqLimit();
                 row.querySelector('[name="geo_faq_question[]"]').focus();
             });
-            activateFaqLanguage('id');
+            activateFaqLanguage(faqDefaultLanguage);
         }
 
         var sectionRows = document.getElementById('tk-geo-llms-section-rows');

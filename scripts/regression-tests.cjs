@@ -101,6 +101,41 @@ const cases = [
     ]
   },
   {
+    "name": "faq-remove-locale-ui",
+    "runtime": "node",
+    "source": [
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const assert = require('node:assert/strict');",
+      "const postFaq = fs.readFileSync(path.join(__dirname, '../assets/post-faq.js'), 'utf8');",
+      "const geo = fs.readFileSync(path.join(__dirname, '../includes/geo.php'), 'utf8');",
+      "assert.ok(postFaq.includes(\"languageRemove.textContent = 'Hapus bahasa'\"));",
+      "assert.ok(postFaq.includes('activeLanguage === defaultLanguage'));",
+      "assert.ok(postFaq.includes(\"row.querySelector('.tk-faq-language').value === tag\"));",
+      "assert.ok(geo.includes(\"removeLanguageButton.textContent = 'Remove Locale'\"));",
+      "assert.ok(geo.includes('faqLanguage === faqDefaultLanguage'));",
+      "assert.ok(geo.includes(\"'Remove locale ' + tag.toUpperCase() + ' and all '\"));",
+      "assert.ok(geo.includes('faqPreferredLanguages.forEach(addFaqLanguage)'));",
+      "assert.ok(postFaq.includes('preferredLanguages'));",
+      "console.log('PASS: FAQ locale removal is available and protects the default locale');"
+    ]
+  },
+  {
+    "name": "faq-bilingual-language-order",
+    "runtime": "php",
+    "source": [
+      "<?php",
+      "define('ABSPATH', '/tmp/');",
+      "function pll_languages_list($args) { return array('en_US', 'id_ID'); }",
+      "function apply_filters($hook, $value) { return $value; }",
+      "require dirname(__DIR__) . '/includes/geo.php';",
+      "$preferred = tk_geo_bilingual_language_order();",
+      "$sorted = tk_geo_sort_language_tags(array('id-id', 'fr', 'en'), $preferred);",
+      "if ($preferred !== array('en-us', 'id-id') || $sorted !== array('en', 'id-id', 'fr')) { throw new RuntimeException('FAQ locale tabs do not follow bilingual order'); }",
+      "echo \"PASS: FAQ locale tabs follow the configured bilingual language order\\n\";"
+    ]
+  },
+  {
     "name": "duplicate-content",
     "runtime": "php",
     "source": [

@@ -12,6 +12,13 @@
         if (!/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(defaultLanguage)) {
             defaultLanguage = 'id';
         }
+        var preferredLanguages;
+        try { preferredLanguages = JSON.parse(root.dataset.languageOrder || '[]'); } catch (e) { preferredLanguages = []; }
+        preferredLanguages = (Array.isArray(preferredLanguages) ? preferredLanguages : []).map(function (tag) {
+            return String(tag || '').trim().toLowerCase().replace(/_/g, '-');
+        }).filter(function (tag, index, items) {
+            return /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(tag) && items.indexOf(tag) === index;
+        });
         var activeLanguage = defaultLanguage;
         var languages = [];
         var tabs = document.createElement('div');
@@ -28,7 +35,15 @@
         languageAdd.type = 'button';
         languageAdd.className = 'button';
         languageAdd.textContent = 'Tambah bahasa';
-        languageTools.append(languageInput, languageAdd);
+        var languageRemove = document.createElement('button');
+        languageRemove.type = 'button';
+        languageRemove.className = 'button';
+        languageRemove.textContent = 'Hapus bahasa';
+        function updateLanguageTools() {
+            languageRemove.disabled = activeLanguage === defaultLanguage || languages.length <= 1;
+            languageRemove.title = languageRemove.disabled ? 'Bahasa default tidak dapat dihapus' : 'Hapus bahasa aktif dan semua FAQ-nya';
+        }
+        languageTools.append(languageInput, languageAdd, languageRemove);
         rows.before(tabs, languageTools);
         function activateLanguage(tag) {
             activeLanguage = tag;
@@ -44,6 +59,7 @@
                 return row.querySelector('.tk-faq-language').value === tag;
             });
             if (!hasRows && rows.children.length < 50) { addRow({ language: tag }); }
+            updateLanguageTools();
         }
         function addLanguage(tag) {
             if (languages.indexOf(tag) !== -1) { return; }
@@ -64,6 +80,7 @@
                 tabs.children[next].focus();
             });
             tabs.appendChild(button);
+            updateLanguageTools();
         }
         languageAdd.addEventListener('click', function () {
             var tag = languageInput.value.trim().toLowerCase().replace(/_/g, '-');
@@ -77,6 +94,25 @@
             addLanguage(tag);
             activateLanguage(tag);
             languageInput.value = '';
+        });
+        languageRemove.addEventListener('click', function () {
+            if (activeLanguage === defaultLanguage || languages.length <= 1) { return; }
+            var tag = activeLanguage;
+            var rowCount = 0;
+            rows.querySelectorAll('.tk-faq-row').forEach(function (row) {
+                if (row.querySelector('.tk-faq-language').value === tag) { rowCount++; }
+            });
+            if (!window.confirm('Hapus bahasa ' + tag.toUpperCase() + ' dan ' + rowCount + ' FAQ di dalamnya?')) { return; }
+            rows.querySelectorAll('.tk-faq-row').forEach(function (row) {
+                if (row.querySelector('.tk-faq-language').value === tag) { row.remove(); }
+            });
+            var index = languages.indexOf(tag);
+            if (index !== -1) {
+                languages.splice(index, 1);
+                tabs.children[index].remove();
+            }
+            activateLanguage(languages.indexOf(defaultLanguage) !== -1 ? defaultLanguage : languages[0]);
+            updateLimit();
         });
         function updateLimit() { add.disabled = rows.children.length >= 50; }
         function addRow(item) {
@@ -131,11 +167,30 @@
             rows.replaceChildren();
             tabs.replaceChildren();
             languages = [];
-            addLanguage(defaultLanguage);
             activeLanguage = defaultLanguage;
             languageInput.value = '';
             error.hidden = true;
-            (Array.isArray(items) ? items : []).forEach(addRow);
+            items = Array.isArray(items) ? items : [];
+            var itemLanguages = items.map(function (item) {
+                return String(item && item.language ? item.language : defaultLanguage).trim().toLowerCase().replace(/_/g, '-');
+            });
+            var knownLanguages = [defaultLanguage].concat(itemLanguages).filter(function (tag, index, all) {
+                return /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(tag) && all.indexOf(tag) === index;
+            });
+            function preferredRank(tag) {
+                var exact = preferredLanguages.indexOf(tag);
+                if (exact !== -1) { return exact; }
+                var base = tag.split('-')[0];
+                for (var index = 0; index < preferredLanguages.length; index++) {
+                    if (preferredLanguages[index].split('-')[0] === base) { return index; }
+                }
+                return preferredLanguages.length + 100;
+            }
+            knownLanguages.sort(function (left, right) {
+                return preferredRank(left) - preferredRank(right);
+            });
+            knownLanguages.forEach(addLanguage);
+            items.forEach(addRow);
             activateLanguage(activeLanguage);
             updateLimit();
             dialog.showModal();

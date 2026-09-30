@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.7.2
+Stable tag: 2.7.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,13 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.3 =
+**FAQ Locale Controls and GEO Overview Polish**
+- Add Remove Locale controls to the GEO FAQPage editor and per-post FAQ dialog, with confirmation and default-locale protection.
+- Order existing FAQ locale tabs using the configured Polylang or WPML bilingual language order while keeping manual locales afterward.
+- Keep unconfigured bilingual locales hidden until they are added explicitly.
+- Rebuild GEO overview metrics as a consistent responsive status grid with clearer success, warning, error, and inactive states.
+
 = 2.7.2 =
 **GEO FAQ Import and Reporting Improvements**
 - Use the WordPress default locale as the initial FAQ language and add other locales only when requested.
