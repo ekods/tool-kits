@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.7.3
+Stable tag: 2.7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,14 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.4 =
+**CSP Inline Compatibility Fix**
+- Fix inline scripts and styles being blocked immediately after activation by removing conflicting CSP nonces from Lite and Balanced policies.
+- Keep inline styles compatible in Hardened mode while retaining nonce-based script protection; preserve Strict mode nonce requirements.
+- Generate CSP nonces only for Hardened and Strict modes.
+- Add regression coverage for all four CSP modes and disabled security headers.
+- Clear page/CDN caches after updating to remove cached CSP headers and markup.
+
 = 2.7.3 =
 **FAQ Locale Controls and GEO Overview Polish**
 - Add Remove Locale controls to the GEO FAQPage editor and per-post FAQ dialog, with confirmation and default-locale protection.

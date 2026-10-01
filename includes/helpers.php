@@ -1448,9 +1448,8 @@ function tk_csp_nonce_enabled(): bool {
     if (!tk_get_option('hardening_security_headers', 1)) {
         return false;
     }
-    return (int) tk_get_option('hardening_csp_lite_enabled', 0) === 1
-        || (int) tk_get_option('hardening_csp_balanced_enabled', 0) === 1
-        || (int) tk_get_option('hardening_csp_hardened_enabled', 0) === 1
+    // Lite and Balanced allow inline content and must not emit CSP nonces.
+    return (int) tk_get_option('hardening_csp_hardened_enabled', 0) === 1
         || (int) tk_get_option('hardening_csp_strict_enabled', 0) === 1;
 }
 

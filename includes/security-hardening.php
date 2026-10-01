@@ -269,6 +269,8 @@ function tk_security_headers() {
         return;
     }
 
+    // A nonce overrides unsafe-inline in the same directive. Keep compatibility
+    // modes nonce-free, and only require nonces for Hardened scripts / Strict.
     $nonce = tk_csp_nonce();
     $nonce_token = $nonce !== '' ? " 'nonce-" . $nonce . "'" : '';
     if (tk_get_option('hardening_csp_strict_enabled', 0)) {
@@ -294,7 +296,7 @@ function tk_security_headers() {
             "img-src 'self' data: blob: https:" . tk_hardening_csp_custom_sources('img'),
             "font-src 'self' data: https:",
             "script-src 'self'" . $nonce_token . tk_hardening_csp_google_sources('script') . tk_hardening_csp_custom_sources('script'),
-            "style-src 'self' 'unsafe-inline'" . $nonce_token . tk_hardening_csp_custom_sources('style'),
+            "style-src 'self' 'unsafe-inline'" . tk_hardening_csp_custom_sources('style'),
             "style-src-attr 'unsafe-inline'",
             "connect-src 'self' https:" . tk_hardening_csp_google_sources('connect') . tk_hardening_csp_custom_sources('connect'),
             "worker-src 'self' blob:",
@@ -311,8 +313,8 @@ function tk_security_headers() {
             "default-src 'self'",
             "img-src 'self' data: blob: https:" . tk_hardening_csp_custom_sources('img'),
             "font-src 'self' data: https:",
-            "script-src 'self' 'unsafe-inline'" . $nonce_token . tk_hardening_csp_google_sources('script') . tk_hardening_csp_custom_sources('script'),
-            "style-src 'self' 'unsafe-inline'" . $nonce_token . tk_hardening_csp_custom_sources('style'),
+            "script-src 'self' 'unsafe-inline'" . tk_hardening_csp_google_sources('script') . tk_hardening_csp_custom_sources('script'),
+            "style-src 'self' 'unsafe-inline'" . tk_hardening_csp_custom_sources('style'),
             "connect-src 'self' https:" . tk_hardening_csp_google_sources('connect') . tk_hardening_csp_custom_sources('connect'),
             "worker-src 'self' blob:",
             "frame-src 'self' https:" . tk_hardening_csp_google_sources('frame') . tk_hardening_csp_custom_sources('frame'),
@@ -328,8 +330,8 @@ function tk_security_headers() {
             "default-src 'self'",
             "img-src 'self' data: blob: https:" . tk_hardening_csp_custom_sources('img'),
             "font-src 'self' data: https:",
-            "script-src 'self' 'unsafe-inline' https:" . $nonce_token . tk_hardening_csp_google_sources('script') . tk_hardening_csp_custom_sources('script'),
-            "style-src 'self' 'unsafe-inline' https:" . $nonce_token . tk_hardening_csp_custom_sources('style'),
+            "script-src 'self' 'unsafe-inline' https:" . tk_hardening_csp_google_sources('script') . tk_hardening_csp_custom_sources('script'),
+            "style-src 'self' 'unsafe-inline' https:" . tk_hardening_csp_custom_sources('style'),
             "connect-src 'self' https:" . tk_hardening_csp_google_sources('connect') . tk_hardening_csp_custom_sources('connect'),
             "worker-src 'self' blob:",
             "frame-src 'self' https:" . tk_hardening_csp_google_sources('frame') . tk_hardening_csp_custom_sources('frame'),
