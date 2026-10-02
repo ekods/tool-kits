@@ -146,6 +146,7 @@ function tk_seo_render_head_tags() {
     $url = tk_seo_current_url();
     $title = wp_get_document_title();
     $description = tk_seo_generate_description();
+    $identity = tk_seo_meta_identity();
 
     if ((int) tk_get_option('seo_canonical_enabled', 1) === 1 && $url !== '' && !is_singular() && !tk_seo_has_theme_managed_canonical()) {
         echo '<link rel="canonical" href="' . esc_url($url) . '">' . "\n";
@@ -153,6 +154,12 @@ function tk_seo_render_head_tags() {
 
     if ((int) tk_get_option('seo_meta_desc_enabled', 1) === 1 && $description !== '') {
         echo '<meta name="description" content="' . esc_attr($description) . '">' . "\n";
+    }
+    if ($identity['author'] !== '') {
+        echo '<meta name="author" content="' . esc_attr($identity['author']) . '">' . "\n";
+    }
+    if ($identity['publisher'] !== '') {
+        echo '<meta name="publisher" content="' . esc_attr($identity['publisher']) . '">' . "\n";
     }
 
     if ((int) tk_get_option('seo_og_enabled', 1) === 1) {
@@ -172,6 +179,24 @@ function tk_seo_render_head_tags() {
         }
     }
 
+}
+
+function tk_seo_meta_identity(): array {
+    $publisher = trim((string) get_bloginfo('name'));
+    if (function_exists('tk_seo_organization_data')) {
+        $organization = tk_seo_organization_data();
+        if (is_array($organization) && trim((string) ($organization['name'] ?? '')) !== '') {
+            $publisher = trim((string) $organization['name']);
+        }
+    }
+    $author = $publisher;
+    if (is_singular()) {
+        $post = get_post();
+        $author_id = is_object($post) ? (int) ($post->post_author ?? 0) : 0;
+        $post_author = $author_id > 0 ? trim((string) get_the_author_meta('display_name', $author_id)) : '';
+        if ($post_author !== '') { $author = $post_author; }
+    }
+    return array('author' => $author, 'publisher' => $publisher);
 }
 
 function tk_seo_generate_description() {
@@ -1705,7 +1730,7 @@ function tk_seo_geo_audit_scan() {
     }
     tk_check_nonce('tk_seo_geo_audit_scan');
     tk_update_option('seo_geo_audit_report', tk_seo_run_geo_audit());
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-geo', 'tk_seo_geo_audit_scanned' => 1), admin_url('admin.php')) . '#geo-audit');
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-geo-audit', 'tk_seo_geo_audit_scanned' => 1), admin_url('admin.php')) . '#geo-audit');
     exit;
 }
 
@@ -1715,7 +1740,7 @@ function tk_seo_geo_audit_clear() {
     }
     tk_check_nonce('tk_seo_geo_audit_clear');
     tk_update_option('seo_geo_audit_report', array());
-    wp_redirect(add_query_arg(array('page' => 'tool-kits-geo', 'tk_seo_geo_audit_cleared' => 1), admin_url('admin.php')) . '#geo-audit');
+    wp_redirect(add_query_arg(array('page' => 'tool-kits-geo-audit', 'tk_seo_geo_audit_cleared' => 1), admin_url('admin.php')) . '#geo-audit');
     exit;
 }
 
@@ -1784,6 +1809,7 @@ function tk_seo_geo_audit_url($url, int $timeout = 20, bool $retry = false): arr
             'score' => null,
             'grade' => '-',
             'issues' => array($message),
+            'solutions' => array(tk_seo_geo_issue_solution($message)),
             'schema' => array('valid' => false, 'types' => array(), 'entity_ok' => false),
             'semantic' => array(),
             'freshness' => array(),
@@ -1811,10 +1837,48 @@ function tk_seo_geo_audit_url($url, int $timeout = 20, bool $retry = false): arr
         'score' => $score,
         'grade' => tk_seo_geo_grade($score),
         'issues' => array_values(array_unique($issues)),
+        'solutions' => array_map('tk_seo_geo_issue_solution', array_values(array_unique($issues))),
         'schema' => $schema,
         'semantic' => $semantic,
         'freshness' => $freshness,
     );
+}
+
+function tk_seo_geo_issue_solution(string $issue): string {
+    return (string) tk_seo_geo_issue_data($issue)['solution'];
+}
+
+function tk_seo_geo_issue_data(string $issue): array {
+    $rules = array(
+        array('/timed out|transport error|not verified/i', 'Review WordPress loopback access, DNS, origin response time, and CDN/firewall rules, then retry the audit.', 'high', 20, false, ''),
+        array('/HTTP status is not successful/i', 'Make the URL return HTTP 200 without an error page, authentication challenge, or redirect loop.', 'critical', 20, false, ''),
+        array('/Missing JSON-LD schema/i', 'Enable GEO output or add valid JSON-LD containing the page and primary entity.', 'high', 8, true, 'schema'),
+        array('/Invalid JSON-LD/i', 'Validate every application/ld+json block and fix its JSON syntax and schema properties.', 'high', 8, false, ''),
+        array('/Missing (Organization|WebSite|WebPage) schema/i', 'Add the missing $1 node to the page JSON-LD and connect nodes with stable @id references.', 'high', 8, true, 'schema'),
+        array('/Organization missing ([A-Za-z]+)\./i', 'Complete the Organization $1 property in the entity JSON-LD.', 'medium', 8, false, ''),
+        array('/Missing H1/i', 'Add one descriptive H1 that states the primary topic of the page.', 'high', 6, true, 'h1'),
+        array('/Multiple H1/i', 'Keep one primary H1 and change secondary headings to H2 or H3.', 'medium', 6, false, ''),
+        array('/Missing semantic main/i', 'Wrap the primary page content in a single <main> element.', 'medium', 6, false, ''),
+        array('/Missing semantic header/i', 'Use a <header> element for the page or site introduction.', 'low', 6, false, ''),
+        array('/Missing semantic footer/i', 'Use a <footer> element for the page or site footer content.', 'low', 6, false, ''),
+        array('/Missing semantic nav/i', 'Wrap the primary navigation links in a labelled <nav> element.', 'low', 6, false, ''),
+        array('/Missing article\/section structure/i', 'Group the main content with meaningful <article> or <section> elements and headings.', 'medium', 6, false, ''),
+        array('/Missing meta description/i', 'Add a clear meta description of at least 50 characters that summarizes this page.', 'medium', 6, true, 'description'),
+        array('/Short meta description/i', 'Expand the existing meta description to at least 50 useful characters in its current SEO source.', 'medium', 6, false, ''),
+        array('/Missing published date/i', 'Add datePublished to Article JSON-LD or article:published_time metadata.', 'medium', 10, true, 'schema'),
+        array('/Missing modified date/i', 'Add dateModified to Article JSON-LD or article:modified_time metadata.', 'medium', 10, true, 'schema'),
+        array('/Content is stale/i', 'Review the content for accuracy, update it where needed, and publish the current modified date.', 'medium', 10, false, ''),
+    );
+    foreach ($rules as $rule) {
+        [$pattern, $solution, $priority, $penalty, $automatic, $field] = $rule;
+        if (preg_match($pattern, $issue, $matches)) {
+            foreach ($matches as $index => $value) {
+                if ($index > 0) { $solution = str_replace('$' . $index, (string) $value, $solution); }
+            }
+            return compact('solution', 'priority', 'penalty', 'automatic', 'field');
+        }
+    }
+    return array('solution' => 'Review the rendered page and server logs, correct the reported condition, then run the GEO Audit again.', 'priority' => 'medium', 'penalty' => 0, 'automatic' => false, 'field' => '');
 }
 
 function tk_seo_geo_validate_schema($html): array {
@@ -1892,7 +1956,11 @@ function tk_seo_geo_scan_semantic_html($html): array {
     $has_footer = (bool) preg_match('/<footer\b/i', (string) $html);
     $has_nav = (bool) preg_match('/<nav\b/i', (string) $html);
     $has_article_or_section = (bool) preg_match('/<(article|section)\b/i', (string) $html);
-    $has_meta_desc = (bool) preg_match('/<meta\b[^>]*name=("|\')description\1[^>]*content=("|\')[^"\']{50,}\2/i', (string) $html);
+    $meta_description = '';
+    if (preg_match('/<meta\b[^>]*name=("|\')description\1[^>]*content=("|\')(.*?)\2/i', (string) $html, $meta_match)) {
+        $meta_description = trim(html_entity_decode((string) $meta_match[3]));
+    }
+    $has_meta_desc = strlen($meta_description) >= 50;
 
     if ((int) $h1_count === 0) {
         $issues[] = 'Missing H1.';
@@ -1914,8 +1982,10 @@ function tk_seo_geo_scan_semantic_html($html): array {
     if (!$has_article_or_section) {
         $issues[] = 'Missing article/section structure.';
     }
-    if (!$has_meta_desc) {
-        $issues[] = 'Missing or short meta description.';
+    if ($meta_description === '') {
+        $issues[] = 'Missing meta description.';
+    } elseif (!$has_meta_desc) {
+        $issues[] = 'Short meta description.';
     }
 
     return array(

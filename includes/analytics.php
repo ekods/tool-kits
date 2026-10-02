@@ -47,13 +47,34 @@ function tk_analytics_render_gtag(): void {
         (function() {
             var gtagId = '<?php echo esc_js($gtag_id); ?>';
             var loaded = false;
+            var timer = 0;
+            var events = ['mousedown', 'mousemove', 'touchstart', 'scroll', 'keydown'];
+
+            window.__tkGoogleAnalyticsIds = window.__tkGoogleAnalyticsIds || {};
+
+            function cleanup() {
+                events.forEach(function(event) {
+                    window.removeEventListener(event, loadGA);
+                });
+                if (timer) {
+                    window.clearTimeout(timer);
+                    timer = 0;
+                }
+            }
             
             function loadGA() {
                 if (loaded) return;
                 loaded = true;
+                cleanup();
+
+                // Protect against duplicate execution after partial navigation,
+                // cached fragments, or another render of the document head.
+                if (window.__tkGoogleAnalyticsIds[gtagId]) return;
+                window.__tkGoogleAnalyticsIds[gtagId] = true;
                 
                 var script = document.createElement('script');
                 script.async = true;
+                script.dataset.tkGoogleAnalytics = gtagId;
                 script.src = 'https://www.googletagmanager.com/gtag/js?id=' + gtagId;
                 document.head.appendChild(script);
                 
@@ -66,14 +87,13 @@ function tk_analytics_render_gtag(): void {
             }
 
             // Load on first interaction or after 3.5s delay
-            var events = ['mousedown', 'mousemove', 'touchstart', 'scroll', 'keydown'];
             events.forEach(function(event) {
-                window.addEventListener(event, loadGA, { once: true, passive: true });
+                window.addEventListener(event, loadGA, { passive: true });
             });
 
             // Fallback for PageSpeed (some crawlers might not trigger events, but we want to stay clean)
             // 3.5s is usually enough to clear the initial LCP/FID window
-            setTimeout(loadGA, 3500);
+            timer = window.setTimeout(loadGA, 3500);
         })();
     </script>
     <?php

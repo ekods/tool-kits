@@ -1120,7 +1120,10 @@ function tk_option_init_defaults() {
         'geo_schema_duplicate_report' => array(),
         'geo_schema_duplicate_fix_report' => array(),
         'geo_crawler_preview' => array(),
+        'geo_crawler_fixes' => array(),
         'geo_visibility_report' => array(),
+        'geo_ai_search_radar_report' => array(),
+        'geo_ai_radar_report' => array(),
         'geo_prompt_preview_report' => array(),
         'geo_post_schema_report' => array(),
         'geo_llms_enabled' => 0,
@@ -1229,6 +1232,9 @@ function tk_option_init_defaults() {
 function tk_run_versioned_upgrades(): void {
     $stored_version = (string) get_option('tk_version', '');
     $current_version = defined('TK_VERSION') ? (string) TK_VERSION : '0.0.0';
+    if ($stored_version === $current_version) {
+        return;
+    }
     tk_option_init_defaults();
     tk_upgrade_antispam_duplicate_window_default();
     if ($stored_version === '' || version_compare($stored_version, '2.2.0', '<')) {
@@ -1576,6 +1582,10 @@ function tk_security_events_table(): string {
 }
 
 function tk_security_events_install_table(): void {
+    $schema_version = '1';
+    if ((string) get_option('tk_security_events_schema_version', '') === $schema_version) {
+        return;
+    }
     global $wpdb;
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -1605,6 +1615,9 @@ function tk_security_events_install_table(): void {
     ) {$wpdb->get_charset_collate()};";
 
     dbDelta($sql);
+    if (tk_security_events_table_exists()) {
+        update_option('tk_security_events_schema_version', $schema_version, false);
+    }
 }
 
 function tk_security_events_table_exists(): bool {

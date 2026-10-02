@@ -25,6 +25,7 @@ if (!function_exists('tk_csp_add_nonce_to_tag')) {
 }
 
 function tk_hardening_init() {
+    add_filter('emoji_svg_url', 'tk_hardening_normalize_twemoji_svg_url', PHP_INT_MAX);
     add_filter('cron_schedules', 'tk_hardening_waf_cron_schedules');
     tk_hardening_apply_recommended_defaults();
     add_filter('auto_update_core', 'tk_hardening_core_auto_updates', 10, 2);
@@ -52,7 +53,7 @@ function tk_hardening_init() {
     }
     if (tk_get_option('hardening_server_aware_enabled', 1)) {
         add_action('init', 'tk_hardening_block_public_wp_cron_request', 0);
-        add_action('init', 'tk_hardening_apply_root_server_rules', 1);
+        add_action('init', 'tk_hardening_maybe_apply_root_server_rules', 1);
     }
     if (tk_get_option('hardening_xmlrpc_block_methods', 1)) {
         add_filter('xmlrpc_methods', 'tk_xmlrpc_block_methods');
@@ -130,6 +131,16 @@ function tk_hardening_init() {
     if (tk_get_option('hardening_waf_log_to_file', 0)) {
         tk_hardening_waf_schedule_cleanup();
     }
+}
+
+function tk_hardening_normalize_twemoji_svg_url($url) {
+    if (!is_string($url) || $url === '') {
+        return $url;
+    }
+    if (preg_match('~^(https://cdn\.jsdelivr\.net/gh/jdecked/twemoji@[^/]+/assets)/?$~i', $url, $match)) {
+        return $match[1] . '/svg/';
+    }
+    return $url;
 }
 
 function tk_hardening_remove_version_strings() {
@@ -1219,8 +1230,24 @@ function tk_hardening_apply_root_server_rules(): void {
     }
     
     if (function_exists('insert_with_markers')) {
-        insert_with_markers($path, 'Tool Kits Root', $lines);
+        $written = insert_with_markers($path, 'Tool Kits Root', $lines);
+        if ($written !== false) {
+            update_option('tk_hardening_root_rules_hash', hash('sha256', $server . "\n" . $snippet), false);
+        }
     }
+}
+
+function tk_hardening_maybe_apply_root_server_rules(): void {
+    $server = tk_hardening_detect_server();
+    if (!in_array($server, array('apache', 'litespeed', 'openlitespeed'), true)) {
+        return;
+    }
+    $snippet = tk_hardening_server_rule_snippet();
+    $hash = hash('sha256', $server . "\n" . $snippet);
+    if ((string) get_option('tk_hardening_root_rules_hash', '') === $hash) {
+        return;
+    }
+    tk_hardening_apply_root_server_rules();
 }
 
 function tk_hardening_server_rule_status(): array {

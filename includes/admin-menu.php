@@ -92,7 +92,8 @@ function tk_register_admin_menus() {
 
         if ($allow_full) {
             add_submenu_page('tool-kits', __('SEO', 'tool-kits'), __('SEO', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-seo', 'tk_render_seo_page');
-            add_submenu_page('tool-kits', __('GEO', 'tool-kits'), __('GEO', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-geo', 'tk_render_geo_page');
+            add_submenu_page('tool-kits', __('GEO Setup', 'tool-kits'), __('GEO Setup', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-geo', 'tk_render_geo_page');
+            add_submenu_page('tool-kits', __('GEO Audit & Fixes', 'tool-kits'), __('GEO Audit & Fixes', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-geo-audit', 'tk_render_geo_audit_page');
             add_submenu_page('tool-kits', __('External Authority', 'tool-kits'), __('External Authority', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-authority', 'tk_render_authority_page');
         }
 
@@ -250,7 +251,7 @@ function tk_overview_calculate_geo_score(): array {
         array('label' => 'FAQPage content available', 'ok' => (int) tk_get_option('geo_faq_enabled', 0) === 1 && !empty($faq_items), 'weight' => 15, 'link' => tk_admin_url('tool-kits-geo') . '#faqpage'),
         array('label' => 'ItemList curated or fallback configured', 'ok' => (int) tk_get_option('geo_itemlist_enabled', 0) === 1 && (!empty($item_ids) || (int) tk_get_option('geo_itemlist_limit', 10) > 0), 'weight' => 15, 'link' => tk_admin_url('tool-kits-geo') . '#itemlist'),
         array('label' => 'llms.txt enabled', 'ok' => (int) tk_get_option('geo_llms_enabled', 0) === 1, 'weight' => 15, 'link' => tk_admin_url('tool-kits-geo') . '#llms'),
-        array('label' => 'AI crawler review passed', 'ok' => $ai_score !== null && $ai_score >= 70, 'weight' => 15, 'link' => tk_admin_url('tool-kits-geo') . '#ai-access'),
+        array('label' => 'AI crawler review passed', 'ok' => $ai_score !== null && $ai_score >= 70, 'weight' => 15, 'link' => tk_admin_url('tool-kits-geo-audit') . '#ai-access'),
     );
 
     $score = 0;
@@ -543,7 +544,12 @@ function tk_render_geo_page() {
     ?>
     <div class="wrap tk-wrap">
         <?php tk_render_header_branding(); ?>
-        <?php tk_render_page_hero('GEO', 'Manage JSON-LD, FAQPage, and ItemList schema for generative engine optimization.', 'dashicons-editor-code'); ?>
+        <?php $geo_audit_page = isset($_GET['page']) && sanitize_key((string) $_GET['page']) === 'tool-kits-geo-audit'; ?>
+        <?php tk_render_page_hero($geo_audit_page ? 'GEO Audit & Fixes' : 'GEO Setup', $geo_audit_page ? 'Scan AI search readiness, inspect crawler access, and apply reviewed fixes.' : 'Configure JSON-LD, FAQPage, ItemList, and llms.txt output.', $geo_audit_page ? 'dashicons-search' : 'dashicons-editor-code'); ?>
+        <p style="margin:16px 0;">
+            <a class="button <?php echo $geo_audit_page ? '' : 'button-primary'; ?>" href="<?php echo esc_url(tk_admin_url('tool-kits-geo')); ?>">GEO Setup</a>
+            <a class="button <?php echo $geo_audit_page ? 'button-primary' : ''; ?>" href="<?php echo esc_url(tk_admin_url('tool-kits-geo-audit')); ?>">GEO Audit &amp; Fixes</a>
+        </p>
         <?php if (isset($_GET['tk_saved']) && sanitize_key((string) $_GET['tk_saved']) === '1') : ?>
             <?php tk_notice('GEO settings saved.', 'success'); ?>
         <?php endif; ?>
@@ -579,6 +585,10 @@ function tk_render_geo_page() {
         <?php tk_render_geo_panel(); ?>
     </div>
     <?php
+}
+
+function tk_render_geo_audit_page() {
+    tk_render_geo_page();
 }
 
 function tk_render_system_tools_page() {

@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.7.4
+Stable tag: 2.7.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,25 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.5 =
+**Crawler and AI Visibility Fixes**
+- Add AI Search Radar with per-URL Entity Analysis, Content Readiness, E-E-A-T Signals, Tech Foundation scores, and prioritized strategic recommendations.
+- Add AI Radar with a site-wide readiness score and eligibility summaries for Google AI, ChatGPT Search, Claude, Perplexity, and Common Crawl.
+- Show a specific recommended solution beneath every issue in the GEO Audit results table, including previously saved reports.
+- Add priority, score penalty, Needs Review labels, and one-click database-backed fixes for safe GEO Audit findings; persist an audit trail and output connected Organization, WebSite, and WebPage schema.
+- Split GEO into dedicated GEO Setup and GEO Audit & Fixes admin menus, with scan and fix actions returning to the audit workspace.
+- Detect missing title, meta description, author, publisher, canonical URL, H1, and JSON-LD in Crawler Preview and AI Visibility reports; add a missing fallback H1 to HTML source with the hidden attribute so it is not visually displayed.
+- Output author and publisher meta tags from the post author and configured organization/site identity, and include them in reviewed per-URL fixes when absent.
+- Add reviewed per-URL fallback fixes that fill only missing metadata without replacing existing theme or SEO-plugin output.
+- Add Scan Again and Remove URL Fix controls, cache invalidation, same-site URL validation, nonce and capability checks, and protection for private, preview, password-protected, and non-HTML responses.
+- Stop spoofing crawler identities from the site server, which caused false 502/403 results when CDNs verified crawler IP ranges; report eligibility from robots.txt and normal page fetchability instead.
+- Apply the same eligibility model to AI Crawler Accessibility Review, remove contradictory per-agent fetch issues, and make Run AI Access Review replace stale saved evidence.
+- Guard the deferred Google Analytics loader globally and remove interaction listeners and fallback timers after the first load, preventing duplicate initialization during partial or repeated head renders.
+- Remove repeated frontend bootstrap work by versioning database-table installation, skipping completed option upgrades, and applying root server rules only when their generated configuration changes.
+- Normalize malformed jsDelivr Twemoji base URLs from `/assets/` to `/assets/svg/`, while preserving valid or disabled emoji providers.
+- Show targeted recommendations for robots meta, X-Robots-Tag, robots.txt, verified-bot/CDN checks, HTTP failures, and invalid existing JSON-LD.
+- Add regression coverage for escaping, duplicate prevention, idempotence, authorization, URL scope, removal, response guards, and fresh scans.
+
 = 2.7.4 =
 **CSP Inline Compatibility Fix**
 - Fix inline scripts and styles being blocked immediately after activation by removing conflicting CSP nonces from Lite and Balanced policies.

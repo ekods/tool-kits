@@ -22,6 +22,10 @@ function tk_login_log_table() {
 }
 
 function tk_login_log_install_table() {
+    $schema_version = '1';
+    if ((string) get_option('tk_login_log_schema_version', '') === $schema_version) {
+        return;
+    }
     global $wpdb;
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -39,6 +43,11 @@ function tk_login_log_install_table() {
     ) {$wpdb->get_charset_collate()};";
 
     dbDelta($sql);
+    $table = tk_login_log_table();
+    $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+    if (is_string($found) && $found === $table) {
+        update_option('tk_login_log_schema_version', $schema_version, false);
+    }
 }
 
 function tk_login_log_insert($username, $user_id, $status, $reason = '') {

@@ -586,6 +586,7 @@ function tk_page_cache_purge_on_updated_option($option, $old_value, $new_value) 
             'geo_visibility_report', 'geo_prompt_preview_report', 'geo_post_schema_report',
             'geo_schema_duplicate_report', 'geo_schema_duplicate_fix_report',
             'geo_crawler_preview', 'geo_ai_access_report',
+            'geo_ai_search_radar_report', 'geo_ai_radar_report',
         );
         foreach ($reports as $key) {
             unset($old_value[$key], $new_value[$key]);

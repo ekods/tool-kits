@@ -18,7 +18,7 @@ function tk_geo_batch_targets(): array {
 }
 
 function tk_geo_batch_assets(): void {
-    if (($_GET['page'] ?? '') !== 'tool-kits-geo' || !tk_is_admin_user()) { return; }
+    if (!in_array(($_GET['page'] ?? ''), array('tool-kits-geo', 'tool-kits-geo-audit'), true) || !tk_is_admin_user()) { return; }
     $version = TK_VERSION . '-' . tk_asset_version('assets/geo-audit-batch.js');
     $src = add_query_arg('tk_build', $version, TK_URL . 'assets/geo-audit-batch.js');
     wp_enqueue_script('tk-geo-batch', $src, array(), $version, true);

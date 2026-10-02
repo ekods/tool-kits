@@ -3,6 +3,123 @@
 const { spawnSync } = require('node:child_process');
 const cases = [
   {
+    "name": "geo-menu-split",
+    "runtime": "node",
+    "source": [
+      "const fs = require('node:fs');",
+      "const menu = fs.readFileSync(__dirname + '/../includes/admin-menu.php', 'utf8');",
+      "const geo = fs.readFileSync(__dirname + '/../includes/geo.php', 'utf8');",
+      "const radar = fs.readFileSync(__dirname + '/../includes/geo-radar.php', 'utf8');",
+      "const fixes = fs.readFileSync(__dirname + '/../includes/geo-crawler-fixes.php', 'utf8');",
+      "if (!menu.includes(\"'tool-kits-geo-audit', 'tk_render_geo_audit_page'\")) throw new Error('Missing GEO Audit & Fixes submenu');",
+      "if (!geo.includes('tk-geo-page-audit') || !geo.includes('tk-geo-page-setup')) throw new Error('GEO page modes are not separated');",
+      "for (const source of [geo, radar, fixes]) { if (/page=tool-kits-geo(?:[&'])[^\\n]*#(?:geo-audit|ai-visibility|ai-search-radar|ai-radar|prompt-preview|post-schema|schema-duplicates|crawler-preview|ai-access)/.test(source)) throw new Error('Audit action still redirects to GEO Setup'); }",
+      "if (!geo.includes('window.getComputedStyle(visibleButton).display')) throw new Error('Hidden cross-page hash can blank the workspace');",
+      "console.log('PASS: GEO setup and audit workspaces have separate menus, panels and redirects');"
+    ]
+  },
+  {
+    "name": "geo-audit-solutions",
+    "runtime": "php",
+    "source": [
+      "<?php",
+      "define('ABSPATH', '/tmp/');",
+      "require dirname(__DIR__) . '/includes/seo-optimization.php';",
+      "$cases = array('Missing H1.' => 'one descriptive H1', 'Missing Organization schema.' => 'Organization node', 'Organization missing sameAs.' => 'sameAs property', 'Missing modified date.' => 'dateModified');",
+      "foreach ($cases as $issue => $expected) { $solution = tk_seo_geo_issue_solution($issue); if (stripos($solution, $expected) === false) throw new RuntimeException($issue . ' has an incorrect solution: ' . $solution); }",
+      "$auto = tk_seo_geo_issue_data('Missing H1.'); if (!$auto['automatic'] || $auto['field'] !== 'h1' || $auto['penalty'] !== 6) throw new RuntimeException('Missing H1 is not safely fixable');",
+      "$manual = tk_seo_geo_issue_data('Multiple H1 headings.'); if ($manual['automatic']) throw new RuntimeException('Multiple H1 must require review');",
+      "$short = tk_seo_geo_issue_data('Short meta description.'); if ($short['automatic']) throw new RuntimeException('Existing short metadata must not be overwritten automatically');",
+      "if (tk_seo_geo_issue_solution('Unexpected audit issue.') === '') throw new RuntimeException('Fallback solution is empty');",
+      "echo \"PASS: GEO Audit issues receive specific and fallback recommended solutions\\n\";"
+    ]
+  },
+  {
+    "name": "geo-ai-radars",
+    "runtime": "php",
+    "source": [
+      "<?php",
+      "define('ABSPATH', '/tmp/');",
+      "require dirname(__DIR__) . '/includes/geo-radar.php';",
+      "$visibility = array('url' => 'https://example.test/', 'snapshot' => array('title' => 'Example', 'description' => 'Description', 'author' => 'Ada', 'publisher' => 'Example Inc', 'canonical' => 'https://example.test/', 'h1s' => array('Example'), 'text_sample' => str_repeat('content ', 50)), 'schema' => array('documents' => 1, 'invalid' => 0, 'types' => array('Organization' => 1, 'WebPage' => 1)), 'checks' => array(array('name' => 'Fetchable URL', 'status' => 'ok'), array('name' => 'Meta robots', 'status' => 'ok'), array('name' => 'X-Robots-Tag', 'status' => 'ok')), 'agents' => array(array('agent' => 'Googlebot')));",
+      "$search = tk_geo_build_search_radar($visibility);",
+      "if ($search['score'] !== 100) throw new RuntimeException('Complete search signals should score 100');",
+      "$rows = array(); foreach (array('Googlebot','OAI-SearchBot','ChatGPT-User','Claude-User','PerplexityBot','Perplexity-User','CCBot') as $agent) $rows[] = array('agent' => $agent, 'ok' => true, 'eligibility' => 'eligible');",
+      "$radar = tk_geo_build_ai_radar($search, array('score' => 100, 'crawler_fetch_results' => $rows));",
+      "if ($radar['score'] !== 100 || count($radar['engines']) !== 5) throw new RuntimeException('Eligible platform radar should score 100');",
+      "echo \"PASS: AI Search Radar scoring and AI Radar platform aggregation are consistent\\n\";"
+    ]
+  },
+  {
+    "name": "twemoji-svg-url",
+    "runtime": "php",
+    "source": [
+      "<?php",
+      "define('ABSPATH', '/tmp/');",
+      "require dirname(__DIR__) . '/includes/security-hardening.php';",
+      "$broken = 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@17.0.1/assets/';",
+      "$fixed = tk_hardening_normalize_twemoji_svg_url($broken);",
+      "if ($fixed !== 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@17.0.1/assets/svg/') throw new RuntimeException('Broken Twemoji base was not repaired');",
+      "$valid = 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@17.0.1/assets/svg/';",
+      "if (tk_hardening_normalize_twemoji_svg_url($valid) !== $valid) throw new RuntimeException('Valid Twemoji base changed');",
+      "$other = 'https://s.w.org/images/core/emoji/15.1.0/svg/';",
+      "if (tk_hardening_normalize_twemoji_svg_url($other) !== $other) throw new RuntimeException('Unrelated emoji provider changed');",
+      "if (tk_hardening_normalize_twemoji_svg_url(false) !== false) throw new RuntimeException('Disabled emoji URL changed');",
+      "echo \"PASS: malformed jsDelivr Twemoji SVG base is normalized without changing other providers\\n\";"
+    ]
+  },
+  {
+    "name": "frontend-bootstrap-performance",
+    "runtime": "node",
+    "source": [
+      "const fs = require('node:fs');",
+      "const helpers = fs.readFileSync(__dirname + '/../includes/helpers.php', 'utf8');",
+      "const login = fs.readFileSync(__dirname + '/../includes/security-login-log.php', 'utf8');",
+      "const hardening = fs.readFileSync(__dirname + '/../includes/security-hardening.php', 'utf8');",
+      "if (!helpers.includes(\"if ($stored_version === $current_version)\")) throw new Error('Completed upgrades still run per request');",
+      "if (!helpers.includes(\"get_option('tk_security_events_schema_version'\")) throw new Error('Security events dbDelta is not versioned');",
+      "if (!login.includes(\"get_option('tk_login_log_schema_version'\")) throw new Error('Login log dbDelta is not versioned');",
+      "if (hardening.includes(\"add_action('init', 'tk_hardening_apply_root_server_rules'\")) throw new Error('Root server rules still write directly on every init');",
+      "if (!hardening.includes(\"get_option('tk_hardening_root_rules_hash'\")) throw new Error('Root server rules lack a change guard');",
+      "console.log('PASS: frontend bootstrap skips completed upgrades, dbDelta and unchanged server-rule writes');"
+    ]
+  },
+  {
+    "name": "ai-access-score-consistency",
+    "runtime": "node",
+    "source": [
+      "const fs = require('node:fs');",
+      "const source = fs.readFileSync(__dirname + '/../includes/geo.php', 'utf8');",
+      "const start = source.indexOf('function tk_geo_run_ai_access_review()');",
+      "const end = source.indexOf('function tk_geo_review_urls', start);",
+      "const review = source.slice(start, end);",
+      "if (review.includes('tk_geo_fetch_url($home_url, (string) $agent)')) throw new Error('AI access still spoofs crawler identity');",
+      "if (review.includes('could not fetch the homepage')) throw new Error('AI access still emits contradictory fetch issues');",
+      "if (!review.includes(\"$eligibility = !$home_ok ? 'unavailable'\")) throw new Error('Missing shared eligibility model');",
+      "const handler = source.slice(source.indexOf('function tk_geo_ai_access_scan()'), source.indexOf('function tk_geo_ai_access_clear()'));",
+      "if (!handler.includes(\"tk_update_option('geo_ai_access_report', array())\")) throw new Error('Manual scan can reuse stale evidence');",
+      "console.log('PASS: AI access score and crawler eligibility use the same verifiable evidence');"
+    ]
+  },
+  {
+    "name": "analytics-single-loader",
+    "runtime": "node",
+    "source": [
+      "const fs = require('node:fs');",
+      "const source = fs.readFileSync(__dirname + '/../includes/analytics.php', 'utf8');",
+      "if (!source.includes('window.__tkGoogleAnalyticsIds[gtagId]')) throw new Error('Missing global GA loader guard');",
+      "if (!source.includes('window.removeEventListener(event, loadGA)')) throw new Error('GA interaction listeners are not cleaned up');",
+      "if (!source.includes('window.clearTimeout(timer)')) throw new Error('GA fallback timer is not cleaned up');",
+      "if ((source.match(/gtag\\('config', gtagId\\)/g) || []).length !== 1) throw new Error('GA config is emitted more than once');",
+      "console.log('PASS: Google Analytics loader is globally guarded and cleans up triggers');"
+    ]
+  },
+  {
+    "name": "crawler-missing-fixes",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/crawler-fixes-regression.php';"]
+  },
+  {
   "name": "csp-inline-compatibility",
   "runtime": "php",
   "source": [
