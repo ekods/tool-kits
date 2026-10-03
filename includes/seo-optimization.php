@@ -1854,7 +1854,7 @@ function tk_seo_geo_issue_data(string $issue): array {
         array('/HTTP status is not successful/i', 'Make the URL return HTTP 200 without an error page, authentication challenge, or redirect loop.', 'critical', 20, false, ''),
         array('/Missing JSON-LD schema/i', 'Enable GEO output or add valid JSON-LD containing the page and primary entity.', 'high', 8, true, 'schema'),
         array('/Invalid JSON-LD/i', 'Validate every application/ld+json block and fix its JSON syntax and schema properties.', 'high', 8, false, ''),
-        array('/Missing (Organization|WebSite|WebPage) schema/i', 'Add the missing $1 node to the page JSON-LD and connect nodes with stable @id references.', 'high', 8, true, 'schema'),
+        array('/Missing (Organization|WebSite|WebPage) schema/i', 'Add the missing $1 node to the page JSON-LD and connect nodes with stable @id references.', 'high', 8, true, 'schema_graph'),
         array('/Organization missing ([A-Za-z]+)\./i', 'Complete the Organization $1 property in the entity JSON-LD.', 'medium', 8, false, ''),
         array('/Missing H1/i', 'Add one descriptive H1 that states the primary topic of the page.', 'high', 6, true, 'h1'),
         array('/Multiple H1/i', 'Keep one primary H1 and change secondary headings to H2 or H3.', 'medium', 6, false, ''),
@@ -1865,8 +1865,8 @@ function tk_seo_geo_issue_data(string $issue): array {
         array('/Missing article\/section structure/i', 'Group the main content with meaningful <article> or <section> elements and headings.', 'medium', 6, false, ''),
         array('/Missing meta description/i', 'Add a clear meta description of at least 50 characters that summarizes this page.', 'medium', 6, true, 'description'),
         array('/Short meta description/i', 'Expand the existing meta description to at least 50 useful characters in its current SEO source.', 'medium', 6, false, ''),
-        array('/Missing published date/i', 'Add datePublished to Article JSON-LD or article:published_time metadata.', 'medium', 10, true, 'schema'),
-        array('/Missing modified date/i', 'Add dateModified to Article JSON-LD or article:modified_time metadata.', 'medium', 10, true, 'schema'),
+        array('/Missing published date/i', 'Add datePublished to Article JSON-LD or article:published_time metadata.', 'medium', 10, true, 'schema_graph'),
+        array('/Missing modified date/i', 'Add dateModified to Article JSON-LD or article:modified_time metadata.', 'medium', 10, true, 'schema_graph'),
         array('/Content is stale/i', 'Review the content for accuracy, update it where needed, and publish the current modified date.', 'medium', 10, false, ''),
     );
     foreach ($rules as $rule) {
@@ -1887,7 +1887,9 @@ function tk_seo_geo_validate_schema($html): array {
     $entity_ok = false;
     $schema_count = 0;
     $invalid_count = 0;
-    $required_entity = array('name', 'description', 'url', 'logo', 'sameAs', 'contactPoint', 'address', 'knowsAbout');
+    // name and url identify the entity. The remaining Organization properties
+    // are useful enhancements, but are not universally applicable or required.
+    $required_entity = array('name', 'url');
     $entity_fields = array();
 
     if (preg_match_all('/<script\b[^>]*type=("|\')application\/ld\+json\1[^>]*>(.*?)<\/script>/is', (string) $html, $matches)) {
@@ -1910,7 +1912,7 @@ function tk_seo_geo_validate_schema($html): array {
                         $types[] = $node_type;
                     }
                 }
-                if (in_array('Organization', $node_types, true)) {
+                if (array_intersect(array('Organization', 'LocalBusiness'), $node_types)) {
                     foreach ($required_entity as $field) {
                         $entity_fields[$field] = !empty($node[$field]);
                     }
@@ -1927,7 +1929,10 @@ function tk_seo_geo_validate_schema($html): array {
         $issues[] = 'Invalid JSON-LD detected.';
     }
     foreach (array('Organization', 'WebSite', 'WebPage') as $required_type) {
-        if (!in_array($required_type, $types, true)) {
+        $present = $required_type === 'Organization'
+            ? (bool) array_intersect(array('Organization', 'LocalBusiness'), $types)
+            : ($required_type === 'WebPage' ? (bool) array_intersect(array('WebPage', 'Article', 'NewsArticle', 'BlogPosting', 'Product', 'CollectionPage'), $types) : in_array($required_type, $types, true));
+        if (!$present) {
             $issues[] = 'Missing ' . $required_type . ' schema.';
         }
     }

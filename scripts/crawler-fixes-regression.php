@@ -68,6 +68,12 @@ check(strpos($fixed, '</script><script>alert') === false && strpos($fixed, 'nonc
 check(tk_geo_crawler_fix_html($fixed, $url, $fix) === $fixed, 'Repeated fix is not idempotent');
 $existing = '<html><head><title>Owned by theme</title><meta content="Existing > description" NAME = description><meta name="author" content="Existing Author"><meta name="publisher" content="Existing Publisher"><link HREF="https://example.com/canonical/" REL = canonical></head><body><h1>Existing heading</h1><script type="application/ld+json">{broken}</script></body></html>';
 check(tk_geo_crawler_fix_html($existing, $url, $fix) === $existing, 'Existing metadata/schema overwritten');
+$schema_supplement = array('fields' => array('schema_graph'), 'title' => 'Supplemented page', 'description' => 'Frontend schema supplement');
+$existing_schema = '<html><head><title>Existing</title><script type="application/ld+json">{"@context":"https://schema.org","@type":"LocalBusiness","name":"Existing entity"}</script></head><body>Page</body></html>';
+$supplemented = tk_geo_crawler_fix_html($existing_schema, $url, $schema_supplement);
+check(strpos($supplemented, $existing_schema) === false && strpos($supplemented, '"@type":"Organization"') !== false && strpos($supplemented, '"@type":"WebSite"') !== false && strpos($supplemented, '"@id":"https://example.com/page/#webpage"') !== false, 'Supplementary schema did not reach frontend HTML');
+check(strpos($supplemented, '"@type":"LocalBusiness"') !== false, 'Existing frontend schema was removed');
+check(tk_geo_crawler_fix_html($supplemented, $url, $schema_supplement) === $supplemented, 'Supplementary frontend schema is not idempotent');
 $fake = '<html><head><!-- <title>fake</title> --><script>var x = \'<meta name="description" content="fake">\';</script></head><body></body></html>';
 check(tk_geo_crawler_metadata($fake)['description'] === '', 'Script/comment mistaken for metadata');
 $head_example = '<html><head><script>var closing = "</head>";</script></head><body></body></html>';

@@ -575,6 +575,14 @@ function tk_render_geo_page() {
         <?php if (isset($_GET['tk_seo_geo_audit_cleared']) && sanitize_key((string) $_GET['tk_seo_geo_audit_cleared']) === '1') : ?>
             <?php tk_notice('GEO audit report cleared.', 'success'); ?>
         <?php endif; ?>
+        <?php if (isset($_GET['tk_geo_fixed']) && sanitize_key((string) $_GET['tk_geo_fixed']) === '1') : ?>
+            <?php tk_notice('GEO fix applied to the database and the URL was scanned again.', 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_geo_bulk_fixed'])) : ?>
+            <?php tk_notice(sprintf('Bulk GEO fixing completed for %d URL(s). Updated URLs were scanned again.', max(0, (int) $_GET['tk_geo_bulk_fixed'])), 'success'); ?>
+        <?php endif; ?>
+        <?php if (isset($_GET['tk_geo_fix_removed'])) : ?><?php tk_notice('The URL fix was removed and the frontend was scanned again.', 'success'); ?><?php endif; ?>
+        <?php if (isset($_GET['tk_geo_fixes_removed'])) : ?><?php tk_notice('All GEO fixes and the stale audit report were removed.', 'success'); ?><?php endif; ?>
         <?php if (isset($_GET['tk_geo_error']) && sanitize_key((string) $_GET['tk_geo_error']) === 'json') : ?>
             <?php tk_notice('Custom JSON-LD is not valid JSON. Settings were not saved.', 'error'); ?>
         <?php endif; ?>

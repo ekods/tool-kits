@@ -3,6 +3,23 @@
 const { spawnSync } = require('node:child_process');
 const cases = [
   {
+    "name": "geo-bulk-fixing",
+    "runtime": "node",
+    "source": [
+      "const fs = require('node:fs');",
+      "const geo = fs.readFileSync(__dirname + '/../includes/geo.php', 'utf8');",
+      "const fixes = fs.readFileSync(__dirname + '/../includes/geo-crawler-fixes.php', 'utf8');",
+      "if (!geo.includes('Bulk Fix All') || !geo.includes('tk_geo_audit_bulk_fix')) throw new Error('Bulk Fix All control is missing');",
+      "if (!geo.includes('tk_geo_fix_batch_start') || !geo.includes('tk_geo_fix_batch_step')) throw new Error('Bulk fix AJAX actions are missing');",
+      "if (!fixes.includes('function tk_geo_audit_bulk_fix_handler()')) throw new Error('Bulk fix handler is missing');",
+      "if (!fixes.includes('function tk_geo_audit_remove_fix_handler()') || !fixes.includes('function tk_geo_audit_remove_all_fixes_handler()')) throw new Error('Rollback handlers are missing');",
+      "if (!fixes.includes('tk_seo_geo_audit_url($url, 20, true)')) throw new Error('Applied fixes do not trigger a fresh live scan');",
+      "if (!fixes.includes(\"$field !== 'schema_graph'\")) throw new Error('Supplementary schema is skipped when JSON-LD already exists');",
+      "if (!fixes.includes('$schema_added')) throw new Error('Combined schema fixes can render duplicate fallback graphs');",
+      "console.log('PASS: individual and bulk GEO fixes update output and replace stale reports with fresh scans');"
+    ]
+  },
+  {
     "name": "geo-menu-split",
     "runtime": "node",
     "source": [
@@ -28,6 +45,7 @@ const cases = [
       "$cases = array('Missing H1.' => 'one descriptive H1', 'Missing Organization schema.' => 'Organization node', 'Organization missing sameAs.' => 'sameAs property', 'Missing modified date.' => 'dateModified');",
       "foreach ($cases as $issue => $expected) { $solution = tk_seo_geo_issue_solution($issue); if (stripos($solution, $expected) === false) throw new RuntimeException($issue . ' has an incorrect solution: ' . $solution); }",
       "$auto = tk_seo_geo_issue_data('Missing H1.'); if (!$auto['automatic'] || $auto['field'] !== 'h1' || $auto['penalty'] !== 6) throw new RuntimeException('Missing H1 is not safely fixable');",
+      "$schema = tk_seo_geo_issue_data('Missing WebSite schema.'); if (!$schema['automatic'] || $schema['field'] !== 'schema_graph') throw new RuntimeException('Missing schema type cannot supplement existing JSON-LD');",
       "$manual = tk_seo_geo_issue_data('Multiple H1 headings.'); if ($manual['automatic']) throw new RuntimeException('Multiple H1 must require review');",
       "$short = tk_seo_geo_issue_data('Short meta description.'); if ($short['automatic']) throw new RuntimeException('Existing short metadata must not be overwritten automatically');",
       "if (tk_seo_geo_issue_solution('Unexpected audit issue.') === '') throw new RuntimeException('Fallback solution is empty');",

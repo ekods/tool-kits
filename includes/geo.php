@@ -7,6 +7,8 @@ require_once __DIR__ . '/geo-radar.php';
 function tk_geo_init() {
     add_action('wp_ajax_tk_geo_batch_start', 'tk_geo_batch_start');
     add_action('wp_ajax_tk_geo_batch_step', 'tk_geo_batch_step');
+    add_action('wp_ajax_tk_geo_fix_batch_start', 'tk_geo_fix_batch_start');
+    add_action('wp_ajax_tk_geo_fix_batch_step', 'tk_geo_fix_batch_step');
     add_action('admin_enqueue_scripts', 'tk_geo_batch_assets');
     add_action('admin_post_tk_geo_save', 'tk_geo_save');
     add_action('admin_post_tk_geo_clear_saved_results', 'tk_geo_clear_saved_results');
@@ -23,6 +25,9 @@ function tk_geo_init() {
     add_action('admin_post_tk_geo_visibility_scan', 'tk_geo_visibility_scan_handler');
     add_action('admin_post_tk_geo_visibility_fix', 'tk_geo_visibility_fix_handler');
     add_action('admin_post_tk_geo_audit_fix', 'tk_geo_audit_fix_handler');
+    add_action('admin_post_tk_geo_audit_bulk_fix', 'tk_geo_audit_bulk_fix_handler');
+    add_action('admin_post_tk_geo_audit_remove_fix', 'tk_geo_audit_remove_fix_handler');
+    add_action('admin_post_tk_geo_audit_remove_all_fixes', 'tk_geo_audit_remove_all_fixes_handler');
     add_action('admin_post_tk_geo_ai_search_radar_scan', 'tk_geo_ai_search_radar_scan');
     add_action('admin_post_tk_geo_ai_radar_scan', 'tk_geo_ai_radar_scan');
     add_action('admin_post_tk_geo_prompt_preview', 'tk_geo_prompt_preview_handler');
@@ -2519,6 +2524,8 @@ function tk_render_geo_panel(): void {
                 $geo_items = isset($geo_report['items']) && is_array($geo_report['items']) ? $geo_report['items'] : array();
                 ?>
                 <p class="tk-report-actions">
+                    <button type="button" class="button button-primary tk-geo-bulk-fix">Bulk Fix All</button>
+                    <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tk_geo_audit_remove_all_fixes'), 'tk_geo_audit_remove_all_fixes')); ?>">Remove All Fixes</a>
                     <button type="button" class="button tk-geo-export-pdf" data-report-target="tk-geo-audit-report" data-report-title="GEO Audit Report">Export Report PDF</button>
                 </p>
                 <div id="tk-geo-audit-report">
@@ -2556,7 +2563,7 @@ function tk_render_geo_panel(): void {
                                 ?>
                                 <tr>
                                     <td><input type="checkbox" class="tk-geo-report-target" value="<?php echo esc_attr((string) ($item['url'] ?? '')); ?>" aria-label="<?php echo esc_attr('Select ' . ($item['url'] ?? 'URL')); ?>"></td>
-                                    <td><a href="<?php echo esc_url((string) ($item['url'] ?? '')); ?>" target="_blank" rel="noopener"><?php echo esc_html((string) ($item['url'] ?? '')); ?></a></td>
+                                    <td><a href="<?php echo esc_url((string) ($item['url'] ?? '')); ?>" target="_blank" rel="noopener"><?php echo esc_html((string) ($item['url'] ?? '')); ?></a><?php if (!empty($item['fix_verification'])) : $verification = (array) $item['fix_verification']; ?><br><span class="tk-badge <?php echo ($verification['status'] ?? '') === 'verified' ? 'tk-on' : 'tk-warn'; ?>"><?php echo esc_html((string) ($verification['label'] ?? 'Fix checked')); ?></span><br><span class="description"><?php echo esc_html((string) ($verification['detail'] ?? '')); ?></span><?php endif; ?></td>
                                     <td><?php echo esc_html((string) ((int) ($item['status'] ?? 0))); ?></td>
                                     <td><strong><?php echo esc_html((string) ($item['grade'] ?? 'F')); ?></strong></td>
                                     <td><?php if (isset($item['score'])) : ?><span class="tk-badge <?php echo esc_attr($item_score_class); ?>"><?php echo esc_html((string) $item_score); ?>/100</span><?php else : ?>Not verified<?php endif; ?></td>
@@ -2591,6 +2598,7 @@ function tk_render_geo_panel(): void {
                                                     $solution = (string) ($solutions[$issue_index] ?? $issue_data['solution']);
                                                     $fix_url = !empty($issue_data['automatic']) ? wp_nonce_url(add_query_arg(array('action' => 'tk_geo_audit_fix', 'url' => (string) ($item['url'] ?? ''), 'issue' => (string) $issue), admin_url('admin-post.php')), 'tk_geo_audit_fix') : '';
                                                     $fix_status = is_array($item['fix_status'][$issue] ?? null) ? $item['fix_status'][$issue] : array();
+                                                    $remove_url = wp_nonce_url(add_query_arg(array('action' => 'tk_geo_audit_remove_fix', 'url' => (string) ($item['url'] ?? '')), admin_url('admin-post.php')), 'tk_geo_audit_remove_fix');
                                                     ?>
                                                     <li style="margin-bottom:10px;">
                                                         <strong><?php echo esc_html((string) $issue); ?></strong>
@@ -2598,6 +2606,7 @@ function tk_render_geo_panel(): void {
                                                         <span class="tk-badge">-<?php echo esc_html((string) ((int) $issue_data['penalty'])); ?></span><br>
                                                         <span class="description"><strong>Solution:</strong> <?php echo esc_html($solution); ?></span><br>
                                                         <?php if (!empty($fix_status)) : ?><span class="tk-badge tk-on" style="margin-top:5px;">Applied to Database</span> <a class="button button-small" style="margin-top:5px;" href="<?php echo esc_url($fix_url); ?>">Apply Again</a><?php elseif ($fix_url !== '') : ?><a class="button button-small" style="margin-top:5px;" href="<?php echo esc_url($fix_url); ?>">Fix in Database</a><?php else : ?><span class="tk-badge tk-warn" style="margin-top:5px;">Needs Review</span><?php endif; ?>
+                                                        <a class="button button-small" style="margin-top:5px;" href="<?php echo esc_url($remove_url); ?>">Remove URL Fix</a>
                                                     </li>
                                                 <?php endforeach; ?>
                                             </ul>

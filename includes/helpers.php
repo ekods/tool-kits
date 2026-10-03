@@ -1121,6 +1121,7 @@ function tk_option_init_defaults() {
         'geo_schema_duplicate_fix_report' => array(),
         'geo_crawler_preview' => array(),
         'geo_crawler_fixes' => array(),
+        'geo_fix_history' => array(),
         'geo_visibility_report' => array(),
         'geo_ai_search_radar_report' => array(),
         'geo_ai_radar_report' => array(),

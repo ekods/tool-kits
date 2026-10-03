@@ -151,7 +151,32 @@ function tk_geo_audit_fix_handler(): void {
     if ($url === '' || !$matched || empty($data['automatic']) || empty($data['field'])) { wp_die('This GEO issue cannot be fixed automatically.'); }
     $fixes = tk_get_option('geo_crawler_fixes', array());
     $fixes = is_array($fixes) ? $fixes : array();
-    if (!isset($fixes[$url]) && count($fixes) >= 100) { wp_die('The limit of 100 URL fixes has been reached.'); }
+    if (!tk_geo_apply_audit_fixes($url, array($issue), $fixes)) { wp_die('The GEO issue could not be applied.'); }
+    tk_update_option('geo_crawler_fixes', $fixes);
+    if (function_exists('tk_page_cache_purge')) { tk_page_cache_purge(); }
+    $fresh = tk_seo_geo_audit_url($url, 20, true);
+    foreach (($report['items'] ?? array()) as $index => $item) {
+        if (tk_geo_crawler_fix_url((string) ($item['url'] ?? '')) === $url) { $report['items'][$index] = $fresh; }
+    }
+    $summary = tk_seo_geo_audit_summary($report['items'] ?? array());
+    $report['average_score'] = $summary['average_score'];
+    $report['issue_count'] = $summary['issue_count'];
+    $report['scanned_at'] = time();
+    tk_update_option('seo_geo_audit_report', $report);
+    wp_safe_redirect(admin_url('admin.php?page=tool-kits-geo-audit&tk_geo_fixed=1') . '#geo-audit'); exit;
+}
+
+function tk_geo_apply_audit_fixes(string $url, array $issues, array &$fixes): bool {
+    if ($url === '' || (!isset($fixes[$url]) && count($fixes) >= 100)) { return false; }
+    $fields = (array) ($fixes[$url]['fields'] ?? array());
+    $applied = array();
+    foreach ($issues as $issue) {
+        $data = function_exists('tk_seo_geo_issue_data') ? tk_seo_geo_issue_data((string) $issue) : array();
+        if (empty($data['automatic']) || empty($data['field'])) { continue; }
+        $fields[] = (string) $data['field'];
+        $applied[] = array('issue' => (string) $issue, 'field' => (string) $data['field'], 'fixed_at' => time());
+    }
+    if (!$applied) { return false; }
     $post_id = url_to_postid($url);
     $title = $post_id > 0 ? trim((string) get_the_title($post_id)) : trim((string) get_bloginfo('name'));
     $description = '';
@@ -161,18 +186,62 @@ function tk_geo_audit_fix_handler(): void {
     }
     if ($description === '') { $description = trim((string) get_bloginfo('description')); }
     $identity = tk_geo_metadata_identity($url);
-    $fields = array_values(array_unique(array_merge((array) ($fixes[$url]['fields'] ?? array()), array((string) $data['field']))));
+    $fields = array_values(array_unique($fields));
     $fixes[$url] = array('fields' => $fields, 'title' => $title, 'description' => $description, 'author' => $identity['author'], 'publisher' => $identity['publisher']);
-    tk_update_option('geo_crawler_fixes', $fixes);
-    // Persist an audit trail in the post database as well as the URL fallback option.
-    if ($post_id > 0) { update_post_meta($post_id, '_tk_geo_last_auto_fix', array('issue' => $issue, 'field' => $data['field'], 'fixed_at' => time())); }
-    if (function_exists('tk_page_cache_purge')) { tk_page_cache_purge(); }
-    foreach (($report['items'] ?? array()) as $index => $item) {
-        if (tk_geo_crawler_fix_url((string) ($item['url'] ?? '')) !== $url) { continue; }
-        $report['items'][$index]['fix_status'][$issue] = array('status' => 'applied', 'field' => $data['field'], 'fixed_at' => time());
+    if ($post_id > 0) { update_post_meta($post_id, '_tk_geo_last_auto_fix', $applied); }
+    return true;
+}
+
+function tk_geo_audit_bulk_fix_handler(): void {
+    tk_require_admin_post('tk_geo_audit_bulk_fix');
+    if (!tk_license_features_enabled()) { wp_die('An active Tool Kits license is required.'); }
+    $report = tk_get_option('seo_geo_audit_report', array());
+    $items = is_array($report['items'] ?? null) ? $report['items'] : array();
+    if (!$items) { wp_die('Run GEO Audit before using Bulk Fix All.'); }
+    $fixes = tk_get_option('geo_crawler_fixes', array());
+    $fixes = is_array($fixes) ? $fixes : array();
+    $fixed_urls = array();
+    foreach ($items as $item) {
+        $url = tk_geo_crawler_fix_url((string) ($item['url'] ?? ''));
+        if ($url !== '' && tk_geo_apply_audit_fixes($url, (array) ($item['issues'] ?? array()), $fixes)) { $fixed_urls[$url] = true; }
     }
+    if (!$fixed_urls) { wp_die('No safe automatic fixes are available in this report.'); }
+    tk_update_option('geo_crawler_fixes', $fixes);
+    if (function_exists('tk_page_cache_purge')) { tk_page_cache_purge(); }
+    foreach ($items as $index => $item) {
+        $url = tk_geo_crawler_fix_url((string) ($item['url'] ?? ''));
+        if (isset($fixed_urls[$url])) { $items[$index] = tk_seo_geo_audit_url($url, 20, true); }
+    }
+    $summary = tk_seo_geo_audit_summary($items);
+    $report['items'] = $items;
+    $report['average_score'] = $summary['average_score'];
+    $report['issue_count'] = $summary['issue_count'];
+    $report['scanned_at'] = time();
+    $report['bulk_fix'] = array('fixed_urls' => count($fixed_urls), 'completed_at' => time());
     tk_update_option('seo_geo_audit_report', $report);
-    wp_safe_redirect(admin_url('admin.php?page=tool-kits-geo-audit&tk_geo_fixed=1') . '#geo-audit'); exit;
+    wp_safe_redirect(admin_url('admin.php?page=tool-kits-geo-audit&tk_geo_bulk_fixed=' . count($fixed_urls)) . '#geo-audit'); exit;
+}
+
+function tk_geo_audit_remove_fix_handler(): void {
+    tk_require_admin_post('tk_geo_audit_remove_fix');
+    $url = tk_geo_crawler_fix_url((string) ($_GET['url'] ?? ''));
+    $fixes = (array) tk_get_option('geo_crawler_fixes', array());
+    if ($url === '' || !isset($fixes[$url])) { wp_die('No stored fix exists for this URL.'); }
+    unset($fixes[$url]); tk_update_option('geo_crawler_fixes', $fixes);
+    if (function_exists('tk_page_cache_purge')) { tk_page_cache_purge(); }
+    $report = (array) tk_get_option('seo_geo_audit_report', array());
+    foreach ((array) ($report['items'] ?? array()) as $index => $item) { if (($item['url'] ?? '') === $url) { $report['items'][$index] = tk_seo_geo_audit_url($url, 20, true); } }
+    $summary = tk_seo_geo_audit_summary($report['items'] ?? array()); $report['average_score'] = $summary['average_score']; $report['issue_count'] = $summary['issue_count']; $report['scanned_at'] = time();
+    tk_update_option('seo_geo_audit_report', $report);
+    wp_safe_redirect(admin_url('admin.php?page=tool-kits-geo-audit&tk_geo_fix_removed=1') . '#geo-audit'); exit;
+}
+
+function tk_geo_audit_remove_all_fixes_handler(): void {
+    tk_require_admin_post('tk_geo_audit_remove_all_fixes');
+    tk_update_option('geo_crawler_fixes', array());
+    tk_update_option('seo_geo_audit_report', array());
+    if (function_exists('tk_page_cache_purge')) { tk_page_cache_purge(); }
+    wp_safe_redirect(admin_url('admin.php?page=tool-kits-geo-audit&tk_geo_fixes_removed=1') . '#geo-audit'); exit;
 }
 
 function tk_geo_crawler_fix_html(string $html, string $url, array $fix): string {
@@ -193,8 +262,10 @@ function tk_geo_crawler_fix_html(string $html, string $url, array $fix): string 
     $tags = array();
     $edits = array();
     $inject_h1 = false;
+    $schema_added = false;
     foreach (($fix['fields'] ?? array()) as $field) {
-        if (!array_key_exists($field, $metadata) || !empty($metadata[$field])) { continue; }
+        if ($field === 'schema_graph' && strpos($html, '"@id":"' . $url . '#webpage"') !== false) { continue; }
+        if ($field !== 'schema_graph' && (!array_key_exists($field, $metadata) || !empty($metadata[$field]))) { continue; }
         $tag = '';
         if ($field === 'title' && !empty($fix['title'])) {
             $tag = '<title>' . esc_html($fix['title']) . '</title>';
@@ -206,14 +277,17 @@ function tk_geo_crawler_fix_html(string $html, string $url, array $fix): string 
             $tag = '<meta name="publisher" content="' . esc_attr($fix['publisher']) . '">';
         } elseif ($field === 'canonical') {
             $tag = '<link rel="canonical" href="' . esc_url($url) . '">';
-        } elseif ($field === 'schema') {
+        } elseif ($field === 'schema' || $field === 'schema_graph') {
+            if ($schema_added) { continue; }
             $site = home_url('/');
             $identity = tk_geo_metadata_identity($url);
             $organization = array('@type' => 'Organization', '@id' => $site . '#organization', 'name' => $identity['publisher'], 'url' => $site);
             $website = array('@type' => 'WebSite', '@id' => $site . '#website', 'url' => $site, 'name' => get_bloginfo('name'), 'publisher' => array('@id' => $site . '#organization'));
-            $page = array('@type' => 'WebPage', '@id' => $url . '#webpage', 'url' => $url, 'name' => $metadata['title'] ?: ($fix['title'] ?? ''), 'isPartOf' => array('@id' => $site . '#website'), 'publisher' => array('@id' => $site . '#organization'));
-            if (!empty($fix['description'])) { $page['description'] = $fix['description']; }
             $post_id = url_to_postid($url);
+            $post_type = $post_id > 0 && function_exists('get_post_type') ? (string) get_post_type($post_id) : '';
+            $page_type = in_array($post_type, array('post', 'news'), true) ? 'Article' : ($post_type === 'product' ? 'Product' : 'WebPage');
+            $page = array('@type' => $page_type, '@id' => $url . '#webpage', 'url' => $url, 'name' => $metadata['title'] ?: ($fix['title'] ?? ''), 'isPartOf' => array('@id' => $site . '#website'), 'publisher' => array('@id' => $site . '#organization'));
+            if (!empty($fix['description'])) { $page['description'] = $fix['description']; }
             if ($post_id > 0 && function_exists('get_post_time') && function_exists('get_post_modified_time')) {
                 $published = get_post_time(DATE_W3C, true, $post_id);
                 $modified = get_post_modified_time(DATE_W3C, true, $post_id);
@@ -223,6 +297,7 @@ function tk_geo_crawler_fix_html(string $html, string $url, array $fix): string 
             $schema = array('@context' => 'https://schema.org', '@graph' => array($organization, $website, $page));
             $tag = '<script type="application/ld+json"' . tk_csp_nonce_attr() . '>'
                 . wp_json_encode($schema, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES) . '</script>';
+            $schema_added = true;
         } elseif ($field === 'h1' && !empty($fix['title'])) {
             $inject_h1 = true;
         }

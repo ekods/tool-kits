@@ -86,6 +86,62 @@ function tk_geo_batch_step(): void {
     wp_send_json_success(array('done' => $done, 'checked' => count($state['items']), 'total' => count($state['targets']), 'item' => $state['items'][$index] ?? null));
 }
 
+function tk_geo_fixable_issues(array $item): array {
+    return array_values(array_filter((array) ($item['issues'] ?? array()), function($issue) {
+        $data = function_exists('tk_seo_geo_issue_data') ? tk_seo_geo_issue_data((string) $issue) : array();
+        return !empty($data['automatic']) && !empty($data['field']);
+    }));
+}
+
+function tk_geo_fix_batch_start(): void {
+    tk_geo_batch_authorize();
+    $report = (array) tk_get_option('seo_geo_audit_report', array());
+    $targets = array_values(array_filter((array) ($report['items'] ?? array()), function($item) { return is_array($item) && tk_geo_fixable_issues($item); }));
+    if (!$targets) { wp_send_json_error(array('message' => 'No safe automatic fixes are available.'), 400); }
+    $token = wp_generate_password(24, false, false);
+    set_transient('tk_geo_fix_batch_' . get_current_user_id() . '_' . $token, array('targets' => $targets, 'done' => 0), HOUR_IN_SECONDS);
+    wp_send_json_success(array('token' => $token, 'total' => count($targets)));
+}
+
+function tk_geo_fix_batch_step(): void {
+    tk_geo_batch_authorize();
+    $token = isset($_POST['token']) && is_string($_POST['token']) ? $_POST['token'] : '';
+    if (!preg_match('/^[a-zA-Z0-9]{24}$/', $token)) { wp_send_json_error(array('message' => 'Invalid fix session.'), 400); }
+    $key = 'tk_geo_fix_batch_' . get_current_user_id() . '_' . $token;
+    $state = get_transient($key);
+    if (!is_array($state)) { wp_send_json_error(array('message' => 'Fix session expired. Start again.'), 410); }
+    $index = (int) ($state['done'] ?? 0);
+    $target = $state['targets'][$index] ?? null;
+    $fresh = null;
+    if (is_array($target)) {
+        $url = tk_geo_crawler_fix_url((string) ($target['url'] ?? ''));
+        $issues = tk_geo_fixable_issues($target);
+        $fixes = (array) tk_get_option('geo_crawler_fixes', array());
+        if ($url !== '' && tk_geo_apply_audit_fixes($url, $issues, $fixes)) {
+            tk_update_option('geo_crawler_fixes', $fixes);
+            if (function_exists('tk_page_cache_purge')) { tk_page_cache_purge(); }
+            $fresh = tk_seo_geo_audit_url($url, 20, true);
+            $remaining = array_intersect($issues, (array) ($fresh['issues'] ?? array()));
+            $fetch_ok = isset($fresh['score']) && (int) ($fresh['status'] ?? 0) >= 200 && (int) ($fresh['status'] ?? 0) < 400;
+            $fresh['fix_verification'] = $fetch_ok && !$remaining
+                ? array('status' => 'verified', 'label' => 'Frontend Verified', 'detail' => 'The applied output was detected in live frontend HTML.')
+                : ($fetch_ok ? array('status' => 'cache_pending', 'label' => 'Still Detected', 'detail' => 'The issue remains in live HTML. Purge external CDN cache or review the active theme/plugin output.') : array('status' => 'unavailable', 'label' => 'Verification Failed', 'detail' => 'The frontend could not be fetched after applying the fix.'));
+            $report = (array) tk_get_option('seo_geo_audit_report', array());
+            foreach ((array) ($report['items'] ?? array()) as $i => $item) { if (($item['url'] ?? '') === $url) { $report['items'][$i] = $fresh; } }
+            $summary = tk_seo_geo_audit_summary($report['items'] ?? array());
+            $report['average_score'] = $summary['average_score']; $report['issue_count'] = $summary['issue_count']; $report['scanned_at'] = time();
+            tk_update_option('seo_geo_audit_report', $report);
+            $history = (array) tk_get_option('geo_fix_history', array());
+            array_unshift($history, array('url' => $url, 'issues' => $issues, 'status' => $fresh['fix_verification']['status'], 'user_id' => get_current_user_id(), 'created_at' => time()));
+            tk_update_option('geo_fix_history', array_slice($history, 0, 100));
+        }
+        $state['done'] = $index + 1; set_transient($key, $state, HOUR_IN_SECONDS);
+    }
+    $done = (int) ($state['done'] ?? 0) >= count($state['targets']);
+    if ($done) { delete_transient($key); }
+    wp_send_json_success(array('done' => $done, 'checked' => (int) ($state['done'] ?? 0), 'total' => count($state['targets']), 'item' => $fresh));
+}
+
 function tk_geo_batch_controls(): void {
     ?>
     <div id="tk-geo-batch" data-nonce="<?php echo esc_attr(wp_create_nonce('tk_geo_batch')); ?>" data-endpoint="<?php echo esc_url(admin_url('admin-ajax.php')); ?>">

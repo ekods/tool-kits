@@ -3,7 +3,7 @@ Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Tested up to: 6.6
-Stable tag: 2.7.5
+Stable tag: 2.7.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +65,16 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.6 =
+**GEO Audit Fix Verification**
+- Replace stale Applied status with an immediate live re-scan after a database fix, updating issues, score, grade, and report totals from the rendered result.
+- Add Bulk Fix All to apply every safe automatic GEO fix across the current report, purge caches once, and re-scan every affected URL.
+- Treat LocalBusiness as a valid organization entity and require only universal entity identity fields instead of penalizing optional Organization properties.
+- Add supplementary schema fixes when valid JSON-LD already exists but required WebSite, WebPage, entity, or freshness nodes are missing.
+- Verify automatic fixes against rendered frontend HTML; preserve existing schema and prevent duplicate supplementary graphs on cached or repeated output.
+- Run Bulk Fix All as a resumable one-URL-per-step AJAX queue with progress, frontend verification, external-cache guidance, a capped audit history, and per-URL or global rollback controls.
+- Generate Article or Product fallback nodes for matching post types while accepting equivalent page-level schema types during validation.
+
 = 2.7.5 =
 **Crawler and AI Visibility Fixes**
 - Add AI Search Radar with per-URL Entity Analysis, Content Readiness, E-E-A-T Signals, Tech Foundation scores, and prioritized strategic recommendations.

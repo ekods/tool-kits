@@ -12,6 +12,7 @@
     var running = false;
     var stopping = false;
     var reportStatus = document.querySelector('.tk-geo-report-status');
+    var bulkFix = document.querySelector('.tk-geo-bulk-fix');
     function showStatus(message) {
         status.textContent = message;
         if (reportStatus) { reportStatus.textContent = message; }
@@ -22,6 +23,7 @@
         stop.disabled = !value;
         root.querySelectorAll('input').forEach(function (input) { input.disabled = value; });
         document.querySelectorAll('.tk-geo-report-selected, .tk-geo-retry-failed, .tk-geo-report-target, .tk-geo-report-all').forEach(function (control) { control.disabled = value; });
+        if (bulkFix) { bulkFix.disabled = value; }
     }
     async function request(action, data) {
         var body = new URLSearchParams({ action: action, _ajax_nonce: root.dataset.nonce });
@@ -77,10 +79,37 @@
             showStatus(error.name === 'AbortError' ? 'Audit request timed out. Completed results remain saved.' : error.message);
         } finally { setRunning(false); }
     }
+    async function runBulkFix() {
+        if (running || !bulkFix) { return; }
+        stopping = false; results.replaceChildren(); progress.value = 0; setRunning(true); showStatus('Preparing safe frontend fixes...');
+        try {
+            var session = await request('tk_geo_fix_batch_start', {});
+            progress.max = session.total;
+            while (!stopping) {
+                showStatus('Applying and verifying frontend fix ' + (progress.value + 1) + '/' + session.total + '...');
+                var data = await request('tk_geo_fix_batch_step', { token: session.token });
+                progress.value = data.checked;
+                if (data.item) {
+                    var row = document.createElement('li');
+                    var verification = data.item.fix_verification || {};
+                    row.textContent = data.item.url + ' — ' + (verification.label || 'Checked') + ': ' + (verification.detail || '');
+                    results.appendChild(row);
+                }
+                if (data.done) {
+                    showStatus('Bulk fixing completed and frontend verified. Refreshing report...');
+                    var reportUrl = new URL(window.location.href); reportUrl.searchParams.set('tk_geo_refresh', String(Date.now())); reportUrl.hash = 'geo-audit'; window.location.replace(reportUrl.toString()); break;
+                }
+                await new Promise(function (resolve) { setTimeout(resolve, 500); });
+            }
+            if (stopping) { showStatus('Stopped. Completed fixes and verification results were saved.'); }
+        } catch (error) { showStatus(error.name === 'AbortError' ? 'Fix verification timed out. Completed results remain saved.' : error.message); }
+        finally { setRunning(false); }
+    }
     all.addEventListener('click', function () { run('all'); });
     selected.addEventListener('click', function () { run('selected'); });
     document.querySelectorAll('.tk-geo-report-selected').forEach(function (button) { button.addEventListener('click', function () { run('report-selected'); }); });
     document.querySelectorAll('.tk-geo-retry-failed').forEach(function (button) { button.addEventListener('click', function () { run('failed'); }); });
+    if (bulkFix) { bulkFix.addEventListener('click', runBulkFix); }
     var reportAll = document.querySelector('.tk-geo-report-all');
     if (reportAll) { reportAll.addEventListener('change', function () {
         document.querySelectorAll('.tk-geo-report-target').forEach(function (input) { input.checked = reportAll.checked; });
