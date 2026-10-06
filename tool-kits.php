@@ -2,7 +2,8 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.7.6
+ * Version: 2.7.7
+ * Requires PHP: 7.4
  * GitHub Plugin URI: https://github.com/ekods/tool-kits
  * Update URI: https://github.com/ekods/tool-kits
  * Author: Eko Dwi Saputro
@@ -12,7 +13,25 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-define('TK_VERSION', '2.7.6');
+define('TK_MINIMUM_PHP', '7.4');
+
+if (version_compare(PHP_VERSION, TK_MINIMUM_PHP, '<')) {
+    if (!function_exists('tk_php_version_warning')) {
+        function tk_php_version_warning() {
+            echo '<div class="notice notice-error"><p><strong>Tool Kits tidak dapat dijalankan.</strong> '
+                . 'Plugin ini membutuhkan PHP ' . esc_html(TK_MINIMUM_PHP) . ' atau lebih baru. '
+                . 'Server saat ini menggunakan PHP ' . esc_html(PHP_VERSION) . '. '
+                . 'Silakan perbarui versi PHP melalui hosting sebelum mengaktifkan Tool Kits.</p></div>';
+        }
+    }
+
+    add_action('admin_notices', 'tk_php_version_warning');
+    add_action('network_admin_notices', 'tk_php_version_warning');
+
+    return;
+}
+
+define('TK_VERSION', '2.7.7');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');

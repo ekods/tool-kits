@@ -2,8 +2,9 @@
 Contributors: toolkits
 Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
+Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.6
+Stable tag: 2.7.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,6 +66,11 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.7 =
+**PHP 7.4 Compatibility**
+- Support activation and operation on PHP 7.4 by replacing the remaining PHP 8-only syntax.
+- Declare and enforce PHP 7.4 as the minimum version with a clear admin warning on older servers.
+
 = 2.7.6 =
 **GEO Audit Fix Verification**
 - Replace stale Applied status with an immediate live re-scan after a database fix, updating issues, score, grade, and report totals from the rendered result.
