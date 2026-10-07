@@ -149,6 +149,10 @@ function tk_hardening_remove_version_strings() {
 }
 
 function tk_remove_wp_ver_css_js($src) {
+    // Admin assets need their versions so updates do not reuse stale scripts.
+    if (is_admin()) {
+        return $src;
+    }
     if (strpos($src, 'ver=' . get_bloginfo('version'))) {
         $src = remove_query_arg('ver', $src);
     }
@@ -221,6 +225,9 @@ function tk_hardening_block_author_canonical_redirect($redirect_url, $requested_
 }
 
 function tk_remove_wp_version_strings($src) {
+    if (is_admin()) {
+        return $src;
+    }
     if (strpos($src, 'ver=')) {
         $src = remove_query_arg('ver', $src);
     }

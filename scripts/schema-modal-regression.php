@@ -16,7 +16,7 @@ $repeated = tk_geo_schema_validate_json('[{"@type":"WebSite","@id":"#site"},{"@t
 verify_schema(strpos(implode(' ', $repeated['messages']), 'Repeated entity definition: #site') !== false, 'Repeated identity not found');
 verify_schema($repeated['duplicate_types']['WebSite'] === 2 && $repeated['duplicate_ids']['#site'] === 2, 'Structured duplicate markers missing');
 $faq = array('@type' => 'FAQPage', 'mainEntity' => array());
-for ($i = 0; $i < 20; $i++) $faq['mainEntity'][] = array('@type' => 'Question', 'name' => 'Question ' . $i,
+for ($i = 0; $i < 20; $i++) $faq['mainEntity'][] = array('@type' => 'Question', '@id' => 'question-' . $i, 'name' => 'Question ' . $i,
     'acceptedAnswer' => array('@type' => 'Answer', 'text' => 'Answer ' . $i));
 $breadcrumbs = array('@type' => 'BreadcrumbList', 'itemListElement' => array());
 for ($i = 0; $i < 12; $i++) $breadcrumbs['itemListElement'][] = array('@type' => 'ListItem', 'position' => $i + 1, 'name' => 'Item ' . $i);
@@ -26,7 +26,7 @@ for ($i = 0; $i < 8; $i++) {
     if ($i < 2) $place['address'] = array('@type' => 'PostalAddress', 'streetAddress' => 'Address ' . $i);
     $graph[] = $place;
 }
-for ($i = 0; $i < 12; $i++) $graph[] = array('@type' => 'Person', '@id' => '#person-' . $i, 'name' => 'Person ' . $i);
+for ($i = 0; $i < 12; $i++) $graph[] = array('@type' => 'Person', 'name' => 'Person ' . $i);
 $normal_json = json_encode(array('@graph' => $graph));
 $normal = tk_geo_schema_validate_json($normal_json);
 foreach (array('Question' => 20, 'Answer' => 20, 'ListItem' => 12, 'ImageObject' => 2, 'Place' => 8, 'PostalAddress' => 2, 'Person' => 12) as $type => $count) {

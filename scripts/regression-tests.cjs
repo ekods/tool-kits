@@ -3,6 +3,11 @@
 const { spawnSync } = require('node:child_process');
 const cases = [
   {
+    "name": "admin-asset-cache-busting",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/admin-asset-version-regression.php';"]
+  },
+  {
     "name": "modal-loading-recovery",
     "runtime": "node",
     "source": ["require(__dirname + '/modal-loading-regression.cjs');"]

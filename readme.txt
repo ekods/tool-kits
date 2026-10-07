@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.13
+Stable tag: 2.7.14
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,12 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.14 =
+**Admin Asset Cache Refresh**
+- Preserve JavaScript and CSS version parameters in WordPress admin through both hardening filters, so plugin updates load current assets instead of stale schema-editor code.
+- Keep existing public version-removal behavior.
+- Add regression coverage for distinct admin cache URLs after updates, both version filters, and FAQ questions with unique IDs and people without IDs.
+
 = 2.7.13 =
 **Schema Entity Review and Type Inventory**
 - Stop treating repeated schema types as duplicate warnings; FAQ questions/answers, list items, and distinct images, places, addresses, or people remain normal inventory counts.

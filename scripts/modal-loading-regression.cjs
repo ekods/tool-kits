@@ -155,13 +155,13 @@ const stored = {json: '{"@type":"WebSite"}', version: 'v1', validation: {message
     marked.cross.click();
     // Matching types alone must not mark FAQ/list/people/image nodes red.
     const normalGraph = {'@context': 'https://schema.org', '@graph': [
-        {'@type': 'FAQPage', mainEntity: Array.from({length: 20}, (_, index) => ({'@type': 'Question', name: 'Question ' + index,
+        {'@type': 'FAQPage', mainEntity: Array.from({length: 20}, (_, index) => ({'@type': 'Question', '@id': 'question-' + index, name: 'Question ' + index,
             acceptedAnswer: {'@type': 'Answer', text: 'Answer ' + index}}))},
         {'@type': 'BreadcrumbList', itemListElement: Array.from({length: 12}, (_, index) => ({'@type': 'ListItem', position: index + 1, name: 'Item ' + index}))},
         ...Array.from({length: 2}, (_, index) => ({'@type': 'ImageObject', '@id': '#image-' + index})),
         ...Array.from({length: 8}, (_, index) => ({'@type': 'Place', name: 'Place ' + index,
             ...(index < 2 ? {address: {'@type': 'PostalAddress', streetAddress: 'Address ' + index}} : {})})),
-        ...Array.from({length: 12}, (_, index) => ({'@type': 'Person', '@id': '#person-' + index, name: 'Person ' + index}))
+        ...Array.from({length: 12}, (_, index) => ({'@type': 'Person', name: 'Person ' + index}))
     ]};
     const normalJson = JSON.stringify(normalGraph);
     const normal = fixture((url, options) => options.body.get('mode') === 'load' ? reply({...stored, json: normalJson})
