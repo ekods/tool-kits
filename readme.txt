@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.11
+Stable tag: 2.7.12
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,14 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.12 =
+**Content SEO Validation Modal**
+- Add Validate & Edit to each editable Content SEO Audit entry, opening the selected page in a responsive modal.
+- Show current score, priority, word/link counts, issues, and all SEO checks & optimization findings with status badges and recommended actions.
+- Validate saved content without writing changes or discarding unsaved inputs, using the audit rules and bounded cross-page duplicate comparison.
+- Separate SEO checks and content improvements into accessible tabs, with field shortcuts, close controls, and Save & Refresh Audit.
+- Add response guards, timeout/retry handling, and regression checks for validation consistency, access restrictions, drafts, and modal navigation.
+
 = 2.7.11 =
 **Schema Modal Response and Tab Fixes**
 - Handle missing or incomplete live JSON-LD responses without JavaScript errors and keep Retry Live Check available.

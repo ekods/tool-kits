@@ -32,14 +32,21 @@ function wp_update_post($updates, $error) {
 }
 function is_wp_error($value) { return false; }
 function update_post_meta($id, $key, $value) { $GLOBALS[$key === '_tk_seo_target_location' ? 'location' : 'keyword'] = $value; }
-function tk_update_option($key, $value) { $GLOBALS['audit'] = $value; }
-function tk_seo_run_content_audit() { return array('refreshed' => true); }
+function tk_update_option($key, $value) { $GLOBALS['audit'] = $value; $GLOBALS['option_writes']++; }
+function tk_seo_run_content_audit($post_id = 0, $compare_duplicates = false) {
+    $GLOBALS['validation_calls'][] = array($post_id, $compare_duplicates);
+    return array('refreshed' => true, 'scanned_at' => 123, 'items' => array(array('post_id' => 1, 'words' => 1,
+        'score' => 42, 'priority' => 'critical', 'issues' => array('Low word count (<300)'),
+        'strategy_checks' => array(array('category' => 'Keyword targeting', 'status' => $GLOBALS['keyword'] === '' ? 'warning' : 'pass',
+            'finding' => $GLOBALS['keyword'], 'action' => 'Review keyword', 'target' => '')))));
+}
 function wp_strip_all_tags($text) { return strip_tags($text); }
 function get_the_title($id) { return 'Project'; }
 function verify_modal($ok, $message) { if (!$ok) throw new RuntimeException($message); }
 function call_modal() { try { tk_seo_content_editor_ajax(); } catch (ModalResponse $result) { return $result; } }
 $GLOBALS['manage'] = $GLOBALS['edit'] = $GLOBALS['nonce'] = true;
 $GLOBALS['writes'] = 0;
+$GLOBALS['option_writes'] = 0;
 $GLOBALS['keyword'] = '';
 $GLOBALS['location'] = 'singapore';
 $GLOBALS['post'] = (object) array('ID' => 1, 'post_status' => 'publish', 'post_password' => '', 'post_type' => 'work', 'post_content' => '<!-- builder -->Original', 'post_excerpt' => 'Original excerpt');
@@ -47,6 +54,17 @@ $_POST = array('post_id' => 1, 'mode' => 'load');
 $loaded = call_modal();
 verify_modal($loaded->success && $loaded->data['excerpt'] === 'Original excerpt', 'Load failed');
 verify_modal($loaded->data['location'] === 'singapore', 'Saved location not loaded');
+verify_modal($loaded->data['validation']['score'] === 42 && $loaded->data['checked_at'] === 123, 'Validation payload missing');
+verify_modal(end($GLOBALS['validation_calls']) === array(1, true), 'Modal skipped cross-page duplicate comparison');
+$_POST['mode'] = 'validate';
+$_POST['content'] = 'Unsaved content';
+$validated = call_modal();
+verify_modal($validated->success && $validated->data['validation'] === $loaded->data['validation'], 'Validation differs from audit checks');
+verify_modal($GLOBALS['writes'] === 0 && $GLOBALS['option_writes'] === 0 && $GLOBALS['post']->post_content === '<!-- builder -->Original', 'Validate wrote content or audit options');
+unset($_POST['content']);
+$_POST['mode'] = 'invalid';
+verify_modal(!call_modal()->success, 'Unknown operation accepted');
+$_POST['mode'] = 'load';
 $_POST += array('version' => $loaded->data['version'], 'content' => 'Useful content', 'links' => '/services/ | Our services', 'excerpt' => 'New excerpt', 'keyword' => 'design', 'client' => 'Example client', 'outcome' => 'Verified results');
 $_POST['mode'] = 'save';
 $_POST['location'] = 'invalid';
@@ -69,5 +87,6 @@ verify_modal($saved->success && strpos($GLOBALS['post']->post_content, '<!-- bui
 verify_modal(strpos($GLOBALS['post']->post_content, 'Project Outcome') !== false && strpos($GLOBALS['post']->post_content, 'https://site.example/services/') !== false, 'Sections or links missing');
 verify_modal($GLOBALS['keyword'] === 'design' && $GLOBALS['audit']['refreshed'], 'Keyword or audit not updated');
 verify_modal($GLOBALS['location'] === 'jakarta', 'Location not saved');
+verify_modal($saved->data['validation']['strategy_checks'][0]['finding'] === 'design', 'Save returned stale validation');
 verify_modal(!call_modal()->success && $GLOBALS['writes'] === 1, 'Retry duplicated content');
-echo "PASS: modal load/save, permissions, nonce, internal links, stale edits, content preservation and fresh audit\n";
+echo "PASS: modal load/validate/save, read-only validation, current audit checks, permissions, nonce, internal links, stale edits, content preservation and fresh audit\n";

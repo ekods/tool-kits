@@ -23,6 +23,16 @@ const cases = [
     "source": ["<?php", "require __DIR__ . '/content-fixes-regression.php';"]
   },
   {
+    "name": "content-seo-validation-checks",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/content-validation-regression.php';"]
+  },
+  {
+    "name": "content-seo-validation-ui",
+    "runtime": "node",
+    "source": ["require(__dirname + '/content-modal-ui-regression.cjs');"]
+  },
+  {
     "name": "geo-bulk-fixing",
     "runtime": "node",
     "source": [

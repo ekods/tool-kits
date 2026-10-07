@@ -2120,11 +2120,11 @@ function tk_seo_content_strategy_checks($post, array $duplicates, bool $duplicat
     return $checks;
 }
 
-function tk_seo_run_content_audit(int $only_post_id = 0) {
+function tk_seo_run_content_audit(int $only_post_id = 0, bool $compare_duplicates = false) {
     $post_types = get_post_types(array('public' => true), 'names');
     unset($post_types['attachment']);
     $post_types = array_values(array_intersect($post_types, tk_seo_selected_post_types()));
-    $ids = $only_post_id > 0 ? array($only_post_id) : ($post_types ? get_posts(array(
+    $sample_ids = $only_post_id > 0 && !$compare_duplicates ? array() : ($post_types ? get_posts(array(
         'post_type' => $post_types,
         'post_status' => 'publish',
         'numberposts' => 200,
@@ -2132,10 +2132,11 @@ function tk_seo_run_content_audit(int $only_post_id = 0) {
         'orderby' => 'date',
         'order' => 'DESC',
     )) : array());
+    $ids = $only_post_id > 0 ? array($only_post_id) : $sample_ids;
 
     $home_host = (string) wp_parse_url(home_url('/'), PHP_URL_HOST);
     $duplicates = array();
-    foreach ($only_post_id > 0 ? array() : $ids as $id) {
+    foreach ($sample_ids as $id) {
         $candidate = get_post((int) $id);
         if (!is_object($candidate)) {
             continue;
@@ -2274,7 +2275,7 @@ function tk_seo_run_content_audit(int $only_post_id = 0) {
         }
 
         $score = max(0, min(100, (int) round($score)));
-        $strategy_checks = tk_seo_content_strategy_checks($post, $duplicates, $only_post_id === 0);
+        $strategy_checks = tk_seo_content_strategy_checks($post, $duplicates, $only_post_id === 0 || $compare_duplicates);
         foreach ($strategy_checks as $check) {
             if ($check['status'] === 'warning') {
                 $issues[] = $check['category'] . ': ' . $check['finding'];
@@ -2894,6 +2895,9 @@ function tk_render_seo_opt_panel() {
                                 $issues = is_array($item['issues'] ?? null) ? $item['issues'] : array();
                                 echo empty($issues) ? 'OK' : esc_html(implode('; ', $issues));
                                 ?>
+                                <?php if ($pid > 0 && current_user_can('edit_post', $pid)) : ?>
+                                    <p><button type="button" class="button button-small tk-seo-content-audit-open" data-post-id="<?php echo esc_attr((string) $pid); ?>">Validate &amp; Edit</button></p>
+                                <?php endif; ?>
                                 <?php if (!empty($item['strategy_checks'])) : ?>
                                     <details>
                                         <summary>SEO checks &amp; optimization</summary>
@@ -2923,6 +2927,7 @@ function tk_render_seo_opt_panel() {
             <p class="description">No audit report yet.</p>
         <?php endif; ?>
     </div>
+    <?php tk_seo_content_editor_render(0, true); ?>
     <?php if (function_exists('tk_indexnow_render_panel')) { tk_indexnow_render_panel(); } ?>
         </div>
     </div>
