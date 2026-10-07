@@ -170,7 +170,9 @@ function tk_hardening_reduce_wp_fingerprint(): void {
     tk_hardening_clean_wp_head();
     remove_action('wp_head', 'feed_links', 2);
     remove_action('wp_head', 'feed_links_extra', 3);
-    add_filter('emoji_svg_url', '__return_false');
+    // Keep the SVG URL: a false value makes Twemoji fall back to its assets/
+    // base, which does not contain SVG files. Emoji disabling is handled by
+    // the dedicated hardening_disable_emojis setting.
     add_filter('wp_headers', 'tk_hardening_filter_wp_headers');
 }
 

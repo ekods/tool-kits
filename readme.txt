@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.7
+Stable tag: 2.7.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,12 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.8 =
+**Dashboard SEO/GEO Scores and Emoji Fix**
+- Add a WordPress dashboard widget showing the latest saved SEO and GEO audit scores, checked pages, audit timestamps, partial audit status, and links to audit details.
+- Keep dashboard requests lightweight by reading saved reports without starting scans.
+- Preserve the emoji SVG URL during fingerprint reduction so Twemoji flags use the correct assets/svg/ path.
+
 = 2.7.7 =
 **PHP 7.4 Compatibility**
 - Support activation and operation on PHP 7.4 by replacing the remaining PHP 8-only syntax.

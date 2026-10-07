@@ -39,10 +39,60 @@ function tk_dashboard_widget_register() {
     );
 
     wp_add_dashboard_widget(
+        'tk_seo_geo_score_widget',
+        __('Tool Kits: SEO & GEO Scores', 'tool-kits'),
+        'tk_render_seo_geo_dashboard_widget'
+    );
+
+    wp_add_dashboard_widget(
         'tk_attacks_blocked_widget',
         'Total Attacks Blocked: Tool Kits Firewall',
         'tk_render_attacks_blocked_dashboard_widget'
     );
+}
+
+function tk_render_seo_geo_dashboard_widget(): void {
+    if (!tk_toolkits_can_manage()) return;
+
+    // Read saved audits only; dashboard visits must not trigger crawling.
+    $audits = array(
+        array('label' => 'SEO', 'key' => 'seo_content_audit_report', 'count' => 'checked_posts', 'page' => 'tool-kits-seo', 'anchor' => 'content-audit'),
+        array('label' => 'GEO', 'key' => 'seo_geo_audit_report', 'count' => 'checked_urls', 'page' => 'tool-kits-geo-audit', 'anchor' => 'geo-audit'),
+    );
+    ?>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        <?php foreach ($audits as $audit) :
+            $report = tk_get_option($audit['key'], array());
+            $report = is_array($report) ? $report : array();
+            $count = max(0, (int) ($report[$audit['count']] ?? 0));
+            $has_score = $count > 0 && isset($report['average_score']) && is_numeric($report['average_score']);
+            $score = $has_score ? max(0, min(100, (int) $report['average_score'])) : 0;
+            $color = !$has_score ? '#646970' : ($score >= 80 ? '#008a20' : ($score >= 60 ? '#996800' : '#b32d2e'));
+            $url = admin_url('admin.php?page=' . $audit['page']) . '#' . $audit['anchor'];
+            ?>
+            <div style="flex:1 1 160px;min-width:0;padding:12px;border:1px solid #dcdcde;border-radius:4px;">
+                <strong><?php echo esc_html($audit['label']); ?></strong>
+                <p style="margin:8px 0;font-size:32px;line-height:1.2;color:<?php echo esc_attr($color); ?>;">
+                    <?php if ($has_score) : ?>
+                        <strong><?php echo esc_html((string) $score); ?></strong><span style="font-size:14px;"> / 100</span>
+                    <?php else : ?>
+                        <span style="font-size:14px;"><?php esc_html_e('No audit results yet', 'tool-kits'); ?></span>
+                    <?php endif; ?>
+                </p>
+                <?php if ($has_score) : ?>
+                    <progress max="100" value="<?php echo esc_attr((string) $score); ?>" aria-label="<?php echo esc_attr(sprintf(__('%s audit score', 'tool-kits'), $audit['label'])); ?>" style="width:100%;accent-color:<?php echo esc_attr($color); ?>;"></progress>
+                    <p class="description"><?php echo esc_html(sprintf(__('Pages checked: %d', 'tool-kits'), $count)); ?></p>
+                    <?php if (!empty($report['incomplete'])) : ?><p class="description"><?php esc_html_e('Partial audit — some pages remain unchecked.', 'tool-kits'); ?></p><?php endif; ?>
+                <?php endif; ?>
+                <?php if (!empty($report['scanned_at'])) : ?>
+                    <p class="description"><?php echo esc_html(sprintf(__('Last audit: %s', 'tool-kits'), wp_date('Y-m-d H:i', (int) $report['scanned_at']))); ?></p>
+                <?php endif; ?>
+                <a class="button" href="<?php echo esc_url($url); ?>"><?php echo esc_html($has_score ? __('View Audit', 'tool-kits') : __('Run Audit', 'tool-kits')); ?></a>
+            </div>
+        <?php endforeach; ?>
+    </div>
+    <p class="description"><?php esc_html_e('Scores reflect the latest saved audits of sampled pages.', 'tool-kits'); ?></p>
+    <?php
 }
 
 function tk_dashboard_widget_login_table_exists(): bool {
