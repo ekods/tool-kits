@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.8
+Stable tag: 2.7.10
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,22 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.10 =
+**SEO/GEO Modal Improvements**
+- Organize schema validation, JSON editing, and missing schema inputs into accessible tabs, with responsive layouts and persistent modal headers and footers.
+- Highlight repeated schema nodes and JSON lines in red; add draft node removal, undo, missing-property completion, and verified WebSite, Organization, and ImageObject inputs.
+- Load custom JSON-LD independently from live inspection; add request timeouts, retry, session/server error handling, and cancellation when closing a loading dialog.
+- Add cross close buttons to SEO/GEO modals and align FAQ GEO styling.
+- Move the SEO/GEO panel to the main editor area, finish English audit labels, and correct the page selector used by the content modal.
+
+= 2.7.9 =
+**Content SEO and Schema Editors**
+- Add Content SEO Audit Fix All for missing excerpts and attachment-based image alt restoration, with progress and refreshed audit results.
+- Add a dashboard and page-editor modal for additional content, internal links, excerpts, focus keywords, client context, and project outcomes.
+- Move Target Location from the sidebar into the content modal and use English text in the FAQ GEO popup.
+- Add Validate & Edit to Duplicate Schema reports with live JSON-LD inspection, identity checks, and site-wide Tool Kits custom JSON-LD editing.
+- Guard modal saves with permissions, nonces, input validation, and stale-edit detection.
+
 = 2.7.8 =
 **Dashboard SEO/GEO Scores and Emoji Fix**
 - Add a WordPress dashboard widget showing the latest saved SEO and GEO audit scores, checked pages, audit timestamps, partial audit status, and links to audit details.

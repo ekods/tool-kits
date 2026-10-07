@@ -1,6 +1,8 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
 require_once __DIR__ . '/seo-rendered-audit.php';
+require_once __DIR__ . '/seo-content-fixes.php';
+require_once __DIR__ . '/seo-content-modal.php';
 
 function tk_seo_opt_init() {
     add_action('admin_post_tk_seo_opt_save', 'tk_seo_opt_save');
@@ -14,6 +16,10 @@ function tk_seo_opt_init() {
     add_action('admin_post_tk_seo_index_delete', 'tk_seo_index_delete');
     add_action('admin_post_tk_seo_content_audit_scan', 'tk_seo_content_audit_scan');
     add_action('admin_post_tk_seo_content_audit_clear', 'tk_seo_content_audit_clear');
+    add_action('wp_ajax_tk_seo_content_fix', 'tk_seo_content_fix_ajax');
+    add_action('wp_ajax_tk_seo_content_fix_finish', 'tk_seo_content_fix_finish_ajax');
+    add_action('wp_ajax_tk_seo_content_editor', 'tk_seo_content_editor_ajax');
+    add_action('admin_enqueue_scripts', 'tk_seo_content_editor_enqueue');
 
     add_action('init', 'tk_seo_sitemap_maybe_render', 1);
     add_action('template_redirect', 'tk_seo_redirect_maybe_handle', 1);
@@ -273,7 +279,7 @@ function tk_seo_add_geo_meta_boxes(): void {
             'Tool Kits SEO / GEO',
             'tk_seo_render_geo_meta_box',
             $post_type,
-            'side',
+            'normal',
             'default'
         );
     }
@@ -311,7 +317,7 @@ function tk_seo_render_geo_meta_box($post): void {
             <meter min="0" max="100" low="50" high="85" optimum="100" value="<?php echo esc_attr((string) $score_item['score']); ?>" aria-label="SEO content score" style="width:100%;height:16px;"></meter>
             <p class="description">Saved content audit. Page-builder fields and rendered GEO/schema require separate review.</p>
             <details>
-                <summary>Temuan (<?php echo esc_html((string) count($score_item['issues'])); ?>)</summary>
+                <summary>Findings (<?php echo esc_html((string) count($score_item['issues'])); ?>)</summary>
                 <ul>
                     <?php foreach ($score_item['issues'] as $issue) : ?>
                         <li><?php echo esc_html($issue); ?></li>
@@ -321,7 +327,7 @@ function tk_seo_render_geo_meta_box($post): void {
         <?php endif; ?>
     <?php else : ?>
         <p><strong>SEO Score: -</strong></p>
-        <p class="description">Simpan draft untuk menghitung skor.</p>
+        <p class="description">Save a draft to calculate the score.</p>
     <?php endif; ?>
     <?php tk_seo_render_public_audit_panel($post); ?>
     <?php foreach (array('seo' => 'SEO', 'geo' => 'GEO') as $feature => $label) : ?>
@@ -341,23 +347,19 @@ function tk_seo_render_geo_meta_box($post): void {
         <p><button type="button" class="button tk-faq-open"><span class="dashicons dashicons-editor-help" aria-hidden="true"></span> FAQ GEO <span class="tk-faq-count"><?php echo esc_html((string) count($faq_items)); ?></span></button></p>
         <dialog class="tk-faq-dialog" aria-labelledby="tk-faq-title">
             <div class="tk-faq-header"><h2 id="tk-faq-title">FAQ GEO</h2><button type="button" class="button tk-faq-cancel" aria-label="Close" title="Close"><span class="dashicons dashicons-no-alt" aria-hidden="true"></span></button></div>
-            <div class="tk-faq-rows"></div>
+            <div class="tk-faq-body"><div class="tk-faq-rows"></div>
             <p class="tk-faq-error" role="alert" hidden></p>
+            </div>
             <div class="tk-faq-footer">
-                <button type="button" class="button tk-faq-add"><span class="dashicons dashicons-plus-alt2" aria-hidden="true"></span> Tambah FAQ</button>
-                <button type="button" class="button tk-faq-cancel">Batal</button>
-                <button type="button" class="button button-primary tk-faq-apply">Terapkan</button>
+                <button type="button" class="button tk-faq-add"><span class="dashicons dashicons-plus-alt2" aria-hidden="true"></span> Add FAQ</button>
+                <button type="button" class="button tk-faq-cancel">Cancel</button>
+                <button type="button" class="button button-primary tk-faq-apply">Apply</button>
             </div>
         </dialog>
     </div>
+    <?php tk_seo_content_editor_render((int) $post_id); ?>
     <p><label for="tk-seo-keyword"><strong>Focus Keyword</strong></label></p>
     <input id="tk-seo-keyword" name="tk_seo_focus_keyword" type="text" style="width:100%;" value="<?php echo esc_attr((string) get_post_meta($post_id, '_tk_seo_focus_keyword', true)); ?>">
-    <p><label for="tk-seo-location"><strong>Target Location</strong></label></p>
-    <select id="tk-seo-location" name="tk_seo_target_location" style="width:100%;">
-        <?php foreach (array('' => 'Not location-specific', 'jakarta' => 'Jakarta', 'singapore' => 'Singapore') as $value => $label) : ?>
-            <option value="<?php echo esc_attr($value); ?>" <?php selected(get_post_meta($post_id, '_tk_seo_target_location', true), $value); ?>><?php echo esc_html($label); ?></option>
-        <?php endforeach; ?>
-    </select>
     <p><label for="tk-schema-type"><strong>Schema Type</strong></label></p>
     <select id="tk-schema-type" name="tk_schema_type" style="width:100%;">
         <?php $selected_schema_type = (string) get_post_meta($post_id, '_tk_schema_type', true); ?>
@@ -2590,6 +2592,11 @@ function tk_render_seo_opt_panel() {
         <h3>Canonical Conflict Checker</h3>
         <p>Scan homepage and recent content for missing or duplicate canonical tags.</p>
         <div class="tk-seo-audit-actions">
+            <?php if (!empty($audit_report['items'])) : ?>
+                <button type="button" class="button button-primary" id="tk-seo-fix-all" style="margin-right:8px;">Fix All</button>
+                <p class="description">Fill missing excerpts from existing content and restore image alt from attachment metadata. Existing text and custom fields are preserved. Keywords, links, client outcomes and content length require editorial review.</p>
+                <p id="tk-seo-fix-status" role="status" aria-live="polite"></p>
+            <?php endif; ?>
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-block; margin-right:8px;">
                 <?php tk_nonce_field('tk_seo_canonical_scan'); ?>
                 <input type="hidden" name="action" value="tk_seo_canonical_scan">
@@ -2766,6 +2773,52 @@ function tk_render_seo_opt_panel() {
                 <button class="button">Clear Audit</button>
             </form>
         </div>
+
+        <?php $fix_report = tk_get_option('seo_content_fix_report', array()); ?>
+        <?php if (is_array($fix_report) && !empty($fix_report['items'])) : ?>
+            <details style="margin-top:12px;"><summary>Last Fix All results</summary>
+                <ul><?php foreach ($fix_report['items'] as $fix_item) : ?>
+                    <li><?php echo esc_html(sprintf('Post #%d: %s', (int) $fix_item['post_id'], implode('; ', (array) $fix_item['messages']))); ?></li>
+                <?php endforeach; ?></ul>
+            </details>
+        <?php endif; ?>
+        <script>
+        (function () {
+            var button = document.getElementById('tk-seo-fix-all');
+            if (!button) return;
+            var status = document.getElementById('tk-seo-fix-status');
+            var ids = <?php echo wp_json_encode(array_values(array_unique(array_filter(array_map(function ($item) { return (int) ($item['post_id'] ?? 0); }, (array) ($audit_report['items'] ?? array())))))); ?>;
+            var nonce = <?php echo wp_json_encode(wp_create_nonce('tk_seo_content_fix')); ?>;
+            function send(action, id) {
+                var data = new URLSearchParams({action: action, nonce: nonce, post_id: String(id || 0)});
+                return fetch(ajaxurl, {method: 'POST', credentials: 'same-origin', body: data}).then(function (response) {
+                    if (!response.ok) throw new Error('Request failed (' + response.status + ').');
+                    return response.json();
+                }).then(function (result) {
+                    if (!result.success) throw new Error(result.data && result.data.message || 'Fix failed.');
+                    return result.data;
+                });
+            }
+            button.addEventListener('click', async function () {
+                if (button.disabled) return;
+                button.disabled = true;
+                try {
+                    for (var i = 0; i < ids.length; i++) {
+                        status.textContent = 'Fixing ' + (i + 1) + ' / ' + ids.length + '…';
+                        var result = await send('tk_seo_content_fix', ids[i]);
+                        status.textContent = result.messages.join('; ');
+                    }
+                    status.textContent = 'Updating audit scores…';
+                    await send('tk_seo_content_fix_finish');
+                    window.location.hash = 'content-audit';
+                    window.location.reload();
+                } catch (error) {
+                    status.textContent = error.message + ' Completed changes are saved. Click Fix All to retry.';
+                    button.disabled = false;
+                }
+            });
+        }());
+        </script>
 
         <?php if (!empty($audit_report)) : ?>
             <?php

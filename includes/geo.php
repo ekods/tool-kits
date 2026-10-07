@@ -3,8 +3,11 @@ if (!defined('ABSPATH')) { exit; }
 require_once __DIR__ . '/geo-audit-batch.php';
 require_once __DIR__ . '/geo-crawler-fixes.php';
 require_once __DIR__ . '/geo-radar.php';
+require_once __DIR__ . '/geo-schema-modal.php';
 
 function tk_geo_init() {
+    add_action('wp_ajax_tk_geo_schema_editor', 'tk_geo_schema_editor_ajax');
+    add_action('admin_enqueue_scripts', 'tk_geo_schema_editor_assets');
     add_action('wp_ajax_tk_geo_batch_start', 'tk_geo_batch_start');
     add_action('wp_ajax_tk_geo_batch_step', 'tk_geo_batch_step');
     add_action('wp_ajax_tk_geo_fix_batch_start', 'tk_geo_fix_batch_start');
@@ -2881,11 +2884,12 @@ function tk_render_geo_panel(): void {
                             <td><?php echo esc_html((string) ((int) ($item['documents'] ?? 0))); ?> docs, <?php echo esc_html((string) ((int) ($item['invalid'] ?? 0))); ?> invalid</td>
                             <td><?php echo tk_geo_render_schema_type_badges($item['types'] ?? array()); ?></td>
                             <td><?php echo !empty($duplicates) ? tk_geo_render_schema_type_badges($duplicates) : '<span class="tk-badge tk-on">None</span>'; ?></td>
-                            <td><?php echo !empty($item['issue']) ? esc_html((string) $item['issue']) : '<span class="tk-badge tk-on">OK</span>'; ?></td>
+                            <td><?php echo !empty($item['issue']) ? esc_html((string) $item['issue']) : '<span class="tk-badge tk-on">OK</span>'; ?><p><button type="button" class="button tk-schema-editor-open" data-url="<?php echo esc_url((string) ($item['url'] ?? '')); ?>" data-duplicates="<?php echo esc_attr(wp_json_encode($duplicates)); ?>">Validate &amp; Edit</button></p></td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>
                 </table>
+                <?php tk_geo_schema_editor_modal(); ?>
             <?php else : ?>
                 <p class="description">No duplicate schema report yet.</p>
             <?php endif; ?>

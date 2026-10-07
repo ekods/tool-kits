@@ -24,24 +24,24 @@
         var tabs = document.createElement('div');
         tabs.className = 'tk-faq-language-tabs';
         tabs.setAttribute('role', 'tablist');
-        tabs.setAttribute('aria-label', 'Bahasa FAQ');
+        tabs.setAttribute('aria-label', 'FAQ language');
         var languageTools = document.createElement('div');
         languageTools.className = 'tk-faq-language-tools';
         var languageInput = document.createElement('input');
         languageInput.type = 'text';
-        languageInput.placeholder = 'Kode bahasa';
-        languageInput.setAttribute('aria-label', 'Kode bahasa tambahan');
+        languageInput.placeholder = 'Language code';
+        languageInput.setAttribute('aria-label', 'Additional language code');
         var languageAdd = document.createElement('button');
         languageAdd.type = 'button';
         languageAdd.className = 'button';
-        languageAdd.textContent = 'Tambah bahasa';
+        languageAdd.textContent = 'Add language';
         var languageRemove = document.createElement('button');
         languageRemove.type = 'button';
         languageRemove.className = 'button';
-        languageRemove.textContent = 'Hapus bahasa';
+        languageRemove.textContent = 'Remove language';
         function updateLanguageTools() {
             languageRemove.disabled = activeLanguage === defaultLanguage || languages.length <= 1;
-            languageRemove.title = languageRemove.disabled ? 'Bahasa default tidak dapat dihapus' : 'Hapus bahasa aktif dan semua FAQ-nya';
+            languageRemove.title = languageRemove.disabled ? 'The default language cannot be removed' : 'Remove the active language and all of its FAQ items';
         }
         languageTools.append(languageInput, languageAdd, languageRemove);
         rows.before(tabs, languageTools);
@@ -85,7 +85,7 @@
         languageAdd.addEventListener('click', function () {
             var tag = languageInput.value.trim().toLowerCase().replace(/_/g, '-');
             if (!/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(tag)) {
-                error.textContent = 'Gunakan kode bahasa seperti id, en, atau en-sg.';
+                error.textContent = 'Use a language code such as id, en, or en-sg.';
                 error.hidden = false;
                 languageInput.focus();
                 return;
@@ -102,7 +102,7 @@
             rows.querySelectorAll('.tk-faq-row').forEach(function (row) {
                 if (row.querySelector('.tk-faq-language').value === tag) { rowCount++; }
             });
-            if (!window.confirm('Hapus bahasa ' + tag.toUpperCase() + ' dan ' + rowCount + ' FAQ di dalamnya?')) { return; }
+            if (!window.confirm('Remove language ' + tag.toUpperCase() + ' and ' + rowCount + ' FAQ items?')) { return; }
             rows.querySelectorAll('.tk-faq-row').forEach(function (row) {
                 if (row.querySelector('.tk-faq-language').value === tag) { row.remove(); }
             });
@@ -126,7 +126,7 @@
             language.value = item.language || '';
             addLanguage(language.value);
             var questionLabel = document.createElement('label');
-            questionLabel.textContent = 'Pertanyaan';
+            questionLabel.textContent = 'Question';
             questionLabel.htmlFor = id + '-question';
             var question = document.createElement('input');
             question.type = 'text';
@@ -134,7 +134,7 @@
             question.className = 'tk-faq-question';
             question.value = item.question || '';
             var answerLabel = document.createElement('label');
-            answerLabel.textContent = 'Jawaban';
+            answerLabel.textContent = 'Answer';
             answerLabel.htmlFor = id + '-answer';
             var answer = document.createElement('textarea');
             answer.id = answerLabel.htmlFor;
@@ -144,8 +144,8 @@
             var remove = document.createElement('button');
             remove.type = 'button';
             remove.className = 'button tk-faq-remove';
-            remove.title = 'Hapus FAQ';
-            remove.setAttribute('aria-label', 'Hapus FAQ');
+            remove.title = 'Remove FAQ';
+            remove.setAttribute('aria-label', 'Remove FAQ');
             var icon = document.createElement('span');
             icon.className = 'dashicons dashicons-trash';
             icon.setAttribute('aria-hidden', 'true');
@@ -222,7 +222,7 @@
                 items.push({ question: question.value.trim(), answer: answer.value.trim(), language: tag });
             });
             if (invalid) {
-                error.textContent = 'Isi pertanyaan dan jawaban; gunakan kode bahasa seperti id atau en.';
+                error.textContent = 'Enter a question and answer; use a language code such as id or en.';
                 error.hidden = false;
                 activateLanguage(invalid.closest('.tk-faq-row').querySelector('.tk-faq-language').value);
                 invalid.focus();

@@ -70,15 +70,15 @@ function tk_seo_render_public_audit_panel($post): void {
     $report = get_post_meta($post->ID, '_tk_seo_rendered_audit', true);
     $url = wp_nonce_url(add_query_arg(array('action' => 'tk_seo_post_rendered_audit', 'post_id' => $post->ID), admin_url('admin-post.php')), 'tk_seo_post_rendered_audit_' . $post->ID);
     ?>
-    <p><a class="button" href="<?php echo esc_url($url); ?>">Audit halaman publik</a></p>
+    <p><a class="button" href="<?php echo esc_url($url); ?>">Audit Public Page</a></p>
     <?php if (is_array($report) && !empty($report['scanned_at'])) : ?>
         <p class="description"><?php echo esc_html(wp_date('Y-m-d H:i', $report['scanned_at'])); ?></p>
-        <?php if (($report['post_modified'] ?? '') !== $post->post_modified_gmt) : ?><p>Konten berubah; jalankan audit ulang.</p><?php endif; ?>
+        <?php if (($report['post_modified'] ?? '') !== $post->post_modified_gmt) : ?><p>Content has changed. Run the audit again.</p><?php endif; ?>
         <?php if (!empty($report['error'])) : ?>
             <p><?php echo esc_html($report['error']); ?></p>
         <?php else : ?>
             <p><strong>Rendered SEO: <?php echo esc_html((string) $report['score']); ?>/100</strong></p>
-            <details><summary>Hasil halaman publik</summary>
+            <details><summary>Public Page Results</summary>
                 <ul><?php foreach ($report['issues'] as $issue) : ?><li><?php echo esc_html($issue); ?></li><?php endforeach; ?></ul>
                 <p><?php echo esc_html($report['text_sample']); ?></p>
             </details>

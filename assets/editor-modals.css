@@ -1,0 +1,57 @@
+.tk-editor-modal { box-sizing: border-box; width: 760px; max-width: calc(100vw - 40px); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); padding: 0; overflow: hidden; border: 1px solid #dcdcde; border-radius: 12px; background: #fff; color: #1d2327; box-shadow: 0 24px 80px rgba(0,0,0,.2); }
+.tk-editor-modal[open] { display: flex; flex-direction: column; }
+.tk-editor-modal-wide { width: 1080px; }
+.tk-editor-modal::backdrop { background: rgba(15,23,42,.52); }
+.tk-editor-modal-header { flex: 0 0 auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 22px 28px; border-bottom: 1px solid #e5e7eb; }
+.tk-editor-modal-header > div { min-width: 0; }
+.tk-editor-modal .tk-editor-modal-header h2 { margin: 0; padding: 0; font-size: 20px; line-height: 1.4; font-weight: 600; }
+.tk-editor-modal-header p { margin: 5px 0 0; color: #646970; font-size: 13px; }
+.tk-editor-modal-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 24px 28px; }
+.tk-editor-modal-cross { flex-shrink: 0; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 6px; background: #f6f7f7; color: #50575e; font-size: 26px; cursor: pointer; }
+.tk-editor-modal-cross:hover { background: #e8eaed; color: #1d2327; }
+.tk-editor-modal-cross:focus-visible { outline: 2px solid #2271b1; outline-offset: 2px; }
+.tk-editor-modal-cross:disabled { opacity: .5; cursor: wait; }
+.tk-editor-modal-footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 16px 28px; background: #f9fafb; border-top: 1px solid #e5e7eb; }
+.tk-editor-modal-footer .tk-schema-retry { margin-right: auto; }
+.tk-editor-modal .button { white-space: normal; min-height: 34px; padding: 2px 12px; border-radius: 5px; }
+.tk-editor-modal textarea, .tk-editor-modal input, .tk-editor-modal select { box-sizing: border-box; max-width: 100%; width: 100%; margin-top: 7px; padding: 8px 10px; border-color: #c3c4c7; border-radius: 6px; font-size: 13px; font-weight: 400; line-height: 1.5; }
+.tk-editor-modal textarea { resize: vertical; }
+.tk-editor-modal label { display: block; font-weight: 600; font-size: 13px; }
+.tk-editor-modal p { margin: 0 0 16px; overflow-wrap: anywhere; }
+.tk-editor-modal .description { font-weight: 400; color: #646970; line-height: 1.6; }
+.tk-editor-modal .tk-modal-note { padding: 12px 16px; border: 1px solid #dbe7f3; border-radius: 6px; background: #f4f8fc; color: #39516b; font-size: 13px; line-height: 1.6; }
+.tk-modal-section + .tk-modal-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e5e7eb; }
+.tk-editor-modal h3 { margin: 0 0 14px; font-size: 15px; }
+.tk-modal-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.tk-modal-grid p { margin-bottom: 0; }
+.tk-seo-content-summary { color: #50575e; font-size: 13px; }
+.tk-seo-content-status:empty, .tk-schema-editor-status:empty { display: none; }
+.tk-editor-modal .tk-seo-content-status:not(:empty), .tk-editor-modal .tk-schema-editor-status:not(:empty) { margin: 20px 0 0; padding: 12px 16px; border-radius: 6px; background: #f0f0f1; font-size: 13px; line-height: 1.6; }
+.tk-schema-editor-url { padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 6px; background: #f9fafb; color: #50575e; font-size: 12px; }
+.tk-modal-tabs { display: flex; gap: 4px; padding: 4px; margin-bottom: 20px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f6f7f7; }
+.tk-modal-tabs button { flex: 1; padding: 9px 12px; border: 0; border-radius: 5px; background: transparent; color: #50575e; font-size: 13px; font-weight: 600; cursor: pointer; }
+.tk-modal-tabs button[aria-selected="true"] { background: #fff; color: #135e96; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+.tk-modal-tabs button:focus-visible { outline: 2px solid #2271b1; outline-offset: 1px; }
+.tk-schema-panel[hidden] { display: none !important; }
+.tk-schema-live > ul { margin: 0 0 16px; padding: 12px 16px 12px 32px; border-radius: 6px; background: #f6f7f7; }
+.tk-schema-live > details { margin: 12px 0; padding: 14px; border: 1px solid #e5e7eb; border-radius: 8px; }
+.tk-schema-live summary, .tk-schema-node summary { cursor: pointer; line-height: 1.5; }
+.tk-schema-live pre, .tk-schema-node pre { max-height: 220px; overflow: auto; padding: 12px; border-radius: 5px; background: #f6f7f7; font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tk-schema-edit-layout { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 20px; align-items: start; }
+.tk-schema-edit-layout #tk-schema-json { min-height: 340px; font-family: ui-monospace,SFMono-Regular,Menlo,monospace; font-size: 12px; }
+.tk-editor-modal .tk-modal-field-heading { margin: 0 0 7px; font-size: 13px; }
+.tk-schema-custom-nodes { max-height: 440px; overflow: auto; padding-right: 4px; }
+.tk-schema-custom-nodes:empty::before { content: "No schema nodes in this draft."; display: block; padding: 16px; border: 1px dashed #dcdcde; border-radius: 6px; color: #646970; }
+.tk-schema-node { margin: 0 0 12px; padding: 14px; border: 1px solid #dcdcde; border-radius: 7px; }
+.tk-schema-node h4 { margin: 0 0 8px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.tk-schema-node p { margin: 10px 0; font-size: 12px; line-height: 1.6; }
+.tk-schema-duplicate { border-color: #b32d2e; background: #fff7f7; box-shadow: inset 3px 0 #b32d2e; }
+.tk-schema-mark, .tk-schema-warning { color: #b32d2e; font-weight: 600; }
+.tk-schema-node-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.tk-schema-node-actions .button { font-size: 12px; }
+.tk-schema-add-fields { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,2fr); gap: 16px; margin: 20px 0 0; align-items: end; }
+.tk-schema-add-fields label:nth-child(3) { grid-column: 1 / -1; }
+.tk-schema-add-fields .button { justify-self: start; }
+.tk-schema-missing { padding: 12px 16px; border: 1px solid #e5e7eb; border-radius: 6px; background: #f9fafb; font-size: 13px; }
+@media (max-width: 760px) { .tk-schema-edit-layout { grid-template-columns: 1fr; } .tk-schema-custom-nodes { max-height: none; } }
+@media (max-width: 600px) { .tk-editor-modal { max-width: calc(100vw - 20px); max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); border-radius: 8px; } .tk-editor-modal-header { padding: 16px; gap: 12px; } .tk-editor-modal .tk-editor-modal-header h2 { font-size: 17px; } .tk-editor-modal-body { padding: 18px 16px; } .tk-editor-modal-footer { padding: 12px 16px; } .tk-editor-modal-footer .button { flex: 1 1 40%; text-align: center; } .tk-editor-modal-footer .tk-schema-retry { margin-right: 0; } .tk-modal-grid, .tk-schema-add-fields { grid-template-columns: 1fr; } .tk-schema-add-fields label:nth-child(3) { grid-column: auto; } .tk-modal-tabs button { padding: 8px 5px; font-size: 12px; } }

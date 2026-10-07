@@ -3,6 +3,26 @@
 const { spawnSync } = require('node:child_process');
 const cases = [
   {
+    "name": "modal-loading-recovery",
+    "runtime": "node",
+    "source": ["require(__dirname + '/modal-loading-regression.cjs');"]
+  },
+  {
+    "name": "schema-validate-edit-modal",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/schema-modal-regression.php';"]
+  },
+  {
+    "name": "content-seo-modal",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/content-modal-regression.php';"]
+  },
+  {
+    "name": "content-seo-fix-all",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/content-fixes-regression.php';"]
+  },
+  {
     "name": "geo-bulk-fixing",
     "runtime": "node",
     "source": [
@@ -294,7 +314,7 @@ const cases = [
       "const assert = require('node:assert/strict');",
       "const postFaq = fs.readFileSync(path.join(__dirname, '../assets/post-faq.js'), 'utf8');",
       "const geo = fs.readFileSync(path.join(__dirname, '../includes/geo.php'), 'utf8');",
-      "assert.ok(postFaq.includes(\"languageRemove.textContent = 'Hapus bahasa'\"));",
+      "assert.ok(postFaq.includes(\"languageRemove.textContent = 'Remove language'\"));",
       "assert.ok(postFaq.includes('activeLanguage === defaultLanguage'));",
       "assert.ok(postFaq.includes(\"row.querySelector('.tk-faq-language').value === tag\"));",
       "assert.ok(geo.includes(\"removeLanguageButton.textContent = 'Remove Locale'\"));",

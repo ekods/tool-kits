@@ -92,6 +92,7 @@ function tk_render_seo_geo_dashboard_widget(): void {
         <?php endforeach; ?>
     </div>
     <p class="description"><?php esc_html_e('Scores reflect the latest saved audits of sampled pages.', 'tool-kits'); ?></p>
+    <?php tk_seo_content_editor_render(); ?>
     <?php
 }
 
