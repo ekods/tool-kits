@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.15
+Stable tag: 2.7.16
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,13 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.16 =
+**Fresh Crawler Metadata Verification**
+- Make both Preview Crawler Fetch and Scan Again replace saved reports with newly fetched responses instead of reusing old missing metadata findings.
+- Rescan live crawler responses after saving or removing a missing metadata fallback; report actual output rather than treating saved form values as verified metadata.
+- Request cache revalidation during crawler scans, display the last scan time, and mark legacy saved reports as requiring refresh.
+- Add regression coverage for stale author/publisher reports, both scan buttons, per-crawler differences, fallback save/removal verification and upstream responses that remain incomplete.
+
 = 2.7.15 =
 **Complete Missing Metadata Form**
 - Show all saved crawler findings and affected crawler names in Fix Missing Metadata, including fetch failures and invalid JSON-LD that need source review.

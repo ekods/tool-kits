@@ -31,11 +31,16 @@ function add_query_arg($params, $url) { return $url . '?' . http_build_query($pa
 function is_wp_error($response) { return false; }
 function wp_remote_get($url, $args) {
     $GLOBALS['fetches']++;
+    $GLOBALS['fetch_log'][] = array('url' => $url, 'args' => $args);
     if (substr($url, -10) === 'robots.txt') { return array('status' => 200, 'body' => "User-agent: *\nAllow: /"); }
     if (!empty($GLOBALS['simulate_agent_fail']) && ($args['headers']['User-Agent'] ?? '') !== 'Tool Kits GEO AI Visibility') {
         return array('status' => 502, 'body' => 'Local WAF rejection');
     }
-    return array('status' => 200, 'body' => '<html><head><title>Fresh</title></head><body>Content</body></html>');
+    $body = $GLOBALS['agent_html'][$args['headers']['User-Agent'] ?? ''] ?? $GLOBALS['crawler_html'] ?? '<html><head><title>Fresh</title></head><body>Content</body></html>';
+    if (!empty($GLOBALS['serve_crawler_fixes']) && isset($GLOBALS['options']['geo_crawler_fixes'][$url])) {
+        $body = tk_geo_crawler_fix_html($body, $url, $GLOBALS['options']['geo_crawler_fixes'][$url]);
+    }
+    return array('status' => 200, 'body' => $body);
 }
 function wp_remote_retrieve_response_code($response) { return $response['status']; }
 function wp_remote_retrieve_body($response) { return $response['body']; }
@@ -128,6 +133,41 @@ $options['geo_crawler_preview'] = $publisher_only;
 $posted = array('crawler_fix_url' => $url, 'crawler_fix_publisher' => 'Updated Publisher');
 run_action('tk_geo_crawler_fix_handler');
 check($options['geo_crawler_fixes'][$url]['title'] === 'Reviewed title' && $options['geo_crawler_fixes'][$url]['description'] === 'Reviewed description' && $options['geo_crawler_fixes'][$url]['author'] === 'Reviewed Author', 'Partial form lost saved fallback values');
+
+// Reproduce the screenshot: old report has blank identities, but live HTML has
+// complete metadata. Either submit button must replace the old evidence.
+$crawler_html = '<html><head><title>Live title</title><meta name="description" content="Live description"><meta content="master" name="author"><meta name="publisher" content="EGGHEAD"><link rel="canonical" href="' . $url . '"><script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage"}</script></head><body>Live page</body></html>';
+$options['geo_crawler_preview'] = $mixed; $fetches = 0; $fetch_log = array();
+$posted = array('crawler_preview_url' => $url);
+run_action('tk_geo_crawler_preview_handler');
+$fresh = $options['geo_crawler_preview'];
+check($fetches === count(tk_geo_ai_crawler_agents()) && $fresh['author'] === 'master' && $fresh['publisher'] === 'EGGHEAD', 'Preview button retained old missing metadata');
+check($fresh['metadata_version'] === 1 && $fresh['scanned_at'] > 0, 'Fresh scan marker missing');
+// An active fallback notice can remain, but the missing form must disappear.
+check(strpos(render_missing_form($fresh), '<h4>Fix Missing Metadata</h4>') === false, 'Complete live scan still offered missing metadata');
+foreach ($fresh['agents'] as $row) { check(tk_geo_crawler_issues($row) === array(), 'Complete live crawler response still marked missing'); }
+foreach ($fetch_log as $request) {
+    check($request['url'] === $url && ($request['args']['headers']['Cache-Control'] ?? '') === 'no-cache, max-age=0' && ($request['args']['headers']['Pragma'] ?? '') === 'no-cache', 'Scan changed URL or omitted revalidation headers');
+}
+$agent_html = array('GPTBot' => str_replace('<meta name="publisher" content="EGGHEAD">', '', $crawler_html));
+$fresh = tk_geo_run_crawler_preview($url);
+check(isset(tk_geo_crawler_missing_findings($fresh)['publisher']) && !isset(tk_geo_crawler_missing_findings($fresh)['author']), 'Fresh scan masked a genuinely incomplete crawler response');
+$agent_html = array();
+
+// Saving must verify output; removing a fix must likewise expose actual missing
+// metadata again, and an unrefreshed upstream cache must stay marked missing.
+$crawler_html = str_replace(array('<meta content="master" name="author">', '<meta name="publisher" content="EGGHEAD">'), '', $crawler_html);
+$options['geo_crawler_fixes'] = array(); $options['geo_crawler_preview'] = $mixed; $serve_crawler_fixes = true;
+$posted = array('crawler_fix_url' => $url, 'crawler_fix_author' => 'Reviewed live author', 'crawler_fix_publisher' => 'Reviewed live publisher');
+run_action('tk_geo_crawler_fix_handler');
+check($options['geo_crawler_preview']['author'] === 'Reviewed live author' && $options['geo_crawler_preview']['publisher'] === 'Reviewed live publisher' && !tk_geo_crawler_missing_findings($options['geo_crawler_preview']), 'Save did not verify and replace old report');
+$posted['crawler_fix_mode'] = 'remove';
+run_action('tk_geo_crawler_fix_handler');
+check(isset(tk_geo_crawler_missing_findings($options['geo_crawler_preview'])['author']), 'Removal did not rescan actual output');
+$serve_crawler_fixes = false; unset($posted['crawler_fix_mode']);
+run_action('tk_geo_crawler_fix_handler');
+check(isset($options['geo_crawler_fixes'][$url]) && isset(tk_geo_crawler_missing_findings($options['geo_crawler_preview'])['author']), 'Saved form values falsely turned stale upstream output green');
+unset($crawler_html, $agent_html, $serve_crawler_fixes);
 $options = array(); $posted = array(); $purges = 0;
 
 $options['geo_crawler_preview'] = array('url' => $url, 'ok' => true, 'status' => 200);
@@ -214,10 +254,10 @@ foreach (array(200, 500) as $status) {
 http_response_code(200);
 $_SERVER['REQUEST_METHOD'] = 'POST';
 
-$posted = array('crawler_preview_url' => $url);
+$posted = array('crawler_preview_url' => $url); $fetches = 0;
 run_action('tk_geo_crawler_preview_handler');
-check($fetches === 0, 'Saved preview unexpectedly crawled');
+check($fetches === count(tk_geo_ai_crawler_agents()), 'Explicit Preview button did not replace saved results');
 $posted['crawler_preview_refresh'] = 1;
 run_action('tk_geo_crawler_preview_handler');
-check($fetches === count(tk_geo_ai_crawler_agents()) && $options['geo_crawler_preview']['title'] === 'Fresh', 'Explicit rescan reused stale results');
-echo "PASS: crawler and AI visibility fixes, idempotence, escaping, authorization, URL scope, removal and fresh scans\n";
+check($fetches === 2 * count(tk_geo_ai_crawler_agents()) && $options['geo_crawler_preview']['title'] === 'Fresh', 'Explicit rescan reused stale results');
+echo "PASS: crawler and AI visibility fixes, idempotence, escaping, authorization, URL scope, fresh scan buttons, save/remove verification and genuine missing responses\n";

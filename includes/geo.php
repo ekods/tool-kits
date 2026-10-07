@@ -859,14 +859,17 @@ function tk_geo_ai_crawler_agents(): array {
     );
 }
 
-function tk_geo_fetch_url(string $url, string $user_agent = 'Tool Kits GEO AI Access Review', int $timeout = 8) {
+function tk_geo_fetch_url(string $url, string $user_agent = 'Tool Kits GEO AI Access Review', int $timeout = 8, bool $refresh = false) {
+    $headers = array('User-Agent' => $user_agent);
+    if ($refresh) {
+        $headers['Cache-Control'] = 'no-cache, max-age=0';
+        $headers['Pragma'] = 'no-cache';
+    }
     return wp_remote_get($url, array(
         'timeout' => max(1, min(60, $timeout)),
         'redirection' => 3,
         'sslverify' => false,
-        'headers' => array(
-            'User-Agent' => $user_agent,
-        ),
+        'headers' => $headers,
     ));
 }
 
@@ -1822,22 +1825,24 @@ function tk_geo_schema_duplicate_clear(): void {
 function tk_geo_crawler_preview_handler(): void {
     tk_require_admin_post('tk_geo_crawler_preview');
     $url = esc_url_raw((string) tk_post('crawler_preview_url', home_url('/')));
-    $agents = tk_geo_ai_crawler_agents();
     $home_host = (string) wp_parse_url(home_url('/'), PHP_URL_HOST);
     $url_host = (string) wp_parse_url($url, PHP_URL_HOST);
     if ($url === '' || ($home_host !== '' && $url_host !== '' && strcasecmp($home_host, $url_host) !== 0)) {
         $url = home_url('/');
     }
-    $saved = tk_get_option('geo_crawler_preview', array());
-    if (is_array($saved) && ($saved['url'] ?? '') === $url && !tk_post('crawler_preview_refresh', 0)) {
-        wp_safe_redirect(admin_url('admin.php?page=tool-kits-geo-audit') . '#crawler-preview');
-        exit;
-    }
+    // Both submit buttons request a scan. Saved results are only reused when
+    // rendering the admin page, never in response to an explicit scan action.
+    tk_update_option('geo_crawler_preview', tk_geo_run_crawler_preview($url));
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-geo-audit', 'tk_geo_crawler_preview' => 1), admin_url('admin.php')) . '#crawler-preview');
+    exit;
+}
 
+function tk_geo_run_crawler_preview(string $url): array {
+    $agents = tk_geo_ai_crawler_agents();
     $results = array();
     $first_visible = array();
     foreach ($agents as $agent => $info) {
-        $response = tk_geo_fetch_url($url, (string) $agent);
+        $response = tk_geo_fetch_url($url, (string) $agent, 8, true);
         $status = is_wp_error($response) ? 0 : (int) wp_remote_retrieve_response_code($response);
         $html = is_wp_error($response) ? '' : (string) wp_remote_retrieve_body($response);
         $schema = tk_geo_extract_jsonld_report($html, true);
@@ -1869,8 +1874,9 @@ function tk_geo_crawler_preview_handler(): void {
         }
     }
     $summary = !empty($first_visible) ? $first_visible : (isset($results[0]) ? $results[0] : array());
-    tk_update_option('geo_crawler_preview', array(
+    return array(
         'scanned_at' => time(),
+        'metadata_version' => 1,
         'url' => $url,
         'agent' => (string) ($summary['agent'] ?? ''),
         'status' => (int) ($summary['status'] ?? 0),
@@ -1888,9 +1894,7 @@ function tk_geo_crawler_preview_handler(): void {
         'body_bytes' => (int) ($summary['body_bytes'] ?? 0),
         'error' => (string) ($summary['error'] ?? ''),
         'agents' => $results,
-    ));
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-geo-audit', 'tk_geo_crawler_preview' => 1), admin_url('admin.php')) . '#crawler-preview');
-    exit;
+    );
 }
 
 function tk_geo_ai_access_scan(): void {
@@ -2918,6 +2922,8 @@ function tk_render_geo_panel(): void {
                 </p>
             </div>
             <?php if (!empty($crawler_preview)) : ?>
+                <p class="description">Last scanned: <?php echo !empty($crawler_preview['scanned_at']) ? esc_html(wp_date('Y-m-d H:i:s T', (int) $crawler_preview['scanned_at'])) : 'Unknown'; ?>. Both Preview Crawler Fetch and Scan Again fetch new responses.</p>
+                <?php if (empty($crawler_preview['metadata_version'])): ?><p><span class="tk-badge tk-warn">Refresh required</span> This saved report predates the current metadata scan. Run Preview Crawler Fetch or Scan Again to update these findings.</p><?php endif; ?>
                 <?php $schema_types = isset($crawler_preview['schema_types']) && is_array($crawler_preview['schema_types']) ? $crawler_preview['schema_types'] : array(); ?>
                 <?php $preview_agents = isset($crawler_preview['agents']) && is_array($crawler_preview['agents']) ? $crawler_preview['agents'] : array(); ?>
                 <?php tk_geo_crawler_fix_controls($crawler_preview); ?>

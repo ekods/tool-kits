@@ -154,6 +154,9 @@ function tk_geo_crawler_fix_handler(): void {
     }
     tk_update_option('geo_crawler_fixes', $fixes);
     if (function_exists('tk_page_cache_purge')) { tk_page_cache_purge(); }
+    // Verify the actual response after saving/removing a fallback. Never turn
+    // missing badges green merely because values were stored in the form.
+    tk_update_option('geo_crawler_preview', tk_geo_run_crawler_preview($url));
     wp_safe_redirect(admin_url('admin.php?page=tool-kits-geo-audit') . '#crawler-preview');
     exit;
 }
