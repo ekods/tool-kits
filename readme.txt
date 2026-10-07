@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.12
+Stable tag: 2.7.13
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,14 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.13 =
+**Schema Entity Review and Type Inventory**
+- Stop treating repeated schema types as duplicate warnings; FAQ questions/answers, list items, and distinct images, places, addresses, or people remain normal inventory counts.
+- Mark repeated @id definitions and identical top-level nodes for source review, while excluding references and shared anonymous nested data.
+- Use the same entity checks in live validation, schema reports, and the duplicate detector; keep type inventory badges neutral.
+- Refresh legacy type-count reports before automatic fix decisions and prompt users to rerun older saved reports.
+- Add regression checks for the reported counts, distinct identities, canonical key ordering, shared nested data, references, and red marking.
+
 = 2.7.12 =
 **Content SEO Validation Modal**
 - Add Validate & Edit to each editable Content SEO Audit entry, opening the selected page in a responsive modal.

@@ -153,7 +153,41 @@ const stored = {json: '{"@type":"WebSite"}', version: 'v1', validation: {message
     marked.tabs[0].listeners.keydown({key: 'ArrowRight', preventDefault() {}});
     assert.equal(marked.tabs[1]['aria-selected'], 'true', 'Keyboard tab navigation failed');
     marked.cross.click();
+    // Matching types alone must not mark FAQ/list/people/image nodes red.
+    const normalGraph = {'@context': 'https://schema.org', '@graph': [
+        {'@type': 'FAQPage', mainEntity: Array.from({length: 20}, (_, index) => ({'@type': 'Question', name: 'Question ' + index,
+            acceptedAnswer: {'@type': 'Answer', text: 'Answer ' + index}}))},
+        {'@type': 'BreadcrumbList', itemListElement: Array.from({length: 12}, (_, index) => ({'@type': 'ListItem', position: index + 1, name: 'Item ' + index}))},
+        ...Array.from({length: 2}, (_, index) => ({'@type': 'ImageObject', '@id': '#image-' + index})),
+        ...Array.from({length: 8}, (_, index) => ({'@type': 'Place', name: 'Place ' + index,
+            ...(index < 2 ? {address: {'@type': 'PostalAddress', streetAddress: 'Address ' + index}} : {})})),
+        ...Array.from({length: 12}, (_, index) => ({'@type': 'Person', '@id': '#person-' + index, name: 'Person ' + index}))
+    ]};
+    const normalJson = JSON.stringify(normalGraph);
+    const normal = fixture((url, options) => options.body.get('mode') === 'load' ? reply({...stored, json: normalJson})
+        : reply({live: {documents: [{json: normalJson, validation: {messages: ['Valid']}}], combined: {messages: ['Valid'], duplicate_ids: {}}}}));
+    normal.opener.dataset.duplicates = JSON.stringify({Question: 20, ImageObject: 2, Person: 12});
+    await normal.opener.click(); await flush();
+    assert.ok(normal.nodes['.tk-schema-custom-nodes'].children.every(card => !card.className.includes('tk-schema-duplicate')));
+    const liveDoc = normal.nodes['.tk-schema-live'].children.find(child => child.tagName === 'details' && child.children[0].textContent.includes('Live document'));
+    assert.notEqual(liveDoc.open, true, 'Normal FAQ/list nodes expanded as duplicate errors');
+    const liveCards = liveDoc.children.find(child => child.tagName === 'div').children;
+    assert.ok(liveCards.every(card => !card.className.includes('tk-schema-duplicate')));
+    const inventory = normal.nodes['.tk-schema-live'].children.find(child => child.tagName === 'details' && child.children[0].textContent.includes('Inventory'));
+    assert.ok(inventory.children[1].children.some(item => item.textContent === 'Question: 20' && !item.className));
+    normal.cross.click();
+    const anonymous = JSON.stringify([{'@type': 'WebSite', name: 'Site', url: 'https://site.example'}, {url: 'https://site.example', name: 'Site', '@type': 'WebSite', '@context': 'https://schema.org'}]);
+    const exact = fixture((url, options) => options.body.get('mode') === 'load' ? reply({...stored, json: anonymous})
+        : reply({live: {documents: [{json: anonymous, validation: {messages: []}}], combined: {messages: [], duplicate_ids: {}}}}));
+    await exact.opener.click(); await flush();
+    assert.equal(exact.nodes['.tk-schema-custom-nodes'].children.filter(card => card.className.includes('tk-schema-duplicate')).length, 2);
+    exact.cross.click();
+    const sharedAddress = schemaTools.analyze([{'@type': 'Person', '@id': '#a', address: {'@type': 'PostalAddress', streetAddress: 'Same'}},
+        {'@type': 'Person', '@id': '#b', address: {'@type': 'PostalAddress', streetAddress: 'Same'}}]);
+    assert.equal(Object.keys(sharedAddress.anonymous).length, 0, 'Nested shared data flagged as anonymous top-level duplicates');
+    assert.equal(schemaTools.analyze([{'@type': 'Organization', '@id': '#org'}, {'@id': '#org', '@context': 'https://schema.org'}]).ids['#org'], 1);
     console.log('PASS: independent live loading, timeout, retry, server errors, expired nonce, close during loading, focus restoration and page selector');
     console.log('PASS: missing/incompatible live responses, dedicated uncached live requests and clickable tabs after fetch failure');
     console.log('PASS: red duplicate nodes/JSON lines, draft removal, undo, missing schema addition, duplicate prevention and missing-field preservation');
+    console.log('PASS: repeated types remain neutral inventories; red marks require repeated identities or identical top-level nodes');
 })().catch(error => { console.error(error); process.exit(1); });

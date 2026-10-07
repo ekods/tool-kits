@@ -22,8 +22,7 @@
         var add = dialog.querySelector('.tk-schema-add');
         var closes = dialog.querySelectorAll('.tk-schema-close');
         var url = '', version = '', opener, saving = false, loaded = false, sequence = 0;
-        var liveData = null, defaults = {}, history = [], fillPath = null, draftBusy = false;
-        var reportDuplicates = {};
+        var liveData = null, liveAnalysis = null, defaults = {}, history = [], fillPath = null, draftBusy = false;
         var controllers = new Set();
         var tabs = dialog.querySelectorAll('[data-schema-panel]');
         function showPanel(name) {
@@ -85,37 +84,37 @@
             var list = document.createElement('ul');
             (Array.isArray(items) ? items : []).forEach(function (message) {
                 var item = document.createElement('li'); item.textContent = message;
-                if (/Repeated (type|entity)|Invalid |No typed/.test(message)) item.className = 'tk-schema-warning';
+                if (/Repeated entity|Identical top-level|Invalid |No typed/.test(message)) item.className = 'tk-schema-warning';
                 list.appendChild(item);
             });
             parent.appendChild(list);
         }
         function parseDraft() { return editor.value.trim() ? JSON.parse(editor.value) : null; }
-        function duplicateTypes() { return liveData && liveData.combined ? liveData.combined.duplicate_types || {} : reportDuplicates; }
         function nodeCards(parent, json, editable, analysis) {
             var value;
             try { value = JSON.parse(json); } catch (error) { return; }
             var info = tools.analyze(value);
-            var repeatedTypes = duplicateTypes(), repeatedIds = liveData && liveData.combined ? liveData.combined.duplicate_ids || {} : {};
+            analysis = analysis || liveAnalysis;
+            var repeatedIds = liveData && liveData.combined ? liveData.combined.duplicate_ids || {} : {};
             info.nodes.forEach(function (entry) {
-                var flaggedTypes = entry.types.filter(function (type) { return repeatedTypes[type] > 1 || info.types[type] > 1 || analysis && analysis.types[type] > 1; });
                 var repeatedId = entry.id && (repeatedIds[entry.id] > 1 || info.ids[entry.id] > 1 || analysis && analysis.ids[entry.id] > 1);
-                var card = document.createElement('div'); card.className = 'tk-schema-node' + (flaggedTypes.length || repeatedId ? ' tk-schema-duplicate' : '');
+                var identical = entry.signature && (info.anonymous[entry.signature] > 1 || analysis && analysis.anonymous[entry.signature] > 1);
+                var card = document.createElement('div'); card.className = 'tk-schema-node' + (identical || repeatedId ? ' tk-schema-duplicate' : '');
                 var title = document.createElement('h4'); title.textContent = entry.types.join(', ') + (entry.id ? ' — ' + entry.id : ''); card.appendChild(title);
-                if (flaggedTypes.length || repeatedId) {
+                if (identical || repeatedId) {
                     var warning = document.createElement('p'); warning.className = 'tk-schema-warning';
-                    warning.textContent = repeatedId ? 'Repeated @id definition — compare and merge overlapping properties before removing a node.' : 'Repeated schema type — review whether these are the same entity before removing.';
+                    warning.textContent = repeatedId ? 'Repeated @id definition — compare complementary descriptions and overlapping properties before removing a node.' : 'Identical top-level node — review whether multiple sources output the same entity before removing.';
                     card.appendChild(warning);
                 }
                 var pre = document.createElement('pre');
                 JSON.stringify(entry.node, null, 2).split('\n').forEach(function (line) {
                     var span = document.createElement('span'); span.textContent = line + '\n';
-                    if (flaggedTypes.some(function (type) { return line.indexOf(JSON.stringify(type)) !== -1; }) || repeatedId && line.indexOf('"@id"') !== -1) span.className = 'tk-schema-mark';
+                    if (identical && line.indexOf('"@type"') !== -1 || repeatedId && line.indexOf('"@id"') !== -1) span.className = 'tk-schema-mark';
                     pre.appendChild(span);
                 });
                 var code = document.createElement('details');
                 var codeTitle = document.createElement('summary'); codeTitle.textContent = 'View Node JSON';
-                code.open = Boolean(flaggedTypes.length || repeatedId);
+                code.open = Boolean(identical || repeatedId);
                 code.appendChild(codeTitle); code.appendChild(pre); card.appendChild(code);
                 var suggested = entry.types.indexOf('ImageObject') !== -1 ? ['contentUrl'] : entry.types.some(function (type) { return type === 'WebSite' || type === 'Organization'; }) ? ['name', 'url'] : [];
                 var absentFields = suggested.filter(function (field) { return entry.node[field] === undefined || entry.node[field] === ''; });
@@ -193,7 +192,7 @@
                 var data = await request('live');
                 if (current !== sequence) return;
                 live.replaceChildren();
-                liveData = null;
+                liveData = null; liveAnalysis = null;
                 if (!data.live || typeof data.live !== 'object' || Array.isArray(data.live)) {
                     throw new Error('The server did not return live schema data. Click Retry Live Check or refresh the page.');
                 }
@@ -207,13 +206,19 @@
                 liveData = data.live;
                 messages(live, data.live.combined.messages);
                 var combined = tools.analyze(data.live.documents.map(function (documentData) { try { return JSON.parse(documentData.json); } catch (error) { return null; } }));
+                liveAnalysis = combined;
+                var inventory = document.createElement('details');
+                var inventoryTitle = document.createElement('summary'); inventoryTitle.textContent = 'Schema Type Inventory (counts are not duplicate warnings)';
+                inventory.appendChild(inventoryTitle);
+                messages(inventory, Object.keys(combined.types).sort().map(function (type) { return type + ': ' + combined.types[type]; }));
+                live.appendChild(inventory);
                 data.live.documents.forEach(function (documentData, index) {
                     var details = document.createElement('details');
                     var summary = document.createElement('summary'); summary.textContent = 'Live document ' + (index + 1) + ' (read-only)';
                     try {
                         var documentInfo = tools.analyze(JSON.parse(documentData.json));
-                        if (documentInfo.nodes.some(function (entry) { return entry.types.some(function (type) { return combined.types[type] > 1; }) || entry.id && combined.ids[entry.id] > 1; })) {
-                            details.open = true; summary.className = 'tk-schema-warning'; summary.textContent += ' — repeated schema: review marked nodes';
+                        if (documentInfo.nodes.some(function (entry) { return entry.id && combined.ids[entry.id] > 1 || entry.signature && combined.anonymous[entry.signature] > 1; })) {
+                            details.open = true; summary.className = 'tk-schema-warning'; summary.textContent += ' — repeated entity definitions: review marked nodes';
                         }
                     } catch (error) { summary.className = 'tk-schema-warning'; summary.textContent += ' — invalid JSON'; }
                     details.appendChild(summary); messages(details, documentData.validation && documentData.validation.messages);
@@ -223,15 +228,14 @@
                     var pre = document.createElement('pre'); pre.textContent = documentData.json; raw.appendChild(rawTitle); raw.appendChild(pre); details.appendChild(raw); live.appendChild(details);
                 });
                 renderCustom();
-            } catch (error) { if (current === sequence) { liveData = null; renderCustom(); live.textContent = 'Live validation unavailable: ' + error.message; } }
+            } catch (error) { if (current === sequence) { liveData = null; liveAnalysis = null; renderCustom(); live.textContent = 'Live validation unavailable: ' + error.message; } }
             finally { if (current === sequence) retry.disabled = false; }
         }
         document.querySelectorAll('.tk-schema-editor-open').forEach(function (button) {
             button.addEventListener('click', async function () {
                 opener = button; url = button.dataset.url; loaded = false; saving = false; editor.value = ''; live.replaceChildren();
-                liveData = null; history = []; customNodes.replaceChildren(); resetAdd();
+                liveData = null; liveAnalysis = null; history = []; customNodes.replaceChildren(); resetAdd();
                 showPanel('live');
-                try { reportDuplicates = JSON.parse(button.dataset.duplicates || '{}'); } catch (error) { reportDuplicates = {}; }
                 var current = ++sequence;
                 dialog.querySelector('.tk-schema-editor-url').textContent = url;
                 dialog.showModal(); lock(true); retry.disabled = true; status.textContent = 'Loading custom JSON-LD…';

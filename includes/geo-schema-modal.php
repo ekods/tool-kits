@@ -20,7 +20,7 @@ function tk_geo_schema_editor_modal(): void {
             <button type="button" id="tk-schema-tab-add" role="tab" aria-controls="tk-schema-panel-add" aria-selected="false" tabindex="-1" data-schema-panel="add">Add Missing Schema</button>
         </div>
         <section id="tk-schema-panel-live" class="tk-schema-panel" role="tabpanel" aria-labelledby="tk-schema-tab-live" data-panel="live">
-        <p class="tk-modal-note">Red marks highlight repeated schema. Compare identities before removing a node; different entities can share the same type.</p>
+        <p class="tk-modal-note">Red marks highlight repeated @id definitions or identical top-level nodes. Review sources before removing anything. FAQ questions, answers, list items, and different entities can share a type.</p>
         <div class="tk-schema-live" aria-live="polite"></div>
         <p class="description">Checks JSON structure and repeated identities. Rich-result eligibility requires separate validation.</p>
         </section>
@@ -57,6 +57,17 @@ function tk_geo_schema_editor_modal(): void {
     <?php
 }
 
+function tk_geo_schema_canonical_node(array $node): string {
+    unset($node['@context']);
+    $sort = function ($value) use (&$sort) {
+        if (!is_array($value)) return $value;
+        if ($value && array_keys($value) !== range(0, count($value) - 1)) ksort($value, SORT_STRING);
+        foreach ($value as $key => $child) $value[$key] = $sort($child);
+        return $value;
+    };
+    return (string) json_encode($sort($node), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+}
+
 function tk_geo_schema_validate_json(string $json): array {
     if (trim($json) === '') return array('valid' => true, 'messages' => array('No custom JSON-LD configured.'));
     $value = json_decode($json, true);
@@ -66,28 +77,51 @@ function tk_geo_schema_validate_json(string $json): array {
     $ids = array();
     $types = array();
     $messages = array();
-    $walk = function ($node) use (&$walk, &$ids, &$types, &$messages) {
+    $id_types = array();
+    $anonymous = array();
+    $anonymous_types = array();
+    $walk = function ($node, $top_level = true) use (&$walk, &$ids, &$types, &$messages, &$id_types, &$anonymous, &$anonymous_types) {
         if (!is_array($node)) return;
+        $node_types = array();
         if (isset($node['@type'])) {
             foreach ((array) $node['@type'] as $type) {
                 if (!is_string($type) || trim($type) === '') { $messages[] = 'Invalid @type: use a non-empty string or an array of strings.'; continue; }
+                if (in_array($type, $node_types, true)) continue;
+                $node_types[] = $type;
                 $types[$type] = ($types[$type] ?? 0) + 1;
             }
         }
-        if (isset($node['@id']) && count(array_diff(array_keys($node), array('@id'))) > 0) {
+        if (isset($node['@id']) && count(array_diff(array_keys($node), array('@id', '@context'))) > 0) {
             if (!is_string($node['@id']) || trim($node['@id']) === '') $messages[] = 'Invalid @id: use a non-empty string.';
-            else $ids[$node['@id']] = ($ids[$node['@id']] ?? 0) + 1;
+            else {
+                $ids[$node['@id']] = ($ids[$node['@id']] ?? 0) + 1;
+                $id_types[$node['@id']][] = $node_types;
+            }
         }
-        foreach ($node as $child) if (is_array($child)) $walk($child);
+        if ($top_level && $node_types && !isset($node['@id'])) {
+            $signature = tk_geo_schema_canonical_node($node);
+            $anonymous[$signature] = ($anonymous[$signature] ?? 0) + 1;
+            $anonymous_types[$signature] = $node_types;
+        }
+        $is_list = $node && array_keys($node) === range(0, count($node) - 1);
+        foreach ($node as $key => $child) if (is_array($child)) $walk($child, $key === '@graph' || ($top_level && $is_list));
     };
     $walk($value);
     $valid = !$messages && (bool) $types;
     if (!$types) $messages[] = 'No typed schema entities found.';
-    foreach ($ids as $id => $count) if ($count > 1) $messages[] = 'Repeated entity definition: ' . $id . ' (' . $count . '). Compare properties; references using only @id are excluded.';
-    foreach ($types as $type => $count) if ($count > 1) $messages[] = 'Repeated type: ' . $type . ' (' . $count . '). This alone does not prove duplication.';
+    $duplicate_types = array();
+    foreach ($ids as $id => $count) if ($count > 1) {
+        $messages[] = 'Repeated entity definition: ' . $id . ' (' . $count . '). Review whether these are complementary descriptions or unintended duplicates; @id references are excluded.';
+        foreach ($id_types[$id] as $node_types) foreach ($node_types as $type) $duplicate_types[$type] = ($duplicate_types[$type] ?? 0) + 1;
+    }
+    foreach ($anonymous as $signature => $count) if ($count > 1) {
+        $messages[] = 'Identical top-level entity definition: ' . implode(', ', $anonymous_types[$signature]) . ' (' . $count . '). Review sources before removing a node.';
+        foreach ($anonymous_types[$signature] as $type) $duplicate_types[$type] = ($duplicate_types[$type] ?? 0) + $count;
+    }
     if ($valid) array_unshift($messages, 'JSON structure is valid. Review identity warnings before publishing.');
     return array('valid' => $valid, 'messages' => $messages, 'types' => $types,
-        'duplicate_types' => array_filter($types, function ($count) { return $count > 1; }),
+        'repeated_types' => array_filter($types, function ($count) { return $count > 1; }),
+        'duplicate_types' => $duplicate_types,
         'duplicate_ids' => array_filter($ids, function ($count) { return $count > 1; }));
 }
 

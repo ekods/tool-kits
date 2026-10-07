@@ -1042,6 +1042,7 @@ function tk_geo_extract_jsonld_report(string $html, bool $recursive = false): ar
     $types = array();
     $documents = 0;
     $invalid = 0;
+    $values = array();
     if (preg_match_all('/<script\b[^>]*type=("|\')application\/ld\+json\1[^>]*>(.*?)<\/script>/is', $html, $matches)) {
         foreach ($matches[2] as $json) {
             $documents++;
@@ -1050,6 +1051,7 @@ function tk_geo_extract_jsonld_report(string $html, bool $recursive = false): ar
                 $invalid++;
                 continue;
             }
+            $values[] = $decoded;
             if ($recursive) {
                 tk_geo_collect_schema_types_from_node($decoded, $types);
             } else {
@@ -1058,17 +1060,19 @@ function tk_geo_extract_jsonld_report(string $html, bool $recursive = false): ar
         }
     }
     $counts = array_count_values($types);
+    $analysis = $values ? tk_geo_schema_validate_json((string) json_encode($values)) : array();
     return array(
+        'analysis_version' => 2,
         'documents' => $documents,
         'invalid' => $invalid,
         'types' => $counts,
-        'duplicates' => array_filter($counts, function($count) {
-            return (int) $count > 1;
-        }),
+        'repeated_types' => array_filter($counts, function($count) { return (int) $count > 1; }),
+        'duplicates' => $analysis['duplicate_types'] ?? array(),
+        'duplicate_ids' => $analysis['duplicate_ids'] ?? array(),
     );
 }
 
-function tk_geo_render_schema_type_badges($types, bool $highlight_duplicates = true): string {
+function tk_geo_render_schema_type_badges($types, bool $highlight_duplicates = false): string {
     if (!is_array($types) || empty($types)) {
         return '<span class="tk-badge">None</span>';
     }
@@ -1553,7 +1557,7 @@ function tk_geo_build_prompt_preview(string $url): array {
 
 function tk_geo_validate_post_schema(int $post_id): array {
     $saved = tk_get_option('geo_post_schema_report', array());
-    if (is_array($saved) && isset($saved['post_id']) && (int) $saved['post_id'] === $post_id) { return $saved; }
+    if (is_array($saved) && isset($saved['post_id']) && (int) $saved['post_id'] === $post_id && (int) ($saved['schema']['analysis_version'] ?? 0) === 2) { return $saved; }
     $post = get_post($post_id);
     if (!$post || $post->post_status !== 'publish') {
         return array(
@@ -1583,7 +1587,7 @@ function tk_geo_validate_post_schema(int $post_id): array {
         $issues[] = 'Invalid JSON-LD detected.';
     }
     if (!empty($schema['duplicates'])) {
-        $issues[] = 'Duplicate schema types detected.';
+        $issues[] = 'Potential duplicate entity definitions detected. Review identities and source output.';
     }
 
     $score = 100;
@@ -1652,7 +1656,7 @@ function tk_geo_post_schema_validate_handler(): void {
 
 function tk_geo_run_schema_duplicate_detector(bool $force_refresh = false): array {
     $saved = tk_get_option('geo_schema_duplicate_report', array());
-    if (!$force_refresh && is_array($saved) && !empty($saved)) { return $saved; }
+    if (!$force_refresh && is_array($saved) && !empty($saved) && (int) ($saved['analysis_version'] ?? 0) === 2) { return $saved; }
     $items = array();
     $issue_count = 0;
     foreach (tk_geo_review_urls(8) as $url) {
@@ -1685,11 +1689,12 @@ function tk_geo_run_schema_duplicate_detector(bool $force_refresh = false): arra
             'invalid' => $invalid,
             'types' => isset($report['types']) && is_array($report['types']) ? $report['types'] : array(),
             'duplicates' => $duplicates,
-            'issue' => !empty($duplicate_types) ? 'Duplicate schema types detected: ' . implode(', ', $duplicate_types) . '.' : ($invalid > 0 ? 'Invalid JSON-LD detected.' : ''),
+            'issue' => !empty($duplicate_types) ? 'Potential duplicate entity definitions: ' . implode(', ', $duplicate_types) . '. Review repeated identities or identical top-level nodes.' : ($invalid > 0 ? 'Invalid JSON-LD detected.' : ''),
         );
     }
 
     return array(
+        'analysis_version' => 2,
         'scanned_at' => time(),
         'checked_urls' => count($items),
         'issue_count' => $issue_count,
@@ -1706,7 +1711,7 @@ function tk_geo_mark_remaining_schema_duplicates(array $report): array {
         $duplicates = isset($item['duplicates']) && is_array($item['duplicates']) ? $item['duplicates'] : array();
         $duplicate_types = array_values(array_filter(array_keys($duplicates), 'is_string'));
         if (!empty($duplicate_types)) {
-            $items[$index]['issue'] = 'Duplicate schema remains outside Tool Kits automatic SEO/Breadcrumb fix: ' . implode(', ', $duplicate_types) . '.';
+            $items[$index]['issue'] = 'Potential duplicate entities remain outside Tool Kits automatic SEO/Breadcrumb fix: ' . implode(', ', $duplicate_types) . '. Review source definitions.';
         }
     }
     $report['items'] = $items;
@@ -1755,7 +1760,7 @@ function tk_geo_schema_duplicate_fix(): void {
 
     $report = tk_get_option('geo_schema_duplicate_report', array());
     $report = is_array($report) ? $report : array();
-    if (empty($report)) {
+    if (empty($report) || (int) ($report['analysis_version'] ?? 0) !== 2) {
         $report = tk_geo_run_schema_duplicate_detector();
     }
 
@@ -1785,7 +1790,7 @@ function tk_geo_schema_duplicate_fix(): void {
     $new_report = tk_geo_mark_remaining_schema_duplicates(tk_geo_run_schema_duplicate_detector(true));
     $new_duplicate_types = tk_geo_schema_duplicate_types_from_report($new_report);
     if (!empty($new_duplicate_types)) {
-        $remaining[] = 'Remaining duplicate types may come from the active theme, custom JSON-LD, or another SEO/schema plugin: ' . implode(', ', $new_duplicate_types) . '.';
+        $remaining[] = 'Remaining repeated entity definitions may come from the active theme, custom JSON-LD, or another SEO/schema plugin: ' . implode(', ', $new_duplicate_types) . '. Compare properties before removing anything.';
     }
 
     tk_update_option('geo_schema_duplicate_report', $new_report);
@@ -2215,7 +2220,7 @@ function tk_render_geo_panel(): void {
                 <div>
                     <dt>Duplicate Schema</dt>
                     <dd class="<?php echo !$duplicate_has_report ? 'is-muted' : ($duplicate_issue_count > 0 ? 'is-danger' : 'is-good'); ?>"><?php echo $duplicate_has_report ? ($duplicate_issue_count > 0 ? esc_html((string) $duplicate_issue_count) : 'Clear') : 'Not run'; ?></dd>
-                    <span><?php echo $duplicate_has_report ? ($duplicate_issue_count > 0 ? 'URLs with duplicate or invalid schema' : 'No duplicate types detected') : 'Run Duplicate Detector to check'; ?></span>
+                    <span><?php echo $duplicate_has_report ? ($duplicate_issue_count > 0 ? 'URLs with potential duplicate entities or invalid schema' : 'No duplicate entity definitions detected') : 'Run Duplicate Detector to check'; ?></span>
                 </div>
             </dl>
             <?php tk_render_switch('geo_enabled', 'Enable GEO JSON-LD Output', 'Print enabled custom JSON-LD, FAQPage, and ItemList documents on public pages.', $enabled); ?>
@@ -2826,7 +2831,7 @@ function tk_render_geo_panel(): void {
                             <tr><th>HTTP</th><td><?php echo esc_html((string) ((int) ($post_schema_report['status'] ?? 0))); ?></td></tr>
                             <tr><th>JSON-LD</th><td><?php echo esc_html((string) ((int) ($post_schema['documents'] ?? 0))); ?> docs, <?php echo esc_html((string) ((int) ($post_schema['invalid'] ?? 0))); ?> invalid</td></tr>
                             <tr><th>Types</th><td><?php echo tk_geo_render_schema_type_badges($post_schema['types'] ?? array()); ?></td></tr>
-                            <tr><th>Duplicates</th><td><?php echo !empty($post_schema['duplicates']) ? tk_geo_render_schema_type_badges($post_schema['duplicates'] ?? array()) : '<span class="tk-badge tk-on">None</span>'; ?></td></tr>
+                            <tr><th>Potential Duplicates</th><td><?php echo !empty($post_schema['duplicates']) ? tk_geo_render_schema_type_badges($post_schema['duplicates'] ?? array(), (int) ($post_schema['analysis_version'] ?? 0) === 2) : '<span class="tk-badge tk-on">None</span>'; ?></td></tr>
                             <?php if (!empty($post_schema_report['error'])) : ?><tr><th>Error</th><td><?php echo esc_html((string) $post_schema_report['error']); ?></td></tr><?php endif; ?>
                         </tbody>
                     </table>
@@ -2839,7 +2844,7 @@ function tk_render_geo_panel(): void {
 
         <div class="tk-card tk-tab-panel" data-panel-id="schema-duplicates" id="schema-duplicates">
             <h3>Schema Duplicate Detector</h3>
-            <p>Scan homepage and recent public content for duplicate JSON-LD types or invalid JSON-LD blocks.</p>
+            <p>Scan homepage and recent public content for repeated entity definitions or invalid JSON-LD blocks.</p>
             <p>
                 <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tk_geo_schema_duplicate_scan'), 'tk_geo_schema_duplicate_scan')); ?>">Run Duplicate Detector</a>
                 <a class="button button-primary" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tk_geo_schema_duplicate_fix'), 'tk_geo_schema_duplicate_fix')); ?>">Auto Fix Tool Kits Duplicates</a>
@@ -2873,9 +2878,12 @@ function tk_render_geo_panel(): void {
             <?php if (!empty($schema_duplicate_report)) : ?>
                 <?php $duplicate_items = isset($schema_duplicate_report['items']) && is_array($schema_duplicate_report['items']) ? $schema_duplicate_report['items'] : array(); ?>
                 <p class="description">Last scan: <?php echo !empty($schema_duplicate_report['scanned_at']) ? esc_html(wp_date('Y-m-d H:i:s', (int) $schema_duplicate_report['scanned_at'])) : '-'; ?> | Issues: <?php echo esc_html((string) ($schema_duplicate_report['issue_count'] ?? 0)); ?></p>
-                <p class="description">Duplicate means the same schema <code>@type</code> appears more than once on a URL. If it is unintended, keep one canonical schema source and disable the overlapping theme/plugin output.</p>
+                <p class="description">Type counts are an inventory. Potential duplicates use repeated <code>@id</code> definitions or identical top-level nodes; complementary descriptions may be intentional. Compare sources before removing anything.</p>
+                <?php if ((int) ($schema_duplicate_report['analysis_version'] ?? 0) !== 2) : ?>
+                    <p class="description">This saved report used type counts. Run Duplicate Detector again for entity-based findings.</p>
+                <?php endif; ?>
                 <table class="widefat striped tk-table">
-                    <thead><tr><th>URL</th><th>Status</th><th>JSON-LD</th><th>Schema Types</th><th>Duplicate Types</th><th>Issue</th></tr></thead>
+                    <thead><tr><th>URL</th><th>Status</th><th>JSON-LD</th><th>Schema Types</th><th>Potential Duplicates</th><th>Issue</th></tr></thead>
                     <tbody>
                     <?php foreach ($duplicate_items as $item) : ?>
                         <?php $duplicates = isset($item['duplicates']) && is_array($item['duplicates']) ? $item['duplicates'] : array(); ?>
@@ -2884,7 +2892,7 @@ function tk_render_geo_panel(): void {
                             <td><?php echo esc_html((string) ((int) ($item['status'] ?? 0))); ?></td>
                             <td><?php echo esc_html((string) ((int) ($item['documents'] ?? 0))); ?> docs, <?php echo esc_html((string) ((int) ($item['invalid'] ?? 0))); ?> invalid</td>
                             <td><?php echo tk_geo_render_schema_type_badges($item['types'] ?? array()); ?></td>
-                            <td><?php echo !empty($duplicates) ? tk_geo_render_schema_type_badges($duplicates) : '<span class="tk-badge tk-on">None</span>'; ?></td>
+                            <td><?php echo !empty($duplicates) ? tk_geo_render_schema_type_badges($duplicates, (int) ($schema_duplicate_report['analysis_version'] ?? 0) === 2) : '<span class="tk-badge tk-on">None</span>'; ?></td>
                             <td><?php echo !empty($item['issue']) ? esc_html((string) $item['issue']) : '<span class="tk-badge tk-on">OK</span>'; ?><p><button type="button" class="button tk-schema-editor-open" data-url="<?php echo esc_url((string) ($item['url'] ?? '')); ?>" data-duplicates="<?php echo esc_attr(wp_json_encode($duplicates)); ?>">Validate &amp; Edit</button></p></td>
                         </tr>
                     <?php endforeach; ?>
