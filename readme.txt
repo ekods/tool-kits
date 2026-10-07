@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.14
+Stable tag: 2.7.15
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,13 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.15 =
+**Complete Missing Metadata Form**
+- Show all saved crawler findings and affected crawler names in Fix Missing Metadata, including fetch failures and invalid JSON-LD that need source review.
+- Offer inputs for missing title, description, author and publisher, with canonical and generated JSON-LD details when absent.
+- Save reviewed author/publisher values and use them in fallback metadata and JSON-LD; preserve stored values when submitting a partial form.
+- Explain saved scan results and verification through Scan Again; allow removing a fallback without completing required fields.
+
 = 2.7.14 =
 **Admin Asset Cache Refresh**
 - Preserve JavaScript and CSS version parameters in WordPress admin through both hardening filters, so plugin updates load current assets instead of stale schema-editor code.

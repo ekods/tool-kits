@@ -83,6 +83,19 @@ function tk_geo_crawler_fix_url(string $url): string {
         . (isset($parts['port']) ? ':' . $parts['port'] : '') . ($parts['path'] ?? '/'));
 }
 
+function tk_geo_crawler_missing_findings(array $report): array {
+    $findings = array();
+    foreach (($report['agents'] ?? array($report)) as $row) {
+        if (!is_array($row)) { continue; }
+        foreach (tk_geo_crawler_issues($row) as $field => $message) {
+            if (!isset($findings[$field])) { $findings[$field] = array('message' => $message, 'agents' => array()); }
+            $agent = trim((string) ($row['agent'] ?? $row['label'] ?? ''));
+            if ($agent !== '') { $findings[$field]['agents'][$agent] = $agent; }
+        }
+    }
+    return $findings;
+}
+
 function tk_geo_metadata_identity(string $url): array {
     $publisher = trim((string) get_bloginfo('name'));
     if (function_exists('tk_seo_organization_data')) {
@@ -116,20 +129,28 @@ function tk_geo_crawler_fix_handler(): void {
     if (tk_post('crawler_fix_mode', '') === 'remove') {
         unset($fixes[$url]);
     } else {
-        $fields = array();
-        foreach (($report['agents'] ?? array($report)) as $row) {
-            $fields = array_merge($fields, array_intersect(array_keys(tk_geo_crawler_issues($row)), array('title', 'description', 'author', 'publisher', 'canonical', 'schema')));
-        }
-        $fields = array_values(array_unique($fields));
+        $fields = array_values(array_intersect(array_keys(tk_geo_crawler_missing_findings($report)), array('title', 'description', 'author', 'publisher', 'canonical', 'schema')));
         if (!$fields) { wp_die('No missing metadata can be fixed in this report. Scan again to check the page.'); }
         $fields = array_values(array_unique(array_merge($fixes[$url]['fields'] ?? array(), $fields)));
-        $title = sanitize_text_field((string) tk_post('crawler_fix_title', ''));
-        $description = sanitize_textarea_field((string) tk_post('crawler_fix_description', ''));
+        $identity = tk_geo_metadata_identity($url);
+        $saved = is_array($fixes[$url] ?? null) ? $fixes[$url] : array();
+        $values = array();
+        foreach (array('title', 'description', 'author', 'publisher') as $field) {
+            $default = (string) ($saved[$field] ?? $report[$field] ?? '');
+            if ($default === '' && isset($identity[$field])) { $default = $identity[$field]; }
+            $input = tk_post('crawler_fix_' . $field, $default);
+            if (!is_string($input)) { wp_die('Enter a valid ' . $field . ' for the fix.'); }
+            $values[$field] = $field === 'description' ? sanitize_textarea_field($input) : sanitize_text_field($input);
+        }
+        $title = $values['title'];
+        $description = $values['description'];
         if ((in_array('title', $fields, true) || in_array('schema', $fields, true)) && $title === '') { wp_die('Enter a page title for the fix.'); }
         if (in_array('description', $fields, true) && $description === '') { wp_die('Enter a page description for the fix.'); }
+        foreach (array('author', 'publisher') as $field) {
+            if ((in_array($field, $fields, true) || in_array('schema', $fields, true)) && $values[$field] === '') { wp_die('Enter a ' . $field . ' for the fix.'); }
+        }
         if (!isset($fixes[$url]) && count($fixes) >= 100) { wp_die('The limit of 100 URL fixes has been reached. Remove an unused fix first.'); }
-        $identity = tk_geo_metadata_identity($url);
-        $fixes[$url] = array('fields' => $fields, 'title' => $title, 'description' => $description, 'author' => $identity['author'], 'publisher' => $identity['publisher']);
+        $fixes[$url] = array_merge($saved, $values, array('fields' => $fields));
     }
     tk_update_option('geo_crawler_fixes', $fixes);
     if (function_exists('tk_page_cache_purge')) { tk_page_cache_purge(); }
@@ -281,12 +302,16 @@ function tk_geo_crawler_fix_html(string $html, string $url, array $fix): string 
             if ($schema_added) { continue; }
             $site = home_url('/');
             $identity = tk_geo_metadata_identity($url);
+            foreach (array('author', 'publisher') as $key) {
+                if (trim((string) ($fix[$key] ?? '')) !== '') { $identity[$key] = $fix[$key]; }
+            }
             $organization = array('@type' => 'Organization', '@id' => $site . '#organization', 'name' => $identity['publisher'], 'url' => $site);
             $website = array('@type' => 'WebSite', '@id' => $site . '#website', 'url' => $site, 'name' => get_bloginfo('name'), 'publisher' => array('@id' => $site . '#organization'));
             $post_id = url_to_postid($url);
             $post_type = $post_id > 0 && function_exists('get_post_type') ? (string) get_post_type($post_id) : '';
             $page_type = in_array($post_type, array('post', 'news'), true) ? 'Article' : ($post_type === 'product' ? 'Product' : 'WebPage');
             $page = array('@type' => $page_type, '@id' => $url . '#webpage', 'url' => $url, 'name' => $metadata['title'] ?: ($fix['title'] ?? ''), 'isPartOf' => array('@id' => $site . '#website'), 'publisher' => array('@id' => $site . '#organization'));
+            if ($identity['author'] !== '') { $page['author'] = array('@type' => 'Person', 'name' => $identity['author']); }
             if (!empty($fix['description'])) { $page['description'] = $fix['description']; }
             if ($post_id > 0 && function_exists('get_post_time') && function_exists('get_post_modified_time')) {
                 $published = get_post_time(DATE_W3C, true, $post_id);
@@ -321,37 +346,64 @@ function tk_geo_crawler_fix_html(string $html, string $url, array $fix): string 
 
 function tk_geo_crawler_fix_controls(array $report): void {
     $url = tk_geo_crawler_fix_url((string) ($report['url'] ?? ''));
-    $issues = array();
-    foreach (($report['agents'] ?? array($report)) as $row) {
-        $issues = array_merge($issues, tk_geo_crawler_issues($row));
-    }
-    $missing = array_intersect(array_keys($issues), array('title', 'description', 'author', 'publisher', 'canonical', 'schema'));
+    $findings = tk_geo_crawler_missing_findings($report);
+    $missing = array_intersect(array_keys($findings), array('title', 'description', 'author', 'publisher', 'canonical', 'schema'));
     $fixes = tk_get_option('geo_crawler_fixes', array());
     $active = is_array($fixes) && isset($fixes[$url]);
     if ($active) {
         echo '<p><strong>Missing metadata fallback enabled for this URL.</strong> Clear external page/CDN caches, then use Scan Again to verify the live output. The report below is the last saved scan.</p>';
-        echo '<p><button class="button" form="tk-geo-crawler-fix-form" name="crawler_fix_mode" value="remove">Remove URL Fix</button></p>';
+        echo '<p><button class="button" form="tk-geo-crawler-fix-form" name="crawler_fix_mode" value="remove" formnovalidate>Remove URL Fix</button></p>';
     }
-    if (!$missing) { return; }
-    if ($url === '') {
+    if (!$findings) { return; }
+    if ($url === '' && $missing) {
         echo '<p>To fix missing metadata, preview the public URL without query parameters on this site.</p>';
         return;
     }
-    $title = trim((string) ($report['title'] ?? ''));
-    if ($title === '') {
-        $post_id = url_to_postid($url);
-        $title = $post_id ? get_the_title($post_id) : get_bloginfo('name');
+    $saved = $active && is_array($fixes[$url]) ? $fixes[$url] : array();
+    $values = array();
+    $identity = tk_geo_metadata_identity($url);
+    foreach (array('title', 'description', 'author', 'publisher') as $field) {
+        $values[$field] = trim((string) ($report[$field] ?? ''));
+        if ($values[$field] === '') { $values[$field] = (string) ($saved[$field] ?? $identity[$field] ?? ''); }
     }
-    $description = trim((string) ($report['description'] ?? ''));
-    if ($description === '') { $description = wp_html_excerpt((string) ($report['text_sample'] ?? ''), 160, ''); }
+    if ($values['title'] === '') {
+        $post_id = url_to_postid($url);
+        $values['title'] = $post_id ? get_the_title($post_id) : get_bloginfo('name');
+    }
+    if ($values['description'] === '') { $values['description'] = wp_html_excerpt((string) ($report['text_sample'] ?? ''), 160, ''); }
+    $labels = array('title' => 'Page title', 'description' => 'Meta description', 'author' => 'Author', 'publisher' => 'Publisher');
     ?>
     <div class="tk-card">
         <h4>Fix Missing Metadata</h4>
-        <p>Review the title and description below. This URL will receive fallback values only for missing metadata, for all visitors and crawlers. Existing metadata stays in place. Missing JSON-LD receives a basic WebPage schema.</p>
-        <p><label>Page title<br><input type="text" class="large-text" form="tk-geo-crawler-fix-form" name="crawler_fix_title" value="<?php echo esc_attr($title); ?>"></label></p>
-        <p><label>Page description<br><textarea class="large-text" rows="3" form="tk-geo-crawler-fix-form" name="crawler_fix_description"><?php echo esc_textarea($description); ?></textarea></label></p>
-        <p>Canonical URL: <code><?php echo esc_html($url); ?></code></p>
-        <button class="button button-primary" form="tk-geo-crawler-fix-form" name="crawler_fix_mode" value="apply">Fix Missing Metadata</button>
+        <p>These findings come from the last saved scan. Use Scan Again to check the current page before applying a fix.</p>
+        <ul>
+            <?php foreach ($findings as $field => $finding): ?>
+                <li><span class="tk-badge tk-warn"><?php echo in_array($field, $missing, true) ? 'Missing' : 'Review required'; ?></span> <strong><?php echo esc_html($finding['message']); ?></strong>
+                    <?php if ($finding['agents']): ?><span class="description"> Crawlers: <?php echo esc_html(implode(', ', $finding['agents'])); ?></span><?php endif; ?>
+                </li>
+            <?php endforeach; ?>
+        </ul>
+        <?php if ($missing): ?>
+            <p>Review the fallback values below. They are applied to this URL for all visitors and crawlers when the corresponding metadata is missing.</p>
+            <?php foreach ($labels as $field => $label):
+                $is_missing = in_array($field, $missing, true);
+                $schema_context = in_array('schema', $missing, true);
+                if (!$is_missing && !$schema_context) { continue; }
+                $required = $is_missing || ($schema_context && $field !== 'description');
+            ?>
+                <p><label for="tk-crawler-fix-<?php echo esc_attr($field); ?>"><strong><?php echo esc_html($label); ?></strong> <span class="description"><?php echo $is_missing ? '(missing)' : '(for JSON-LD)'; ?></span></label><br>
+                    <?php if ($field === 'description'): ?>
+                        <textarea id="tk-crawler-fix-description" class="large-text" rows="3" form="tk-geo-crawler-fix-form" name="crawler_fix_description"<?php echo $required ? ' required' : ''; ?>><?php echo esc_textarea($values[$field]); ?></textarea>
+                    <?php else: ?>
+                        <input id="tk-crawler-fix-<?php echo esc_attr($field); ?>" type="text" class="large-text" form="tk-geo-crawler-fix-form" name="crawler_fix_<?php echo esc_attr($field); ?>" value="<?php echo esc_attr($values[$field]); ?>"<?php echo $required ? ' required' : ''; ?>>
+                    <?php endif; ?>
+                </p>
+            <?php endforeach; ?>
+            <?php if (in_array('canonical', $missing, true)): ?><p><strong>Canonical URL (missing)</strong><br><code><?php echo esc_html($url); ?></code><br><span class="description">The public URL above will be used as the canonical URL.</span></p><?php endif; ?>
+            <?php if (in_array('schema', $missing, true)): ?><p><strong>JSON-LD (missing)</strong><br><span class="description">Generate an Organization, WebSite and page graph using the reviewed values. The page type follows its WordPress post type.</span></p><?php endif; ?>
+            <button class="button button-primary" form="tk-geo-crawler-fix-form" name="crawler_fix_mode" value="apply">Fix Missing Metadata</button>
+            <p class="description">After saving, clear external page/CDN caches and use Scan Again to verify the live output.</p>
+        <?php endif; ?>
     </div>
     <?php
 }

@@ -6,6 +6,9 @@ function check($ok, $message) { if (!$ok) { throw new RuntimeException($message)
 function wp_strip_all_tags($s) { return strip_tags($s); }
 function esc_html($s) { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 function esc_attr($s) { return esc_html($s); }
+function esc_textarea($s) { return esc_html($s); }
+function wp_html_excerpt($s, $length, $more = '') { return substr(strip_tags($s), 0, $length); }
+function get_the_title($id) { return 'Example page'; }
 function esc_url($s) { return esc_html($s); }
 function esc_url_raw($s) { return $s; }
 function wp_parse_url($url, $component = -1) { return parse_url($url, $component); }
@@ -84,6 +87,48 @@ check(isset(tk_geo_crawler_issues(array('ok' => true, 'schema_invalid' => 1))['i
 foreach (array('https://evil.example/page', '//example.com/page', 'https://example.com:444/page', 'https://user@example.com/page', 'https://example.com/page?preview=1', 'http://example.com/page') as $invalid) {
     check(tk_geo_crawler_fix_url($invalid) === '', 'Unsafe URL allowed: ' . $invalid);
 }
+
+function render_missing_form($report) { ob_start(); tk_geo_crawler_fix_controls($report); return ob_get_clean(); }
+$complete = array('url' => $url, 'ok' => true, 'status' => 200, 'title' => 'Existing title', 'description' => 'Existing description', 'author' => 'Ada', 'publisher' => 'Example', 'canonical' => $url, 'schema_documents' => 1);
+check(render_missing_form($complete) === '', 'Complete metadata offered a missing form');
+$author_missing = $complete; $author_missing['author'] = ''; $author_missing['agent'] = 'GPTBot';
+$publisher_missing = $complete; $publisher_missing['publisher'] = ''; $publisher_missing['agent'] = 'OAI-SearchBot';
+$mixed = $complete; $mixed['agents'] = array($author_missing, $publisher_missing);
+$form = render_missing_form($mixed);
+check(strpos($form, 'name="crawler_fix_author"') !== false && strpos($form, 'name="crawler_fix_publisher"') !== false, 'Missing identity inputs absent when summary row was complete');
+check(strpos($form, 'GPTBot') !== false && strpos($form, 'OAI-SearchBot') !== false, 'Affected crawlers absent');
+check(strpos($form, 'name="crawler_fix_title"') === false && strpos($form, 'name="crawler_fix_description"') === false, 'Unrelated inputs offered for complete metadata');
+$invalid_report = $complete; $invalid_report['schema_invalid'] = 1;
+$form = render_missing_form($invalid_report);
+check(strpos($form, 'Invalid JSON-LD') !== false && strpos($form, 'Review required') !== false && strpos($form, 'value="apply"') === false, 'Invalid schema offered an unsafe fallback');
+$failed_report = array('url' => $url, 'ok' => false, 'status' => 403, 'agent' => '<script>alert(1)</script>');
+$form = render_missing_form($failed_report);
+check(strpos($form, 'Fetch issue') !== false && strpos($form, 'name="crawler_fix_author"') === false && strpos($form, '<script>alert') === false, 'Fetch failure offered false metadata fixes or unescaped agent');
+$all_missing = array('url' => $url, 'ok' => true, 'status' => 200);
+$form = render_missing_form($all_missing);
+foreach (array('title', 'description', 'author', 'publisher') as $field) { check(strpos($form, 'name="crawler_fix_' . $field . '"') !== false, 'Missing input absent: ' . $field); }
+check(strpos($form, 'Canonical URL (missing)') !== false && strpos($form, 'JSON-LD (missing)') !== false, 'Generated metadata missing from form');
+$options['geo_crawler_preview'] = $all_missing;
+$posted = array('crawler_fix_url' => $url, 'crawler_fix_title' => 'Reviewed title', 'crawler_fix_description' => 'Reviewed description', 'crawler_fix_author' => '<b>Reviewed Author</b>', 'crawler_fix_publisher' => '<b>Reviewed Publisher</b>');
+run_action('tk_geo_crawler_fix_handler');
+$reviewed = $options['geo_crawler_fixes'][$url];
+check($reviewed['author'] === 'Reviewed Author' && $reviewed['publisher'] === 'Reviewed Publisher', 'Reviewed identities not sanitized and persisted');
+$reviewed_html = tk_geo_crawler_fix_html($html, $url, $reviewed);
+check(strpos($reviewed_html, '"name":"Reviewed Publisher"') !== false && strpos($reviewed_html, '"author":{"@type":"Person","name":"Reviewed Author"}') !== false, 'JSON-LD ignored reviewed identities');
+$form = render_missing_form($all_missing);
+check(strpos($form, 'value="Reviewed Author"') !== false && strpos($form, 'value="remove" formnovalidate') !== false, 'Saved fallback absent or removal blocked by required inputs');
+$before = $options['geo_crawler_fixes'];
+foreach (array('', array('invalid')) as $bad_author) {
+    $posted['crawler_fix_author'] = $bad_author;
+    try { tk_geo_crawler_fix_handler(); throw new LogicException('Invalid author accepted'); } catch (RuntimeException $e) { check(strpos($e->getMessage(), 'author') !== false, 'Wrong author validation'); }
+    check($options['geo_crawler_fixes'] === $before, 'Invalid identity mutated fixes');
+}
+$publisher_only = $complete; $publisher_only['publisher'] = '';
+$options['geo_crawler_preview'] = $publisher_only;
+$posted = array('crawler_fix_url' => $url, 'crawler_fix_publisher' => 'Updated Publisher');
+run_action('tk_geo_crawler_fix_handler');
+check($options['geo_crawler_fixes'][$url]['title'] === 'Reviewed title' && $options['geo_crawler_fixes'][$url]['description'] === 'Reviewed description' && $options['geo_crawler_fixes'][$url]['author'] === 'Reviewed Author', 'Partial form lost saved fallback values');
+$options = array(); $posted = array(); $purges = 0;
 
 $options['geo_crawler_preview'] = array('url' => $url, 'ok' => true, 'status' => 200);
 $posted = array('crawler_fix_url' => $url, 'crawler_fix_title' => 'Page title', 'crawler_fix_description' => 'Page description');
