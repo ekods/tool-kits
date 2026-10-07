@@ -7,6 +7,7 @@ require_once __DIR__ . '/geo-schema-modal.php';
 
 function tk_geo_init() {
     add_action('wp_ajax_tk_geo_schema_editor', 'tk_geo_schema_editor_ajax');
+    add_action('wp_ajax_tk_geo_schema_editor_live', 'tk_geo_schema_editor_live_ajax');
     add_action('admin_enqueue_scripts', 'tk_geo_schema_editor_assets');
     add_action('wp_ajax_tk_geo_batch_start', 'tk_geo_batch_start');
     add_action('wp_ajax_tk_geo_batch_step', 'tk_geo_batch_step');

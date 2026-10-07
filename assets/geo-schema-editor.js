@@ -4,6 +4,8 @@
         var dialog = document.getElementById('tk-schema-editor');
         if (!dialog || dialog.dataset.initialized) return;
         dialog.dataset.initialized = '1';
+        // Keep the dialog outside the GEO settings form and its tab panels.
+        document.body.appendChild(dialog);
         var editor = dialog.querySelector('textarea');
         var status = dialog.querySelector('.tk-schema-editor-status');
         var live = dialog.querySelector('.tk-schema-live');
@@ -32,7 +34,9 @@
             dialog.querySelectorAll('.tk-schema-panel').forEach(function (panel) { panel.hidden = panel.dataset.panel !== name; });
         }
         tabs.forEach(function (button, index) {
-            button.addEventListener('click', function () { showPanel(button.dataset.schemaPanel); });
+            button.addEventListener('click', function (event) {
+                event.preventDefault(); event.stopPropagation(); showPanel(button.dataset.schemaPanel);
+            });
             button.addEventListener('keydown', function (event) {
                 var next;
                 if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
@@ -60,13 +64,17 @@
             var timedOut = false;
             var timer = setTimeout(function () { timedOut = true; controller.abort(); }, mode === 'save' ? 45000 : 20000);
             try {
-                var response = await fetch(ajaxurl, {method: 'POST', credentials: 'same-origin', signal: controller.signal,
-                    body: new URLSearchParams({action: 'tk_geo_schema_editor', nonce: dialog.dataset.nonce, mode: mode, url: url, version: version, json: editor.value})});
+                var endpoint = new URL(ajaxurl, window.location.href);
+                endpoint.searchParams.set('tk_schema_operation', mode);
+                endpoint.searchParams.set('tk_schema_request', String(Date.now()) + '-' + sequence);
+                var response = await fetch(endpoint.href, {method: 'POST', cache: 'no-store', credentials: 'same-origin', signal: controller.signal,
+                    body: new URLSearchParams({action: mode === 'live' ? 'tk_geo_schema_editor_live' : 'tk_geo_schema_editor', nonce: dialog.dataset.nonce, mode: mode, url: url, version: version, json: editor.value})});
                 var body = await response.text();
                 if (body.trim() === '-1') throw new Error('Your session expired. Refresh the page and try again.');
                 var result;
                 try { result = JSON.parse(body); } catch (error) { throw new Error('The server returned an invalid response (HTTP ' + response.status + ').'); }
                 if (!response.ok || !result || !result.success) throw new Error(result && result.data && result.data.message || 'Request failed (HTTP ' + response.status + ').');
+                if (!result.data || typeof result.data !== 'object' || Array.isArray(result.data)) throw new Error('The server returned incomplete schema data. Refresh the page and retry.');
                 return result.data;
             } catch (error) {
                 if (timedOut) throw new Error('Request timed out. Please retry.');
@@ -75,7 +83,7 @@
         }
         function messages(parent, items) {
             var list = document.createElement('ul');
-            (items || []).forEach(function (message) {
+            (Array.isArray(items) ? items : []).forEach(function (message) {
                 var item = document.createElement('li'); item.textContent = message;
                 if (/Repeated (type|entity)|Invalid |No typed/.test(message)) item.className = 'tk-schema-warning';
                 list.appendChild(item);
@@ -171,6 +179,9 @@
             resetAdd(); renderCustom();
         }
         function render(data) {
+            if (typeof data.json !== 'string' || typeof data.version !== 'string' || !data.validation || !Array.isArray(data.validation.messages)) {
+                throw new Error('The server returned incomplete editor data. Refresh the page and reopen the dialog.');
+            }
             editor.value = data.json; version = data.version; loaded = true;
             defaults = data.defaults || {}; history = []; resetAdd(); renderCustom();
             status.textContent = (data.saved ? 'Custom JSON-LD saved. ' : '') + data.validation.messages.join(' ');
@@ -182,7 +193,17 @@
                 var data = await request('live');
                 if (current !== sequence) return;
                 live.replaceChildren();
-                if (data.live.error) { liveData = null; renderCustom(); live.textContent = 'Live validation unavailable: ' + data.live.error; return; }
+                liveData = null;
+                if (!data.live || typeof data.live !== 'object' || Array.isArray(data.live)) {
+                    throw new Error('The server did not return live schema data. Click Retry Live Check or refresh the page.');
+                }
+                if (data.live.error) { renderCustom(); live.textContent = 'Live validation unavailable: ' + data.live.error; return; }
+                if (!Array.isArray(data.live.documents) || !data.live.combined || !Array.isArray(data.live.combined.messages)) {
+                    throw new Error('The live schema response is incomplete. Click Retry Live Check.');
+                }
+                if (data.live.documents.some(function (documentData) { return !documentData || typeof documentData.json !== 'string'; })) {
+                    throw new Error('The live response contains an invalid schema document. Click Retry Live Check.');
+                }
                 liveData = data.live;
                 messages(live, data.live.combined.messages);
                 var combined = tools.analyze(data.live.documents.map(function (documentData) { try { return JSON.parse(documentData.json); } catch (error) { return null; } }));
@@ -195,14 +216,14 @@
                             details.open = true; summary.className = 'tk-schema-warning'; summary.textContent += ' — repeated schema: review marked nodes';
                         }
                     } catch (error) { summary.className = 'tk-schema-warning'; summary.textContent += ' — invalid JSON'; }
-                    details.appendChild(summary); messages(details, documentData.validation.messages);
+                    details.appendChild(summary); messages(details, documentData.validation && documentData.validation.messages);
                     var nodes = document.createElement('div'); nodeCards(nodes, documentData.json, false, combined); details.appendChild(nodes);
                     var raw = document.createElement('details');
                     var rawTitle = document.createElement('summary'); rawTitle.textContent = 'View Full Document JSON';
                     var pre = document.createElement('pre'); pre.textContent = documentData.json; raw.appendChild(rawTitle); raw.appendChild(pre); details.appendChild(raw); live.appendChild(details);
                 });
                 renderCustom();
-            } catch (error) { if (current === sequence) live.textContent = 'Live validation unavailable: ' + error.message; }
+            } catch (error) { if (current === sequence) { liveData = null; renderCustom(); live.textContent = 'Live validation unavailable: ' + error.message; } }
             finally { if (current === sequence) retry.disabled = false; }
         }
         document.querySelectorAll('.tk-schema-editor-open').forEach(function (button) {
@@ -226,7 +247,11 @@
         validate.addEventListener('click', async function () {
             showPanel('edit');
             lock(true); status.textContent = 'Validating…'; var current = sequence;
-            try { var data = await request('validate'); if (current === sequence) { status.textContent = data.validation.messages.join(' '); renderCustom(); } }
+            try {
+                var data = await request('validate');
+                if (!data.validation || !Array.isArray(data.validation.messages)) throw new Error('The validation response is incomplete. Refresh the page and retry.');
+                if (current === sequence) { status.textContent = data.validation.messages.join(' '); renderCustom(); }
+            }
             catch (error) { if (current === sequence) status.textContent = error.message; }
             finally { if (current === sequence) lock(false); }
         });

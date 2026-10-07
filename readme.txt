@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.10
+Stable tag: 2.7.11
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,13 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.11 =
+**Schema Modal Response and Tab Fixes**
+- Handle missing or incomplete live JSON-LD responses without JavaScript errors and keep Retry Live Check available.
+- Give live inspection a dedicated AJAX action and uncached requests, with a fresh script URL for updated installations.
+- Isolate the schema dialog from the GEO settings form and its tabs; stabilize modal height when switching panels.
+- Add regression checks for incomplete responses, tab navigation, dedicated live routing, and access restrictions.
+
 = 2.7.10 =
 **SEO/GEO Modal Improvements**
 - Organize schema validation, JSON editing, and missing schema inputs into accessible tabs, with responsive layouts and persistent modal headers and footers.

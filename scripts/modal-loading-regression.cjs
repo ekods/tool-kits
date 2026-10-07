@@ -30,12 +30,12 @@ function fixture(fetcher) {
     dialog.querySelector = key => nodes[key];
     dialog.querySelectorAll = selector => selector === '.tk-schema-close' ? [cross, footer] : selector === '[data-schema-panel]' ? tabs : selector === '.tk-schema-panel' ? panels : [];
     const timers = new Map(); let timerId = 0;
-    const document = {readyState: 'complete', getElementById: () => dialog, querySelectorAll: () => [opener], createElement: tag => { const node = new Element(); node.tagName = tag; return node; }};
-    vm.runInNewContext(fs.readFileSync(__dirname + '/../assets/geo-schema-modal.js', 'utf8'), {
-        document, window: {ToolKitsSchemaEditor: schemaTools}, fetch: fetcher, ajaxurl: '/ajax', URLSearchParams, URL, AbortController, Set,
+    const document = {body: new Element(), readyState: 'complete', getElementById: () => dialog, querySelectorAll: () => [opener], createElement: tag => { const node = new Element(); node.tagName = tag; return node; }};
+    vm.runInNewContext(fs.readFileSync(__dirname + '/../assets/geo-schema-editor.js', 'utf8'), {
+        document, window: {location: {href: 'https://site.example/wp-admin/admin.php'}, ToolKitsSchemaEditor: schemaTools}, fetch: fetcher, ajaxurl: '/ajax', URLSearchParams, URL, AbortController, Set,
         setTimeout: (fn, ms) => { timers.set(++timerId, {fn, ms}); return timerId; }, clearTimeout: id => timers.delete(id)
     });
-    return {dialog, nodes, cross, footer, opener, timers, tabs, panels};
+    return {dialog, nodes, cross, footer, opener, timers, tabs, panels, document};
 }
 const reply = data => Promise.resolve({ok: true, status: 200, text: async () => JSON.stringify({success: true, data})});
 const stored = {json: '{"@type":"WebSite"}', version: 'v1', validation: {messages: ['Valid']}};
@@ -76,6 +76,38 @@ const stored = {json: '{"@type":"WebSite"}', version: 'v1', validation: {message
     stalled.cross.click(); await pending;
     assert.equal(stalled.dialog.open, false);
     assert.equal(stalled.opener.focused, true);
+
+    // An old/cached endpoint can return editor data for a live request. This
+    // must produce a recoverable message while all modal tabs still work.
+    const incompatible = fixture((url, options) => {
+        if (options.body.get('mode') === 'live') {
+            assert.equal(options.body.get('action'), 'tk_geo_schema_editor_live');
+            assert.equal(options.cache, 'no-store');
+            assert.equal(new URL(url).searchParams.get('tk_schema_operation'), 'live');
+        }
+        return reply(stored);
+    });
+    await incompatible.opener.click(); await flush();
+    assert.match(incompatible.nodes['.tk-schema-live'].textContent, /did not return live schema data/);
+    assert.doesNotMatch(incompatible.nodes['.tk-schema-live'].textContent, /Cannot read properties/);
+    assert.equal(incompatible.nodes['.tk-schema-retry'].disabled, false);
+    assert.equal(incompatible.nodes['.tk-schema-save'].disabled, false);
+    incompatible.tabs.forEach((tab, index) => {
+        tab.listeners.click({preventDefault() {}, stopPropagation() {}});
+        assert.equal(incompatible.panels[index].hidden, false);
+        assert.equal(tab['aria-selected'], 'true');
+    });
+    assert.equal(incompatible.document.body.children[0], incompatible.dialog, 'Dialog remains inside the parent form');
+    incompatible.cross.click();
+    for (const liveResponse of [null, {}, {documents: null, combined: {}}, {documents: [null], combined: {messages: []}}]) {
+        const incomplete = fixture((url, options) => options.body.get('mode') === 'load' ? reply(stored) : reply({live: liveResponse}));
+        await incomplete.opener.click(); await flush();
+        assert.match(incomplete.nodes['.tk-schema-live'].textContent, /Live validation unavailable/);
+        assert.doesNotMatch(incomplete.nodes['.tk-schema-live'].textContent, /Cannot read properties/);
+        incomplete.tabs[1].listeners.click({preventDefault() {}, stopPropagation() {}});
+        assert.equal(incomplete.panels[1].hidden, false);
+        incomplete.cross.click();
+    }
 
     // On a post editor, Target Location is the first select. It must never
     // substitute for the post ID used by the content-editor AJAX endpoint.
@@ -122,5 +154,6 @@ const stored = {json: '{"@type":"WebSite"}', version: 'v1', validation: {message
     assert.equal(marked.tabs[1]['aria-selected'], 'true', 'Keyboard tab navigation failed');
     marked.cross.click();
     console.log('PASS: independent live loading, timeout, retry, server errors, expired nonce, close during loading, focus restoration and page selector');
+    console.log('PASS: missing/incompatible live responses, dedicated uncached live requests and clickable tabs after fetch failure');
     console.log('PASS: red duplicate nodes/JSON lines, draft removal, undo, missing schema addition, duplicate prevention and missing-field preservation');
 })().catch(error => { console.error(error); process.exit(1); });

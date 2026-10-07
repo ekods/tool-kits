@@ -5,7 +5,7 @@ function tk_geo_schema_editor_assets(): void {
     if (!tk_toolkits_can_manage() || ($_GET['page'] ?? '') !== 'tool-kits-geo-audit') return;
     wp_enqueue_style('tk-editor-modals', TK_URL . 'assets/editor-modals.css', array(), tk_asset_version('assets/editor-modals.css'));
     wp_enqueue_script('tk-schema-editor-tools', TK_URL . 'assets/schema-editor-tools.js', array(), tk_asset_version('assets/schema-editor-tools.js'), true);
-    wp_enqueue_script('tk-geo-schema-editor', TK_URL . 'assets/geo-schema-modal.js', array('tk-schema-editor-tools'), tk_asset_version('assets/geo-schema-modal.js'), true);
+    wp_enqueue_script('tk-geo-schema-editor-v2', TK_URL . 'assets/geo-schema-editor.js', array('tk-schema-editor-tools'), tk_asset_version('assets/geo-schema-editor.js'), true);
 }
 
 function tk_geo_schema_editor_modal(): void {
@@ -115,10 +115,14 @@ function tk_geo_schema_live_documents(string $url): array {
     return array('documents' => $documents, 'combined' => $combined ? tk_geo_schema_validate_json(wp_json_encode($combined)) : array('messages' => array('No JSON-LD found.')));
 }
 
-function tk_geo_schema_editor_ajax(): void {
+function tk_geo_schema_editor_live_ajax(): void {
+    tk_geo_schema_editor_ajax('live');
+}
+
+function tk_geo_schema_editor_ajax(string $operation = ''): void {
     if (!tk_toolkits_can_manage()) wp_send_json_error(array('message' => 'Forbidden'), 403);
     check_ajax_referer('tk_geo_schema_editor', 'nonce');
-    $mode = isset($_POST['mode']) && is_string($_POST['mode']) ? $_POST['mode'] : '';
+    $mode = $operation !== '' ? $operation : (isset($_POST['mode']) && is_string($_POST['mode']) ? $_POST['mode'] : '');
     if ($mode === 'validate') {
         if (!isset($_POST['json']) || !is_string($_POST['json'])) wp_send_json_error(array('message' => 'Invalid JSON input.'), 400);
         wp_send_json_success(array('validation' => tk_geo_schema_validate_json(wp_unslash($_POST['json']))));
@@ -132,7 +136,7 @@ function tk_geo_schema_editor_ajax(): void {
         isset($parts['user']) || isset($parts['pass']) || strcasecmp($parts['host'] ?? '', (string) wp_parse_url(home_url('/'), PHP_URL_HOST)) !== 0) {
         wp_send_json_error(array('message' => 'Choose a same-site URL from the saved duplicate report.'), 400);
     }
-    if ($mode === 'live') wp_send_json_success(array('live' => tk_geo_schema_live_documents($url)));
+    if ($mode === 'live') wp_send_json_success(array('operation' => 'live', 'live' => tk_geo_schema_live_documents($url)));
     $json = (string) tk_get_option('geo_custom_jsonld', '');
     if ($mode === 'save') {
         if (!isset($_POST['version'], $_POST['json']) || !is_string($_POST['version']) || !is_string($_POST['json'])) wp_send_json_error(array('message' => 'Invalid input.'), 400);

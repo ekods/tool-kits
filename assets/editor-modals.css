@@ -1,12 +1,13 @@
 .tk-editor-modal { box-sizing: border-box; width: 760px; max-width: calc(100vw - 40px); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); padding: 0; overflow: hidden; border: 1px solid #dcdcde; border-radius: 12px; background: #fff; color: #1d2327; box-shadow: 0 24px 80px rgba(0,0,0,.2); }
 .tk-editor-modal[open] { display: flex; flex-direction: column; }
 .tk-editor-modal-wide { width: 1080px; }
+.tk-editor-modal-wide[open] { height: min(840px, calc(100vh - 64px)); height: min(840px, calc(100dvh - 64px)); }
 .tk-editor-modal::backdrop { background: rgba(15,23,42,.52); }
 .tk-editor-modal-header { flex: 0 0 auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 22px 28px; border-bottom: 1px solid #e5e7eb; }
 .tk-editor-modal-header > div { min-width: 0; }
 .tk-editor-modal .tk-editor-modal-header h2 { margin: 0; padding: 0; font-size: 20px; line-height: 1.4; font-weight: 600; }
 .tk-editor-modal-header p { margin: 5px 0 0; color: #646970; font-size: 13px; }
-.tk-editor-modal-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 24px 28px; }
+.tk-editor-modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 24px 28px; }
 .tk-editor-modal-cross { flex-shrink: 0; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 6px; background: #f6f7f7; color: #50575e; font-size: 26px; cursor: pointer; }
 .tk-editor-modal-cross:hover { background: #e8eaed; color: #1d2327; }
 .tk-editor-modal-cross:focus-visible { outline: 2px solid #2271b1; outline-offset: 2px; }
