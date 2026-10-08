@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) { exit; }
 // Inspect actual tags, skipping comments and raw text so examples in scripts do
 // not count as metadata. Keep offsets to repair empty tags without rewriting HTML.
 function tk_geo_crawler_metadata(string $html): array {
-    $result = array('title' => '', 'description' => '', 'author' => '', 'publisher' => '', 'canonical' => '', 'schema' => false, 'h1' => false, 'empty' => array());
+    $result = array('title' => '', 'description' => '', 'author' => '', 'publisher' => '', 'keywords' => '', 'image' => '', 'canonical' => '', 'schema' => false, 'h1' => false, 'empty' => array());
     $attributes = '(?:"[^"]*"|\'[^\']*\'|[^\'">])*';
     $pattern = '~<!--.*?-->|<(script|style|textarea|title)\b' . $attributes . '>.*?</\1\s*>|<(meta|link)\b' . $attributes . '>~is';
     preg_match_all($pattern, $html, $tokens, PREG_OFFSET_CAPTURE);
@@ -29,8 +29,11 @@ function tk_geo_crawler_metadata(string $html): array {
         } elseif ($name === 'title') {
             $key = 'title';
             $value = html_entity_decode(wp_strip_all_tags(preg_replace('/<\/title\s*>$/i', '', substr($tag, strlen($opening[0])))), ENT_QUOTES, 'UTF-8');
-        } elseif ($name === 'meta' && in_array(strtolower(trim($attrs['name'] ?? '')), array('description', 'author', 'publisher'), true)) {
+        } elseif ($name === 'meta' && in_array(strtolower(trim($attrs['name'] ?? '')), array('description', 'author', 'publisher', 'keywords'), true)) {
             $key = strtolower(trim($attrs['name']));
+            $value = $attrs['content'] ?? '';
+        } elseif ($name === 'meta' && strtolower(trim($attrs['property'] ?? $attrs['name'] ?? '')) === 'og:image') {
+            $key = 'image';
             $value = $attrs['content'] ?? '';
         } elseif ($name === 'link' && in_array('canonical', preg_split('/\s+/', strtolower(trim($attrs['rel'] ?? ''))), true)) {
             $key = 'canonical';
@@ -105,6 +108,11 @@ function tk_geo_metadata_identity(string $url): array {
         }
     }
     $author = $publisher;
+    if (function_exists('tk_seo_global_enabled') && tk_seo_global_enabled()) {
+        $global = tk_seo_global_content();
+        $publisher = $global['publisher']['value'] ?: $publisher;
+        $author = $global['author']['value'] ?: $publisher;
+    }
     $post_id = url_to_postid($url);
     if ($post_id > 0) {
         $post = get_post($post_id);

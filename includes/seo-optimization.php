@@ -3,9 +3,13 @@ if (!defined('ABSPATH')) { exit; }
 require_once __DIR__ . '/seo-rendered-audit.php';
 require_once __DIR__ . '/seo-content-fixes.php';
 require_once __DIR__ . '/seo-content-modal.php';
+require_once __DIR__ . '/seo-global-content.php';
 
 function tk_seo_opt_init() {
     add_action('admin_post_tk_seo_opt_save', 'tk_seo_opt_save');
+    add_action('admin_post_tk_seo_global_save', 'tk_seo_global_save');
+    add_action('template_redirect', 'tk_seo_global_start', 990);
+    add_filter('pre_get_document_title', 'tk_seo_global_document_title', 20);
     add_action('admin_post_tk_seo_redirect_add', 'tk_seo_redirect_add');
     add_action('admin_post_tk_seo_redirect_delete', 'tk_seo_redirect_delete');
     add_action('admin_post_tk_seo_links_scan', 'tk_seo_links_scan');
@@ -196,6 +200,11 @@ function tk_seo_meta_identity(): array {
         }
     }
     $author = $publisher;
+    if (tk_seo_global_enabled()) {
+        $global = tk_seo_global_content();
+        $publisher = $global['publisher']['value'] ?: $publisher;
+        $author = $global['author']['value'] ?: $publisher;
+    }
     if (is_singular()) {
         $post = get_post();
         $author_id = is_object($post) ? (int) ($post->post_author ?? 0) : 0;
@@ -207,8 +216,11 @@ function tk_seo_meta_identity(): array {
 
 function tk_seo_generate_description() {
     $description = '';
+    $global = tk_seo_global_enabled() ? tk_seo_global_content() : array();
+    $default = $global['description']['value'] ?? get_bloginfo('description');
     if (is_singular()) {
         $description = trim(wp_strip_all_tags(strip_shortcodes(get_the_excerpt())));
+        if ($description === '' && $global && is_front_page()) { $description = (string) $default; }
         if ($description === '') {
             $post = get_post();
             if (is_object($post) && !empty($post->post_content)) {
@@ -216,13 +228,13 @@ function tk_seo_generate_description() {
             }
         }
     } elseif (is_home() || is_front_page()) {
-        $description = (string) get_bloginfo('description');
+        $description = (string) $default;
     } elseif (is_category() || is_tag() || is_tax()) {
         $description = trim(wp_strip_all_tags(term_description()));
     }
 
     if ($description === '') {
-        $description = (string) get_bloginfo('description');
+        $description = (string) $default;
     }
 
     $description = preg_replace('/\s+/', ' ', (string) $description);
@@ -239,6 +251,10 @@ function tk_seo_og_image_url() {
         if (is_string($thumb) && $thumb !== '') {
             return $thumb;
         }
+    }
+    if (tk_seo_global_enabled()) {
+        $global = tk_seo_global_content();
+        if ($global['image']['value'] !== '') { return $global['image']['value']; }
     }
     $custom_logo_id = get_theme_mod('custom_logo');
     if ($custom_logo_id) {
@@ -563,6 +579,7 @@ function tk_seo_option_lines($key, $limit = 20): array {
 }
 
 function tk_seo_organization_data(): array {
+    $global = tk_seo_global_enabled() ? tk_seo_global_content() : array();
     $logo = tk_seo_theme_option('themes_logo_color', '');
     if ($logo === '') {
         $logo = tk_seo_theme_option('themes_logo_secondary', '');
@@ -587,15 +604,15 @@ function tk_seo_organization_data(): array {
     $email = sanitize_email((string) tk_seo_theme_option('themes_email', get_option('admin_email')));
     $address = trim(wp_strip_all_tags((string) tk_seo_theme_option('themes_address', '')));
     $expertise = tk_seo_option_lines('themes_expertise', 20);
-    $service_name = trim(wp_strip_all_tags((string) tk_seo_theme_option('themes_service_name', get_bloginfo('name'))));
+    $service_name = trim(wp_strip_all_tags((string) (!empty($global['service_name']['value']) ? $global['service_name']['value'] : tk_seo_theme_option('themes_service_name', get_bloginfo('name')))));
 
     if ($service_name !== '') {
         array_unshift($expertise, $service_name);
     }
 
     return array(
-        'name' => (string) get_bloginfo('name'),
-        'description' => trim(wp_strip_all_tags((string) tk_seo_theme_option('themes_description', get_bloginfo('description')))),
+        'name' => (string) ($global['publisher']['value'] ?? get_bloginfo('name')),
+        'description' => trim(wp_strip_all_tags((string) ($global['description']['value'] ?? tk_seo_theme_option('themes_description', get_bloginfo('description'))))),
         'url' => home_url('/'),
         'contact_url' => home_url('/contact/'),
         'logo' => esc_url_raw((string) $logo),
@@ -607,7 +624,7 @@ function tk_seo_organization_data(): array {
         'team' => tk_seo_option_lines('themes_team', 12),
         'expertise' => array_values(array_unique(array_filter($expertise))),
         'service_name' => $service_name,
-        'service_description' => trim(wp_strip_all_tags((string) tk_seo_theme_option('themes_service_description', get_bloginfo('description')))),
+        'service_description' => trim(wp_strip_all_tags((string) (!empty($global['service_description']['value']) ? $global['service_description']['value'] : tk_seo_theme_option('themes_service_description', get_bloginfo('description'))))),
     );
 }
 
@@ -2441,16 +2458,18 @@ function tk_render_seo_opt_panel() {
     if (isset($_GET['tk_seo_audit_cleared']) && sanitize_key((string) $_GET['tk_seo_audit_cleared']) === '1') {
         tk_notice('Content SEO audit report cleared.', 'success');
     }
+    if (!empty($_GET['tk_global_saved'])) { tk_notice('Global SEO content saved. Theme-managed values remain linked to their source.', 'success'); }
     if ($has_third_party) {
         tk_notice('Third-party SEO plugin detected. Tool Kits meta output is auto-disabled to avoid duplicate tags. JSON-LD Schema is managed from GEO.', 'warning');
     }
     if ($has_theme_managed) {
-        tk_notice('Active theme manages SEO head output. Tool Kits meta, Open Graph, and canonical tags are not printed on the frontend.', 'warning');
+        tk_notice('Active theme manages SEO head output. Global SEO Content reuses theme settings and can fill missing metadata when enabled. Canonical tags remain managed by the theme.', 'warning');
     }
     ?>
     <div class="tk-tabs tk-seo-tabs">
         <div class="tk-tabs-nav">
             <button type="button" class="tk-tabs-nav-button is-active" data-panel="settings">Settings</button>
+            <button type="button" class="tk-tabs-nav-button" data-panel="global-content">Global SEO Content</button>
             <button type="button" class="tk-tabs-nav-button" data-panel="redirects">Redirects</button>
             <button type="button" class="tk-tabs-nav-button" data-panel="canonical">Canonical</button>
             <button type="button" class="tk-tabs-nav-button" data-panel="indexing">Indexing</button>
@@ -2516,6 +2535,7 @@ function tk_render_seo_opt_panel() {
         </form>
     </div>
 
+    <?php tk_seo_global_render_panel(); ?>
     <div class="tk-card tk-tab-panel" data-panel-id="redirects">
         <h3>Redirect Manager</h3>
         <p>Create 301/302/410 redirects and use 404 logs as quick suggestions.</p>

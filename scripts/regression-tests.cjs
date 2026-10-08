@@ -3,6 +3,11 @@
 const { spawnSync } = require('node:child_process');
 const cases = [
   {
+    "name": "global-seo-content",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/global-seo-content-regression.php';"]
+  },
+  {
     "name": "admin-asset-cache-busting",
     "runtime": "php",
     "source": ["<?php", "require __DIR__ . '/admin-asset-version-regression.php';"]
@@ -1120,6 +1125,7 @@ const cases = [
       "function wp_strip_all_tags($text) { return strip_tags($text); }",
       "function strip_shortcodes($text) { return str_replace('[tool_kits_geo_faq]', '', $text); }",
       "function get_bloginfo($key) { return 'Site description'; }",
+      "function tk_get_option($key, $default = null) { return $default; }",
       "require dirname(__DIR__) . '/includes/seo-optimization.php';",
       "function verify($expected) {",
       "    if (tk_seo_generate_description() !== $expected) { throw new RuntimeException('Description regression'); }",

@@ -1074,6 +1074,8 @@ function tk_option_init_defaults() {
         'image_opt_cleanup_report' => array(),
         'image_opt_queue' => array(),
         'seo_enabled' => 0,
+        'seo_global_enabled' => 0,
+        'seo_global_content' => array(),
         'seo_meta_desc_enabled' => 1,
         'seo_canonical_enabled' => 1,
         'seo_og_enabled' => 1,

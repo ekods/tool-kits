@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.16
+Stable tag: 2.7.17
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,14 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.17 =
+**Global SEO Content and Linked Theme Defaults**
+- Add a Global SEO Content tab for homepage title, default description, author, publisher, keywords, social image and service details.
+- Display supported Theme Settings and Customizer values as linked, read-only fields with source links; read current values without copying them into Tool Kits settings.
+- Provide editable fallbacks for fields the theme does not supply, reuse service details in GEO, and preserve page excerpts, authors and featured images.
+- Add opt-in global metadata completion that fills only missing tags in the final HTML without replacing existing theme metadata or JSON-LD. Keep third-party SEO plugin ownership and public-page guards.
+- Cover inherited settings, secure saving, source changes, page priority, duplicate prevention and frontend output in regression checks; verify tabs and forms at desktop/mobile sizes.
+
 = 2.7.16 =
 **Fresh Crawler Metadata Verification**
 - Make both Preview Crawler Fetch and Scan Again replace saved reports with newly fetched responses instead of reusing old missing metadata findings.
