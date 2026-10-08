@@ -2097,7 +2097,7 @@ function tk_seo_geo_audit_summary($items): array {
     );
 }
 
-function tk_seo_content_strategy_checks($post, array $duplicates, bool $duplicate_checked = true): array {
+function tk_seo_content_strategy_checks($post, array $duplicates, bool $duplicate_checked = true, ?int $content_score = null): array {
     $plain = trim(preg_replace('/\s+/u', ' ', wp_strip_all_tags(strip_shortcodes($post->post_content))) ?? '');
     $title = (string) get_the_title($post->ID);
     $keyword = trim((string) get_post_meta($post->ID, '_tk_seo_focus_keyword', true));
@@ -2134,6 +2134,25 @@ function tk_seo_content_strategy_checks($post, array $duplicates, bool $duplicat
     $add('GEO / AI readability', 'review', 'Stored content cannot verify crawler-visible structure.', 'Run GEO Audit and Crawler Preview; review concise answers, headings, citations, and content access.', tk_admin_url('tool-kits-geo'));
     $add('Entity signals', 'review', 'Organization identity requires rendered schema and visible business information.', 'Review organization name, URL, logo, contact details, and verified profile links in GEO.', tk_admin_url('tool-kits-geo'));
     $add('Structured data/schema', 'review', 'Rendered JSON-LD validity is checked by GEO Audit.', 'Run GEO Audit and schema validation; resolve duplicates and use types that match visible content.', tk_admin_url('tool-kits-geo'));
+    // Scores describe only the tested criterion, never unverified live output.
+    $keyword_score = $keyword === '' ? 0 : 25 * (4 - count($missing));
+    $portfolio_score = !$portfolio ? null : 50 * ((int) (bool) preg_match('/\b(client|klien)\b/i', $plain) + (int) (bool) preg_match('/\b(result|outcome|hasil|impact)\b/i', $plain));
+    $presentation = array(
+        'Content SEO' => array('Content quality', $plain === '' ? 'Add page content.' : 'Content, structure, links and trust checks.', $content_score),
+        'Keyword targeting' => array('Focus keyword', $keyword === '' ? 'Set a focus keyword.' : ($missing ? 'Missing in ' . implode(', ', $missing) . '.' : 'Keyword matches title, content and slug.'), $keyword_score),
+        'URL consistency' => array('URL format', $consistent ? 'Site origin matches; verify canonical live.' : 'Review the permalink origin or query.', $consistent ? 100 : 0),
+        'Duplicate content' => array('Duplicate text', !$duplicate_checked || $plain === '' ? 'Run a cross-page content audit.' : ($peers ? 'Exact duplicate found in this sample.' : 'No exact duplicate in this sample.'), $duplicate_checked && $plain !== '' ? ($peers ? 0 : 100) : null),
+        'Placeholder content' => array('Placeholder copy', $placeholder ? 'Replace unfinished wording.' : ($plain !== '' ? 'No known placeholder phrases.' : 'Add page content to check.'), $placeholder ? 0 : ($plain !== '' ? 100 : null)),
+        'Portfolio SEO' => array('Portfolio details', !$portfolio ? 'Not a portfolio page.' : ($portfolio_complete ? 'Client and outcome wording found.' : 'Add client context and project outcomes.'), $portfolio_score),
+        'Local SEO Jakarta/Singapore' => array('Location mentions', $location === '' ? 'No target city selected.' : ($local_found ? 'City mentioned; verify business details.' : 'Add the selected city to relevant copy.'), $location === '' ? null : ($local_found ? 100 : 0)),
+        'GEO / AI readability' => array('AI readability', 'Check crawler-visible content in GEO.', null),
+        'Entity signals' => array('Business identity', 'Verify organization details in GEO.', null),
+        'Structured data/schema' => array('Schema', 'Validate live JSON-LD in GEO.', null),
+    );
+    foreach ($checks as &$check) {
+        list($check['label'], $check['summary'], $check['score']) = $presentation[$check['category']];
+    }
+    unset($check);
     return $checks;
 }
 
@@ -2292,7 +2311,7 @@ function tk_seo_run_content_audit(int $only_post_id = 0, bool $compare_duplicate
         }
 
         $score = max(0, min(100, (int) round($score)));
-        $strategy_checks = tk_seo_content_strategy_checks($post, $duplicates, $only_post_id === 0 || $compare_duplicates);
+        $strategy_checks = tk_seo_content_strategy_checks($post, $duplicates, $only_post_id === 0 || $compare_duplicates, $score);
         foreach ($strategy_checks as $check) {
             if ($check['status'] === 'warning') {
                 $issues[] = $check['category'] . ': ' . $check['finding'];
@@ -2918,23 +2937,7 @@ function tk_render_seo_opt_panel() {
                                 <?php if ($pid > 0 && current_user_can('edit_post', $pid)) : ?>
                                     <p><button type="button" class="button button-small tk-seo-content-audit-open" data-post-id="<?php echo esc_attr((string) $pid); ?>">Validate &amp; Edit</button></p>
                                 <?php endif; ?>
-                                <?php if (!empty($item['strategy_checks'])) : ?>
-                                    <details>
-                                        <summary>SEO checks &amp; optimization</summary>
-                                        <ul>
-                                        <?php foreach ($item['strategy_checks'] as $check) : ?>
-                                            <li>
-                                                <strong><?php echo esc_html($check['category']); ?></strong>
-                                                (<?php echo esc_html($check['status']); ?>): <?php echo esc_html($check['finding']); ?>
-                                                <br><?php echo esc_html($check['action']); ?>
-                                                <?php if (!empty($check['target'])) : ?>
-                                                    <a href="<?php echo esc_url($check['target']); ?>">Review</a>
-                                                <?php endif; ?>
-                                            </li>
-                                        <?php endforeach; ?>
-                                        </ul>
-                                    </details>
-                                <?php endif; ?>
+                                <?php tk_seo_content_checks_render($item); ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>

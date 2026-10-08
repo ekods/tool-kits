@@ -29,13 +29,12 @@ function tk_seo_content_editor_render(int $post_id = 0, bool $audit_context = fa
                     <?php endforeach; ?>
                 </select></label></p>
             <?php endif; ?>
-            <p class="tk-seo-content-summary"></p>
+            <div class="tk-seo-content-summary"></div>
             <div class="tk-modal-tabs" role="tablist" aria-label="Content SEO sections">
                 <button type="button" role="tab" id="<?php echo esc_attr($title_id); ?>-checks-tab" aria-controls="<?php echo esc_attr($title_id); ?>-checks" aria-selected="true" data-content-panel="checks">SEO Checks &amp; Optimization</button>
                 <button type="button" role="tab" id="<?php echo esc_attr($title_id); ?>-edit-tab" aria-controls="<?php echo esc_attr($title_id); ?>-edit" aria-selected="false" tabindex="-1" data-content-panel="edit">Content Improvements</button>
             </div>
             <section class="tk-seo-content-panel" id="<?php echo esc_attr($title_id); ?>-checks" role="tabpanel" aria-labelledby="<?php echo esc_attr($title_id); ?>-checks-tab" data-panel="checks">
-                <p class="tk-modal-note">Validation checks saved content using the Content SEO Audit rules. Page-builder fields and rendered output may require separate review. Unsaved inputs are not included.</p>
                 <div class="tk-seo-content-validation" aria-live="polite"></div>
             </section>
             <section class="tk-seo-content-panel" id="<?php echo esc_attr($title_id); ?>-edit" role="tabpanel" aria-labelledby="<?php echo esc_attr($title_id); ?>-edit-tab" data-panel="edit" hidden>
@@ -70,6 +69,40 @@ function tk_seo_content_editor_render(int $post_id = 0, bool $audit_context = fa
 
 function tk_seo_content_editor_version($post): string {
     return hash('sha256', $post->post_content . '\0' . $post->post_excerpt . '\0' . (string) get_post_meta($post->ID, '_tk_seo_focus_keyword', true) . '\0' . (string) get_post_meta($post->ID, '_tk_seo_target_location', true));
+}
+
+function tk_seo_content_checks_render(array $item): void {
+    $checks = is_array($item['strategy_checks'] ?? null) ? $item['strategy_checks'] : array();
+    if (!$checks) { return; }
+    $has_scores = false;
+    foreach ($checks as $check) { if (is_array($check) && array_key_exists('score', $check)) { $has_scores = true; break; } }
+    ?>
+    <details class="tk-content-audit-checks">
+        <summary>SEO Checks &amp; Optimization <span class="tk-content-check-badge">Score: <?php echo esc_html((string) ($item['score'] ?? '—')); ?>/100</span></summary>
+        <p class="description"><?php echo $has_scores ? 'Each score covers the named saved-content test. Pending items need live review.' : 'Run Content Audit to refresh individual check scores.'; ?></p>
+        <ul class="tk-content-check-grid">
+        <?php foreach ($checks as $check): if (!is_array($check)) { continue; }
+            $state = in_array($check['status'] ?? '', array('pass', 'warning', 'review', 'not-applicable'), true) ? $check['status'] : 'review';
+            $score = $check['score'] ?? null;
+            $score = $state !== 'not-applicable' && (is_int($score) || is_float($score)) && $score >= 0 && $score <= 100 ? (int) round($score) : null;
+            $score_text = $state === 'not-applicable' ? 'N/A' : ($score !== null ? $score . '/100' : ($state === 'warning' ? 'Needs attention' : ($state === 'pass' ? 'Passed' : 'Pending')));
+            $color = $score === null ? ($state === 'warning' ? 'poor' : 'pending') : ($score >= 85 ? 'good' : ($score >= 50 ? 'fair' : 'poor'));
+        ?>
+            <li class="tk-content-check tk-content-check-<?php echo esc_attr($state); ?>">
+                <div class="tk-content-check-heading"><strong><?php echo esc_html((string) ($check['label'] ?? $check['category'] ?? 'SEO check')); ?></strong> <span class="tk-content-check-badge tk-content-score-<?php echo esc_attr($color); ?>"><?php echo esc_html($score_text); ?></span></div>
+                <p><?php echo esc_html((string) ($check['summary'] ?? $check['finding'] ?? '')); ?></p>
+                <?php if ($state !== 'not-applicable'): ?>
+                    <details class="tk-content-check-details"><summary>Details</summary>
+                        <p><?php echo esc_html((string) ($check['finding'] ?? '')); ?></p>
+                        <p class="description"><?php echo esc_html((string) ($check['action'] ?? '')); ?></p>
+                        <?php if (!empty($check['target'])): ?><a href="<?php echo esc_url($check['target']); ?>">Review</a><?php endif; ?>
+                    </details>
+                <?php endif; ?>
+            </li>
+        <?php endforeach; ?>
+        </ul>
+    </details>
+    <?php
 }
 
 function tk_seo_content_editor_ajax(): void {

@@ -13,10 +13,14 @@ class Element {
     click() { if (!this.disabled && this.listeners.click) return this.listeners.click({preventDefault() {}, stopPropagation() {}}); }
 }
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
+const textOf = node => node.textContent + node.children.map(textOf).join(' ');
+const find = (node, predicate) => predicate(node) ? node : node.children.map(child => find(child, predicate)).find(Boolean);
 const stored = {version: 'v1', title: 'Project', excerpt: 'Saved excerpt', keyword: '', location: 'singapore', checked_at: 123,
     validation: {score: 42, priority: 'critical', words: 80, internal_links: 0, external_links: 0, issues: ['Low word count (<300)'],
-        strategy_checks: [{category: 'Keyword targeting', status: 'warning', finding: 'Focus keyword not set.', action: 'Set a relevant keyword.', target: 'https://site.example/edit'},
-            {category: 'Structured data/schema', status: 'review', finding: 'Requires live validation.', action: 'Run GEO Audit.', target: 'javascript:alert(1)'}]}};
+        strategy_checks: [{category: 'Keyword targeting', label: 'Focus keyword', summary: 'Set a focus keyword.', score: 0, status: 'warning', finding: 'Focus keyword not set.', action: 'Set a relevant keyword.', target: 'https://site.example/edit'},
+            {category: 'Structured data/schema', label: 'Schema', score: null, status: 'review', finding: 'Requires live validation.', action: 'Run GEO Audit.', target: 'javascript:alert(1)'},
+            {category: 'URL consistency', label: 'URL format', score: 100, status: 'review', finding: 'Site origin matches.', action: 'Verify canonical live.'},
+            {category: 'Portfolio SEO', label: 'Portfolio details', score: null, status: 'not-applicable', finding: 'Not a portfolio page.', action: 'Add portfolio context.'}]}};
 const reply = data => Promise.resolve({ok: true, status: 200, text: async () => JSON.stringify({success: true, data})});
 function fixture(fetcher, audit = true) {
     const root = new Element(), dialog = new Element(), opener = new Element(), selector = audit ? new Element() : null;
@@ -47,13 +51,22 @@ function fixture(fetcher, audit = true) {
     assert.equal(calls[0].get('post_id'), '5');
     assert.equal(f.document.body.children[0], f.dialog);
     assert.equal(f.panels[0].hidden, false);
-    assert.match(f.nodes['.tk-seo-content-summary'].textContent, /42\/100.*80/);
+    assert.match(textOf(f.nodes['.tk-seo-content-summary']), /42\/100.*80/);
+    assert.equal(find(f.nodes['.tk-seo-content-summary'], node => node.tagName === 'progress').value, 42);
     const grid = f.nodes['.tk-seo-content-validation'].children.at(-1);
-    assert.equal(grid.children.length, 2);
+    assert.equal(grid.children.length, 4);
     assert.match(grid.children[0].className, /warning/);
     assert.match(grid.children[1].className, /review/);
-    assert.equal(grid.children[1].children.at(-1).children.length, 0, 'Unsafe review URL rendered');
-    grid.children[0].children.at(-1).children[0].click();
+    assert.equal(find(grid.children[1], node => node.tagName === 'a'), undefined, 'Unsafe review URL rendered');
+    assert.match(textOf(grid.children[0]), /Focus keyword.*0\/100/);
+    assert.match(textOf(grid.children[1]), /Pending/);
+    assert.match(textOf(grid.children[2]), /100\/100/);
+    assert.match(textOf(grid.children[3]), /N\/A/);
+    assert.equal(find(grid.children[3], node => node.tagName === 'button'), undefined, 'Not-applicable check offered improvements');
+    const findings = find(f.nodes['.tk-seo-content-validation'], node => node.className === 'tk-content-findings');
+    assert.equal(!!findings.open, false, 'Long audit findings expanded by default');
+    const improve = find(grid.children[0], node => node.tagName === 'button' && node.textContent === 'Improve');
+    improve.click();
     assert.equal(f.panels[1].hidden, false);
     assert.equal(f.fields[3].focused, true);
     f.fields[0].value = 'Unsaved draft'; f.fields[3].value = 'draft keyword';
@@ -93,5 +106,5 @@ function fixture(fetcher, audit = true) {
     const stalled = fixture((url, options) => new Promise((resolve, reject) => options.signal.addEventListener('abort', () => reject(new Error('Aborted')))));
     stalled.opener.click(); stalled.closes[1].click(); await flush();
     assert.equal(stalled.dialog.open, false); assert.equal(stalled.opener.focused, true);
-    console.log('PASS: audit-row selection, checklist rendering, tabs, improvement focus, read-only validation, draft preservation, save refresh, incomplete replies, timeout/retry and closing during load');
+    console.log('PASS: compact check rows, total/per-check scores, pending/N/A states, collapsed details, audit-row selection, tabs, improvement focus, draft preservation, save refresh and request recovery');
 })().catch(error => { console.error(error); process.exitCode = 1; });

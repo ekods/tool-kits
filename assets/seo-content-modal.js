@@ -78,7 +78,7 @@
                 return node;
             }
             function improve(parent, fieldName) {
-                var button = element('button', 'Improve Content', 'button button-small'); button.type = 'button';
+                var button = element('button', 'Improve', 'button button-small'); button.type = 'button';
                 button.addEventListener('click', function () {
                     showPanel('edit'); dialog.querySelector('[data-field="' + fieldName + '"]').focus();
                 });
@@ -92,32 +92,62 @@
             }
             function renderValidation(data) {
                 var audit = data.validation;
-                summary.textContent = data.title + ' — Score: ' + audit.score + '/100 · Priority: ' + audit.priority +
-                    ' · Words: ' + audit.words + ' · Links (Int/Ext): ' + audit.internal_links + '/' + audit.external_links;
+                function validScore(value) { return typeof value === 'number' && isFinite(value) && value >= 0 && value <= 100 ? Math.round(value) : null; }
+                function scoreClass(value) { return value === null ? 'pending' : value >= 85 ? 'good' : value >= 50 ? 'fair' : 'poor'; }
+                var total = validScore(audit.score);
+                summary.replaceChildren();
+                var scoreCard = element('div', undefined, 'tk-content-score-card tk-content-score-' + scoreClass(total));
+                var scoreNumber = element('div', undefined, 'tk-content-score-number');
+                scoreNumber.appendChild(element('span', 'Overall score'));
+                scoreNumber.appendChild(element('strong', total === null ? 'Pending' : total + '/100'));
+                scoreCard.appendChild(scoreNumber);
+                var scoreInfo = element('div', undefined, 'tk-content-score-info');
+                scoreInfo.appendChild(element('strong', data.title));
+                scoreInfo.appendChild(element('p', (audit.priority || 'Review') + ' priority · ' + audit.words + ' words · ' + audit.internal_links + ' internal links · ' + audit.external_links + ' external links'));
+                if (total !== null) {
+                    var progress = element('progress'); progress.max = 100; progress.value = total;
+                    progress.setAttribute('aria-label', 'Overall content audit score'); scoreInfo.appendChild(progress);
+                }
+                scoreCard.appendChild(scoreInfo); summary.appendChild(scoreCard);
                 results.replaceChildren();
                 var checked = new Date(data.checked_at * 1000);
-                if (!isNaN(checked.getTime())) results.appendChild(element('p', 'Last validation: ' + checked.toLocaleString(), 'description'));
-                results.appendChild(element('h3', 'Content Audit Findings'));
-                if (!audit.issues.length) results.appendChild(element('p', 'No stored-content issues found.', 'tk-content-check-pass'));
-                else {
+                if (!isNaN(checked.getTime())) results.appendChild(element('p', 'Last validation: ' + checked.toLocaleString(), 'description tk-content-validation-time'));
+                if (audit.issues.length) {
+                    var findings = element('details', undefined, 'tk-content-findings');
+                    findings.appendChild(element('summary', audit.issues.length + ' content audit findings'));
                     var list = element('ul', undefined, 'tk-content-audit-issues');
-                    audit.issues.forEach(function (issue) { list.appendChild(element('li', issue)); }); results.appendChild(list);
+                    audit.issues.forEach(function (issue) { list.appendChild(element('li', issue)); }); findings.appendChild(list); results.appendChild(findings);
                 }
-                results.appendChild(element('h3', 'SEO Checks & Optimization'));
+                var scoreHelp = element('details', undefined, 'tk-content-score-help');
+                scoreHelp.appendChild(element('summary', 'How scoring works'));
+                scoreHelp.appendChild(element('p', 'Each score covers the named saved-content test. Pending items need live review. Overall score follows Content Audit rules and is not an average of these checks. Validate Page checks saved content; unsaved inputs are not included.', 'description'));
+                results.appendChild(scoreHelp);
                 var grid = element('div', undefined, 'tk-content-check-grid');
                 var fieldMap = {'Content SEO': 'content', 'Keyword targeting': 'keyword', 'Portfolio SEO': 'client', 'Local SEO Jakarta/Singapore': 'location'};
                 audit.strategy_checks.forEach(function (check) {
                     if (!check || typeof check.category !== 'string') return;
                     var state = ['pass', 'warning', 'review', 'not-applicable'].indexOf(check.status) !== -1 ? check.status : 'review';
+                    var score = state === 'not-applicable' ? null : validScore(check.score);
                     var card = element('section', undefined, 'tk-content-check tk-content-check-' + state);
+                    var main = element('div', undefined, 'tk-content-check-main');
+                    var info = element('div', undefined, 'tk-content-check-info');
                     var heading = element('div', undefined, 'tk-content-check-heading');
-                    heading.appendChild(element('h4', check.category));
-                    heading.appendChild(element('span', state === 'not-applicable' ? 'Not Applicable' : state.charAt(0).toUpperCase() + state.slice(1), 'tk-content-check-badge'));
-                    card.appendChild(heading); card.appendChild(element('p', check.finding));
-                    card.appendChild(element('p', check.action, 'description'));
+                    heading.appendChild(element('h4', check.label || check.category));
+                    var scoreText = state === 'not-applicable' ? 'N/A' : score !== null ? score + '/100' : state === 'warning' ? 'Needs attention' : state === 'pass' ? 'Passed' : 'Pending';
+                    heading.appendChild(element('span', scoreText, 'tk-content-check-badge tk-content-score-' + (score === null && state === 'warning' ? 'poor' : scoreClass(score))));
+                    info.appendChild(heading); info.appendChild(element('p', check.summary || check.finding)); main.appendChild(info);
                     var actions = element('div', undefined, 'tk-content-check-actions');
-                    if (fieldMap[check.category] && state !== 'not-applicable') improve(actions, fieldMap[check.category]);
-                    review(actions, check.target); card.appendChild(actions); grid.appendChild(card);
+                    if (fieldMap[check.category] && (state === 'warning' || score !== null && score < 100)) improve(actions, fieldMap[check.category]);
+                    else if (score === null && state !== 'not-applicable') review(actions, check.target);
+                    main.appendChild(actions); card.appendChild(main);
+                    if (state !== 'not-applicable') {
+                        var details = element('details', undefined, 'tk-content-check-details');
+                        details.appendChild(element('summary', 'Details'));
+                        details.appendChild(element('p', check.finding)); details.appendChild(element('p', check.action, 'description'));
+                        if (score !== null) review(details, check.target);
+                        card.appendChild(details);
+                    }
+                    grid.appendChild(card);
                 });
                 results.appendChild(grid);
             }

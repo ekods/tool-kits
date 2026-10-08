@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.17
+Stable tag: 2.7.18
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,14 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.18 =
+**Simpler SEO Checks and Scores**
+- Simplify SEO Checks & Optimization into short rows with friendly labels, concise summaries, and expandable findings and recommendations.
+- Show the existing overall Content Audit score with a progress bar in the validation modal and a score beside the audit checklist title.
+- Add individual scores for checks supported by stored content evidence; use Pending for unverified live checks and N/A for checks that do not apply.
+- Keep the existing overall audit calculation and warning penalties; explain scoring in a collapsed help section and direct Improve buttons to the relevant inputs.
+- Ask users to rerun Content Audit for individual scores in legacy saved reports. Verify scoring, details, tabs, draft preservation, field focus, close controls and mobile layout.
+
 = 2.7.17 =
 **Global SEO Content and Linked Theme Defaults**
 - Add a Global SEO Content tab for homepage title, default description, author, publisher, keywords, social image and service details.
