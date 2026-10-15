@@ -57,17 +57,29 @@ function tk_geo_build_search_radar(array $report): array {
     );
 }
 
+/** Shared platform list for AI Radar and the website catalog generator. */
+function tk_geo_ai_radar_platforms(): array {
+    return array(
+        'google-ai' => array('name' => 'Google AI', 'provider' => 'Google', 'website' => 'https://www.google.com/',
+            'category' => 'AI Search', 'description' => 'Google search and AI answer discovery', 'agents' => array('Googlebot')),
+        'chatgpt' => array('name' => 'ChatGPT Search', 'provider' => 'OpenAI', 'website' => 'https://chatgpt.com/',
+            'category' => 'AI Search', 'description' => 'ChatGPT search and user-requested retrieval', 'agents' => array('OAI-SearchBot', 'ChatGPT-User')),
+        'claude' => array('name' => 'Claude', 'provider' => 'Anthropic', 'website' => 'https://claude.ai/',
+            'category' => 'AI Assistant', 'description' => 'Claude user-requested retrieval', 'agents' => array('Claude-User')),
+        'perplexity' => array('name' => 'Perplexity', 'provider' => 'Perplexity', 'website' => 'https://www.perplexity.ai/',
+            'category' => 'AI Search', 'description' => 'Perplexity search and user-requested retrieval', 'agents' => array('PerplexityBot', 'Perplexity-User')),
+        'common-crawl' => array('name' => 'Common Crawl', 'provider' => 'Common Crawl', 'website' => 'https://commoncrawl.org/',
+            'category' => 'Web Crawler', 'description' => 'Common Crawl public web crawling', 'agents' => array('CCBot')),
+    );
+}
+
 function tk_geo_build_ai_radar(array $search, array $access): array {
     $rows = is_array($access['crawler_fetch_results'] ?? null) ? $access['crawler_fetch_results'] : array();
     $by_agent = array();
     foreach ($rows as $row) { $by_agent[(string) ($row['agent'] ?? '')] = $row; }
-    $platforms = array(
-        'Google AI' => array('Googlebot'), 'ChatGPT Search' => array('OAI-SearchBot', 'ChatGPT-User'),
-        'Claude' => array('Claude-User'), 'Perplexity' => array('PerplexityBot', 'Perplexity-User'),
-        'Common Crawl' => array('CCBot'),
-    );
     $engines = array();
-    foreach ($platforms as $name => $agents) {
+    foreach (tk_geo_ai_radar_platforms() as $platform) {
+        $name = $platform['name']; $agents = $platform['agents'];
         $eligible = 0; $found = 0; $details = array();
         foreach ($agents as $agent) {
             if (!isset($by_agent[$agent])) { continue; }

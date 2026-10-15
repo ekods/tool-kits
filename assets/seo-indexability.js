@@ -6,6 +6,8 @@
     var status = root.querySelector('[data-indexability-status]');
     var scan = root.querySelector('[data-indexability-scan]');
     var fixAll = root.querySelector('[data-indexability-fix-all]');
+    var retry = root.querySelector('[data-indexability-retry]');
+    var fixHint = root.querySelector('[data-indexability-fix-hint]');
     var stop = root.querySelector('[data-indexability-stop]');
     var includeRedirects = root.querySelector('[data-indexability-include-redirects]');
     var bulkResults = root.querySelector('[data-indexability-bulk-results]');
@@ -41,11 +43,28 @@
         return canFix(item, kind) && (kind !== 'redirect' || includeRedirects.checked) && (kind !== 'canonical' || canonicalTarget(item).trim() !== '');
     }
     function updateBulkControls() {
-        fixAll.disabled = busy || !Array.from(items.values()).some(function (item) {
+        var reports = Array.from(items.values());
+        var eligible = reports.some(function (item) {
             return ['noindex', 'robots', 'canonical', 'redirect'].some(function (kind) { return bulkEligible(item, kind); });
         });
+        var unverified = reports.filter(needsRetry).length;
+        var issues = reports.some(function (item) { return Object.values(item.checks).some(function (check) { return check.state === 'issue'; }); });
+        fixAll.disabled = busy || !eligible;
+        if (busy) fixHint.textContent = 'Wait for the current operation to finish.';
+        else if (!reports.length) fixHint.textContent = 'Run Check Current Website to find issues before using Fix All.';
+        else if (eligible) fixHint.textContent = 'Fix All is ready for verified, editable findings.';
+        else if (unverified) fixHint.textContent = 'Fix All is unavailable because ' + unverified + ' URL(s) have unverified checks. Click Retry Unverified. A timeout does not confirm an indexing issue.';
+        else if (issues) fixHint.textContent = 'No automatic fixes are ready. Choose preferred URLs for conflicting canonicals, include Tool Kits redirects if needed, or follow the source-level guidance in the table. SEO Toolkit and page editing access are required.';
+        else fixHint.textContent = 'All verified checks passed. There is nothing for Fix All to change.';
+        retry.hidden = unverified === 0;
+        retry.style.display = unverified ? '' : 'none';
+        retry.disabled = busy || unverified === 0;
         stop.hidden = !bulkRunning;
+        stop.style.display = bulkRunning ? '' : 'none';
         stop.disabled = !bulkRunning || stopRequested;
+    }
+    function needsRetry(item) {
+        return item.verification_pending || Object.values(item.checks).some(function (check) { return check.state === 'unknown'; });
     }
     function captureCanonicalTargets() {
         root.querySelectorAll('input[data-indexability-canonical]').forEach(function (input) { canonicalDrafts.set(input.dataset.indexabilityCanonical, input.value); });
@@ -75,19 +94,28 @@
     }
     function render() {
         results.replaceChildren();
+        if (!items.size) { lock(busy); return; }
+        var wrapper = el('div'); wrapper.style.overflowX = 'auto';
+        wrapper.setAttribute('role', 'region'); wrapper.setAttribute('aria-label', 'Indexing checks grouped by URL'); wrapper.tabIndex = 0;
+        var table = el('table'); table.className = 'widefat striped'; table.style.minWidth = '900px';
+        var head = el('thead'); var heading = el('tr');
+        ['URL', 'Check', 'Result', 'Evidence & recommendation', 'Action'].forEach(function (label) {
+            var column = el('th', label); column.setAttribute('scope', 'col'); heading.appendChild(column);
+        });
+        head.appendChild(heading); table.appendChild(head);
         items.forEach(function (item) {
-            var section = el('section');
-            var title = el('h4', item.url); section.appendChild(title);
-            var timestamp = el('p', 'Checked: ' + new Date(item.scanned_at * 1000).toLocaleString()); timestamp.className = 'description'; section.appendChild(timestamp);
-            if (item.verification_pending) section.appendChild(el('p', 'Live verification pending. Use Recheck URL before applying more fixes.'));
-            var table = el('table'); table.className = 'widefat striped';
-            var head = el('thead'); var heading = el('tr');
-            ['Check', 'Result', 'Evidence & recommendation', 'Action'].forEach(function (label) { heading.appendChild(el('th', label)); });
-            head.appendChild(heading); table.appendChild(head);
-            var body = el('tbody');
-            Object.keys(item.checks).forEach(function (kind) {
+            var kinds = Object.keys(item.checks);
+            var body = el('tbody'); body.dataset.indexabilityUrl = item.url;
+            var group = el('th'); group.setAttribute('scope', 'rowgroup'); group.setAttribute('rowspan', String(kinds.length));
+            group.style.width = '24%'; group.style.verticalAlign = 'top'; group.style.overflowWrap = 'anywhere';
+            group.appendChild(el('p', item.url));
+            var timestamp = el('p', 'Checked: ' + new Date(item.scanned_at * 1000).toLocaleString()); timestamp.className = 'description'; group.appendChild(timestamp);
+            if (item.verification_pending) group.appendChild(el('p', 'Live verification pending. Use Recheck URL before applying more fixes.'));
+            kinds.forEach(function (kind, index) {
                 var check = item.checks[kind]; var row = el('tr');
-                row.appendChild(el('td', check.label)); row.appendChild(el('td', { pass: 'Pass', issue: 'Needs review', unknown: 'Unverified' }[check.state] || check.state));
+                if (index === 0) row.appendChild(group);
+                var checkLabel = el('th', check.label); checkLabel.setAttribute('scope', 'row'); row.appendChild(checkLabel);
+                var outcome = el('td', { pass: 'Pass', issue: 'Needs review', unknown: 'Unverified' }[check.state] || check.state); row.appendChild(outcome);
                 var detail = el('td'); detail.appendChild(el('p', check.detail)); detail.appendChild(el('p', check.recommendation)); row.appendChild(detail);
                 var action = el('td');
                 if (check.state === 'issue' && sourceOnly(item, kind)) {
@@ -102,9 +130,12 @@
                     button.addEventListener('click', function () { return fix(item, kind, canonical ? canonical.value : ''); }); action.appendChild(button);
                     if (kind === 'robots') { action.appendChild(el('p', 'For a physical robots.txt file, add this rule to the matching Googlebot or * group:')); var path = new URL(item.url); action.appendChild(el('code', 'Allow: ' + path.pathname + path.search + '$')); }
                 } else if (check.state === 'issue') { action.appendChild(el('p', 'Edit this alternate URL at its source, or enable SEO Toolkit for an editable public page.')); }
+                if (index === 0) {
+                    [group, checkLabel, outcome, detail, action].forEach(function (cell) { cell.style.borderTop = '2px solid var(--tk-border-soft, #dcdcde)'; });
+                }
                 row.appendChild(action); body.appendChild(row);
             });
-            table.appendChild(body); section.appendChild(table);
+            table.appendChild(body);
             var recheck = el('button', 'Recheck URL'); recheck.type = 'button'; recheck.className = 'button';
             recheck.addEventListener('click', async function () {
                 if (busy) return;
@@ -119,11 +150,28 @@
                 var remove = el('button', 'Remove page overrides'); remove.type = 'button'; remove.className = 'button';
                 remove.addEventListener('click', function () { return fix(item, 'remove'); }); actions.appendChild(document.createTextNode(' ')); actions.appendChild(remove);
             }
-            section.appendChild(actions); results.appendChild(section);
+            group.appendChild(actions);
         });
+        wrapper.appendChild(table); results.appendChild(wrapper);
         lock(busy);
     }
     includeRedirects.addEventListener('change', updateBulkControls);
+    retry.addEventListener('click', async function () {
+        if (busy) return;
+        captureCanonicalTargets();
+        var targets = Array.from(items.values()).filter(needsRetry);
+        if (!targets.length) return;
+        lock(true); var failures = []; var checked = 0;
+        try {
+            for (var i = 0; i < targets.length; i++) {
+                status.textContent = 'Retrying unverified URL ' + (i + 1) + '/' + targets.length + ': ' + targets[i].url;
+                try { var data = await request(targets[i].url); items.set(data.item.url, data.item); checked++; render(); }
+                catch (error) { failures.push(targets[i].url + ': ' + error.message); }
+            }
+            var remaining = Array.from(items.values()).filter(needsRetry).length;
+            status.textContent = 'Retry completed: ' + checked + '/' + targets.length + ' URLs checked; ' + remaining + ' URL(s) still unverified.' + (failures.length ? ' ' + failures.join(' · ') : '') + (remaining ? ' If requests keep timing out, check server loopback access and hosting/firewall logs.' : '');
+        } finally { lock(false); }
+    });
     stop.addEventListener('click', function () { stopRequested = true; stop.disabled = true; status.textContent = 'Stopping Fix All after the current change is checked…'; });
     fixAll.addEventListener('click', async function () {
         if (busy) return;

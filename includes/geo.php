@@ -38,7 +38,10 @@ function tk_geo_init() {
     add_action('admin_post_tk_geo_prompt_preview', 'tk_geo_prompt_preview_handler');
     add_action('admin_post_tk_geo_post_schema_validate', 'tk_geo_post_schema_validate_handler');
     add_action('init', 'tk_geo_llms_maybe_render', 1);
-    add_action('template_redirect', 'tk_geo_ai_catalog_maybe_render', -1);
+    // After post types are registered, before routing, 404 redirects and HTML buffers.
+    add_action('wp_loaded', 'tk_geo_ai_catalog_maybe_render', 0);
+    add_filter('wp_headers', 'tk_geo_ai_catalog_discovery_headers');
+    add_action('wp_head', 'tk_geo_ai_catalog_discovery_head', 2);
     add_action('wp_head', 'tk_geo_render_head_jsonld', 3);
     add_shortcode('tool_kits_geo_faq', 'tk_geo_faq_shortcode');
     add_action('wp_enqueue_scripts', 'tk_geo_enqueue_faq_styles');
@@ -1918,6 +1921,9 @@ function tk_geo_ai_access_clear(): void {
 function tk_geo_save(): void {
     tk_require_admin_post('tk_geo_save');
 
+    $catalog_settings = tk_geo_ai_catalog_posted_settings();
+    if (is_wp_error($catalog_settings)) { wp_die(esc_html($catalog_settings->get_error_message()), 'Invalid AI Catalog', array('back_link' => true, 'response' => 400)); }
+
     $active_tab = sanitize_key((string) tk_post('tk_geo_active_tab', 'overview'));
     $allowed_tabs = array('overview', 'custom-jsonld', 'faqpage', 'itemlist', 'llms', 'ai-catalog', 'geo-audit', 'ai-visibility', 'prompt-preview', 'post-schema', 'schema-duplicates', 'crawler-preview', 'ai-access', 'preview');
     if (!in_array($active_tab, $allowed_tabs, true)) {
@@ -2021,8 +2027,10 @@ function tk_geo_save(): void {
     tk_update_option('geo_itemlist_limit', max(1, min(50, (int) tk_post('geo_itemlist_limit', 10))));
     tk_update_option('geo_itemlist_language_mode', $itemlist_language_mode);
     tk_update_option('geo_llms_enabled', !empty($_POST['geo_llms_enabled']) ? 1 : 0);
-    tk_update_option('geo_ai_catalog_enabled', !empty($_POST['geo_ai_catalog_enabled']) || !empty($_POST['geo_ai_catalog_generate']) ? 1 : 0);
-    if (!empty($_POST['geo_ai_catalog_generate'])) {
+    tk_update_option('geo_ai_catalog_enabled', !empty($_POST['geo_ai_catalog_enabled']) || !empty($_POST['geo_ai_catalog_generate']) || !empty($_POST['geo_ai_catalog_generate_auto']) ? 1 : 0);
+    if (is_array($catalog_settings)) { tk_geo_ai_catalog_save_settings($catalog_settings); }
+    if (!empty($_POST['geo_ai_catalog_use_example'])) { $active_tab = 'ai-catalog'; }
+    if (!empty($_POST['geo_ai_catalog_generate']) || !empty($_POST['geo_ai_catalog_generate_auto'])) {
         $active_tab = 'ai-catalog';
     }
     $llms_mode = sanitize_key((string) tk_post('geo_llms_mode', 'auto'));
@@ -2523,17 +2531,42 @@ function tk_render_geo_panel(): void {
 
         <div class="tk-card tk-tab-panel" data-panel-id="ai-catalog" id="ai-catalog">
             <h3>ai-catalog.json Generator</h3>
-            <p>Generate a JSON catalog with site details and published posts, pages, and public custom content. Each entry includes its title, URL, content type, summary, language, and last update.</p>
-            <?php tk_render_switch('geo_ai_catalog_enabled', 'Enable ai-catalog.json', 'Keep the public catalog up to date automatically when content changes.', (int) tk_get_option('geo_ai_catalog_enabled', 0)); ?>
+            <p>Generate a document with <code>version</code>, <code>last_updated</code>, and a <code>catalog</code> array. Each entry includes id, name, provider, category, description, website, features, pricing, tags, and status.</p>
+            <?php tk_render_switch('geo_ai_catalog_enabled', 'Enable ai-catalog.json', 'Serve the catalog at the public URL below.', (int) tk_get_option('geo_ai_catalog_enabled', 0)); ?>
+            <input type="hidden" name="geo_ai_catalog_settings_present" value="1">
+            <p><label for="tk-ai-catalog-mode"><strong>Catalog source</strong></label><br>
+                <select id="tk-ai-catalog-mode" name="geo_ai_catalog_mode">
+                    <option value="auto" <?php selected(tk_get_option('geo_ai_catalog_mode', 'auto'), 'auto'); ?>>Website + AI Radar (automatic)</option>
+                    <option value="manual" <?php selected(tk_get_option('geo_ai_catalog_mode', 'auto'), 'manual'); ?>>Custom catalog (manual)</option>
+                </select>
+            </p>
+            <p><label for="tk-ai-catalog-entries"><strong>Custom catalog entries (JSON)</strong></label></p>
+            <textarea id="tk-ai-catalog-entries" name="geo_ai_catalog_entries" rows="16" class="large-text code"><?php echo esc_textarea((string) wp_json_encode(tk_get_option('geo_ai_catalog_entries', array()), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)); ?></textarea>
+            <p class="description">Enter an array of entries or paste a full document containing a catalog array. Select Custom catalog to publish these entries. IDs must be unique; features and tags must be arrays. The update date is managed automatically when the catalog changes.</p>
+            <p><button type="submit" class="button" name="geo_ai_catalog_use_example" value="1">Use ChatGPT &amp; Claude Example</button></p>
             <p><code><?php echo esc_html(home_url('/ai-catalog.json')); ?></code></p>
             <p>
+                <button type="submit" class="button button-primary" name="geo_ai_catalog_generate_auto" value="1">Generate Website + AI Radar</button>
                 <button type="submit" class="button button-secondary" name="geo_ai_catalog_generate" value="1">Generate &amp; Enable Catalog</button>
                 <?php if (tk_geo_ai_catalog_enabled()) : ?>
                     <a class="button" href="<?php echo esc_url(home_url('/ai-catalog.json')); ?>" target="_blank" rel="noopener">View Catalog</a>
                     <a class="button" href="<?php echo esc_url(add_query_arg('download', '1', home_url('/ai-catalog.json'))); ?>">Download ai-catalog.json</a>
                 <?php endif; ?>
             </p>
-            <p class="description">Drafts, private posts, attachments, and password-protected content are excluded. The catalog is served live, like llms.txt.</p>
+            <p class="description">Automatic mode combines this website's name, description, homepage and published public content with the platform list shared by AI Radar. Drafts, private posts, attachments, and password-protected content are excluded. Custom mode publishes only the entries you enter above.</p>
+            <p class="description">For AI Radar entries, status is the last saved crawler access result for this website: eligible, partial, blocked, or unknown. Run AI Radar to refresh it. Unknown means no matching result is available. Crawler access does not confirm indexing or citation. Pricing is left blank. The catalog is served live without external AI API calls.</p>
+            <h4>Agentic Resource Discovery (ARD)</h4>
+            <p>The separate ARD manifest uses the discovery schema checked by Lighthouse. It is served before 404 redirects and linked automatically from public pages.</p>
+            <p><code><?php echo esc_html(home_url('/.well-known/ard.json')); ?></code><br>
+                <code><?php echo esc_html(home_url('/.well-known/ai-catalog.json')); ?></code> (legacy discovery)</p>
+            <p class="description">The ARD manifest publishes the site name with an empty entries array: this generator does not provide callable agents or tools. The content and AI product catalog above keeps its own format.</p>
+            <?php if (tk_geo_ai_catalog_enabled()) : ?>
+            <p><a class="button" href="<?php echo esc_url(home_url('/.well-known/ard.json')); ?>" target="_blank" rel="noopener">View ARD Manifest</a></p>
+            <?php endif; ?>
+            <?php if (tk_get_option('geo_ai_catalog_mode', 'auto') === 'manual') : ?>
+            <p><label for="tk-ai-catalog-preview"><strong>Current JSON preview</strong></label></p>
+            <textarea id="tk-ai-catalog-preview" readonly rows="16" class="large-text code"><?php echo esc_textarea(tk_geo_build_ai_catalog_json()); ?></textarea>
+            <?php endif; ?>
         </div>
 
         <div class="tk-card tk-tab-panel<?php echo $geo_audit_page ? ' is-active' : ''; ?>" data-panel-id="geo-audit" id="geo-audit">

@@ -116,8 +116,13 @@ function tk_seo_indexability_parse(string $html): array {
     return $result;
 }
 
-function tk_seo_indexability_request(string $url) {
-    return wp_safe_remote_get($url, array('timeout' => 5, 'redirection' => 0, 'limit_response_size' => 2 * MB_IN_BYTES,
+function tk_seo_indexability_request(string $url, float $timeout = 20.0, float $deadline = 0.0) {
+    if ($deadline > 0) {
+        $remaining = $deadline - microtime(true);
+        if ($remaining <= 0) { return new WP_Error('tk_indexability_budget', 'Live-check time budget reached. Recheck this URL.'); }
+        $timeout = min($timeout, $remaining);
+    }
+    return wp_safe_remote_get($url, array('timeout' => $timeout, 'redirection' => 0, 'limit_response_size' => 2 * MB_IN_BYTES,
         'headers' => array('User-Agent' => 'Tool Kits Indexability Audit', 'Cache-Control' => 'no-cache')));
 }
 
@@ -156,11 +161,12 @@ function tk_seo_indexability_discover(int $page = 1): array {
     return array('urls' => array_values(array_unique($urls)), 'has_more' => count($ids) === 100, 'next_page' => $page + 1);
 }
 
-function tk_seo_indexability_scan(string $url): array {
+function tk_seo_indexability_scan(string $url, float $deadline = 0.0): array {
     $url = tk_seo_indexability_url($url);
     if ($url === '') { throw new RuntimeException('Enter a URL on this website using its current scheme and port.'); }
+    if ($deadline <= 0) { $deadline = microtime(true) + 25.0; }
     $item = array('url' => $url, 'scanned_at' => time(), 'checks' => array());
-    $response = tk_seo_indexability_request($url);
+    $response = tk_seo_indexability_request($url, 20.0, $deadline);
     $ok = !is_wp_error($response);
     $status = $ok ? (int) wp_remote_retrieve_response_code($response) : 0;
     $item['http_status'] = $status;
@@ -206,7 +212,7 @@ function tk_seo_indexability_scan(string $url): array {
     );
     $origin = wp_parse_url(home_url('/'));
     $robots_url = $origin['scheme'] . '://' . $origin['host'] . (isset($origin['port']) ? ':' . $origin['port'] : '') . '/robots.txt';
-    $robots = tk_seo_indexability_request($robots_url);
+    $robots = tk_seo_indexability_request($robots_url, 5.0, $deadline);
     $robots_status = is_wp_error($robots) ? 0 : (int) wp_remote_retrieve_response_code($robots);
     $robots_body = is_wp_error($robots) ? '' : (string) wp_remote_retrieve_body($robots);
     $robots_known = $robots_status === 200 && !preg_match('/<(?:!doctype|html|head|body)\b/i', $robots_body);
@@ -257,8 +263,13 @@ function tk_seo_indexability_apply(string $url, string $kind, string $canonical 
         tk_update_option('seo_indexability_fixes', $fixes);
         return 'Removed the Tool Kits page overrides for this URL. Redirect rules remain managed in Redirects.';
     }
-    $fresh = tk_seo_indexability_scan($url);
-    if (!in_array($kind, array('noindex', 'canonical', 'robots', 'redirect'), true) || $fresh['checks'][$kind]['state'] !== 'issue') {
+    if (!in_array($kind, array('noindex', 'canonical', 'robots', 'redirect'), true)) { throw new RuntimeException('Unknown fix.'); }
+    $deadline = microtime(true) + 25.0;
+    $fresh = tk_seo_indexability_scan($url, $deadline);
+    if ($fresh['checks'][$kind]['state'] === 'unknown') {
+        throw new RuntimeException('Live verification could not complete. No change was applied. Recheck this URL before retrying the fix.');
+    }
+    if ($fresh['checks'][$kind]['state'] !== 'issue') {
         throw new RuntimeException('This issue is no longer present. Run the check again.');
     }
     if ($kind === 'redirect') {
@@ -281,7 +292,12 @@ function tk_seo_indexability_apply(string $url, string $kind, string $canonical 
         if (!empty($fresh['header_canonical'])) { throw new RuntimeException('A canonical HTTP Link header is present. Correct that header at its source before overriding the HTML canonical.'); }
         $canonical = tk_seo_indexability_url($canonical);
         if ($canonical === '') { throw new RuntimeException('Enter the preferred canonical URL on this website.'); }
-        $target = tk_seo_indexability_scan($canonical);
+        // A self-canonical uses the response already fetched above. All requests
+        // for another destination share this action's time budget.
+        $target = $canonical === $url ? $fresh : tk_seo_indexability_scan($canonical, $deadline);
+        if ($target['checks']['noindex']['state'] === 'unknown' || $target['checks']['robots']['state'] === 'unknown') {
+            throw new RuntimeException('The canonical destination could not be verified. Recheck its URL before retrying the fix.');
+        }
         if ($target['http_status'] !== 200 || $target['checks']['noindex']['state'] !== 'pass' || $target['checks']['robots']['state'] !== 'pass') {
             throw new RuntimeException('The canonical target must return HTML with HTTP 200, allow indexing, and allow Googlebot crawling.');
         }
@@ -432,7 +448,8 @@ function tk_seo_indexability_panel(): void {
         <p>Website: <strong><?php echo esc_html(home_url('/')); ?></strong></p>
         <p class="description">These are live website checks. Google's duplicate classification and indexing status still require Search Console URL Inspection. Keep intentional exclusions and redirects.</p>
         <?php if (!tk_seo_tools_enabled()): ?><p>Enable SEO Toolkit in Settings to apply per-URL fixes.</p><?php endif; ?>
-        <p><button type="button" class="button button-primary" data-indexability-scan>Check Current Website</button> <button type="button" class="button button-secondary" data-indexability-fix-all disabled>Fix All</button> <button type="button" class="button" data-indexability-stop hidden disabled>Stop Fix All</button> <a class="button" href="<?php echo esc_url(admin_url('options-reading.php')); ?>">Search Engine Visibility</a> <a class="button" href="<?php echo esc_url(tk_admin_url('tool-kits-seo') . '#redirects'); ?>">Manage Redirects</a></p>
+        <p><button type="button" class="button button-primary" data-indexability-scan>Check Current Website</button> <button type="button" class="button" data-indexability-retry hidden disabled>Retry Unverified</button> <button type="button" class="button button-secondary" data-indexability-fix-all aria-describedby="tk-indexability-fix-hint" disabled>Fix All</button> <button type="button" class="button" data-indexability-stop hidden disabled>Stop Fix All</button> <a class="button" href="<?php echo esc_url(admin_url('options-reading.php')); ?>">Search Engine Visibility</a> <a class="button" href="<?php echo esc_url(tk_admin_url('tool-kits-seo') . '#redirects'); ?>">Manage Redirects</a></p>
+        <p id="tk-indexability-fix-hint" class="description" data-indexability-fix-hint role="status"></p>
         <p><label><input type="checkbox" data-indexability-include-redirects> Include disabling Tool Kits redirects</label></p>
         <p class="description">Fix All processes editable findings from the current report and rechecks each change. Missing canonical tags use the page permalink; choose a preferred URL below for conflicting canonicals. Intentional redirects are kept unless included. Server/CDN rules and physical robots.txt files need correction at their source.</p>
         <p data-indexability-status role="status" aria-live="polite"></p>

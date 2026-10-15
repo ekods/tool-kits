@@ -4,7 +4,11 @@ define('MB_IN_BYTES', 1048576);
 require dirname(__DIR__) . '/includes/seo-indexability.php';
 set_error_handler(function($severity, $message, $file, $line) { throw new ErrorException($message, 0, $severity, $file, $line); });
 function verify_indexing($ok, $message) { if (!$ok) { throw new RuntimeException($message); } }
-class WP_Error { function get_error_message() { return 'Connection failed'; } }
+class WP_Error {
+    private $message;
+    function __construct($code = 'http_request_failed', $message = 'Connection failed') { $this->message = $message; }
+    function get_error_message() { return $this->message; }
+}
 class WP_Http {
     static function make_absolute_url($url, $base) {
         if (preg_match('~^https?://~', $url)) return $url;
@@ -49,7 +53,9 @@ function tk_seo_normalize_path($url) { return rtrim(parse_url($url, PHP_URL_PATH
 function wp_safe_remote_get($url, $args) {
     verify_indexing($args['redirection'] === 0 && $args['limit_response_size'] === 2 * MB_IN_BYTES, 'Unsafe HTTP request options');
     $GLOBALS['requests'][] = $url;
+    $GLOBALS['request_args'][] = array('url' => $url, 'timeout' => $args['timeout']);
     if ($url === 'https://site.example/robots.txt') return $GLOBALS['robots'];
+    if ($args['timeout'] < ($GLOBALS['minimum_page_timeout'] ?? 0)) return new WP_Error('http_request_failed', 'cURL error 28: Operation timed out');
     return $GLOBALS['response'];
 }
 function is_wp_error($value) { return $value instanceof WP_Error; }
@@ -87,6 +93,21 @@ foreach (array('https://external.example/page', 'https://site.example.evil/page'
 $item = tk_seo_indexability_scan($url);
 foreach ($item['checks'] as $check) verify_indexing($check['state'] === 'pass', 'Healthy page flagged: ' . $check['label']);
 verify_indexing($requests[1] === 'https://site.example/robots.txt', 'Robots fetched below site subdirectory');
+
+// A page needing more than five seconds must remain auditable. Robots requests
+// have a shorter timeout and every scan/action has a shared wall-clock budget.
+$minimum_page_timeout = 8.0;
+$slow = tk_seo_indexability_scan($url);
+verify_indexing($slow['checks']['noindex']['state'] === 'pass' && $slow['checks']['canonical']['state'] === 'pass', 'Slow page still fails the former five-second timeout');
+verify_indexing($request_args[count($request_args) - 2]['timeout'] >= 8 && $request_args[count($request_args) - 2]['timeout'] <= 20, 'Page timeout is not bounded');
+verify_indexing($request_args[count($request_args) - 1]['timeout'] <= 5, 'Robots request exhausted the page budget');
+$minimum_page_timeout = 0;
+$request_count = count($requests); $expired = tk_seo_indexability_scan($url, microtime(true) - 1);
+verify_indexing(count($requests) === $request_count && $expired['checks']['noindex']['state'] === 'unknown' && $expired['checks']['robots']['state'] === 'unknown', 'Expired budget starts HTTP calls or falsely passes checks');
+$response = new WP_Error('http_request_failed', 'cURL error 28: Operation timed out'); $before = $options;
+try { tk_seo_indexability_apply($url, 'noindex'); throw new Exception('Unverified page was changed'); }
+catch (RuntimeException $error) { verify_indexing(strpos($error->getMessage(), 'No change was applied') !== false && $options === $before, 'Timeout mistaken for a resolved issue or allowed a blind fix'); }
+$response = $healthy;
 
 foreach (array('noindex, follow', 'NOINDEX', 'none', 'googlebot: noindex') as $directive) verify_indexing(tk_seo_indexability_has_noindex($directive), 'Missed directive ' . $directive);
 verify_indexing(tk_seo_indexability_has_noindex('max-snippet: -1, noindex'), 'Colon directive mistaken for a user-agent');
@@ -174,7 +195,9 @@ verify_indexing(!tk_seo_indexability_editable($url), 'Per-content SEO disable ig
 $content_enabled = true;
 verify_indexing(!tk_seo_indexability_editable($url . '?variant=1'), 'Alternate URL accepted for page override');
 $response = $healthy; $response['body'] = '<html><head></head></html>';
+$request_count = count($requests);
 tk_seo_indexability_apply($url, 'canonical', $url);
+verify_indexing(count($requests) - $request_count === 2, 'Self-canonical fix fetched the same page twice');
 verify_indexing($options['seo_indexability_fixes'][hash('sha256', $url)]['canonical'] === $url, 'Preferred canonical not persisted');
 tk_seo_indexability_apply($url, 'remove');
 verify_indexing(!isset($options['seo_indexability_fixes'][hash('sha256', $url)]), 'Undo did not remove page overrides');

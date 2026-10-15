@@ -44,11 +44,25 @@ Open **Tool Kits > GEO Setup > ai-catalog.json**, then click **Generate & Enable
 Use **View Catalog** to open `/ai-catalog.json` or **Download ai-catalog.json** to save the file.
 The endpoint uses the site's home URL, including its subfolder when applicable, and follows the plugin's license gate.
 
-The Tool Kits JSON format contains `version`, `site`, `links`, and `items`. Each item includes
-`title`, `url`, `type`, `description`, `language`, and `modified`. Published pages, posts, and
-publicly queryable custom post types are included; drafts, private posts, attachments, and
-password-protected content are excluded. Summaries use excerpts or plain text from content
-without executing shortcodes. Output is generated live, so content updates need no manual rebuild.
+The JSON document contains `version` (`1.0.0`), `last_updated` (`YYYY-MM-DD`), and `catalog`.
+Every catalog entry includes `id`, `name`, `provider`, `category`, `description`, `website`,
+`features`, `pricing`, `tags`, and `status`. Features and tags are JSON arrays.
+
+**Website content (automatic)** includes published pages, posts, and publicly queryable custom
+post types; drafts, private posts, attachments, and password-protected content are excluded.
+The content title becomes `name`, the site name becomes `provider`, the post type becomes
+`category`, and the permalink becomes `website`. IDs use the post type and ID. Summaries use
+excerpts or plain text without executing shortcodes. Features/tags default to empty arrays,
+pricing is blank, and published entries have active status. The update date tracks the latest
+content or catalog configuration change. Output is generated live, so content updates need no manual rebuild.
+
+For entries like ChatGPT and Claude, choose **Custom catalog (manual)** and enter JSON in
+**Custom catalog entries**. The editor accepts either an entries array or a full document
+containing `catalog`. **Use ChatGPT & Claude Example** saves the supplied two-entry example and
+selects custom mode. Review the entries, then use **Generate & Enable Catalog** to publish them.
+A preview shows the saved custom JSON. The schema version and update date are managed by the
+generator; the date changes when the saved catalog changes. Invalid JSON, duplicate IDs, invalid
+website URLs and non-array features/tags are rejected before GEO settings are written.
 Disable **Enable ai-catalog.json** and save to stop serving the catalog.
 
 ### Check and fix indexing exclusions
@@ -60,6 +74,8 @@ continues past 100 URLs, checking each URL separately for robots/Googlebot meta 
 X-Robots-Tag, HTML/HTTP canonical declarations, robots.txt rules and HTTP redirects.
 Each result includes evidence and a recommendation. Request failures and non-HTML responses
 are reported as unverified rather than passing.
+Results share one table, grouped by URL. Each URL appears once beside its checks, timestamp,
+and page actions; the table scrolls horizontally on smaller screens.
 
 For an editable, public permalink or the homepage, with SEO Toolkit enabled:
 
@@ -83,6 +99,13 @@ Changes run sequentially, with progress and a live recheck after each change. A 
 not prevent later pages from being processed. The final summary distinguishes saved changes,
 verified fixes, remaining findings, failures, and pending verifications. **Stop Fix All** finishes
 verification of the current change before stopping.
+
+**Fix All** becomes available only when the report contains verified findings that Tool Kits can
+edit. An **Unverified** result after a request timeout is not a confirmed indexing problem.
+The explanation beside the button identifies this state, and **Retry Unverified** rechecks only
+affected URLs without changing page settings. Page requests allow up to 20 seconds within a
+25-second shared scan/action budget. If retries still time out, check server loopback access and
+hosting/firewall logs. A self-canonical fix reuses its already fetched response to avoid a duplicate request.
 
 Missing canonical tags default to the public permalink. Duplicate tags declaring the same URL
 use that URL; conflicting canonical destinations require choosing a preferred URL in the page's

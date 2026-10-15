@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.20
+Stable tag: 2.7.21
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,31 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.21 =
+**Website and AI Radar Catalog Generation**
+- Generate the current website profile and public content together with the AI platforms from the same registry used by AI Radar.
+- Include saved per-platform crawler access eligibility for the current website, using unknown when no matching report exists. Do not claim indexing, citations or product pricing.
+- Add Generate Website + AI Radar to enable automatic output while preserving custom entries for manual mode.
+
+**ARD Discovery and JSON Routing**
+- Serve an ARD manifest at /.well-known/ard.json and /.well-known/ai-catalog.json before routing, 404 redirects and HTML output buffers.
+- Advertise both discovery URLs through HTML links and HTTP Link headers, preserving existing Link values.
+- Keep the requested version/last_updated/catalog format at /ai-catalog.json. The separate ARD manifest declares the site name and no callable resources, since this generator does not implement agents or tools.
+
+**Editable AI Catalog Format**
+- Generate version 1.0.0 documents with last_updated and catalog, including id, name, provider, category, description, website, features, pricing, tags and status for every entry.
+- Add a custom JSON catalog editor, full-document import, saved preview, and the supplied ChatGPT/Claude example alongside automatic website content.
+- Validate entries before saving and update catalog dates when data changes.
+
+**Indexing Timeout Recovery**
+- Increase the page request timeout from 5 to 20 seconds within a shared 25-second live-check budget; reuse the source response for self-canonical fixes.
+- Explain why Fix All is unavailable and add Retry Unverified for read-only rechecks after timeouts or incomplete verification.
+- Keep unverified requests from being treated as resolved findings or edited without evidence, and hide the Stop button while no bulk operation is running.
+
+**Grouped Indexing Results**
+- Display indexing results in one table with checks grouped by URL, a shared header, and page actions alongside each URL.
+- Preserve individual fixes, canonical selections, Fix All and live rechecks in the grouped table.
+
 = 2.7.20 =
 **Indexing Fix All**
 - Add Fix All for editable indexing findings with sequential requests, progress, a stop control, and live verification after each change.

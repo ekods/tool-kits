@@ -20,16 +20,17 @@ function fixture(saved, fetcher) {
     const root = new Element(); root.dataset = {nonce: 'valid', home: 'https://site.example/'};
     const results = new Element(), status = new Element(), scan = new Element('button'), data = new Element('script', JSON.stringify(saved));
     const fixAll = new Element('button'), stop = new Element('button'), includeRedirects = new Element('input'), bulkResults = new Element();
+    const retry = new Element('button'), fixHint = new Element();
     includeRedirects.checked = false;
-    root.children = [results, status, scan, fixAll, stop, includeRedirects, bulkResults, data];
+    root.children = [results, status, scan, fixAll, stop, retry, fixHint, includeRedirects, bulkResults, data];
     root.querySelector = selector => ({'[data-indexability-results]': results, '[data-indexability-status]': status, '[data-indexability-scan]': scan, '.tk-indexability-saved': data,
-        '[data-indexability-fix-all]': fixAll, '[data-indexability-stop]': stop, '[data-indexability-include-redirects]': includeRedirects, '[data-indexability-bulk-results]': bulkResults}[selector]);
+        '[data-indexability-fix-all]': fixAll, '[data-indexability-stop]': stop, '[data-indexability-retry]': retry, '[data-indexability-fix-hint]': fixHint, '[data-indexability-include-redirects]': includeRedirects, '[data-indexability-bulk-results]': bulkResults}[selector]);
     root.querySelectorAll = selector => walk(root).filter(node => selector === 'input[data-indexability-canonical]' ? node.tagName === 'input' && !!node.dataset.indexabilityCanonical : ['button', 'input', 'textarea'].includes(node.tagName));
     vm.runInNewContext(fs.readFileSync(__dirname + '/../assets/seo-indexability.js', 'utf8'), {
         document: {getElementById: () => root, createElement: tag => new Element(tag), createTextNode: text => new Element('#text', text)},
         window: {ajaxurl: '/wp-admin/admin-ajax.php'}, fetch: fetcher, URL, URLSearchParams, Map, Set, Date
     });
-    return {root, results, status, scan, fixAll, stop, includeRedirects, bulkResults};
+    return {root, results, status, scan, fixAll, stop, retry, fixHint, includeRedirects, bulkResults};
 }
 (async () => {
     const calls = []; let mode = 'fix';
@@ -171,5 +172,30 @@ function fixture(saved, fetcher) {
     stoppable.stop.click(); releaseFix(reply({message: 'Saved.'})); await fixing;
     assert.equal(stopCalls.length, 2, 'Stopping must verify the current change and leave later URLs alone');
     assert.match(stoppable.status.textContent, /Fix All stopped/); assert.equal(stoppable.scan.disabled, false);
+
+    // Screenshot regression: three Unverified checks and robots Pass cannot
+    // enable Fix All. Explain the reason and offer a read-only retry instead.
+    const timedOut = issueItem();
+    ['noindex', 'canonical', 'redirect'].forEach(kind => { timedOut.checks[kind].state = 'unknown'; });
+    timedOut.checks.robots.state = 'pass';
+    const retryCalls = []; let resolveRetry;
+    const timeout = fixture([timedOut], (url, options) => { retryCalls.push(options.body); return new Promise(resolve => { resolveRetry = resolve; }); });
+    assert.equal(timeout.fixAll.disabled, true); assert.match(timeout.fixHint.textContent, /unverified checks.*Retry Unverified/);
+    assert.equal(timeout.stop.style.display, 'none', 'Idle Stop control overrides hidden with button styling');
+    assert.equal(timeout.retry.disabled, false); assert.equal(timeout.retry.hidden, false);
+    const retrying = timeout.retry.click(); timeout.retry.click();
+    assert.equal(timeout.retry.disabled, true); assert.equal(retryCalls.length, 1); assert.equal(retryCalls[0].get('operation'), 'scan');
+    const retried = issueItem(); ['canonical', 'robots', 'redirect'].forEach(kind => { retried.checks[kind].state = 'pass'; });
+    resolveRetry(reply({item: retried})); await retrying;
+    assert.equal(timeout.fixAll.disabled, false, 'Verified fixable finding did not enable Fix All');
+    assert.equal(timeout.retry.hidden, true); assert.match(timeout.fixHint.textContent, /ready for verified/);
+    const allPass = issueItem(); Object.values(allPass.checks).forEach(check => { check.state = 'pass'; });
+    const clean = fixture([allPass], () => { throw new Error('No request expected'); });
+    assert.equal(clean.fixAll.disabled, true); assert.match(clean.fixHint.textContent, /All verified checks passed/); assert.equal(clean.retry.hidden, true);
+    const stillTimedOut = fixture([timedOut], async () => reply({item: timedOut}));
+    await stillTimedOut.retry.click();
+    assert.equal(stillTimedOut.fixAll.disabled, true); assert.match(stillTimedOut.status.textContent, /still unverified.*loopback/);
+    const failedRetry = fixture([timedOut], async () => ({json: async () => ({success: false, data: {message: 'Request failed.'}})}));
+    await failedRetry.retry.click(); assert.equal(failedRetry.retry.disabled, false); assert.equal(failedRetry.fixAll.disabled, true); assert.match(failedRetry.status.textContent, /Request failed/);
     console.log('PASS: automatic discovery and per-URL fixes; Fix All sequencing, canonical choices, redirect opt-in, source/permission exclusions, verification, failure recovery, progress and stop');
 })().catch(error => { console.error(error); process.exitCode = 1; });
