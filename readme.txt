@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.19
+Stable tag: 2.7.20
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,13 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.20 =
+**Indexing Fix All**
+- Add Fix All for editable indexing findings with sequential requests, progress, a stop control, and live verification after each change.
+- Preserve preferred canonical inputs during result updates and require an explicit destination for conflicting canonicals.
+- Add an option to include disabling Tool Kits redirects; keep source-managed issues available for manual review.
+- Continue after per-URL failures and report saved changes, verified fixes, remaining findings and pending verifications separately.
+
 = 2.7.19 =
 **Indexing Checks and Fixes**
 - Automatically discover and scan the current website's homepage, published public content, and active Tool Kits redirect sources in batches, without manual URL entry.

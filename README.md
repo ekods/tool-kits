@@ -77,6 +77,19 @@ For an editable, public permalink or the homepage, with SEO Toolkit enabled:
 
 Every fix clears supported caches and runs a live check again. **Remove page overrides** undoes
 saved noindex/canonical/virtual-robots overrides. Disabled redirects remain listed in **Redirects**.
+
+After scanning, click **Fix All** to process editable findings across the current report.
+Changes run sequentially, with progress and a live recheck after each change. A failed change does
+not prevent later pages from being processed. The final summary distinguishes saved changes,
+verified fixes, remaining findings, failures, and pending verifications. **Stop Fix All** finishes
+verification of the current change before stopping.
+
+Missing canonical tags default to the public permalink. Duplicate tags declaring the same URL
+use that URL; conflicting canonical destinations require choosing a preferred URL in the page's
+canonical field. Those choices are preserved while bulk results refresh. Redirects are included
+only when **Include disabling Tool Kits redirects** is checked. Server/CDN headers, redirects
+managed elsewhere, uneditable pages and physical robots.txt issues retain their source-level guidance.
+
 Drafts, private/password-protected content and alternate URLs cannot receive page overrides.
 This checker does not connect to Search Console or identify Google's chosen duplicate/canonical;
 use URL Inspection for that evidence and request validation after Google recrawls the changed URLs.

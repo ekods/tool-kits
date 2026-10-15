@@ -432,8 +432,11 @@ function tk_seo_indexability_panel(): void {
         <p>Website: <strong><?php echo esc_html(home_url('/')); ?></strong></p>
         <p class="description">These are live website checks. Google's duplicate classification and indexing status still require Search Console URL Inspection. Keep intentional exclusions and redirects.</p>
         <?php if (!tk_seo_tools_enabled()): ?><p>Enable SEO Toolkit in Settings to apply per-URL fixes.</p><?php endif; ?>
-        <p><button type="button" class="button button-primary" data-indexability-scan>Check Current Website</button> <a class="button" href="<?php echo esc_url(admin_url('options-reading.php')); ?>">Search Engine Visibility</a> <a class="button" href="<?php echo esc_url(tk_admin_url('tool-kits-seo') . '#redirects'); ?>">Manage Redirects</a></p>
+        <p><button type="button" class="button button-primary" data-indexability-scan>Check Current Website</button> <button type="button" class="button button-secondary" data-indexability-fix-all disabled>Fix All</button> <button type="button" class="button" data-indexability-stop hidden disabled>Stop Fix All</button> <a class="button" href="<?php echo esc_url(admin_url('options-reading.php')); ?>">Search Engine Visibility</a> <a class="button" href="<?php echo esc_url(tk_admin_url('tool-kits-seo') . '#redirects'); ?>">Manage Redirects</a></p>
+        <p><label><input type="checkbox" data-indexability-include-redirects> Include disabling Tool Kits redirects</label></p>
+        <p class="description">Fix All processes editable findings from the current report and rechecks each change. Missing canonical tags use the page permalink; choose a preferred URL below for conflicting canonicals. Intentional redirects are kept unless included. Server/CDN rules and physical robots.txt files need correction at their source.</p>
         <p data-indexability-status role="status" aria-live="polite"></p>
+        <div data-indexability-bulk-results aria-live="polite"></div>
         <div data-indexability-results></div>
         <script type="application/json" class="tk-indexability-saved"><?php echo wp_json_encode($report, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?></script>
     </div>

@@ -19,14 +19,17 @@ const issueItem = () => ({url: 'https://site.example/page/', scanned_at: 1780000
 function fixture(saved, fetcher) {
     const root = new Element(); root.dataset = {nonce: 'valid', home: 'https://site.example/'};
     const results = new Element(), status = new Element(), scan = new Element('button'), data = new Element('script', JSON.stringify(saved));
-    root.children = [results, status, scan, data];
-    root.querySelector = selector => ({'[data-indexability-results]': results, '[data-indexability-status]': status, '[data-indexability-scan]': scan, '.tk-indexability-saved': data}[selector]);
-    root.querySelectorAll = () => walk(root).filter(node => ['button', 'input', 'textarea'].includes(node.tagName));
+    const fixAll = new Element('button'), stop = new Element('button'), includeRedirects = new Element('input'), bulkResults = new Element();
+    includeRedirects.checked = false;
+    root.children = [results, status, scan, fixAll, stop, includeRedirects, bulkResults, data];
+    root.querySelector = selector => ({'[data-indexability-results]': results, '[data-indexability-status]': status, '[data-indexability-scan]': scan, '.tk-indexability-saved': data,
+        '[data-indexability-fix-all]': fixAll, '[data-indexability-stop]': stop, '[data-indexability-include-redirects]': includeRedirects, '[data-indexability-bulk-results]': bulkResults}[selector]);
+    root.querySelectorAll = selector => walk(root).filter(node => selector === 'input[data-indexability-canonical]' ? node.tagName === 'input' && !!node.dataset.indexabilityCanonical : ['button', 'input', 'textarea'].includes(node.tagName));
     vm.runInNewContext(fs.readFileSync(__dirname + '/../assets/seo-indexability.js', 'utf8'), {
         document: {getElementById: () => root, createElement: tag => new Element(tag), createTextNode: text => new Element('#text', text)},
         window: {ajaxurl: '/wp-admin/admin-ajax.php'}, fetch: fetcher, URL, URLSearchParams, Map, Set, Date
     });
-    return {root, results, status, scan};
+    return {root, results, status, scan, fixAll, stop, includeRedirects, bulkResults};
 }
 (async () => {
     const calls = []; let mode = 'fix';
@@ -94,5 +97,79 @@ function fixture(saved, fetcher) {
     assert.equal(findButton(manual.results, 'Remove page noindex'), undefined, 'Server header offers a misleading automatic fix');
     assert.equal(findButton(manual.results, 'Set preferred canonical'), undefined, 'HTTP canonical header offers an HTML-only fix');
     assert.equal(findButton(manual.results, 'Disable Tool Kits redirect'), undefined, 'Unknown redirect offers a Tool Kits mutation');
-    console.log('PASS: automatic website discovery, paged sequential scans beyond 100 URLs, no URL input, duplicate prevention, four fix controls, live verification, failures and editability');
+
+    // Bulk fixes run in order, preserve canonical choices, verify each change,
+    // retain intentional redirects, and skip source-only or uneditable findings.
+    const pageA = issueItem(); pageA.canonicals = [];
+    const pageB = issueItem(); pageB.url = 'https://site.example/second/'; pageB.canonicals = ['https://site.example/a/', 'https://site.example/b/'];
+    const external = issueItem(); external.url = 'https://site.example/upstream/'; external.header_noindex = true; external.header_canonical = true; external.toolkits_redirect = false; external.checks.robots.state = 'pass';
+    const noEdit = issueItem(); noEdit.url = 'https://site.example/no-edit/'; noEdit.editable = false;
+    const state = new Map([pageA, pageB, external, noEdit].map(item => [item.url, structuredClone(item)]));
+    const bulkCalls = [];
+    const bulk = fixture([pageA, pageB, external, noEdit], async (url, options) => {
+        const body = options.body; bulkCalls.push(body);
+        const item = state.get(body.get('url'));
+        if (body.get('operation') === 'fix') {
+            if (body.get('kind') === 'canonical') assert.equal(body.get('canonical'), item.url === pageB.url ? 'https://site.example/preferred/' : item.url);
+            item.checks[body.get('kind')].state = 'pass'; item.has_fix = true; return reply({message: 'Saved.'});
+        }
+        return reply({item: structuredClone(item)});
+    });
+    const preferred = walk(bulk.results).find(node => node.dataset.indexabilityCanonical === pageB.url);
+    assert.equal(preferred.value, '', 'Conflicting canonical targets silently selected the page itself');
+    preferred.value = 'https://site.example/preferred/';
+    await bulk.fixAll.click();
+    const changes = bulkCalls.filter(body => body.get('operation') === 'fix');
+    assert.deepEqual(changes.map(body => body.get('kind')), ['noindex', 'robots', 'canonical', 'noindex', 'robots', 'canonical']);
+    assert.equal(bulkCalls.length, 12, 'Every bulk change must receive a separate live recheck');
+    assert.equal(changes.some(body => body.get('kind') === 'redirect'), false, 'Intentional redirects disabled by default');
+    assert.match(bulk.status.textContent, /6 changes saved, 6 checks verified fixed/);
+    assert.equal(bulk.fixAll.disabled, true, 'Only manual/redirect findings remain');
+    bulk.includeRedirects.checked = true; bulk.includeRedirects.listeners.change();
+    assert.equal(bulk.fixAll.disabled, false); await bulk.fixAll.click();
+    assert.deepEqual(bulkCalls.filter(body => body.get('operation') === 'fix').slice(-2).map(body => body.get('kind')), ['redirect', 'redirect']);
+    assert.equal(bulk.stop.hidden, true); assert.equal(bulk.scan.disabled, false);
+    assert.equal(fixture([], () => {}).fixAll.disabled, true, 'Fix All enabled without a report');
+
+    const conflict = issueItem(); conflict.canonicals = ['https://site.example/a/', 'https://site.example/b/'];
+    ['noindex', 'robots', 'redirect'].forEach(kind => { conflict.checks[kind].state = 'pass'; });
+    const needsChoice = fixture([conflict], () => { throw new Error('Unchosen canonical must not be changed'); });
+    assert.equal(needsChoice.fixAll.disabled, true);
+    const choice = walk(needsChoice.results).find(node => node.dataset.indexabilityCanonical);
+    choice.value = 'https://site.example/preferred/'; choice.listeners.input(); assert.equal(needsChoice.fixAll.disabled, false);
+
+    const failedPage = issueItem(); const goodPage = issueItem(); goodPage.url = 'https://site.example/good/';
+    [failedPage, goodPage].forEach(item => ['robots', 'canonical', 'redirect'].forEach(kind => { item.checks[kind].state = 'pass'; }));
+    const recoveryState = new Map([failedPage, goodPage].map(item => [item.url, structuredClone(item)]));
+    const recovery = fixture([failedPage, goodPage], async (url, options) => {
+        const body = options.body, item = recoveryState.get(body.get('url'));
+        if (body.get('operation') === 'fix') {
+            if (item.url === failedPage.url) return {json: async () => ({success: false, data: {message: 'Origin refused change.'}})};
+            item.checks.noindex.state = 'pass'; return reply({message: 'Saved.'});
+        }
+        return reply({item: structuredClone(item)});
+    });
+    await recovery.fixAll.click();
+    assert.match(recovery.status.textContent, /1 changes saved, 1 checks verified fixed.*1 failed changes/);
+    assert.match(textOf(recovery.bulkResults), /Origin refused change/); assert.equal(recovery.scan.disabled, false);
+
+    const pending = fixture([goodPage], async (url, options) => options.body.get('operation') === 'fix'
+        ? reply({message: 'Saved.'}) : {json: async () => ({success: false, data: {message: 'Live check unavailable.'}})});
+    await pending.fixAll.click();
+    assert.match(pending.status.textContent, /1 changes saved, 0 checks verified fixed.*1 pending verifications/);
+    assert.match(textOf(pending.results), /Live verification pending/); assert.equal(pending.scan.disabled, false);
+
+    let releaseFix; const stopCalls = [];
+    const stoppable = fixture([failedPage, goodPage], (url, options) => {
+        stopCalls.push(options.body);
+        if (options.body.get('operation') === 'fix') return new Promise(resolve => { releaseFix = resolve; });
+        const fresh = structuredClone(failedPage); fresh.checks.noindex.state = 'pass'; return Promise.resolve(reply({item: fresh}));
+    });
+    const fixing = stoppable.fixAll.click();
+    assert.equal(stoppable.scan.disabled, true); assert.equal(stoppable.stop.hidden, false); assert.equal(stoppable.stop.disabled, false);
+    stoppable.fixAll.click(); assert.equal(stopCalls.length, 1, 'Duplicate bulk requests overlapped');
+    stoppable.stop.click(); releaseFix(reply({message: 'Saved.'})); await fixing;
+    assert.equal(stopCalls.length, 2, 'Stopping must verify the current change and leave later URLs alone');
+    assert.match(stoppable.status.textContent, /Fix All stopped/); assert.equal(stoppable.scan.disabled, false);
+    console.log('PASS: automatic discovery and per-URL fixes; Fix All sequencing, canonical choices, redirect opt-in, source/permission exclusions, verification, failure recovery, progress and stop');
 })().catch(error => { console.error(error); process.exitCode = 1; });
