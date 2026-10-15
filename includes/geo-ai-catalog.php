@@ -68,8 +68,13 @@ function tk_geo_ai_catalog_parse_entries(string $json) {
 /** Validate before the shared GEO save handler writes any settings. */
 function tk_geo_ai_catalog_posted_settings() {
     if (!empty($_POST['geo_ai_catalog_generate_auto'])) {
-        $entries = tk_get_option('geo_ai_catalog_entries', array());
-        return array('mode' => 'auto', 'entries' => is_array($entries) ? $entries : array());
+        // Generate from the website even when a custom catalog is currently active.
+        // Save an editable snapshot so the editor and public output stay in sync.
+        $catalog = tk_geo_build_ai_catalog(true);
+        $json = wp_json_encode($catalog['catalog']);
+        if (!is_string($json)) { return new WP_Error('tk_catalog_generate', 'The generated catalog could not be encoded as JSON.'); }
+        $entries = tk_geo_ai_catalog_parse_entries($json);
+        return is_wp_error($entries) ? $entries : array('mode' => 'manual', 'entries' => $entries);
     }
     if (empty($_POST['geo_ai_catalog_settings_present']) && empty($_POST['geo_ai_catalog_use_example'])) { return null; }
     $mode = tk_post('geo_ai_catalog_mode', 'auto');
@@ -101,6 +106,11 @@ function tk_geo_ai_catalog_radar_report(): array {
     return $report;
 }
 
+function tk_geo_ai_catalog_site_name(): string {
+    $name = trim(wp_strip_all_tags(get_bloginfo('name')));
+    return $name !== '' ? $name : (string) wp_parse_url(home_url('/'), PHP_URL_HOST);
+}
+
 function tk_geo_ai_catalog_radar_entries(array $report): array {
     $statuses = array();
     foreach (is_array($report['engines'] ?? null) ? $report['engines'] : array() as $engine) {
@@ -109,7 +119,7 @@ function tk_geo_ai_catalog_radar_entries(array $report): array {
         $statuses[$engine['name']] = in_array($status, array('eligible', 'partial', 'blocked', 'unknown'), true) ? $status : 'unknown';
     }
     $entries = array();
-    $site_name = wp_strip_all_tags(get_bloginfo('name'));
+    $site_name = tk_geo_ai_catalog_site_name();
     foreach (tk_geo_ai_radar_platforms() as $id => $platform) {
         $entries[] = array(
             'id' => 'ai-radar-' . $id,
@@ -131,14 +141,14 @@ function tk_geo_ai_catalog_radar_entries(array $report): array {
  * A catalog using the version/last_updated/catalog format in both modes.
  * Summaries are plain text; shortcodes and content filters are never executed.
  */
-function tk_geo_build_ai_catalog(): array {
+function tk_geo_build_ai_catalog(bool $force_auto = false): array {
     $catalog = array(
         'version' => '1.0.0',
         'last_updated' => (string) tk_get_option('geo_ai_catalog_updated_at', ''),
         'catalog' => array(),
     );
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $catalog['last_updated'])) { $catalog['last_updated'] = wp_date('Y-m-d'); }
-    if (tk_get_option('geo_ai_catalog_mode', 'auto') === 'manual') {
+    if (!$force_auto && tk_get_option('geo_ai_catalog_mode', 'auto') === 'manual') {
         $json = wp_json_encode(tk_get_option('geo_ai_catalog_entries', array()));
         $entries = is_string($json) ? tk_geo_ai_catalog_parse_entries($json) : array();
         $catalog['catalog'] = is_wp_error($entries) ? array() : $entries;
@@ -148,8 +158,8 @@ function tk_geo_build_ai_catalog(): array {
     $report = tk_geo_ai_catalog_radar_report();
     $catalog['catalog'][] = array(
         'id' => 'site-home',
-        'name' => wp_strip_all_tags(get_bloginfo('name')),
-        'provider' => wp_strip_all_tags(get_bloginfo('name')),
+        'name' => tk_geo_ai_catalog_site_name(),
+        'provider' => tk_geo_ai_catalog_site_name(),
         'category' => 'Website',
         'description' => wp_strip_all_tags(get_bloginfo('description'), true),
         'website' => esc_url_raw(home_url('/')),
@@ -193,10 +203,11 @@ function tk_geo_build_ai_catalog(): array {
             $seen_urls[$url] = true;
             $summary = $post->post_excerpt !== '' ? $post->post_excerpt : $post->post_content;
             $summary = wp_strip_all_tags(strip_shortcodes($summary), true);
+            $title = trim(wp_strip_all_tags(get_the_title($post)));
             $catalog['catalog'][] = array(
                 'id' => $post->post_type . '-' . (int) $post->ID,
-                'name' => wp_strip_all_tags(get_the_title($post)),
-                'provider' => wp_strip_all_tags(get_bloginfo('name')),
+                'name' => $title !== '' ? $title : 'Untitled ' . $post->post_type . ' #' . (int) $post->ID,
+                'provider' => tk_geo_ai_catalog_site_name(),
                 'category' => $post->post_type,
                 'description' => wp_trim_words($summary, 55, '…'),
                 'website' => esc_url_raw($url),

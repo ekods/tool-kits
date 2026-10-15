@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.21
+Stable tag: 2.7.22
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,11 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.22 =
+**Editable Generated Catalog**
+- Populate Custom catalog entries (JSON) with generated website and AI Radar entries, selecting manual mode so saved edits are published.
+- Regenerate from current website data even when a custom catalog is active, and label the save action Save & Enable Catalog.
+
 = 2.7.21 =
 **Website and AI Radar Catalog Generation**
 - Generate the current website profile and public content together with the AI platforms from the same registry used by AI Radar.

@@ -40,7 +40,10 @@ Tool Kits helps WordPress administrators manage five main areas:
 
 ### Generate ai-catalog.json
 
-Open **Tool Kits > GEO Setup > ai-catalog.json**, then click **Generate & Enable Catalog**.
+Open **Tool Kits > GEO Setup > ai-catalog.json**, then click **Generate Website + AI Radar**.
+The generated entries appear in **Custom catalog entries (JSON)** and Custom catalog mode is
+selected automatically. Edit the JSON, then click **Save & Enable Catalog** to publish your edits.
+Generating again replaces the editor contents with a fresh snapshot of the website and AI Radar.
 Use **View Catalog** to open `/ai-catalog.json` or **Download ai-catalog.json** to save the file.
 The endpoint uses the site's home URL, including its subfolder when applicable, and follows the plugin's license gate.
 
@@ -48,7 +51,8 @@ The JSON document contains `version` (`1.0.0`), `last_updated` (`YYYY-MM-DD`), a
 Every catalog entry includes `id`, `name`, `provider`, `category`, `description`, `website`,
 `features`, `pricing`, `tags`, and `status`. Features and tags are JSON arrays.
 
-**Website content (automatic)** includes published pages, posts, and publicly queryable custom
+**Website + AI Radar (automatic)** includes the website profile, platforms from AI Radar,
+and published pages, posts, and publicly queryable custom
 post types; drafts, private posts, attachments, and password-protected content are excluded.
 The content title becomes `name`, the site name becomes `provider`, the post type becomes
 `category`, and the permalink becomes `website`. IDs use the post type and ID. Summaries use
@@ -59,7 +63,7 @@ content or catalog configuration change. Output is generated live, so content up
 For entries like ChatGPT and Claude, choose **Custom catalog (manual)** and enter JSON in
 **Custom catalog entries**. The editor accepts either an entries array or a full document
 containing `catalog`. **Use ChatGPT & Claude Example** saves the supplied two-entry example and
-selects custom mode. Review the entries, then use **Generate & Enable Catalog** to publish them.
+selects custom mode. Review the entries, then use **Save & Enable Catalog** to publish them.
 A preview shows the saved custom JSON. The schema version and update date are managed by the
 generator; the date changes when the saved catalog changes. Invalid JSON, duplicate IDs, invalid
 website URLs and non-array features/tags are rejected before GEO settings are written.

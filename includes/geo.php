@@ -2542,19 +2542,19 @@ function tk_render_geo_panel(): void {
             </p>
             <p><label for="tk-ai-catalog-entries"><strong>Custom catalog entries (JSON)</strong></label></p>
             <textarea id="tk-ai-catalog-entries" name="geo_ai_catalog_entries" rows="16" class="large-text code"><?php echo esc_textarea((string) wp_json_encode(tk_get_option('geo_ai_catalog_entries', array()), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)); ?></textarea>
-            <p class="description">Enter an array of entries or paste a full document containing a catalog array. Select Custom catalog to publish these entries. IDs must be unique; features and tags must be arrays. The update date is managed automatically when the catalog changes.</p>
+            <p class="description">Generate Website + AI Radar fills this editor and selects Custom catalog so you can edit the result. Save your changes to publish them. Generating again replaces these entries with a fresh website and AI Radar catalog. You can also paste an entries array or a full document containing a catalog array. IDs must be unique; features and tags must be arrays.</p>
             <p><button type="submit" class="button" name="geo_ai_catalog_use_example" value="1">Use ChatGPT &amp; Claude Example</button></p>
             <p><code><?php echo esc_html(home_url('/ai-catalog.json')); ?></code></p>
             <p>
                 <button type="submit" class="button button-primary" name="geo_ai_catalog_generate_auto" value="1">Generate Website + AI Radar</button>
-                <button type="submit" class="button button-secondary" name="geo_ai_catalog_generate" value="1">Generate &amp; Enable Catalog</button>
+                <button type="submit" class="button button-secondary" name="geo_ai_catalog_generate" value="1">Save &amp; Enable Catalog</button>
                 <?php if (tk_geo_ai_catalog_enabled()) : ?>
                     <a class="button" href="<?php echo esc_url(home_url('/ai-catalog.json')); ?>" target="_blank" rel="noopener">View Catalog</a>
                     <a class="button" href="<?php echo esc_url(add_query_arg('download', '1', home_url('/ai-catalog.json'))); ?>">Download ai-catalog.json</a>
                 <?php endif; ?>
             </p>
             <p class="description">Automatic mode combines this website's name, description, homepage and published public content with the platform list shared by AI Radar. Drafts, private posts, attachments, and password-protected content are excluded. Custom mode publishes only the entries you enter above.</p>
-            <p class="description">For AI Radar entries, status is the last saved crawler access result for this website: eligible, partial, blocked, or unknown. Run AI Radar to refresh it. Unknown means no matching result is available. Crawler access does not confirm indexing or citation. Pricing is left blank. The catalog is served live without external AI API calls.</p>
+            <p class="description">For AI Radar entries, status is the last saved crawler access result for this website: eligible, partial, blocked, or unknown. Run AI Radar to refresh it; generate again to copy the new results into a custom catalog. Unknown means no matching result is available. Crawler access does not confirm indexing or citation. Pricing is left blank. Generation requires no external AI API calls.</p>
             <h4>Agentic Resource Discovery (ARD)</h4>
             <p>The separate ARD manifest uses the discovery schema checked by Lighthouse. It is served before 404 redirects and linked automatically from public pages.</p>
             <p><code><?php echo esc_html(home_url('/.well-known/ard.json')); ?></code><br>
