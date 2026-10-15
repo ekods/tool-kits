@@ -36,6 +36,52 @@ Tool Kits helps WordPress administrators manage five main areas:
 - Theme checker (summary, largest file, duplicate PHP, risky functions).
 - Tool Kits Access (role/IP access, alerts, audit log, owner mode, license).
 - Role Management for custom roles, per-module capabilities including custom post type CRUD, and visible dashboard menus per role.
+- GEO Setup includes an `ai-catalog.json` generator with live output and a JSON download.
+
+### Generate ai-catalog.json
+
+Open **Tool Kits > GEO Setup > ai-catalog.json**, then click **Generate & Enable Catalog**.
+Use **View Catalog** to open `/ai-catalog.json` or **Download ai-catalog.json** to save the file.
+The endpoint uses the site's home URL, including its subfolder when applicable, and follows the plugin's license gate.
+
+The Tool Kits JSON format contains `version`, `site`, `links`, and `items`. Each item includes
+`title`, `url`, `type`, `description`, `language`, and `modified`. Published pages, posts, and
+publicly queryable custom post types are included; drafts, private posts, attachments, and
+password-protected content are excluded. Summaries use excerpts or plain text from content
+without executing shortcodes. Output is generated live, so content updates need no manual rebuild.
+Disable **Enable ai-catalog.json** and save to stop serving the catalog.
+
+### Check and fix indexing exclusions
+
+Open **Tool Kits > SEO > Indexing > Indexing Checks & Fixes** and click **Check Current Website**.
+The scanner automatically discovers the current site's homepage, published pages, posts, public custom
+content, and active Tool Kits redirect sources. No URL input is needed. Discovery uses batches and
+continues past 100 URLs, checking each URL separately for robots/Googlebot meta noindex,
+X-Robots-Tag, HTML/HTTP canonical declarations, robots.txt rules and HTTP redirects.
+Each result includes evidence and a recommendation. Request failures and non-HTML responses
+are reported as unverified rather than passing.
+
+For an editable, public permalink or the homepage, with SEO Toolkit enabled:
+
+- **Remove page noindex** applies a removable per-URL override to the rendered robots/Googlebot meta tags.
+  It preserves other directives, including nofollow. Site-wide Search Engine Visibility and server/CDN
+  X-Robots-Tag blocks require changes at their source.
+- **Set preferred canonical** replaces the rendered HTML canonical for that URL with the reviewed
+  same-site destination. The destination must return HTTP 200 HTML and allow indexing/crawling.
+  Existing HTTP canonical headers must be corrected at their source.
+- **Allow this URL for Googlebot** adds an exact-URL Allow rule to the matching group in virtual
+  WordPress robots.txt. The same rule is shown for manual application to a physical robots.txt file.
+- **Disable Tool Kits redirect** disables a matching Tool Kits rule for an unintended redirect.
+  Intentional redirects should be retained, with links/sitemaps pointing to the destination.
+  WordPress core, other-plugin, server and CDN redirects require changes at their source.
+
+Every fix clears supported caches and runs a live check again. **Remove page overrides** undoes
+saved noindex/canonical/virtual-robots overrides. Disabled redirects remain listed in **Redirects**.
+Drafts, private/password-protected content and alternate URLs cannot receive page overrides.
+This checker does not connect to Search Console or identify Google's chosen duplicate/canonical;
+use URL Inspection for that evidence and request validation after Google recrawls the changed URLs.
+See [Google's Page indexing report](https://support.google.com/webmasters/answer/7440203?hl=en)
+and [robots.txt specification](https://developers.google.com/search/docs/crawling-indexing/robots/robots_txt).
 
 ### Latest Updates (Access, License, Monitoring)
 

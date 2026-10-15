@@ -4,6 +4,7 @@ require_once __DIR__ . '/geo-audit-batch.php';
 require_once __DIR__ . '/geo-crawler-fixes.php';
 require_once __DIR__ . '/geo-radar.php';
 require_once __DIR__ . '/geo-schema-modal.php';
+require_once __DIR__ . '/geo-ai-catalog.php';
 
 function tk_geo_init() {
     add_action('wp_ajax_tk_geo_schema_editor', 'tk_geo_schema_editor_ajax');
@@ -37,6 +38,7 @@ function tk_geo_init() {
     add_action('admin_post_tk_geo_prompt_preview', 'tk_geo_prompt_preview_handler');
     add_action('admin_post_tk_geo_post_schema_validate', 'tk_geo_post_schema_validate_handler');
     add_action('init', 'tk_geo_llms_maybe_render', 1);
+    add_action('template_redirect', 'tk_geo_ai_catalog_maybe_render', -1);
     add_action('wp_head', 'tk_geo_render_head_jsonld', 3);
     add_shortcode('tool_kits_geo_faq', 'tk_geo_faq_shortcode');
     add_action('wp_enqueue_scripts', 'tk_geo_enqueue_faq_styles');
@@ -1917,7 +1919,7 @@ function tk_geo_save(): void {
     tk_require_admin_post('tk_geo_save');
 
     $active_tab = sanitize_key((string) tk_post('tk_geo_active_tab', 'overview'));
-    $allowed_tabs = array('overview', 'custom-jsonld', 'faqpage', 'itemlist', 'llms', 'geo-audit', 'ai-visibility', 'prompt-preview', 'post-schema', 'schema-duplicates', 'crawler-preview', 'ai-access', 'preview');
+    $allowed_tabs = array('overview', 'custom-jsonld', 'faqpage', 'itemlist', 'llms', 'ai-catalog', 'geo-audit', 'ai-visibility', 'prompt-preview', 'post-schema', 'schema-duplicates', 'crawler-preview', 'ai-access', 'preview');
     if (!in_array($active_tab, $allowed_tabs, true)) {
         $active_tab = 'overview';
     }
@@ -2019,6 +2021,10 @@ function tk_geo_save(): void {
     tk_update_option('geo_itemlist_limit', max(1, min(50, (int) tk_post('geo_itemlist_limit', 10))));
     tk_update_option('geo_itemlist_language_mode', $itemlist_language_mode);
     tk_update_option('geo_llms_enabled', !empty($_POST['geo_llms_enabled']) ? 1 : 0);
+    tk_update_option('geo_ai_catalog_enabled', !empty($_POST['geo_ai_catalog_enabled']) || !empty($_POST['geo_ai_catalog_generate']) ? 1 : 0);
+    if (!empty($_POST['geo_ai_catalog_generate'])) {
+        $active_tab = 'ai-catalog';
+    }
     $llms_mode = sanitize_key((string) tk_post('geo_llms_mode', 'auto'));
     if (!in_array($llms_mode, array('auto', 'manual', 'hybrid'), true)) {
         $llms_mode = 'auto';
@@ -2181,8 +2187,8 @@ function tk_render_geo_panel(): void {
             <style>
                 .tk-geo-page-setup :is([data-panel="geo-audit"],[data-panel="ai-visibility"],[data-panel="ai-search-radar"],[data-panel="ai-radar"],[data-panel="prompt-preview"],[data-panel="post-schema"],[data-panel="schema-duplicates"],[data-panel="crawler-preview"],[data-panel="ai-access"]),
                 .tk-geo-page-setup :is([data-panel-id="geo-audit"],[data-panel-id="ai-visibility"],[data-panel-id="ai-search-radar"],[data-panel-id="ai-radar"],[data-panel-id="prompt-preview"],[data-panel-id="post-schema"],[data-panel-id="schema-duplicates"],[data-panel-id="crawler-preview"],[data-panel-id="ai-access"]),
-                .tk-geo-page-audit :is([data-panel="overview"],[data-panel="custom-jsonld"],[data-panel="faqpage"],[data-panel="itemlist"],[data-panel="llms"],[data-panel="preview"]),
-                .tk-geo-page-audit :is([data-panel-id="overview"],[data-panel-id="custom-jsonld"],[data-panel-id="faqpage"],[data-panel-id="itemlist"],[data-panel-id="llms"],[data-panel-id="preview"]) { display:none !important; }
+                .tk-geo-page-audit :is([data-panel="overview"],[data-panel="custom-jsonld"],[data-panel="faqpage"],[data-panel="itemlist"],[data-panel="llms"],[data-panel="ai-catalog"],[data-panel="preview"]),
+                .tk-geo-page-audit :is([data-panel-id="overview"],[data-panel-id="custom-jsonld"],[data-panel-id="faqpage"],[data-panel-id="itemlist"],[data-panel-id="llms"],[data-panel-id="ai-catalog"],[data-panel-id="preview"]) { display:none !important; }
             </style>
             <div class="tk-tabs-nav" role="tablist" aria-label="GEO feature tabs">
                 <button type="button" class="tk-tabs-nav-button<?php echo $geo_audit_page ? '' : ' is-active'; ?>" data-panel="overview">Output</button>
@@ -2190,6 +2196,7 @@ function tk_render_geo_panel(): void {
                 <button type="button" class="tk-tabs-nav-button" data-panel="faqpage">FAQPage</button>
                 <button type="button" class="tk-tabs-nav-button" data-panel="itemlist">ItemList</button>
                 <button type="button" class="tk-tabs-nav-button" data-panel="llms">llms.txt</button>
+                <button type="button" class="tk-tabs-nav-button" data-panel="ai-catalog">ai-catalog.json</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $geo_audit_page ? ' is-active' : ''; ?>" data-panel="geo-audit">GEO Audit</button>
                 <button type="button" class="tk-tabs-nav-button" data-panel="ai-visibility">AI Visibility</button>
                 <button type="button" class="tk-tabs-nav-button" data-panel="ai-search-radar">AI Search Radar</button>
@@ -2512,6 +2519,21 @@ function tk_render_geo_panel(): void {
             <p><button type="button" class="button" id="tk-geo-llms-section-add">Add Section</button></p>
             <label>Preview</label>
             <textarea readonly rows="12" style="width:100%; max-width:100%; font-family:monospace;"><?php echo esc_textarea($llms_preview); ?></textarea>
+        </div>
+
+        <div class="tk-card tk-tab-panel" data-panel-id="ai-catalog" id="ai-catalog">
+            <h3>ai-catalog.json Generator</h3>
+            <p>Generate a JSON catalog with site details and published posts, pages, and public custom content. Each entry includes its title, URL, content type, summary, language, and last update.</p>
+            <?php tk_render_switch('geo_ai_catalog_enabled', 'Enable ai-catalog.json', 'Keep the public catalog up to date automatically when content changes.', (int) tk_get_option('geo_ai_catalog_enabled', 0)); ?>
+            <p><code><?php echo esc_html(home_url('/ai-catalog.json')); ?></code></p>
+            <p>
+                <button type="submit" class="button button-secondary" name="geo_ai_catalog_generate" value="1">Generate &amp; Enable Catalog</button>
+                <?php if (tk_geo_ai_catalog_enabled()) : ?>
+                    <a class="button" href="<?php echo esc_url(home_url('/ai-catalog.json')); ?>" target="_blank" rel="noopener">View Catalog</a>
+                    <a class="button" href="<?php echo esc_url(add_query_arg('download', '1', home_url('/ai-catalog.json'))); ?>">Download ai-catalog.json</a>
+                <?php endif; ?>
+            </p>
+            <p class="description">Drafts, private posts, attachments, and password-protected content are excluded. The catalog is served live, like llms.txt.</p>
         </div>
 
         <div class="tk-card tk-tab-panel<?php echo $geo_audit_page ? ' is-active' : ''; ?>" data-panel-id="geo-audit" id="geo-audit">

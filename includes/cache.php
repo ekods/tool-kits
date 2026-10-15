@@ -582,7 +582,7 @@ function tk_page_cache_purge_on_updated_option($option, $old_value, $new_value) 
         // Audit results are admin-only data, not changes to rendered page content.
         $reports = array(
             'seo_geo_audit_report', 'seo_content_audit_report', 'seo_canonical_audit_report',
-            'seo_broken_links_report', 'seo_index_monitor', 'authority_reports',
+            'seo_broken_links_report', 'seo_index_monitor', 'seo_indexability_report', 'authority_reports',
             'geo_visibility_report', 'geo_prompt_preview_report', 'geo_post_schema_report',
             'geo_schema_duplicate_report', 'geo_schema_duplicate_fix_report',
             'geo_crawler_preview', 'geo_ai_access_report',

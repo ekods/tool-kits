@@ -4,8 +4,10 @@ require_once __DIR__ . '/seo-rendered-audit.php';
 require_once __DIR__ . '/seo-content-fixes.php';
 require_once __DIR__ . '/seo-content-modal.php';
 require_once __DIR__ . '/seo-global-content.php';
+require_once __DIR__ . '/seo-indexability.php';
 
 function tk_seo_opt_init() {
+    tk_seo_indexability_init();
     add_action('admin_post_tk_seo_opt_save', 'tk_seo_opt_save');
     add_action('admin_post_tk_seo_global_save', 'tk_seo_global_save');
     add_action('template_redirect', 'tk_seo_global_start', 990);
@@ -2583,7 +2585,7 @@ function tk_render_seo_opt_panel() {
                     <tr>
                         <td><code><?php echo esc_html((string) $rule['from']); ?></code></td>
                         <td><code><?php echo esc_html((string) $rule['to']); ?></code></td>
-                        <td><?php echo esc_html((string) $rule['status']); ?></td>
+                        <td><?php echo esc_html((string) $rule['status']); ?><?php if ((int) $rule['enabled'] !== 1): ?> <span class="tk-badge">Disabled</span><?php endif; ?></td>
                         <td><?php echo esc_html((string) (int) $rule['hits']); ?></td>
                         <td>
                             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;">
@@ -2684,6 +2686,8 @@ function tk_render_seo_opt_panel() {
     </div>
 
     <div class="tk-card tk-tab-panel" data-panel-id="indexing">
+        <?php tk_seo_indexability_panel(); ?>
+        <hr>
         <h3>Indexing Monitor</h3>
         <p>Track index status per URL and use quick links to inspect in Google tools.</p>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:14px;">

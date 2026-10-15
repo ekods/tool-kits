@@ -3,6 +3,21 @@
 const { spawnSync } = require('node:child_process');
 const cases = [
   {
+    "name": "geo-ai-catalog",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/ai-catalog-regression.php';"]
+  },
+  {
+    "name": "seo-indexability",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/indexability-regression.php';"]
+  },
+  {
+    "name": "seo-indexability-ui",
+    "runtime": "node",
+    "source": ["require(__dirname + '/indexability-ui-regression.cjs');"]
+  },
+  {
     "name": "global-seo-content",
     "runtime": "php",
     "source": ["<?php", "require __DIR__ . '/global-seo-content-regression.php';"]

@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.18
+Stable tag: 2.7.19
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,18 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.19 =
+**Indexing Checks and Fixes**
+- Automatically discover and scan the current website's homepage, published public content, and active Tool Kits redirect sources in batches, without manual URL entry.
+- Add per-URL live checks for noindex meta/headers, canonical declarations, Googlebot robots.txt access, and HTTP redirects in SEO > Indexing.
+- Provide reviewed, removable public-page noindex/canonical overrides, exact virtual robots.txt allow rules, and disabling of matching Tool Kits redirects.
+- Recheck after fixes, show source-level guidance for server/CDN/physical-file issues, preserve intentional exclusions, and distinguish live signals from Google's indexing classifications.
+
+**AI Catalog Generator**
+- Add an ai-catalog.json tab to GEO Setup with generate, view, and download controls.
+- Serve a live JSON catalog of site details and public content, excluding drafts, private posts, attachments, and password-protected content.
+- Support WordPress home URLs in subfolders and keep catalog output behind its opt-in setting and the license gate.
+
 = 2.7.18 =
 **Simpler SEO Checks and Scores**
 - Simplify SEO Checks & Optimization into short rows with friendly labels, concise summaries, and expandable findings and recommendations.

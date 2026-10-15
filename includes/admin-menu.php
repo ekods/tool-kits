@@ -545,7 +545,7 @@ function tk_render_geo_page() {
     <div class="wrap tk-wrap">
         <?php tk_render_header_branding(); ?>
         <?php $geo_audit_page = isset($_GET['page']) && sanitize_key((string) $_GET['page']) === 'tool-kits-geo-audit'; ?>
-        <?php tk_render_page_hero($geo_audit_page ? 'GEO Audit & Fixes' : 'GEO Setup', $geo_audit_page ? 'Scan AI search readiness, inspect crawler access, and apply reviewed fixes.' : 'Configure JSON-LD, FAQPage, ItemList, and llms.txt output.', $geo_audit_page ? 'dashicons-search' : 'dashicons-editor-code'); ?>
+        <?php tk_render_page_hero($geo_audit_page ? 'GEO Audit & Fixes' : 'GEO Setup', $geo_audit_page ? 'Scan AI search readiness, inspect crawler access, and apply reviewed fixes.' : 'Configure JSON-LD, FAQPage, ItemList, llms.txt, and ai-catalog.json output.', $geo_audit_page ? 'dashicons-search' : 'dashicons-editor-code'); ?>
         <p style="margin:16px 0;">
             <a class="button <?php echo $geo_audit_page ? '' : 'button-primary'; ?>" href="<?php echo esc_url(tk_admin_url('tool-kits-geo')); ?>">GEO Setup</a>
             <a class="button <?php echo $geo_audit_page ? 'button-primary' : ''; ?>" href="<?php echo esc_url(tk_admin_url('tool-kits-geo-audit')); ?>">GEO Audit &amp; Fixes</a>
