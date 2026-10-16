@@ -2143,6 +2143,13 @@ function tk_render_geo_panel(): void {
     $geo_audit_score = (int) ($geo_report['average_score'] ?? 0);
     $duplicate_has_report = !empty($schema_duplicate_report['scanned_at']);
     $duplicate_issue_count = (int) ($schema_duplicate_report['issue_count'] ?? 0);
+    $duplicate_types = tk_geo_schema_duplicate_types_from_report($schema_duplicate_report);
+    $duplicate_seo_types = array_diff(tk_geo_toolkits_seo_schema_types(), array('BreadcrumbList'));
+    $duplicate_fix_available = $enabled && (int) ($schema_duplicate_report['analysis_version'] ?? 0) === 2 && (
+        ($seo_schema && array_intersect($duplicate_types, $duplicate_seo_types)) ||
+        ($seo_breadcrumb && in_array('BreadcrumbList', $duplicate_types, true))
+    );
+    $duplicate_details_url = admin_url('admin.php?page=tool-kits-geo-audit') . '#schema-duplicates';
     $configured_document_count = count($preview);
     $faq_item_count = count($faq_items);
     $faq_language_count = count($faq_languages);
@@ -2185,6 +2192,10 @@ function tk_render_geo_panel(): void {
     <form id="tk-geo-post-schema-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
         <?php tk_nonce_field('tk_geo_post_schema_validate'); ?>
         <input type="hidden" name="action" value="tk_geo_post_schema_validate">
+    </form>
+    <form id="tk-geo-schema-duplicate-fix-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+        <?php tk_nonce_field('tk_geo_schema_duplicate_fix'); ?>
+        <input type="hidden" name="action" value="tk_geo_schema_duplicate_fix">
     </form>
     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
         <?php tk_nonce_field('tk_geo_save'); ?>
@@ -2238,8 +2249,9 @@ function tk_render_geo_panel(): void {
                 </div>
                 <div>
                     <dt>Duplicate Schema</dt>
-                    <dd class="<?php echo !$duplicate_has_report ? 'is-muted' : ($duplicate_issue_count > 0 ? 'is-danger' : 'is-good'); ?>"><?php echo $duplicate_has_report ? ($duplicate_issue_count > 0 ? esc_html((string) $duplicate_issue_count) : 'Clear') : 'Not run'; ?></dd>
+                    <dd class="<?php echo !$duplicate_has_report ? 'is-muted' : ($duplicate_issue_count > 0 ? 'is-danger' : 'is-good'); ?>"><a class="tk-geo-metric-link" href="<?php echo esc_url($duplicate_details_url); ?>" aria-label="View Duplicate Schema details and Auto Fix options"><?php echo $duplicate_has_report ? ($duplicate_issue_count > 0 ? esc_html((string) $duplicate_issue_count) : 'Clear') : 'Not run'; ?></a></dd>
                     <span><?php echo $duplicate_has_report ? ($duplicate_issue_count > 0 ? 'URLs with potential duplicate entities or invalid schema' : 'No duplicate entity definitions detected') : 'Run Duplicate Detector to check'; ?></span>
+                    <span>Click to view URLs and fix options.</span>
                 </div>
             </dl>
             <?php tk_render_switch('geo_enabled', 'Enable GEO JSON-LD Output', 'Print enabled custom JSON-LD, FAQPage, and ItemList documents on public pages.', $enabled); ?>
@@ -2906,8 +2918,19 @@ function tk_render_geo_panel(): void {
             <p>Scan homepage and recent public content for repeated entity definitions or invalid JSON-LD blocks.</p>
             <p>
                 <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tk_geo_schema_duplicate_scan'), 'tk_geo_schema_duplicate_scan')); ?>">Run Duplicate Detector</a>
-                <a class="button button-primary" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tk_geo_schema_duplicate_fix'), 'tk_geo_schema_duplicate_fix')); ?>">Auto Fix Tool Kits Duplicates</a>
+                <button type="submit" class="button button-primary" form="tk-geo-schema-duplicate-fix-form" aria-describedby="tk-schema-duplicate-fix-help" <?php disabled(!$duplicate_fix_available); ?>>Auto Fix Tool Kits Duplicates</button>
+                <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=tool-kits-geo') . '#overview'); ?>">Manage Schema Output</a>
                 <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tk_geo_schema_duplicate_clear'), 'tk_geo_schema_duplicate_clear')); ?>">Clear Report</a>
+            </p>
+            <p class="description" id="tk-schema-duplicate-fix-help">
+                <?php if ($duplicate_fix_available) : ?>
+                    Auto Fix disables the Tool Kits SEO schema generator and/or BreadcrumbList output for conflicting types, clears caches, and rechecks the URLs. These settings apply site-wide.
+                <?php elseif (!$duplicate_has_report || (int) ($schema_duplicate_report['analysis_version'] ?? 0) !== 2) : ?>
+                    Run Duplicate Detector to get current entity-based findings before using Auto Fix.
+                <?php else : ?>
+                    No enabled Tool Kits SEO or Breadcrumb output matches these findings. Use Validate &amp; Edit for invalid or custom JSON-LD, or review the source settings for theme and other plugin schema.
+                <?php endif; ?>
+                Use Manage Schema Output to review or disable Tool Kits schema generators while keeping their saved settings.
             </p>
             <?php if (!empty($schema_duplicate_fix_report)) : ?>
                 <?php

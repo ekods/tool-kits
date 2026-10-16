@@ -186,6 +186,9 @@
 .tk-wrap .tk-geo-overview-metrics dd.is-warn { color: #a15c00; }
 .tk-wrap .tk-geo-overview-metrics dd.is-danger { color: #b42318; }
 .tk-wrap .tk-geo-overview-metrics dd.is-muted { color: #667085; }
+.tk-wrap .tk-geo-metric-link { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
+.tk-wrap .tk-geo-metric-link:hover { color: var(--tk-accent); }
+.tk-wrap .tk-geo-metric-link:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
 .tk-wrap .tk-geo-overview-metrics > div > span { display: block; max-width: 44ch; color: var(--tk-muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
 .tk-image-workspace { width: 100%; min-width: 0; }
 .tk-image-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 0 24px; padding: 20px 0; background: #fff; border-block: 1px solid var(--tk-border-soft); }

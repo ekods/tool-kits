@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.22
+Stable tag: 2.7.23
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,12 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.23 =
+**Duplicate Schema Shortcuts**
+- Make the Duplicate Schema count open the URL report and Auto Fix controls in GEO Audit.
+- Add a direct link to schema output settings and explain which Tool Kits generators Auto Fix disables.
+- Disable Auto Fix when the saved entity report has no matching enabled Tool Kits SEO/Breadcrumb output, and submit fixes through a separate nonce-protected form.
+
 = 2.7.22 =
 **Editable Generated Catalog**
 - Populate Custom catalog entries (JSON) with generated website and AI Radar entries, selecting manual mode so saved edits are published.
