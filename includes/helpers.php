@@ -227,16 +227,37 @@ function tk_render_header_branding() {
  * Option helpers
  */
 function tk_get_option($key, $default = null) {
-    $opts = get_option('tk_options', array());
-    if (!is_array($opts)) { $opts = array(); }
+    $opts = tk_get_options();
     return array_key_exists($key, $opts) ? $opts[$key] : $default;
 }
 
-function tk_get_options() {
-    $opts = get_option('tk_options', array());
-    if (!is_array($opts)) { $opts = array(); }
-    return $opts;
+function &tk_request_options_cache() {
+    static $cache = array();
+    return $cache;
 }
+
+function tk_get_options() {
+    $cache = &tk_request_options_cache();
+    $blog_id = function_exists('get_current_blog_id') ? get_current_blog_id() : 0;
+    if (!array_key_exists($blog_id, $cache)) {
+        // WordPress caches the serialized option; repeated get_option() calls
+        // would deserialize large audit reports again for every feature check.
+        $opts = get_option('tk_options', array());
+        $cache[$blog_id] = is_array($opts) ? $opts : array();
+    }
+    return $cache[$blog_id];
+}
+
+function tk_clear_request_options_cache($option = 'tk_options') {
+    if ($option === 'tk_options') {
+        $cache = &tk_request_options_cache();
+        $blog_id = function_exists('get_current_blog_id') ? get_current_blog_id() : 0;
+        unset($cache[$blog_id]);
+    }
+}
+add_action('added_option', 'tk_clear_request_options_cache');
+add_action('updated_option', 'tk_clear_request_options_cache');
+add_action('deleted_option', 'tk_clear_request_options_cache');
 
 function tk_update_option($key, $value) {
     $opts = get_option('tk_options', array());
@@ -244,6 +265,7 @@ function tk_update_option($key, $value) {
     $old = array_key_exists($key, $opts) ? $opts[$key] : null;
     $opts[$key] = $value;
     update_option('tk_options', $opts, false);
+    tk_clear_request_options_cache();
     $recoverable_key = tk_killswitch_current_recovery_key($key, $opts);
     if ($recoverable_key !== '') {
         update_option('tk_killswitch_last_key', $recoverable_key, false);

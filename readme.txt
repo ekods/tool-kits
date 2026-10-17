@@ -68,6 +68,7 @@ Filters to adjust CORS by environment (optional example):
 == Changelog ==
 = 2.7.24 =
 **Frontend Rendering Compatibility**
+- Reuse parsed Tool Kits options during a request; invalidate on option add/update/delete and keep multisite caches separate. Signature and site checks remain active.
 - Add tk_page_cache_purge_for_meta_change so integrations can exclude derived caches and analytics counters while preserving invalidation for content changes.
 - Add tk_assets_version_theme_assets so themes with release-versioned URLs can skip per-file hashing and transient queries.
 - Respect explicit lazy image loading instead of promoting the first content images to eager loading.
