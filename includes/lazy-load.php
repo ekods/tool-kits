@@ -70,6 +70,11 @@ function tk_lazy_image_attributes($attr, $attachment, $size) {
     static $count = 0;
     $count++;
     $eager = max(0, (int) tk_get_option('lazy_load_eager_images', 2));
+    if (($attr['loading'] ?? '') === 'lazy' && ($attr['fetchpriority'] ?? '') !== 'high') {
+        // An explicit theme decision takes precedence over the generic image count.
+        $attr['decoding'] = $attr['decoding'] ?? 'async';
+        return $attr;
+    }
     if (($attr['loading'] ?? '') === 'eager' || ($attr['fetchpriority'] ?? '') === 'high') {
         $attr['loading'] = 'eager';
         $attr['decoding'] = $attr['decoding'] ?? 'async';

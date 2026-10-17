@@ -25,6 +25,11 @@ function tk_assets_theme_asset_version($src) {
         return $src;
     }
 
+    // Themes with their own release URLs can skip hashing and transient lookups.
+    if (!apply_filters('tk_assets_version_theme_assets', true, $src)) {
+        return $src;
+    }
+
     $parts = wp_parse_url($src);
     if (!is_array($parts) || empty($parts['path'])) {
         return $src;

@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.23
+Stable tag: 2.7.24
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,12 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.24 =
+**Frontend Rendering Compatibility**
+- Add tk_page_cache_purge_for_meta_change so integrations can exclude derived caches and analytics counters while preserving invalidation for content changes.
+- Add tk_assets_version_theme_assets so themes with release-versioned URLs can skip per-file hashing and transient queries.
+- Respect explicit lazy image loading instead of promoting the first content images to eager loading.
+
 = 2.7.23 =
 **Duplicate Schema Shortcuts**
 - Make the Duplicate Schema count open the URL report and Auto Fix controls in GEO Audit.

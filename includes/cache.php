@@ -574,6 +574,10 @@ function tk_page_cache_purge_on_meta_change($meta_id, $post_id, $meta_key, $valu
     if (in_array($meta_key, array('_tk_seo_rendered_audit', '_edit_lock', '_edit_last'), true)) {
         return;
     }
+    // Integrations may exclude derived caches/counters without excluding real content.
+    if (!apply_filters('tk_page_cache_purge_for_meta_change', true, $meta_key, $post_id)) {
+        return;
+    }
     tk_page_cache_purge_once();
 }
 
