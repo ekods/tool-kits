@@ -615,6 +615,13 @@ function tk_render_system_tools_page() {
         <?php tk_render_page_hero('System Tools', 'Administrative tools for database work, user management, mail delivery, theme audits, and diagnostics.', 'dashicons-admin-settings'); ?>
 
         <div class="tk-grid tk-grid-3" style="margin-top:24px;">
+            <?php if (function_exists('tk_health_center_allowed') && tk_health_center_allowed()) : ?>
+                <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-health-center')); ?>">
+                    <span class="dashicons dashicons-heart"></span>
+                    <h2>WordPress Health Center</h2>
+                    <p class="description">Run a manual scan to check site health and measure performance. View saved results without starting another scan.</p>
+                </a>
+            <?php endif; ?>
             <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-db')); ?>">
                 <span class="dashicons dashicons-database"></span>
                 <h2>Database Tools</h2>

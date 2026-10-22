@@ -1,5 +1,7 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
+require_once __DIR__ . '/html-injection-context.php';
+require_once __DIR__ . '/html-injection-css.php';
 
 /** Read-only heuristics. Never execute JavaScript, PHP or serialized objects. */
 final class TK_HTML_Injection_Engine {
@@ -15,7 +17,7 @@ final class TK_HTML_Injection_Engine {
     public static function trusted(string $host, string $origin, array $trusted): bool {
         if ($host === '' || $host === self::host($origin)) { return true; }
         foreach ($trusted as $entry) {
-            if ($host === $entry || (strpos($entry, '*.') === 0 && substr($host, -strlen(substr($entry, 1))) === substr($entry, 1))) { return true; }
+            if ($host === strtolower(rtrim($entry, '.'))) { return true; }
         }
         return false;
     }
@@ -36,108 +38,147 @@ final class TK_HTML_Injection_Engine {
             || ($node->hasAttribute('height') && (string) $node->getAttribute('height') === '0');
     }
 
-    public static function scan(string $html, string $origin, array $trusted = array(), int $depth = 0, bool $stored = false): array {
-        $result = array('findings' => array(), 'limited' => false);
+    public static function scan(string $html, string $origin, array $trusted = array(), int $depth = 0, bool $stored = false, ?array $providers = null): array {
+        $result = array('findings' => array(), 'suppressed' => array(), 'resources' => array(), 'limited' => false, 'audit_overflow' => 0);
         if (strlen($html) > self::MAX_BYTES) { $result['limited'] = true; return $result; }
         if (strpos($html, '<') === false) { return $result; }
         if (!class_exists('DOMDocument')) { throw new RuntimeException('PHP DOM extension is required.'); }
-        $document = new DOMDocument();
-        $previous = libxml_use_internal_errors(true);
-        try {
-            $loaded = $document->loadHTML('<?xml encoding="UTF-8">' . $html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
-        } finally { libxml_clear_errors(); libxml_use_internal_errors($previous); }
+        $providers = $providers ?? TK_HTML_Injection_Context::providers();
+        $document = new DOMDocument(); $previous = libxml_use_internal_errors(true);
+        try { $loaded = $document->loadHTML('<?xml encoding="UTF-8">' . $html, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING); }
+        finally { libxml_clear_errors(); libxml_use_internal_errors($previous); }
         if (!$loaded) { $result['limited'] = true; return $result; }
-        $add = function(DOMElement $node, string $rule, string $severity, string $reason, string $host = '') use (&$result, $document) {
-            if (count($result['findings']) >= self::MAX_FINDINGS) { $result['limited'] = true; return; }
-            $opening = $document->saveHTML($node);
+        $base_safe = true;
+        foreach ($document->getElementsByTagName('base') as $base) { if ($base->hasAttribute('href')) { $parts = TK_HTML_Injection_Context::url($base->getAttribute('href'), $origin); $base_safe = $parts && TK_HTML_Injection_Context::same_origin($parts, $origin); break; } }
+        $add = function (DOMElement $node, string $rule, string $severity, string $reason, string $host = '', array $meta = array()) use (&$result, $document) {
+            $severity = $severity === 'review' ? 'low' : $severity;
+            $action = $meta['action'] ?? (in_array($severity, array('critical', 'high'), true) ? 'REPORT' : 'REVIEW');
+            $copy = $node->cloneNode(true); $copy->removeAttribute('nonce');
+            $opening = $document->saveHTML($copy);
+            $normalized = $copy->cloneNode(true);
+            foreach ($normalized->attributes as $attribute) { if (preg_match('/^on[a-z]+$/iD', $attribute->name)) { $tokens = TK_HTML_Injection_Context::tokens($attribute->value); if ($tokens !== null) { $normalized->setAttribute($attribute->name, json_encode($tokens)); } } }
+            if (strtolower($node->tagName) === 'script') { $tokens = TK_HTML_Injection_Context::tokens($node->textContent); if ($tokens !== null) { $normalized->textContent = json_encode($tokens); } }
+            $evidence_hash = hash('sha256', $document->saveHTML($normalized));
             if (strtolower($node->tagName) === 'form') { $opening = preg_replace('~>.*$~s', '>', $opening); }
-            $result['findings'][] = array('rule' => $rule, 'severity' => $severity, 'reason' => $reason, 'line' => max(1, $node->getLineNo()), 'host' => $host, 'snippet' => self::snippet($opening));
+            $finding = array('rule' => $rule, 'severity' => $severity, 'reason' => $reason, 'line' => max(1, $node->getLineNo()), 'host' => $host, 'snippet' => self::snippet($opening),
+                'rule_id' => strtoupper($rule), 'action' => $action, 'classification' => $action === 'REPORT' ? 'dangerous_behavior' : 'suspicious_behavior', 'confidence' => $action === 'REPORT' ? .94 : .65,
+                'location' => $node->getNodePath(), 'evidence_hash' => $evidence_hash, 'resource_identifier' => $host);
+            self::retain($result, array_merge($finding, $meta));
         };
         $visited = 0;
         foreach ($document->getElementsByTagName('*') as $node) {
-            if (++$visited > 15000 || count($result['findings']) >= self::MAX_FINDINGS) { $result['limited'] = true; break; }
-            $tag = strtolower($node->tagName);
+            if (++$visited > 15000) { $result['limited'] = true; break; }
+            $tag = strtolower($node->tagName); $has_events = false;
+            foreach ($node->attributes as $attribute) { if (preg_match('/^on[a-z]+$/iD', $attribute->name)) { $has_events = true; } }
             foreach ($node->attributes as $attribute) {
-                $name = strtolower($attribute->name);
-                $value = $attribute->value;
-                if (preg_match('/^on[a-z]+$/', $name)) {
-                    $high = preg_match('/(?:eval\s*\(|document\.cookie|(?:window\.)?location\s*[.=]|fetch\s*\(|atob\s*\()/i', $value);
-                    $add($node, 'event_handler', $high ? 'high' : 'medium', 'Inline ' . $name . ' handler can execute JavaScript. Verify that it belongs to the intended page.');
+                $name = strtolower($attribute->name); $value = $attribute->value;
+                if (preg_match('/^on[a-z]+$/D', $name)) {
+                    $safe = ($base_safe || preg_match('~^https?://~i', $node->getAttribute('href'))) && TK_HTML_Injection_Context::safe_css_handler($node, $name, $value, $origin, $trusted, $providers);
+                    if ($safe) {
+                        $add($node, 'event_handler', 'info', 'Recognized asynchronous CSS loading pattern; the complete handler and stylesheet destination were validated.', '', array('rule_id' => 'SAFE_CSS_ONLOAD_001', 'classification' => 'expected_behavior', 'action' => 'SKIP', 'confidence' => .99, 'location' => $node->getNodePath() . '/@' . $name));
+                    } else {
+                        $behavior = TK_HTML_Injection_Context::behavior($value, $origin, $trusted, $providers);
+                        $strong = $behavior['exfil'] || $behavior['network'] && $behavior['host'] !== '' || $behavior['execution'] && $behavior['input'];
+                        $active = $strong || $behavior['network'] && in_array($name, array('onerror', 'onload'), true);
+                        $add($node, 'event_handler', $strong ? 'high' : ($behavior['network'] || $behavior['execution'] || $behavior['encoded'] ? 'medium' : 'low'), 'Inline ' . $name . ': ' . ($strong ? 'sensitive-data/outbound or user-input execution indicators.' : 'behavior was not verified as an approved safe pattern; inspect its intended function.'), $behavior['host'], array('action' => $active ? 'REPORT' : 'REVIEW', 'location' => $node->getNodePath() . '/@' . $name));
+                    }
                 }
                 if (in_array($name, array('src', 'href', 'action', 'formaction', 'xlink:href', 'data'), true)) {
                     $normalized = preg_replace('/[\x00-\x20\x7f]+/', '', $value);
-                    if (preg_match('~^(?:javascript|vbscript):~i', $normalized)) {
-                        $add($node, 'executable_url', 'high', 'Executable URL in ' . $name . ' can run code when the element is used.');
-                    } elseif (preg_match('~^data:(?:text/html|(?:application|text)/(?:javascript|ecmascript)|image/svg\+xml)~i', $normalized)) {
-                        $add($node, 'active_data_url', 'high', 'An active document/script is embedded in a data URL. Review its origin.');
-                    }
+                    if (preg_match('~^(?:javascript|vbscript):~i', $normalized)) { $add($node, 'executable_url', 'high', 'Executable URL in ' . $name . ' can run code when the element is used.'); }
+                    elseif (preg_match('~^data:(?:text/html|(?:application|text)/(?:javascript|ecmascript)|image/svg\+xml)~i', $normalized)) { $add($node, 'active_data_url', 'high', 'An active document/script is embedded in a data URL. Review its origin.'); }
+                }
+                if ($name === 'style') {
+                    $css = TK_HTML_Injection_CSS::scan('element{' . $value . '}', $origin, $trusted, $providers);
+                    foreach ($css['findings'] as $finding) { $add($node, $finding['rule'], $finding['severity'], $finding['reason'], $finding['host'], array('action' => $finding['action'], 'location' => $node->getNodePath() . '/@style:' . $finding['line'])); }
+                    $result['limited'] = $result['limited'] || $css['limited'];
                 }
             }
-            $resource = $tag === 'script' || $tag === 'iframe' || $tag === 'embed' ? $node->getAttribute('src') : ($tag === 'object' ? $node->getAttribute('data') : '');
-            $host = self::host($resource, $origin);
-            $external = $host !== '' && !self::trusted($host, $origin, $trusted);
-            if ($tag === 'script' && $external) {
-                $add($node, 'external_script', 'review', 'Script is loaded from an unreviewed external host. External scripts can be legitimate integrations.', $host);
+            if ($tag === 'link') {
+                $rel = strtolower(trim($node->getAttribute('rel'))); $style = $rel === 'stylesheet' || $rel === 'preload' && strtolower(trim($node->getAttribute('as'))) === 'style';
+                if ($style) {
+                    $url = $node->getAttribute('href'); $parts = TK_HTML_Injection_Context::url($url, $origin);
+                    $safe = ($base_safe || preg_match('~^https?://~i', $url)) && TK_HTML_Injection_Context::css_destination($url, $origin, $trusted, $providers);
+                    if ($safe && !$has_events) { $add($node, 'stylesheet', 'info', 'Validated stylesheet destination; a stylesheet link is not executable JavaScript.', $parts['host'] ?? '', array('rule_id' => 'SAFE_CSS_STYLESHEET_001', 'classification' => 'expected_behavior', 'action' => 'SKIP', 'confidence' => .99)); }
+                    elseif (!$safe) { $add($node, 'external_stylesheet', 'low', 'Stylesheet destination is unreviewed, ambiguous or uses an unexpected scheme. A CSS loading handler does not establish trust.', $parts['host'] ?? '', array('action' => 'REVIEW')); }
+                    if ($parts && TK_HTML_Injection_Context::same_origin($parts, $origin) && preg_match('/\.css$/iD', $parts['path'])) { $result['resources'][] = $url; }
+                }
+            }
+            $resource = in_array($tag, array('script', 'iframe', 'embed'), true) ? $node->getAttribute('src') : ($tag === 'object' ? $node->getAttribute('data') : '');
+            $host = self::host($resource, $origin); $external = $host !== '' && !self::trusted($host, $origin, $trusted);
+            $type = strtolower(trim(explode(';', $node->getAttribute('type'))[0]));
+            $executable = $type === '' || in_array($type, array('text/javascript', 'application/javascript', 'application/ecmascript', 'text/ecmascript', 'module'), true);
+            $provider = $tag === 'script' && $executable && !$has_events && trim($node->textContent) === '' ? TK_HTML_Injection_Context::provider($resource, 'script', $origin, $providers) : '';
+            if ($tag === 'script' && $executable && $resource !== '' && ($external || $host !== '' && $host !== self::host($origin))) {
+                if ($provider !== '') { $add($node, 'external_script', 'info', 'Approved integration script URL and non-executable attributes verified. Remote content and account ownership are not attested.', $host, array('rule_id' => 'SAFE_PROVIDER_SCRIPT_001', 'classification' => 'recognized_integration', 'action' => 'SKIP', 'confidence' => .98, 'provider' => $provider)); }
+                else {
+                    $parts = TK_HTML_Injection_Context::url($resource, $origin); $insecure = !$parts || $parts['scheme'] !== 'https';
+                    $add($node, 'external_script', $insecure ? 'medium' : 'low', 'External script was not verified against an approved integration path/context. Review its provenance; hostname trust alone does not approve arbitrary scripts.', $host, array('action' => $insecure ? 'REPORT' : 'REVIEW', 'classification' => $external ? 'unknown_integration' : 'custom_trusted_destination'));
+                }
             }
             if ($tag === 'iframe') {
-                if (self::hidden($node)) {
-                    $add($node, 'hidden_iframe', 'high', 'A hidden or zero-sized iframe can load another document without being visible. Confirm its purpose.', $host);
-                } elseif ($external) {
-                    $add($node, 'external_iframe', 'review', 'Iframe uses an unreviewed external host; verify this embed.', $host);
-                }
+                if (self::hidden($node)) { $add($node, 'hidden_iframe', 'medium', 'A hidden/zero-sized iframe warrants contextual review; it may be an intentional integration.', $host); }
+                elseif ($external) { $add($node, 'external_iframe', 'low', 'Iframe uses an unreviewed external host; verify this embed.', $host); }
                 if ($node->hasAttribute('srcdoc')) {
                     if ($depth < 2) {
-                        $nested = self::scan($node->getAttribute('srcdoc'), $origin, $trusted, $depth + 1, $stored);
-                        foreach ($nested['findings'] as $finding) {
-                            if (count($result['findings']) >= self::MAX_FINDINGS) { $result['limited'] = true; break; }
-                            $finding['reason'] = 'Inside iframe srcdoc: ' . $finding['reason'];
-                            $finding['line'] = max(1, $node->getLineNo());
-                            $result['findings'][] = $finding;
-                        }
-                        $result['limited'] = $result['limited'] || $nested['limited'];
+                        $nested = self::scan($node->getAttribute('srcdoc'), $origin, $trusted, $depth + 1, $stored, $providers);
+                        foreach (array('findings', 'suppressed') as $bucket) { foreach ($nested[$bucket] as $finding) { $finding['reason'] = 'Inside iframe srcdoc: ' . $finding['reason']; $finding['location'] = $node->getNodePath() . '/srcdoc' . $finding['location']; $finding['line'] = max(1, $node->getLineNo()); self::retain($result, $finding); } }
+                        $result['resources'] = array_merge($result['resources'], $nested['resources']); $result['limited'] = $result['limited'] || $nested['limited']; $result['audit_overflow'] += $nested['audit_overflow'];
                     } else { $result['limited'] = true; }
                 }
             }
             if (in_array($tag, array('object', 'embed'), true) && $external) { $add($node, 'external_active_embed', 'medium', 'Active embedded content uses an unreviewed external host.', $host); }
-            if ($tag === 'base' && $node->hasAttribute('href')) {
-                $host = self::host($node->getAttribute('href'), $origin);
-                if (!self::trusted($host, $origin, $trusted)) { $add($node, 'external_base', 'high', 'External base URL changes where relative links, forms and resources resolve.', $host); }
-            }
+            if ($tag === 'base' && $node->hasAttribute('href') && !$base_safe) { $add($node, 'external_base', 'high', 'External or invalid base URL changes where relative links, forms and resources resolve.', self::host($node->getAttribute('href'), $origin)); }
             if ($tag === 'meta' && strtolower(trim($node->getAttribute('http-equiv'))) === 'refresh' && preg_match('~url\s*=\s*["\']?([^"\']+)~i', $node->getAttribute('content'), $refresh)) {
-                $host = self::host(trim($refresh[1]), $origin);
-                if (!self::trusted($host, $origin, $trusted)) { $add($node, 'external_meta_redirect', 'high', 'Meta refresh redirects visitors to an unreviewed external host.', $host); }
+                $destination = self::host(trim($refresh[1]), $origin); if (!self::trusted($destination, $origin, $trusted)) { $add($node, 'external_meta_redirect', 'medium', 'Meta refresh redirects to an unreviewed external host; verify intent.', $destination); }
             }
             if ($tag === 'form' && $node->hasAttribute('action')) {
-                $host = self::host($node->getAttribute('action'), $origin);
-                if (!self::trusted($host, $origin, $trusted)) {
-                    $password = false;
-                    foreach ($node->getElementsByTagName('input') as $input) { if (strtolower($input->getAttribute('type')) === 'password') { $password = true; break; } }
-                    $add($node, 'external_form', $password ? 'high' : 'medium', $password ? 'A form with a password field submits to an unreviewed external host.' : 'Form submits data to an unreviewed external host. Verify the destination.', $host);
-                }
+                $destination = self::host($node->getAttribute('action'), $origin); $password = false;
+                foreach ($node->getElementsByTagName('input') as $input) { if (strtolower($input->getAttribute('type')) === 'password') { $password = true; break; } }
+                if ($destination !== '' && $destination !== self::host($origin) && ($password || !self::trusted($destination, $origin, $trusted))) { $add($node, 'external_form', $password ? 'high' : 'medium', $password ? 'A password form submits credentials to another origin; hostname trust cannot establish that this is intended.' : 'Form submits data to an unreviewed external host. Verify the destination.', $destination); }
             }
-            if ($tag === 'a' && self::hidden($node)) {
-                $host = self::host($node->getAttribute('href'), $origin);
-                if (!self::trusted($host, $origin, $trusted)) { $add($node, 'hidden_external_link', 'medium', 'Hidden external link can indicate SEO spam. Verify the intended content.', $host); }
+            if ($tag === 'a' && self::hidden($node)) { $destination = self::host($node->getAttribute('href'), $origin); if (!self::trusted($destination, $origin, $trusted)) { $add($node, 'hidden_external_link', 'medium', 'Hidden external link can indicate SEO spam. Verify intended content.', $destination); } }
+            if ($tag === 'style') {
+                $css = TK_HTML_Injection_CSS::scan($node->textContent, $origin, $trusted, $providers);
+                foreach ($css['findings'] as $finding) { $add($node, $finding['rule'], $finding['severity'], $finding['reason'], $finding['host'], array('action' => $finding['action'], 'location' => $node->getNodePath() . '/css:' . $finding['line'])); }
+                $result['resources'] = array_merge($result['resources'], $css['resources']); $result['limited'] = $result['limited'] || $css['limited'];
             }
-            if ($tag !== 'script') { continue; }
-            $type = strtolower(trim(explode(';', $node->getAttribute('type'))[0]));
-            if ($type !== '' && !in_array($type, array('text/javascript', 'application/javascript', 'application/ecmascript', 'text/ecmascript', 'module'), true)) { continue; }
-            if ($stored) { $add($node, 'stored_script', 'review', 'Executable script is stored in database content. Confirm that it was intentionally added.'); }
+            if ($tag !== 'script' || !$executable) { continue; }
+            $behavior = TK_HTML_Injection_Context::behavior($node->textContent, $origin, $trusted, $providers);
+            $safe_script = !$has_events && ($provider !== '' || $resource === '' && $behavior['provider'] !== '');
+            if ($stored) { $add($node, 'stored_script', $safe_script ? 'info' : 'low', $safe_script ? 'Stored script matches an approved integration grammar.' : 'Executable script is stored in database content. Confirm it was intentionally added.', $host, $safe_script ? array('rule_id' => 'SAFE_STORED_INTEGRATION_001', 'classification' => 'recognized_integration', 'action' => 'SKIP', 'confidence' => .98, 'provider' => $provider ?: $behavior['provider']) : array('action' => 'REVIEW')); }
             if ($node->hasAttribute('src')) { continue; }
-            $script = $node->textContent;
-            if (preg_match('~(?:\beval|\bFunction|document\.write(?:ln)?)\s*\(\s*(?:atob|unescape|decodeURIComponent|String\.fromCharCode)\s*\(~i', $script)) {
-                $add($node, 'encoded_execution', 'high', 'Decoded or character-generated content is passed into code execution/document.write.');
+            if ($behavior['encoded']) { $add($node, 'encoded_execution', $behavior['exfil'] || $behavior['input'] ? 'high' : 'medium', 'Decoded/character-generated data is passed into code execution or document.write; inspect provenance and data flow.', $behavior['host']); }
+            elseif ($behavior['execution']) { $add($node, 'dynamic_execution', $behavior['input'] ? 'high' : 'medium', 'Dynamic code execution requires review; user-controlled inputs increase risk.', $behavior['host']); }
+            if ($behavior['sensitive'] && $behavior['network']) { $add($node, 'cookie_outbound', $behavior['exfil'] ? 'high' : 'medium', $behavior['exfil'] ? 'Sensitive data appears in an outbound transport expression; investigate potential leakage, including to recognized providers.' : 'Sensitive reads and outbound transport occur in the same script; data flow was not proven and requires review.', $behavior['host']); }
+            if ($behavior['host'] !== '' && preg_match('/\blocation\s*(?:\.\s*href\s*)?=|\blocation\s*\.\s*(?:replace|assign)\s*\(/i', $behavior['code'])) { $add($node, 'script_redirect', 'medium', 'Navigation changes reference an unreviewed external host. Verify the redirect.', $behavior['host']); }
+            if ($behavior['dynamic']) {
+                $safe = $safe_script && !$behavior['sensitive'] && !$behavior['execution'];
+                $strong = $behavior['input'] || $behavior['exfil'] || $behavior['insecure'];
+                $add($node, 'dynamic_script_loader', $safe ? 'info' : ($strong ? 'high' : 'medium'), $safe ? 'Entire loader matches an approved integration grammar and URL.' : 'Dynamic script destination/behavior could not be verified; dynamic construction or user-controlled inputs require review.', $behavior['host'], $safe ? array('rule_id' => 'SAFE_DYNAMIC_INTEGRATION_001', 'classification' => 'recognized_integration', 'action' => 'SKIP', 'confidence' => .98, 'provider' => $behavior['provider']) : array('action' => $strong ? 'REPORT' : 'REVIEW', 'classification' => 'unknown_integration'));
             }
-            $untrusted = '';
-            preg_match_all('~https?://[^\s"\'<>`\\\\]+~i', $script, $urls);
-            foreach ($urls[0] as $url) { $candidate = self::host($url); if (!self::trusted($candidate, $origin, $trusted)) { $untrusted = $candidate; break; } }
-            if ($untrusted !== '' && preg_match('/document\.cookie/i', $script) && preg_match('/(?:fetch\s*\(|sendBeacon\s*\(|XMLHttpRequest|new\s+Image|\.src\s*=)/i', $script)) {
-                $add($node, 'cookie_outbound', 'high', 'Script reads cookies and contains an outbound transport plus an unreviewed external host. Review for data leakage.', $untrusted);
-            }
-            if ($untrusted !== '' && preg_match('/(?:window\.)?location(?:\.href)?\s*=|location\.(?:replace|assign)\s*\(/i', $script)) { $add($node, 'script_redirect', 'medium', 'Script changes navigation and references an unreviewed external host. Verify the redirect.', $untrusted); }
-            if ($untrusted !== '' && preg_match('/createElement\s*\(\s*["\']script["\']/i', $script)) { $add($node, 'dynamic_script_loader', 'medium', 'Script creates a script element and references an unreviewed external host.', $untrusted); }
+            if ($behavior['tokens'] === null && ($behavior['dynamic'] || $behavior['execution'] || $behavior['encoded'] || $behavior['sensitive'] || $behavior['network'])) { $add($node, 'unparsed_javascript', 'low', 'A script with behavior indicators exceeded the supported lexical grammar/budget; no safe-pattern suppression was applied. Manual review is required.'); }
         }
+        $result['resources'] = array_values(array_unique($result['resources']));
         return $result;
+    }
+
+    /** Prioritize stronger evidence when weak observations exhaust a result budget. */
+    public static function retain(array &$result, array $finding): void {
+        $bucket = ($finding['action'] ?? '') === 'SKIP' ? 'suppressed' : 'findings';
+        $limit = $bucket === 'suppressed' ? 80 : self::MAX_FINDINGS;
+        if (count($result[$bucket]) < $limit) { $result[$bucket][] = $finding; return; }
+        if ($bucket === 'suppressed') {
+            $result['audit_overflow'] = ($result['audit_overflow'] ?? 0) + 1;
+            $id = $finding['rule_id'];
+            if (!isset($result['audit_overflow_rules'][$id])) { $result['audit_overflow_rules'][$id] = array('count' => 0, 'reason' => $finding['reason'], 'confidence' => $finding['confidence'], 'action' => 'SKIP'); }
+            $result['audit_overflow_rules'][$id]['count']++; return;
+        }
+        $result['limited'] = true;
+        $rank = static function ($item) { return (array('info' => 0, 'low' => 2, 'medium' => 4, 'high' => 6, 'critical' => 8)[$item['severity']] ?? 0) + (($item['action'] ?? '') === 'REPORT' ? 1 : 0); };
+        $lowest = 0;
+        foreach ($result[$bucket] as $index => $item) { if ($rank($item) < $rank($result[$bucket][$lowest])) { $lowest = $index; } }
+        if ($rank($finding) > $rank($result[$bucket][$lowest])) { $result[$bucket][$lowest] = $finding; }
     }
 
     public static function secret_key(string $key): bool {

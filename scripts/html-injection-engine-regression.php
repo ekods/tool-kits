@@ -38,7 +38,7 @@ foreach (array(
     '<img src="data:image/png;base64,AA==">',
 ) as $html) { check_html(rules_html($html, array('www.youtube.com')) === array(), 'Benign content flagged: ' . $html); }
 
-check_html(rules_html('<script src="https://cdn.good.test/app.js"></script>', array('*.good.test')) === array(), 'Wildcard subdomain not trusted');
+check_html(in_array('external_script', rules_html('<script src="https://cdn.good.test/app.js"></script>', array('*.good.test')), true), 'Legacy wildcard silently approved arbitrary external scripts');
 check_html(in_array('external_script', rules_html('<script src="https://good.test.evil.test/a.js"></script>', array('good.test')), true), 'Suffix host spoof bypassed review');
 check_html(in_array('hidden_iframe', rules_html('<iframe hidden src="https://good.test"></iframe>', array('good.test')), true), 'Trusted host suppressed a dangerous inline/hidden finding');
 check_html(in_array('stored_script', rules_html('<script>alert(1)</script>', array(), true), true), 'Plain script stored in database not inventoried');

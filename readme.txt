@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.28
+Stable tag: 2.7.30
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,20 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.30 =
+* Use English throughout the WordPress Health Center widget and manual scan page, including metrics, empty states, progress and error messages.
+* Improve the existing HTML Injection Scanner with contextual CSS/event-handler analysis and whole-token-stream verification of approved Google Analytics/Tag Manager loaders.
+* Separate exact-host recognized providers from custom destination trust; arbitrary provider paths, modified loaders, sensitive-data transports and deceptive hosts remain reviewable/detectable.
+* Add risk-based REPORT/REVIEW/SKIP classification, suppression audit metadata, stable finding groups, affected pages/occurrence counts, seven report filters, and administrator restoration of suppressed groups.
+* Inspect discovered local CSS in bounded batches, reuse resource analyses, flag external imports/exfiltration/executable CSS, and retain first-seen CSS hashes for integrity-change review. No site content is modified.
+* Preserve legacy reports without reclassifying them as safe; new custom host entries require exact names instead of wildcards. Expand PHP 7.4/8.4 and browser security regression coverage.
+
+= 2.7.29 =
+* Add a WordPress Health Center dashboard widget and dedicated manual scan page with saved results; opening either view never starts a scan.
+* Measure public homepage TTFB, profile uncached homepage database queries and slow WP HTTP requests, inspect response headers/SEO, and snapshot server/declared compatibility requirements.
+* Separate overdue WP-Cron events from retained Action Scheduler failures; show unavailable measurements explicitly, with transparent category scoring and scan timestamps.
+* Protect scans with administrator permissions, Tool Kits access/license checks, nonces, owner-bound expiring sessions and locks; keep scan metadata from purging page cache.
+
 = 2.7.28 =
 **HTML Injection Scanner**
 - Add a read-only HTML Injection Scanner under Security, with a shortcut from Hardening. Scan post titles/content/excerpts, post meta, selected widget/theme/ACF options, and same-origin public HTML.

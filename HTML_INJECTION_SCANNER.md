@@ -1,4 +1,4 @@
-# HTML Injection Scanner — Tool Kits 2.7.28
+# HTML Injection Scanner — Tool Kits 2.7.30
 
 Buka **Tool Kits → Security → HTML Injection Scanner**, atau tombol **Open HTML
 Injection Scanner** pada halaman Hardening. Pilih batas scan dan tekan **Start
@@ -23,7 +23,7 @@ Pola meliputi inline event handler (`onerror`, `onload`, dan lainnya), URL
 `javascript:`/`vbscript:`, data URL berisi dokumen/script aktif, iframe tersembunyi,
 script/iframe/embed eksternal, form yang mengirim ke domain lain, external base
 URL, meta refresh, link eksternal tersembunyi, script tersamarkan, serta kombinasi
-pembacaan cookie dengan pengiriman data ke host yang belum ditinjau. Isi `srcdoc`
+pembacaan data sensitif dengan pengiriman keluar, termasuk ke provider yang dikenal. Isi `srcdoc`
 iframe diperiksa sampai kedalaman terbatas. CSP nonce tidak membuat script lolos
 dari pemeriksaan.
 
@@ -34,9 +34,18 @@ sudah di-escape serta komentar HTML tidak diperlakukan sebagai elemen aktif.
 
 ## Membaca hasil
 
-**HIGH** menunjukkan pola yang perlu diprioritaskan, **MEDIUM** perlu ditinjau
-sesuai konteks, dan **REVIEW** adalah inventaris resource/script yang belum
-dikonfirmasi. Semuanya merupakan indikator heuristik, bukan vonis malware.
+Severity memakai **CRITICAL, HIGH, MEDIUM, LOW, INFO**. Severity terpisah dari
+tindakan: **REPORT** untuk bukti risiko yang kuat, **REVIEW** untuk indikasi yang
+belum cukup pasti, dan **SKIP** untuk pola yang seluruh konteksnya memenuhi aturan
+aman. `eval()` atau `createElement('script')` saja tidak cukup untuk severity HIGH.
+Confidence adalah keyakinan pada klasifikasi heuristik, bukan probabilitas malware.
+
+Laporan dibagi menjadi **Security Findings**, **Needs Review**, dan **Suppressed
+Findings**. Bagian terakhir tertutup secara default dan tetap menyimpan rule ID,
+alasan, sumber, bukti, timestamp, confidence, serta halaman terdampak. **Restore to
+Needs Review** memindahkan satu grup untuk ditinjau dan menyimpan override yang
+berlaku untuk fingerprint yang sama pada scan berikutnya. Aksi ini ditolak selama
+scan masih aktif dan hanya mengubah metadata laporan.
 
 Laporan menyertakan sumber, ID row/post, field, path data nested, nomor baris,
 alasan, host terkait, dan cuplikan bukti. Nomor baris mengacu pada field HTML yang
@@ -45,11 +54,38 @@ post/postmeta; options tetap ditinjau melalui pengaturan tema/widget terkait.
 Cuplikan selalu ditampilkan sebagai teks dan tidak dijalankan dalam halaman
 admin. Nonce, nilai form, dan query URL disamarkan pada bukti yang disimpan.
 
-Tambahkan domain integrasi yang sudah diverifikasi ke **Trusted external hosts**,
-misalnya `www.googletagmanager.com` atau `www.youtube.com`. `*.example.com`
-mencakup subdomain, bukan domain induknya. Daftar ini hanya mengurangi temuan
-berdasarkan tujuan eksternal; inline event handler, script tersamarkan dan iframe
-tersembunyi tetap diperiksa.
+**Trusted external hosts** menerima hostname persis seperti `cdn.example.com`,
+tanpa wildcard, URL, atau pencocokan suffix. Setting wildcard dari versi lama
+tetap tersimpan, tetapi tidak memberikan kepercayaan pada engine baru; ganti
+dengan hostname persis sebelum memulai scan baru. Kepercayaan custom memvalidasi
+tujuan CSS dan embed yang memang disetujui; tidak otomatis menyetujui JavaScript
+arbitrer atau pengiriman password/data sensitif.
+
+Registry provider terpisah mengenali HTTPS, host persis, path dan parameter yang
+disetujui: Google Analytics/Tag Manager, Google Fonts, serta path CSS Font Awesome
+dan AOS yang memiliki versi numerik pada cdnjs. Host tiruan, port tidak sesuai,
+userinfo pada URL, path berbeda, parameter tak dikenal, atau payload tambahan
+tidak ikut disembunyikan. Registry dapat disesuaikan oleh developer melalui filter
+`tk_html_scan_recognized_providers`; lihat [aturan dan contoh](SCANNER_CONTEXT_FILTERING.md).
+
+Handler async CSS diverifikasi menggunakan DOM dan lexer/grammar JavaScript yang
+dibatasi. `this.media='all'` hanya disetujui pada stylesheet `media=print`, dan
+`this.rel='stylesheet'` pada preload `as=style`, dengan tujuan yang tervalidasi.
+Pembersihan `this.onload=null` juga didukung. Kode tambahan atau atribut event lain
+membatalkan verifikasi; atribut berbahaya lainnya tetap dianalisis terpisah.
+
+Loader Google hanya di-SKIP jika seluruh token stream cocok dengan grammar yang
+disetujui. Template yang didukung: loader literal sederhana dengan `appendChild`,
+snippet GTM standar, dan konfigurasi gtag standar yang tersimpan. Perubahan yang
+belum dikenali tetap masuk REVIEW. Tidak ada JavaScript yang dieksekusi untuk
+membuat keputusan ini.
+
+Temuan publik identik pada lokasi DOM yang sama digabung lintas halaman, dengan
+jumlah kemunculan dan daftar URL. Record database, atribut, lokasi DOM, file,
+resource atau bukti yang berbeda tetap dipisahkan. Fingerprint tidak bergantung
+pada nomor baris maupun atribut nonce request yang berubah. Filter laporan
+mencakup severity, tipe, sumber, classification, action, minimum confidence,
+dan halaman terdampak.
 
 ## Batas dan perilaku
 
@@ -59,6 +95,11 @@ tersembunyi tetap diperiksa.
 - Maksimal 512 KiB per field/respons, 40 temuan per potongan HTML, 300 temuan per
   laporan, serta batas struktur/kedalaman. Data yang melampaui batas atau format
   serialized yang tidak didukung ditandai sebagai cakupan belum lengkap.
+- Pengamatan aman memiliki budget terpisah: 80 cuplikan per sumber dan 300 grup
+  suppressed per laporan. Setelah batas detail, jumlah/ringkasan rule audit tetap
+  dicatat dan cakupan ditandai terbatas. Pemeriksaan ancaman terus berjalan sampai
+  batas struktur; bukti dengan risiko lebih tinggi diprioritaskan bila pengamatan
+  lemah mengisi budget temuan. Restore tersedia untuk grup dengan bukti detail.
 - JSON dan array/scalar serialized dibaca sebagai data tanpa `unserialize`,
   eval, instansiasi class, atau pemanggilan constructor/wakeup. Object serialized
   tidak dibuka. Kredensial dan session bukan bagian target scan.
@@ -67,9 +108,21 @@ tersembunyi tetap diperiksa.
   tidak diikuti. HTTP gagal, redirect, respons non-HTML atau URL yang tidak bisa
   diperiksa akan dicatat sebagai cakupan tidak lengkap. Safe HTTP WordPress dapat
   menolak hostname lokal/private; kegagalannya ditampilkan sebagai belum dicek.
+- Stylesheet lokal yang ditemukan diperiksa dua file per batch, maksimal 100 file
+  berbeda. Root yang diizinkan adalah `WP_CONTENT_DIR` dan `wp-includes`, dengan
+  validasi realpath dan ekstensi `.css` pada target akhir. Symlink keluar root,
+  traversal terenkode, file PHP yang menyamar sebagai CSS, serta URL eksternal
+  tidak dibaca. Import CSS lokal ikut diantrikan; file yang sama diproses sekali.
+- Isi CSS diperiksa untuk expression legacy, URL executable, import/resource
+  eksternal tak dikenal, kombinasi selector sensitif + request lintas origin,
+  dan kombinasi overlay tersembunyi yang didukung bukti tambahan. `url()`, data
+  image/font biasa, serta properti layout tunggal bukan otomatis kerentanan.
+- Hash CSS pertama yang dibaca menjadi referensi metadata; perubahan berikutnya
+  masuk LOW/REVIEW. Update tema/build dapat menjadi penyebab sah. Referensi ini
+  bukan attestasi bahwa file awal bersih, dan tidak menonaktifkan analisis isi.
 - Scanner memeriksa HTML yang benar-benar dikembalikan server, termasuk jika
   dilayani cache. Ia tidak membuka browser, menjalankan JavaScript, mengunduh
-  script eksternal, mengikuti link, atau memindai file PHP/JS. Gunakan Malware
+  script/CSS eksternal, mengikuti redirect resource, atau memindai file PHP/JS. Gunakan Malware
   Scanner yang sudah ada untuk pemeriksaan file.
 - Memerlukan extension PHP DOM. Parser DOM/libxml bukan parser browser HTML5;
   payload yang sangat tersamarkan atau bergantung pada perilaku browser bisa
@@ -89,8 +142,10 @@ tersembunyi tetap diperiksa.
 
 ```sh
 php scripts/html-injection-engine-regression.php
+php scripts/html-injection-context-regression.php
 php scripts/html-injection-scanner-regression.php
 node scripts/html-injection-ui-regression.cjs
+python3 scripts/html-injection-browser-regression.py
 ```
 
 Tes memakai HTML/JSON/serialized fixtures, DOM parser asli, database/HTTP adapters
@@ -98,6 +153,10 @@ in-memory, dan UI fixture. Tidak membaca database produksi atau menjalankan
 payload bukti. Cakupannya termasuk deteksi positif/negatif, host allowlist,
 serialized object safety, izin dan nonce, cursor/batas, read-only content, sesi
 antar-user, penguncian batch, stop/resume, escaping laporan, dan cache exclusions.
+Tes browser menggunakan Chrome headless dan HTML fixture lokal, tanpa database
+produksi atau request ke situs eksternal. Semua kasus PHP/Node di atas juga
+terdaftar pada `node scripts/regression-tests.cjs`. Untuk tes browser, sesuaikan
+`TK_CHROME_BINARY` jika lokasi Chrome berbeda.
 
 Referensi implementasi:
 [WordPress safe HTTP](https://developer.wordpress.org/reference/functions/wp_safe_remote_get/),

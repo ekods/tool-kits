@@ -2,6 +2,12 @@
 // Each case runs in its own process so PHP mocks and browser state stay isolated.
 const { spawnSync } = require('node:child_process');
 const cases = [
+  { "name": "html-injection-engine", "runtime": "php", "source": ["<?php", "require __DIR__ . '/html-injection-engine-regression.php';"] },
+  { "name": "html-injection-context", "runtime": "php", "source": ["<?php", "require __DIR__ . '/html-injection-context-regression.php';"] },
+  { "name": "html-injection-scanner", "runtime": "php", "source": ["<?php", "require __DIR__ . '/html-injection-scanner-regression.php';"] },
+  { "name": "html-injection-ui", "runtime": "node", "source": ["require(__dirname + '/html-injection-ui-regression.cjs');"] },
+  { "name": "health-center", "runtime": "php", "source": ["<?php", "require __DIR__ . '/health-center-regression.php';"] },
+  { "name": "health-center-ui", "runtime": "node", "source": ["require(__dirname + '/health-center-ui-regression.cjs');"] },
   { "name": "frontend-performance", "runtime": "php", "source": ["<?php", "require __DIR__ . '/frontend-performance-regression.php';"] },
   { "name": "request-options", "runtime": "php", "source": ["<?php", "require __DIR__ . '/request-options-regression.php';"] },
   {

@@ -12,6 +12,11 @@
     var summary = document.querySelector('[data-scan-summary]');
     var issues = document.querySelector('[data-scan-issues]');
     var empty = document.querySelector('[data-scan-empty]');
+    var reportRoot = document.getElementById('tk-html-report');
+    var review = document.querySelector('[data-scan-review]');
+    var suppressed = document.querySelector('[data-scan-suppressed]');
+    var statistics = document.querySelector('[data-scan-statistics]');
+    var filters = reportRoot ? reportRoot.querySelectorAll('[data-scan-filter]') : [];
     var token = root.dataset.token || '';
     var running = false;
     var stopping = false;
@@ -21,34 +26,81 @@
         stop.disabled = !token;
         clear.disabled = running || !!token;
         progress.hidden = !running;
+        if (reportRoot) { reportRoot.querySelectorAll('[data-scan-restore]').forEach(function (button) { button.disabled = running || !!token; }); }
     }
     function node(tag, text) { var element = document.createElement(tag); element.textContent = text; return element; }
+    function applyFilters() {
+        if (!reportRoot) { return; }
+        reportRoot.querySelectorAll('[data-finding-row]').forEach(function (row) {
+            row.hidden = Array.from(filters).some(function (filter) {
+                var value = filter.value, key = filter.dataset.scanFilter;
+                if (!value) { return false; }
+                if (key === 'confidence') { return Number(row.dataset.confidence) < Number(value); }
+                if (key === 'page') { try { return JSON.parse(row.dataset.pages || '[]').indexOf(value) < 0; } catch (error) { return true; } }
+                return row.dataset[key] !== value;
+            });
+        });
+    }
+    function populateFilters(findings) {
+        Array.from(filters).forEach(function (filter) {
+            var key = filter.dataset.scanFilter;
+            if (['type', 'source', 'classification', 'page'].indexOf(key) < 0) { return; }
+            var previous = filter.value, values = [];
+            findings.forEach(function (f) { values = values.concat(key === 'page' ? f.affected_urls || [] : [key === 'type' ? f.rule : f[key] || 'legacy_unverified']); });
+            filter.replaceChildren(node('option', 'All')); filter.firstChild.value = '';
+            Array.from(new Set(values)).sort().forEach(function (value) { var option = node('option', value); option.value = value; filter.appendChild(option); });
+            filter.value = values.indexOf(previous) >= 0 ? previous : '';
+        });
+    }
+    function actionFor(finding) { return finding.action || (['high', 'critical'].indexOf(finding.severity) >= 0 ? 'REPORT' : 'REVIEW'); }
+    function renderRow(finding) {
+        var row = document.createElement('tr');
+        var action = actionFor(finding), severity = finding.severity === 'review' ? 'low' : finding.severity;
+        var classification = finding.classification || 'legacy_unverified', confidence = finding.confidence === undefined ? .5 : finding.confidence;
+        Object.assign(row.dataset, {findingRow: '', severity: severity, type: finding.rule, source: finding.source, classification: classification, action: action, confidence: String(confidence), pages: JSON.stringify(finding.affected_urls || [])});
+        var level = document.createElement('td'), badge = node('strong', severity.toUpperCase()); badge.className = 'tk-scan-severity tk-scan-' + severity; level.appendChild(badge); level.appendChild(node('p', action)); level.appendChild(node('small', Math.round(confidence * 100) + '% confidence')); row.appendChild(level);
+        var source = node('td', finding.source + ' · line ' + finding.line);
+        if (finding.post_id && root.dataset.editUrl) {
+            var edit = new URL(root.dataset.editUrl, window.location.href);
+            edit.searchParams.set('post', String(finding.post_id)); edit.searchParams.set('action', 'edit');
+            var link = node('a', 'Edit source'); link.href = edit.toString();
+            source.appendChild(document.createElement('br')); source.appendChild(link);
+        }
+        source.appendChild(node('p', (finding.occurrences || 1) + ' occurrence(s)'));
+        if (finding.affected_urls && finding.affected_urls.length) {
+            var pages = document.createElement('details'); pages.appendChild(node('summary', 'Affected pages (' + finding.affected_urls.length + ')'));
+            var list = document.createElement('ul'); finding.affected_urls.forEach(function (url) { list.appendChild(node('li', url)); }); pages.appendChild(list); source.appendChild(pages);
+        }
+        row.appendChild(source);
+        var detail = document.createElement('td');
+        detail.appendChild(node('strong', finding.rule)); detail.appendChild(node('p', finding.reason)); detail.appendChild(node('code', finding.rule_id || finding.rule.toUpperCase())); detail.appendChild(node('p', classification));
+        if (finding.provider) { detail.appendChild(node('p', finding.provider)); }
+        if (finding.host) { detail.appendChild(node('code', finding.host)); }
+        if (finding.timestamp) { detail.appendChild(node('p', new Date(finding.timestamp * 1000).toISOString())); }
+        if (action === 'SKIP' && finding.fingerprint) { var restore = node('button', 'Restore to Needs Review'); restore.type = 'button'; restore.className = 'button'; restore.dataset.scanRestore = finding.fingerprint; restore.disabled = running || !!token; detail.appendChild(restore); }
+        row.appendChild(detail);
+        var evidence = document.createElement('td'), code = node('code', finding.snippet);
+        code.style.whiteSpace = 'pre-wrap'; code.style.overflowWrap = 'anywhere'; evidence.appendChild(code); row.appendChild(evidence);
+        return row;
+    }
     function render(report) {
         summary.replaceChildren(node('p', 'Status: ' + report.status + ' · Phase: ' + report.phase + ' · Posts: ' + report.counts.posts + ' · Meta: ' + report.counts.meta + ' · Options: ' + report.counts.options + ' · URLs attempted: ' + report.counts.urls + '/' + report.max_urls + ' · Findings: ' + report.findings.length));
         issues.replaceChildren();
         if (report.limited) { issues.appendChild(node('li', 'Coverage is incomplete or limited to the configured sample. Review the items below.')); }
         report.issues.forEach(function (issue) { issues.appendChild(node('li', issue)); });
-        results.replaceChildren();
-        report.findings.forEach(function (finding) {
-            var row = document.createElement('tr');
-            row.appendChild(node('td', finding.severity.toUpperCase()));
-            var source = node('td', finding.source + ' · line ' + finding.line);
-            if (finding.post_id && root.dataset.editUrl) {
-                var edit = new URL(root.dataset.editUrl, window.location.href);
-                edit.searchParams.set('post', String(finding.post_id)); edit.searchParams.set('action', 'edit');
-                var link = node('a', 'Edit source'); link.href = edit.toString();
-                source.appendChild(document.createElement('br')); source.appendChild(link);
-            }
-            row.appendChild(source);
-            var detail = document.createElement('td');
-            detail.appendChild(node('strong', finding.rule)); detail.appendChild(node('p', finding.reason));
-            if (finding.host) { detail.appendChild(node('code', finding.host)); }
-            row.appendChild(detail);
-            var evidence = document.createElement('td'); var code = node('code', finding.snippet);
-            code.style.whiteSpace = 'pre-wrap'; code.style.overflowWrap = 'anywhere';
-            evidence.appendChild(code); row.appendChild(evidence); results.appendChild(row);
+        results.replaceChildren(); if (review) { review.replaceChildren(); } if (suppressed) { suppressed.replaceChildren(); }
+        var findings = report.findings.concat(report.suppressed || []);
+        findings.forEach(function (finding) {
+            var action = actionFor(finding), target = !reportRoot ? results : (action === 'SKIP' ? suppressed : (action === 'REVIEW' ? review : results));
+            if (target) { target.appendChild(renderRow(finding)); }
         });
-        empty.hidden = !!report.findings.length;
+        if (statistics) {
+            statistics.replaceChildren(); var stats = report.statistics || {};
+            var labels = {pages_scanned: 'Pages scanned', files_analyzed: 'Files analyzed', critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', needs_review: 'Needs review', suppressed: 'Suppressed occurrences', duplicates_grouped: 'Duplicate occurrences grouped'};
+            Object.keys(labels).forEach(function (key) { var card = document.createElement('div'); card.appendChild(node('strong', String(stats[key] || 0))); card.appendChild(node('span', labels[key])); statistics.appendChild(card); });
+        }
+        populateFilters(findings); applyFilters();
+        empty.hidden = !!findings.length;
         empty.textContent = 'No matching patterns in the sources checked so far. Review coverage and status above.';
     }
     async function request(action, values) {
@@ -97,9 +149,17 @@
     clear.addEventListener('click', async function () {
         if (running || token) { return; }
         clear.disabled = true;
-        try { await request('clear', {}); results.replaceChildren(); issues.replaceChildren(); summary.replaceChildren(); empty.hidden = false; empty.textContent = 'No scan report yet.'; status.textContent = 'Report cleared. Site content was not changed.'; }
+        try { await request('clear', {}); render({status: 'empty', phase: '', counts: {posts: 0, meta: 0, options: 0, urls: 0}, max_urls: 0, findings: [], suppressed: [], issues: []}); summary.replaceChildren(); empty.hidden = false; empty.textContent = 'No scan report yet.'; status.textContent = 'Report cleared. Site content was not changed.'; }
         catch (error) { status.textContent = error.message; }
         controls();
     });
-    controls();
+    Array.from(filters).forEach(function (filter) { filter.addEventListener('change', applyFilters); });
+    if (reportRoot) { reportRoot.addEventListener('click', async function (event) {
+        var button = event.target.closest('[data-scan-restore]');
+        if (!button || running || token) { return; }
+        button.disabled = true;
+        try { var restored = await request('restore', {fingerprint: button.dataset.scanRestore}); render(restored.report); status.textContent = 'Finding restored to Needs Review. Future scans retain this override for the same fingerprint.'; }
+        catch (error) { status.textContent = error.message; button.disabled = false; }
+    }); }
+    applyFilters(); controls();
 }());

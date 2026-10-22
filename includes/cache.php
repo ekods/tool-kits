@@ -732,6 +732,7 @@ function tk_page_cache_should_ignore_option_change(string $option): bool {
 
     $ignored_prefixes = array(
         'tk_html_scan_',
+        'tk_health_center_',
         '_site_transient_',
         '_transient_',
         'tk_audit_',

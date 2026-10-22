@@ -1,11 +1,14 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
 require_once __DIR__ . '/html-injection-engine.php';
+require_once __DIR__ . '/html-injection-report.php';
+require_once __DIR__ . '/html-injection-resources.php';
+require_once __DIR__ . '/html-injection-view.php';
 
 function tk_html_scan_init(): void {
     add_action('admin_menu', 'tk_html_scan_register_page', 22);
     add_action('admin_enqueue_scripts', 'tk_html_scan_enqueue');
-    foreach (array('start', 'step', 'cancel', 'clear') as $action) { add_action('wp_ajax_tk_html_scan_' . $action, 'tk_html_scan_' . $action . '_ajax'); }
+    foreach (array('start', 'step', 'cancel', 'clear', 'restore') as $action) { add_action('wp_ajax_tk_html_scan_' . $action, 'tk_html_scan_' . $action . '_ajax'); }
 }
 
 function tk_html_scan_allowed(): bool {
@@ -20,6 +23,7 @@ function tk_html_scan_register_page(): void {
 function tk_html_scan_enqueue(): void {
     if (($_GET['page'] ?? '') !== 'tool-kits-html-scanner' || !tk_html_scan_allowed()) { return; }
     wp_enqueue_script('tk-html-injection-scanner', TK_URL . 'assets/html-injection-scanner.js', array(), tk_asset_version('assets/html-injection-scanner.js'), true);
+    wp_enqueue_style('tk-html-injection-scanner', TK_URL . 'assets/html-injection-scanner.css', array(), tk_asset_version('assets/html-injection-scanner.css'));
 }
 
 function tk_html_scan_authorize(): void {
@@ -35,7 +39,7 @@ function tk_html_scan_settings(array $posted): array {
     $trusted = array();
     foreach (preg_split('/\s+/', strtolower(trim($hosts))) as $host) {
         if ($host === '') { continue; }
-        if (!preg_match('/^(?:\*\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/D', $host)) { throw new InvalidArgumentException('Trusted hosts must be domain names, optionally starting with *.'); }
+        if (!preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/D', $host)) { throw new InvalidArgumentException('Trusted hosts must be exact domain names. Wildcards, URLs and host suffix rules are not accepted.'); }
         $trusted[] = $host;
     }
     foreach (array('max_urls', 'max_rows') as $key) {
@@ -71,18 +75,23 @@ function tk_html_scan_start_ajax(): void {
     tk_html_scan_authorize();
     try { $settings = tk_html_scan_settings(wp_unslash($_POST)); }
     catch (InvalidArgumentException $error) { wp_send_json_error(array('message' => $error->getMessage()), 400); return; }
+    if ((int) get_option('tk_html_scan_step_lock', 0) < time()) { delete_option('tk_html_scan_step_lock'); }
+    if (!add_option('tk_html_scan_step_lock', time() + 60, '', false)) { wp_send_json_error(array('message' => 'A scanner operation is still running.'), 409); return; }
     $lock = get_option('tk_html_scan_lock', array());
     if (is_array($lock) && (int) ($lock['expires'] ?? 0) < time()) { delete_option('tk_html_scan_lock'); }
     $token = wp_generate_uuid4();
     $lock = array('token' => $token, 'owner' => get_current_user_id(), 'expires' => time() + 1800);
-    if (!add_option('tk_html_scan_lock', $lock, '', false)) { wp_send_json_error(array('message' => 'A scan is already running. Resume or stop it before starting another.'), 409); return; }
+    if (!add_option('tk_html_scan_lock', $lock, '', false)) { delete_option('tk_html_scan_step_lock'); wp_send_json_error(array('message' => 'A scan is already running. Resume or stop it before starting another.'), 409); return; }
     try {
         $targets = tk_html_scan_targets($settings['max_urls']);
         $state = array('token' => $token, 'owner' => get_current_user_id(), 'settings' => $settings, 'urls' => $targets['urls'], 'phase' => 'posts', 'cursor' => 0,
             'report' => array('started' => time(), 'updated' => time(), 'status' => 'running', 'phase' => 'posts', 'counts' => array('posts' => 0, 'meta' => 0, 'options' => 0, 'urls' => 0), 'findings' => array(), 'issues' => $targets['limited'] ? array('Public URLs are a limited sample or some permalinks could not be checked.') : array(), 'limited' => $targets['limited'], 'max_urls' => count($targets['urls']), 'max_rows' => $settings['max_rows']));
+        $state += array('providers' => TK_HTML_Injection_Context::providers(), 'restored' => get_option('tk_html_scan_restored', array()), 'baseline' => get_option('tk_html_scan_css_baseline', array()), 'css_queue' => array(), 'css_seen' => array(), 'css_cache' => array());
+        $state['report'] += array('schema_version' => 2, 'suppressed' => array(), 'pages_scanned' => 0, 'files_analyzed' => 0, 'suppression_audit_overflow' => 0);
         tk_html_scan_persist($state);
         update_option('tk_html_scan_settings', $settings, false);
-    } catch (Throwable $error) { delete_option('tk_html_scan_lock'); wp_send_json_error(array('message' => 'The scan could not start. No site content was changed.'), 500); return; }
+    } catch (Throwable $error) { delete_option('tk_html_scan_lock'); delete_option('tk_html_scan_step_lock'); wp_send_json_error(array('message' => 'The scan could not start. No site content was changed.'), 500); return; }
+    delete_option('tk_html_scan_step_lock');
     wp_send_json_success(tk_html_scan_public_state($state));
 }
 
@@ -96,6 +105,8 @@ function tk_html_scan_load(): array {
 }
 
 function tk_html_scan_persist(array $state): void {
+    $state['report']['statistics'] = tk_html_scan_statistics($state['report']);
+    if (!empty($state['baseline_dirty'])) { update_option('tk_html_scan_css_baseline', $state['baseline'], false); $state['baseline_dirty'] = false; }
     set_transient('tk_html_scan_job_' . $state['token'], $state, 1800);
     update_option('tk_html_scan_report', $state['report'], false);
     $lock = get_option('tk_html_scan_lock', array());
@@ -103,27 +114,30 @@ function tk_html_scan_persist(array $state): void {
 }
 
 function tk_html_scan_public_state(array $state): array {
+    $state['report']['statistics'] = tk_html_scan_statistics($state['report']);
     return array('token' => $state['token'], 'done' => $state['report']['status'] !== 'running', 'report' => $state['report']);
 }
 
 function tk_html_scan_issue(array &$state, string $message): void {
     $state['report']['limited'] = true;
-    if (count($state['report']['issues']) < 40) { $state['report']['issues'][] = $message; }
+    if (count($state['report']['issues']) < 40 && !in_array($message, $state['report']['issues'], true)) { $state['report']['issues'][] = $message; }
 }
 
 function tk_html_scan_source(array &$state, string $raw, string $source, string $source_url = '', int $post_id = 0): void {
     $strings = TK_HTML_Injection_Engine::strings($raw);
     if ($strings['limited']) { tk_html_scan_issue($state, $source . ': value exceeded limits or used an unsupported serialized format.'); }
     foreach ($strings['values'] as $part) {
-        $result = TK_HTML_Injection_Engine::scan($part['html'], home_url('/'), $state['settings']['trusted_hosts'], 0, strpos($source, 'Public HTML / ') !== 0);
+        $base = $source_url !== '' ? $source_url : home_url('/');
+        // Per-batch cache avoids reparsing identical builder fields without retaining raw HTML in the job.
+        static $parsed = array();
+        $cache_key = hash('sha256', $part['html'] . '|' . $base . '|' . (strpos($source, 'Public HTML / ') === 0 ? 'public' : 'stored') . '|' . json_encode(array($state['settings']['trusted_hosts'], $state['providers'] ?? array())));
+        if (isset($parsed[$cache_key])) { $result = $parsed[$cache_key]; }
+        else { $result = TK_HTML_Injection_Engine::scan($part['html'], $base, $state['settings']['trusted_hosts'], 0, strpos($source, 'Public HTML / ') !== 0, $state['providers'] ?? null); if (count($parsed) < 5) { $parsed[$cache_key] = $result; } }
         if ($result['limited']) { tk_html_scan_issue($state, $source . ': HTML analysis limit reached.'); }
-        foreach ($result['findings'] as $finding) {
-            if (count($state['report']['findings']) >= 300) { tk_html_scan_issue($state, 'The report reached 300 findings; remaining sources were not checked.'); return; }
-            $finding['source'] = $source . $part['path'];
-            $finding['source_url'] = tk_html_scan_local_url($source_url) ? $source_url : '';
-            $finding['post_id'] = $post_id;
-            $state['report']['findings'][] = $finding;
-        }
+        foreach (array('findings', 'suppressed') as $bucket) { foreach ($result[$bucket] as $finding) { tk_html_scan_record($state, $finding, $source . $part['path'], tk_html_scan_local_url($source_url) ? $source_url : '', $post_id); } }
+        if ($result['audit_overflow']) { $state['report']['suppression_audit_overflow'] = ($state['report']['suppression_audit_overflow'] ?? 0) + $result['audit_overflow']; tk_html_scan_issue($state, 'Safe-pattern audit evidence exceeded the per-source budget; threat detection continued.'); }
+        foreach ($result['audit_overflow_rules'] ?? array() as $id => $summary) { if (!isset($state['report']['suppression_overflow_rules'][$id])) { $state['report']['suppression_overflow_rules'][$id] = $summary; $state['report']['suppression_overflow_rules'][$id]['count'] = 0; } $state['report']['suppression_overflow_rules'][$id]['count'] += $summary['count']; $state['report']['suppression_overflow_rules'][$id]['timestamp'] = time(); }
+        tk_html_scan_queue_css($state, $result['resources'], $base, $source_url !== '' ? array($source_url) : array());
     }
 }
 
@@ -172,7 +186,7 @@ function tk_html_scan_database_step(array &$state): void {
 
 function tk_html_scan_url_step(array &$state): void {
     $url = $state['urls'][$state['cursor']] ?? '';
-    if ($url === '') { $state['phase'] = 'done'; return; }
+    if ($url === '') { $state['phase'] = empty($state['css_queue']) ? 'done' : 'css'; return; }
     $state['cursor']++; $state['report']['counts']['urls']++;
     if (!tk_html_scan_local_url($url)) { tk_html_scan_issue($state, 'A URL was outside the permitted site origin.'); return; }
     $response = wp_safe_remote_get($url, array('timeout' => 8, 'redirection' => 0, 'limit_response_size' => TK_HTML_Injection_Engine::MAX_BYTES + 1, 'sslverify' => true, 'cookies' => array(), 'headers' => array('Accept' => 'text/html', 'User-Agent' => 'Tool Kits HTML Injection Scanner')));
@@ -181,7 +195,8 @@ function tk_html_scan_url_step(array &$state): void {
     $type = strtolower((string) wp_remote_retrieve_header($response, 'content-type'));
     if ($code !== 200 || strpos($type, 'text/html') === false) { tk_html_scan_issue($state, $url . ': HTTP ' . $code . ' or non-HTML response; not checked (redirects are not followed).'); return; }
     tk_html_scan_source($state, wp_remote_retrieve_body($response), 'Public HTML / ' . $url, $url);
-    if ($state['cursor'] >= count($state['urls'])) { $state['phase'] = 'done'; }
+    $state['report']['pages_scanned'] = ($state['report']['pages_scanned'] ?? 0) + 1;
+    if ($state['cursor'] >= count($state['urls'])) { $state['phase'] = empty($state['css_queue']) ? 'done' : 'css'; }
 }
 
 function tk_html_scan_step_ajax(): void {
@@ -195,6 +210,7 @@ function tk_html_scan_step_ajax(): void {
         $state = tk_html_scan_load();
         try {
             if ($state['phase'] === 'urls') { tk_html_scan_url_step($state); }
+            elseif ($state['phase'] === 'css') { tk_html_scan_css_step($state); }
             elseif ($state['phase'] !== 'done') { tk_html_scan_database_step($state); }
         } catch (Throwable $error) {
             tk_html_scan_issue($state, 'The ' . $state['phase'] . ' batch failed; remaining sources were not checked.');
@@ -231,9 +247,12 @@ function tk_html_scan_cancel_ajax(): void {
 
 function tk_html_scan_clear_ajax(): void {
     tk_html_scan_authorize();
+    if ((int) get_option('tk_html_scan_step_lock', 0) < time()) { delete_option('tk_html_scan_step_lock'); }
+    if (!add_option('tk_html_scan_step_lock', time() + 60, '', false)) { wp_send_json_error(array('message' => 'A scanner operation is still running.'), 409); return; }
     $lock = get_option('tk_html_scan_lock', array());
-    if ((int) ($lock['expires'] ?? 0) >= time()) { wp_send_json_error(array('message' => 'Stop the active scan before clearing the report.'), 409); return; }
+    if ((int) ($lock['expires'] ?? 0) >= time()) { delete_option('tk_html_scan_step_lock'); wp_send_json_error(array('message' => 'Stop the active scan before clearing the report.'), 409); return; }
     delete_option('tk_html_scan_report');
+    delete_option('tk_html_scan_step_lock');
     wp_send_json_success(array('cleared' => true));
 }
 
@@ -257,23 +276,14 @@ function tk_html_scan_render_page(): void {
                     <p><label for="tk-html-max-rows"><strong>Maximum rows per database source</strong></label><br><input id="tk-html-max-rows" type="number" name="max_rows" min="25" max="5000" value="<?php echo esc_attr((string) ($settings['max_rows'] ?? 500)); ?>"></p>
                 </div>
                 <p><label for="tk-html-trusted"><strong>Trusted external hosts</strong></label><br><textarea id="tk-html-trusted" name="trusted_hosts" class="large-text" rows="4" placeholder="www.googletagmanager.com&#10;www.youtube.com"><?php echo esc_textarea(implode("\n", (array) ($settings['trusted_hosts'] ?? array()))); ?></textarea></p>
-                <p class="description">One domain per line. Optional *.example.com matches subdomains. Trusting a host suppresses external-resource findings; dangerous inline patterns and hidden iframes remain checked. External scripts are not downloaded or executed.</p>
+                <p class="description">One exact hostname per line. No wildcards or suffix matching. Custom trust allows expected CSS destinations; scripts still require path and behavior verification. Google Analytics/Tag Manager and Google Fonts have a separate recognized-provider registry. Remote scripts and external stylesheets are not downloaded, followed through redirects, or executed.</p>
+                <p class="description">Discovered local CSS is inspected in batches (up to 100 files, 512 KiB each). First-seen file hashes become reference metadata; subsequent changes require review and are not automatically labeled malware. Existing wildcard host settings must be replaced with exact hosts before starting a new scan.</p>
                 <p><button type="submit" class="button button-primary">Start New Scan</button> <button type="button" class="button" data-scan-resume <?php disabled($resume === ''); ?>>Resume Scan</button> <button type="button" class="button" data-scan-stop <?php disabled($resume === ''); ?>>Stop Scan</button> <button type="button" class="button" data-scan-clear>Clear Report</button></p>
             </form>
             <p role="status" aria-live="polite" data-scan-status>Ready. Reports identify suspicious patterns, not proof that a site is infected.</p>
             <progress data-scan-progress hidden aria-label="Scan running"></progress>
         </div>
-        <div class="tk-card">
-            <h2>Scan Report</h2>
-            <div data-scan-summary><?php if ($report): ?><p><?php echo esc_html('Status: ' . ($report['status'] ?? '') . ' · Posts: ' . ($report['counts']['posts'] ?? 0) . ' · Meta: ' . ($report['counts']['meta'] ?? 0) . ' · Options: ' . ($report['counts']['options'] ?? 0) . ' · URLs attempted: ' . ($report['counts']['urls'] ?? 0) . ' · Findings: ' . count($report['findings'] ?? array())); ?></p><?php endif; ?></div>
-            <ul data-scan-issues><?php if (!empty($report['limited'])): ?><li>Coverage is incomplete or limited to the configured sample.</li><?php endif; ?><?php foreach (($report['issues'] ?? array()) as $issue): ?><li><?php echo esc_html($issue); ?></li><?php endforeach; ?></ul>
-            <p data-scan-empty <?php if (!empty($report['findings'])) { echo 'hidden'; } ?>><?php echo esc_html($report ? 'No matching patterns in the sources checked so far. Review coverage and status above.' : 'No scan report yet.'); ?></p>
-            <div style="overflow-x:auto;"><table class="widefat striped"><thead><tr><th>Severity</th><th>Source</th><th>Finding</th><th>Evidence</th></tr></thead>
-                <tbody data-scan-results><?php foreach (($report['findings'] ?? array()) as $finding): ?>
-                    <tr><td><?php echo esc_html(strtoupper($finding['severity'])); ?></td><td><?php echo esc_html($finding['source'] . ' · line ' . $finding['line']); ?><?php if (!empty($finding['post_id']) && ($edit_link = get_edit_post_link((int) $finding['post_id'], 'raw'))): ?><br><a href="<?php echo esc_url($edit_link); ?>">Edit source</a><?php endif; ?></td><td><strong><?php echo esc_html($finding['rule']); ?></strong><p><?php echo esc_html($finding['reason']); ?></p><?php if ($finding['host'] !== ''): ?><code><?php echo esc_html($finding['host']); ?></code><?php endif; ?></td><td><code style="white-space:pre-wrap;overflow-wrap:anywhere;"><?php echo esc_html($finding['snippet']); ?></code></td></tr>
-                <?php endforeach; ?></tbody>
-            </table></div>
-        </div>
+        <?php tk_html_scan_render_report(is_array($report) ? $report : array()); ?>
     </div>
     <?php
 }
