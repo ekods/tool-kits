@@ -18,6 +18,7 @@ function tk_minify_start_buffer() {
     if (!tk_get_option('minify_html_enabled', 0)) {
         return;
     }
+    if (!apply_filters('tk_minify_html_optimization_enabled', true)) { return; }
     ob_start('tk_minify_buffer_callback');
 }
 

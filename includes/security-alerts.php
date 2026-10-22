@@ -63,7 +63,7 @@ function tk_security_alert_ip_is_public(string $ip): bool {
     return (bool) filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
 }
 
-function tk_security_alert_ip_location(string $ip): string {
+function tk_security_alert_ip_location(string $ip, bool $allow_remote = true): string {
     if (!tk_security_alert_ip_is_public($ip)) {
         return 'Private/local IP';
     }
@@ -73,6 +73,7 @@ function tk_security_alert_ip_location(string $ip): string {
     if (is_string($cached) && $cached !== '') {
         return $cached;
     }
+    if (!$allow_remote) { return 'Unknown'; }
 
     $location = 'Unknown';
     $endpoints = array(

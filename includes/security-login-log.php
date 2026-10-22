@@ -226,14 +226,14 @@ function tk_login_log_location_for_ip($ip): string {
         return 'Unknown';
     }
     if (function_exists('tk_security_alert_ip_location')) {
-        return tk_security_alert_ip_location($ip);
+        return tk_security_alert_ip_location($ip, false);
     }
     return 'Unknown';
 }
 
 function tk_login_log_row_location($row): string {
     $stored = isset($row->location) ? trim((string) $row->location) : '';
-    if ($stored !== '') {
+    if ($stored !== '' && $stored !== 'Unknown') {
         return $stored;
     }
     $ip = isset($row->ip) ? (string) $row->ip : '';

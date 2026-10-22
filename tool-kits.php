@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.7.24
+ * Version: 2.7.28
  * Requires PHP: 7.4
  * GitHub Plugin URI: https://github.com/ekods/tool-kits
  * Update URI: https://github.com/ekods/tool-kits
@@ -31,7 +31,7 @@ if (version_compare(PHP_VERSION, TK_MINIMUM_PHP, '<')) {
     return;
 }
 
-define('TK_VERSION', '2.7.24');
+define('TK_VERSION', '2.7.28');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
@@ -71,6 +71,7 @@ add_action('admin_init', 'tk_debug_deprecated_init');
 add_action('admin_init', 'tk_toolkits_guard', 0);
 add_action('init', 'tk_security_events_schedule_maintenance');
 add_action('tk_security_events_maintenance', 'tk_security_events_maintenance');
+add_action('tk_security_events_cleanup_batch', 'tk_security_events_cleanup');
 
 /**
  * Module Registry
@@ -93,6 +94,7 @@ $tk_modules = array(
     'security-hardening.php'    => 'tk_hardening_init',
     'security-firewall.php'     => 'tk_firewall_init',
     'malware-scanner.php'       => 'tk_malware_scanner_init',
+    'html-injection-scanner.php' => 'tk_html_scan_init',
     'vulnerability-scanner.php' => 'tk_vulnerability_scanner_init',
     'incident-response.php'     => 'tk_incident_response_init',
     'smtp.php'                  => 'tk_smtp_init',
@@ -156,10 +158,13 @@ function tk_activate() {
 register_activation_hook(__FILE__, 'tk_activate');
 
 function tk_deactivate() {
+    $GLOBALS['tk_page_cache_early_deactivated'] = true;
+    tk_page_cache_early_remove();
     // Flush rewrite rules so custom login slug is removed cleanly
     tk_hide_login_flush_rewrite(false);
     tk_security_events_clear_maintenance();
     wp_clear_scheduled_hook('tk_monitoring_deferred_checks');
+    wp_clear_scheduled_hook('tk_security_events_cleanup_batch');
 
 }
 register_deactivation_hook(__FILE__, 'tk_deactivate');
@@ -201,7 +206,9 @@ add_action('admin_enqueue_scripts', function($hook) {
     if ($is_toolkits_area || $is_toolkits_menu) {
         wp_enqueue_style('tool-kits-overview', TK_URL . 'assets/overview.css', array('tool-kits-admin'), tk_asset_version('assets/overview.css'));
         wp_enqueue_style('tool-kits-admin-ui-v2', TK_URL . 'assets/tool-kits-admin-ui.css', array('tool-kits-overview'), tk_asset_version('assets/tool-kits-admin-ui.css'));
-        wp_enqueue_script('tool-kits-image-optimizer', TK_URL . 'assets/image-optimizer.js', array(), tk_asset_version('assets/image-optimizer.js'), true);
+        if ($hook === 'tool-kits_page_tool-kits-image-opt') {
+            wp_enqueue_script('tool-kits-image-optimizer', TK_URL . 'assets/image-optimizer.js', array(), tk_asset_version('assets/image-optimizer.js'), true);
+        }
     }
     if ($hook === 'tool-kits_page_tool-kits-geo') {
         wp_enqueue_style('select2', 'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css', array(), '4.1.0-rc.0');

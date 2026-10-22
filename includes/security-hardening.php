@@ -73,8 +73,8 @@ function tk_hardening_init() {
         add_action('init', 'tk_hardening_block_author_enumeration');
     }
     if (tk_get_option('hardening_remove_query_ver', 0)) {
-        add_filter('style_loader_src', 'tk_remove_wp_version_strings', 9999);
-        add_filter('script_loader_src', 'tk_remove_wp_version_strings', 9999);
+        add_filter('style_loader_src', 'tk_remove_wp_version_strings', 9999, 2);
+        add_filter('script_loader_src', 'tk_remove_wp_version_strings', 9999, 2);
     }
     if (tk_get_option('hardening_disable_emojis', 0)) {
         add_action('init', 'tk_hardening_disable_emojis');
@@ -144,16 +144,26 @@ function tk_hardening_normalize_twemoji_svg_url($url) {
 }
 
 function tk_hardening_remove_version_strings() {
-    add_filter('script_loader_src', 'tk_remove_wp_ver_css_js', 9999);
-    add_filter('style_loader_src', 'tk_remove_wp_ver_css_js', 9999);
+    add_filter('script_loader_src', 'tk_remove_wp_ver_css_js', 9999, 2);
+    add_filter('style_loader_src', 'tk_remove_wp_ver_css_js', 9999, 2);
 }
 
-function tk_remove_wp_ver_css_js($src) {
+function tk_remove_wp_ver_css_js($src, $handle = '') {
     // Admin assets need their versions so updates do not reuse stale scripts.
     if (is_admin()) {
         return $src;
     }
-    if (strpos($src, 'ver=' . get_bloginfo('version'))) {
+    // Explicit versions belong to the asset owner, even when equal to WP's version.
+    foreach (array('wp_scripts', 'wp_styles') as $registry) {
+        if ($handle !== '' && isset($GLOBALS[$registry]->registered[$handle])
+            && $GLOBALS[$registry]->registered[$handle]->ver !== false
+            && $GLOBALS[$registry]->registered[$handle]->ver !== null) {
+            return $src;
+        }
+    }
+    $query = array();
+    parse_str((string) wp_parse_url($src, PHP_URL_QUERY), $query);
+    if (isset($query['ver']) && $query['ver'] === get_bloginfo('version')) {
         $src = remove_query_arg('ver', $src);
     }
     return $src;
@@ -224,14 +234,8 @@ function tk_hardening_block_author_canonical_redirect($redirect_url, $requested_
     return $redirect_url;
 }
 
-function tk_remove_wp_version_strings($src) {
-    if (is_admin()) {
-        return $src;
-    }
-    if (strpos($src, 'ver=')) {
-        $src = remove_query_arg('ver', $src);
-    }
-    return $src;
+function tk_remove_wp_version_strings($src, $handle = '') {
+    return tk_remove_wp_ver_css_js($src, $handle);
 }
 
 function tk_hardening_disable_emojis() {
@@ -1198,7 +1202,7 @@ function tk_hardening_server_rule_snippet(): string {
     if ($server === 'apache' || $server === 'litespeed' || $server === 'openlitespeed') {
         $out = "<IfModule mod_autoindex.c>\n  Options -Indexes\n</IfModule>\n<FilesMatch \"^(\\.env|debug\\.log|readme\\.html|license\\.txt|wp-config-sample\\.php|composer\\.(json|lock)|package(-lock)?\\.json|yarn\\.lock)$\">\n  Require all denied\n</FilesMatch>\n<IfModule mod_rewrite.c>\n  RewriteEngine On\n  RewriteRule ^wp-content/uploads/.*\\.php$ - [F]\n</IfModule>";
         if ($browser_cache) {
-            $out .= "\n<IfModule mod_expires.c>\n  ExpiresActive On\n  ExpiresDefault \"access plus 1 month\"\n  ExpiresByType image/jpg \"access plus 1 year\"\n  ExpiresByType image/jpeg \"access plus 1 year\"\n  ExpiresByType image/gif \"access plus 1 year\"\n  ExpiresByType image/png \"access plus 1 year\"\n  ExpiresByType image/webp \"access plus 1 year\"\n  ExpiresByType image/x-icon \"access plus 1 year\"\n  ExpiresByType image/svg+xml \"access plus 1 year\"\n  ExpiresByType text/css \"access plus 1 year\"\n  ExpiresByType application/javascript \"access plus 1 year\"\n  ExpiresByType application/x-javascript \"access plus 1 year\"\n  ExpiresByType font/woff2 \"access plus 1 year\"\n  ExpiresByType font/woff \"access plus 1 year\"\n  ExpiresByType font/ttf \"access plus 1 year\"\n  ExpiresByType font/otf \"access plus 1 year\"\n</IfModule>\n<IfModule mod_headers.c>\n  <FilesMatch \"\\.(ico|pdf|jpg|jpeg|png|gif|webp|svg|js|css|woff2|woff|ttf|otf)$\">\n    Header set Cache-Control \"max-age=31536000, public\"\n  </FilesMatch>\n</IfModule>";
+            $out .= "\n<IfModule mod_expires.c>\n  ExpiresActive On\n  ExpiresDefault \"access plus 1 month\"\n  ExpiresByType text/html \"access plus 0 seconds\"\n  ExpiresByType application/json \"access plus 0 seconds\"\n  ExpiresByType application/xml \"access plus 0 seconds\"\n  ExpiresByType text/xml \"access plus 0 seconds\"\n  ExpiresByType image/jpg \"access plus 1 year\"\n  ExpiresByType image/jpeg \"access plus 1 year\"\n  ExpiresByType image/gif \"access plus 1 year\"\n  ExpiresByType image/png \"access plus 1 year\"\n  ExpiresByType image/webp \"access plus 1 year\"\n  ExpiresByType image/x-icon \"access plus 1 year\"\n  ExpiresByType image/svg+xml \"access plus 1 year\"\n  ExpiresByType text/css \"access plus 1 year\"\n  ExpiresByType application/javascript \"access plus 1 year\"\n  ExpiresByType application/x-javascript \"access plus 1 year\"\n  ExpiresByType font/woff2 \"access plus 1 year\"\n  ExpiresByType font/woff \"access plus 1 year\"\n  ExpiresByType font/ttf \"access plus 1 year\"\n  ExpiresByType font/otf \"access plus 1 year\"\n</IfModule>\n<IfModule mod_headers.c>\n  <FilesMatch \"\\.(ico|pdf|jpg|jpeg|png|gif|webp|svg|js|css|woff2|woff|ttf|otf)$\">\n    Header set Cache-Control \"max-age=31536000, public\"\n  </FilesMatch>\n</IfModule>";
         }
         return $out;
     }
@@ -2482,6 +2486,7 @@ function tk_render_hardening_page() {
     <div class="wrap tk-wrap">
         <?php tk_render_header_branding(); ?>
         <?php tk_render_page_hero(__('Security Hardening', 'tool-kits'), __('Strengthen your WordPress installation with industry-standard security protocols and rules.', 'tool-kits'), 'dashicons-shield-alt'); ?>
+        <?php if (function_exists('tk_html_scan_allowed') && tk_html_scan_allowed()): ?><p><a class="button" href="<?php echo esc_url(admin_url('admin.php?page=tool-kits-html-scanner')); ?>">Open HTML Injection Scanner</a></p><?php endif; ?>
         <div class="tk-tabs">
             <div class="tk-tabs-nav">
                 <button type="button" class="tk-tabs-nav-button is-active" data-panel="active">Security Score</button>

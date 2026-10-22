@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.24
+Stable tag: 2.7.28
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,40 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.28 =
+**HTML Injection Scanner**
+- Add a read-only HTML Injection Scanner under Security, with a shortcut from Hardening. Scan post titles/content/excerpts, post meta, selected widget/theme/ACF options, and same-origin public HTML.
+- Report executable URLs, inline event handlers, hidden iframes/links, active data URLs, unreviewed external resources/forms, redirects, encoded script execution and suspicious cookie/outbound patterns. Scripts stored in database content are listed for review, even when they carry a CSP nonce.
+- Add trusted external hosts, source IDs/fields/line numbers, escaped evidence and edit-source links. Findings are review indicators, not proof of infection; external scripts and browser JavaScript are not executed by the scanner.
+- Process bounded AJAX batches with administrator/capability/license/nonce checks, owner-scoped sessions, resume/stop, timeouts, incomplete-coverage reporting and report clearing. Do not change site content or flush frontend page caches when saving scanner progress.
+- Parse JSON and supported serialized scalar/array content without calling unserialize or instantiating objects. Keep security-sensitive keys outside the selected content scan.
+
+= 2.7.27 =
+**Browser Cache, CSP Nonces and Early Page Cache**
+- Expire HTML, JSON and XML immediately in Apache/LiteSpeed browser-cache rules while retaining one-year static asset caching. The existing init/hash check refreshes the managed .htaccess block after updates; nginx's one-year rule remains limited to assets.
+- Store nonce-free page HTML with security-header metadata. Rebuild CSP and script/style nonces per request for normal and early hits; expose tk_page_cache_csp_nonce for theme generators. Never store Set-Cookie responses or replay Set-Cookie headers.
+- Install an owned advanced-cache.php drop-in and a bounded, signed-license-derived config snapshot, with identical scheme/host/URI keys and request exclusions. Early hits skip WordPress bootstrap and emit X-Tool-Kits-Cache: HIT-EARLY.
+- Preserve foreign drop-ins and user-owned WP_CACHE definitions; show setup notices when files cannot be updated. Remove owned config/drop-in/WP_CACHE on disable, inactive licensing and deactivation. Keep normal caching for multisite, HTTP authentication and the PHP firewall.
+- Bind HTML and metadata with hashes and purge generations, delete metadata on purge, and keep browser HTML max-age=0 independently of server TTL. Existing nonce-bearing or metadata-free cache files regenerate on demand.
+
+= 2.7.26 =
+**Meta Title Override**
+- Add an opt-in title override in SEO > Global SEO Content with a customizable separator (default: -).
+- Use WordPress Site Title + separator + Tagline only on the front page, including static front pages. Use Page Title + separator + Site Title elsewhere, with archive, search, 404 and pagination support.
+- Override theme and SEO plugin document titles, including hardcoded output, and keep one real head title. Preserve other metadata, social titles, schema and body markup.
+- Require Enable SEO Toolkit; the title switch works independently of global metadata fallbacks and takes priority over Homepage SEO title. Saving purges Tool Kits page caches.
+
+= 2.7.25 =
+**General Performance and Multisite Cache Audit**
+- Preserve 2.7.24 option-cache helpers and integration filters; invalidate parsed configuration before dynamic option callbacks and reuse it in remaining internal readers. License signatures and site matching remain active.
+- Isolate page cache and deferred purges per blog, coalesce external purges, cover taxonomy relationships, and allow derived metadata/config exclusions.
+- Add bounded file locks, a 30-second stale refresh window, atomic publication and purge generation checks; never cache flushed partial responses, cookies or non-HTML response types.
+- Preserve explicit theme/plugin asset versions. Use file timestamps for unversioned local theme assets without hashing or transient writes; expose fallback and image-priority settings.
+- Combine image dimension/priority processing, skip file reads for complete dimensions, preserve explicit loading/priority/decoding and responsive attributes, and add HTML-optimizer integration filters.
+- Scope the image workspace script to Images, avoid a lazy-media bootstrap when unused, prime attachment report caches and move log geolocation misses off the login/event write path.
+- Bound existing security-event retention to 1,000-row batches with scheduled continuation; keep table-presence memoization separate by multisite table.
+- Keep upload optimization and existing image delivery settings. No data migration, new indexes or production deployment. See PERFORMANCE_AUDIT.md for measurements, limitations and rollback.
+
 = 2.7.24 =
 **Frontend Rendering Compatibility**
 - Reuse parsed Tool Kits options during a request; invalidate on option add/update/delete and keep multisite caches separate. Signature and site checks remain active.

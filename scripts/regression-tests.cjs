@@ -2,6 +2,13 @@
 // Each case runs in its own process so PHP mocks and browser state stay isolated.
 const { spawnSync } = require('node:child_process');
 const cases = [
+  { "name": "frontend-performance", "runtime": "php", "source": ["<?php", "require __DIR__ . '/frontend-performance-regression.php';"] },
+  { "name": "request-options", "runtime": "php", "source": ["<?php", "require __DIR__ . '/request-options-regression.php';"] },
+  {
+    "name": "performance-core",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/performance-regression.php';"]
+  },
   {
     "name": "geo-ai-catalog",
     "runtime": "php",
@@ -491,6 +498,8 @@ const cases = [
       "define('ABSPATH', '/tmp/');",
       "$hooks = array();",
       "function add_action($hook, $callback, $priority = 10) { $GLOBALS['hooks'][] = array($hook, $callback); }",
+      "function apply_filters($hook, $value, ...$args) { return $value; }",
+      "function tk_get_option($key, $default = null) { return $key === 'page_cache_enabled' ? 1 : $default; }",
       "require dirname(__DIR__) . '/includes/cache.php';",
       "$old = array('geo_enabled' => 1, 'geo_faq_items' => array('question' => 'Old'), 'seo_geo_audit_report' => array());",
       "$new = $old; $new['seo_geo_audit_report'] = array('items' => array('new result'));",
@@ -502,7 +511,7 @@ const cases = [
       "if ($hooks) { throw new RuntimeException('Admin report changes purged page cache'); }",
       "$new['geo_faq_items'] = array('question' => 'Updated');",
       "tk_page_cache_purge_on_updated_option('tk_options', $old, $new);",
-      "if ($hooks !== array(array('shutdown', 'tk_page_cache_purge'))) { throw new RuntimeException('Real content/settings changes must purge cache'); }",
+      "if ($hooks !== array(array('shutdown', 'tk_page_cache_flush_pending'))) { throw new RuntimeException('Real content/settings changes must purge cache'); }",
       "echo \"PASS: report updates/removals preserve cache; mixed FAQ/settings updates invalidate cache\\n\";"
     ]
   },
@@ -984,6 +993,7 @@ const cases = [
       "",
       "    if (!empty($argv[1])) {",
       "        $wp = rtrim($argv[1], '/') . '/wp-includes/';",
+      "        if (is_file($wp . 'utf8.php')) { require_once $wp . 'compat.php'; require_once $wp . 'utf8.php'; }",
       "        require_once $wp . 'class-wp-token-map.php';",
       "        foreach (array('html5-named-character-references.php', 'class-wp-html-attribute-token.php', 'class-wp-html-span.php', 'class-wp-html-text-replacement.php', 'class-wp-html-decoder.php', 'class-wp-html-tag-processor.php') as $file) {",
       "            require_once $wp . 'html-api/' . $file;",
@@ -1169,8 +1179,9 @@ const cases = [
       "function set_transient($key, $value, $ttl) { $GLOBALS['cache'][$key] = $value; $GLOBALS['writes']++; }",
       "function trailingslashit($path) { return rtrim($path, '/') . '/'; }",
       "function add_action($hook, $callback, $priority = 10, $args = 1) { $GLOBALS['hooks'][] = array($hook, $callback, $priority); }",
-      "function apply_filters($hook, $value) { return $value; }",
       "require dirname(__DIR__) . '/includes/monitoring-404-health.php';",
+      "function apply_filters($hook, $value, ...$args) { return $value; }",
+      "function tk_get_option($key, $default = null) { return $key === 'page_cache_enabled' ? 1 : $default; }",
       "require dirname(__DIR__) . '/includes/cache.php';",
       "function verify($condition, $message) { if (!$condition) { throw new RuntimeException($message); } }",
       "tk_error_rate_recent(300);",
@@ -1182,7 +1193,7 @@ const cases = [
       "tk_page_cache_purge_on_meta_change(1, 2, '_tk_geo_faq_items', array());",
       "tk_page_cache_purge_once();",
       "tk_page_cache_purge_on_content_change();",
-      "verify(count($hooks) === 1 && $hooks[0] === array('shutdown', 'tk_page_cache_purge', PHP_INT_MAX), 'Content changes must queue a single final purge');",
+      "verify(count($hooks) === 1 && $hooks[0] === array('shutdown', 'tk_page_cache_flush_pending', PHP_INT_MAX), 'Content changes must queue a single final purge');",
       "echo \"PASS: error-rate cache, ignored internal metadata, deferred single purge\\n\";",
       ""
     ]
@@ -1376,7 +1387,6 @@ const cases = [
       "function wp_send_json_success($data) { throw new MonitoringResponse(array('success' => true, 'data' => $data)); }",
       "function wp_send_json_error($data) { throw new MonitoringResponse(array('success' => false, 'data' => $data)); }",
       "require dirname(__DIR__) . '/includes/helpers.php';",
-      "function apply_filters($hook, $value) { return $value; }",
       "require dirname(__DIR__) . '/includes/monitoring-404-health.php';",
       "$checks = 0;",
       "function verify($condition, $label) {",
@@ -1385,10 +1395,10 @@ const cases = [
       "    echo 'PASS: ', $label, PHP_EOL;",
       "}",
       "$options['tk_options']['license_signature'] = tk_license_expected_signature();",
-      "tk_clear_request_options_cache();",
+      "tk_options_cache_invalidate();",
       "verify(tk_license_validate()['status'] === 'valid', 'Signed cached license validates without a network call');",
       "$options['tk_options']['license_signature'] = 'tampered';",
-      "tk_clear_request_options_cache();",
+      "tk_options_cache_invalidate();",
       "verify(tk_license_validate()['status'] === 'integrity_violation', 'Cached license still enforces signature integrity');",
       "verify(tk_healthcheck_cpu_cores() === 4, 'CPU capacity uses its cached value');",
       "$transients['tk_healthcheck_cpu_cores'] = 0;",
@@ -1549,7 +1559,7 @@ if (requested === '--list') {
     cases.forEach(test => console.log(test.name));
     process.exit(0);
 }
-const optional = new Set(['image-optimizer', 'image-optimizer-no-imagick', 'monitoring-ui']);
+const optional = new Set(['request-options', 'performance-core', 'image-optimizer', 'image-optimizer-no-imagick', 'monitoring-ui']);
 const selected = requested ? cases.filter(test => test.name === requested) : cases.filter(test => !optional.has(test.name));
 if (!selected.length) { console.error('Unknown test: ' + requested); process.exit(1); }
 let failures = 0;

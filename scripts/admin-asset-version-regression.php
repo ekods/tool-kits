@@ -2,6 +2,7 @@
 define('ABSPATH', '/tmp/');
 require dirname(__DIR__) . '/includes/security-hardening.php';
 function is_admin() { return $GLOBALS['admin_request']; }
+function wp_parse_url($url, $component = -1) { return parse_url($url, $component); }
 function get_bloginfo($key) { return '6.6.2'; }
 function remove_query_arg($key, $url) {
     $parts = explode('?', $url, 2);
@@ -19,8 +20,8 @@ foreach (array($base . '?ver=6.6.2', 'https://site.example/wp-includes/css/admin
     verify_asset_version(version_filters($url) === $url, 'Admin CSS/JS cache key modified');
 }
 $GLOBALS['admin_request'] = false;
-verify_asset_version(version_filters($new) === $base, 'Public version stripping changed');
+verify_asset_version(version_filters($new) === $new, 'Explicit public asset version stripped');
 verify_asset_version(tk_remove_wp_ver_css_js($base . '?ver=6.6.2') === $base, 'Public WordPress fingerprint retained');
 verify_asset_version(tk_remove_wp_ver_css_js($new) === $new, 'WordPress-only filter stripped a file timestamp');
-verify_asset_version(version_filters($base . '?lang=en&ver=200') === $base . '?lang=en', 'Other public query parameters removed');
-echo "PASS: admin script/CSS versions survive both hardening filters, updates use distinct cache URLs, and public stripping behavior is preserved\n";
+verify_asset_version(version_filters($base . '?lang=en&ver=200') === $base . '?lang=en&ver=200', 'Other public query parameters removed');
+echo "PASS: admin script/CSS versions survive both hardening filters, updates use distinct cache URLs, and explicit public versions are preserved\n";

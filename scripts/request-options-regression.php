@@ -2,7 +2,7 @@
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit; }
 error_reporting(E_ALL);
 set_error_handler(function ($level, $message) { throw new RuntimeException($message); });
-define('ABSPATH', dirname(__DIR__, 4) . '/');
+define('ABSPATH', rtrim((string) getenv('TK_WP_ROOT'), '/') . '/');
 define('AUTH_KEY', 'request-cache-test-key');
 require ABSPATH . 'wp-includes/plugin.php';
 $blog = 1; $stored = array(); $reads = 0; $checks = 0;

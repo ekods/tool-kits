@@ -340,6 +340,11 @@ function tk_render_security_overview_page() {
                 <h2>Malware Scanner</h2>
                 <p class="description">Scan plugin, theme, and upload files for suspicious signatures and risky code patterns.</p>
             </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-html-scanner')); ?>">
+                <span class="dashicons dashicons-editor-code"></span>
+                <h2>HTML Injection Scanner</h2>
+                <p class="description">Inspect public HTML and stored content for suspicious scripts, hidden embeds, redirects, and external forms.</p>
+            </a>
             <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-vulnerability-scanner')); ?>">
                 <span class="dashicons dashicons-shield-alt"></span>
                 <h2>Vulnerability Scanner</h2>

@@ -149,6 +149,7 @@ function tk_image_opt_start_output_rewrite() {
     if (is_feed() || (function_exists('is_robots') && is_robots()) || (function_exists('is_trackback') && is_trackback())) {
         return;
     }
+    if (!apply_filters('tk_image_opt_html_rewrite_enabled', true)) { return; }
     ob_start('tk_image_opt_rewrite_html_buffer');
 }
 
@@ -556,6 +557,9 @@ function tk_image_opt_format_bytes($bytes): string {
 
 function tk_image_opt_compression_report(): array {
     $scan = tk_image_opt_attachment_ids(0, 500);
+    if (!empty($scan['ids']) && function_exists('_prime_post_caches')) {
+        _prime_post_caches($scan['ids'], false, true);
+    }
     $total_original = 0;
     $total_original_with_derivatives = 0;
     $total_optimized = 0;

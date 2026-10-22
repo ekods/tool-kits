@@ -4,9 +4,11 @@ require_once __DIR__ . '/seo-rendered-audit.php';
 require_once __DIR__ . '/seo-content-fixes.php';
 require_once __DIR__ . '/seo-content-modal.php';
 require_once __DIR__ . '/seo-global-content.php';
+require_once __DIR__ . '/seo-title.php';
 require_once __DIR__ . '/seo-indexability.php';
 
 function tk_seo_opt_init() {
+    tk_seo_title_init();
     tk_seo_indexability_init();
     add_action('admin_post_tk_seo_opt_save', 'tk_seo_opt_save');
     add_action('admin_post_tk_seo_global_save', 'tk_seo_global_save');
@@ -2481,7 +2483,7 @@ function tk_render_seo_opt_panel() {
     }
     if (!empty($_GET['tk_global_saved'])) { tk_notice('Global SEO content saved. Theme-managed values remain linked to their source.', 'success'); }
     if ($has_third_party) {
-        tk_notice('Third-party SEO plugin detected. Tool Kits meta output is auto-disabled to avoid duplicate tags. JSON-LD Schema is managed from GEO.', 'warning');
+        tk_notice('Third-party SEO plugin detected. Automatic metadata fallbacks are disabled. Meta Title Override can still replace titles when enabled. JSON-LD Schema is managed from GEO.', 'warning');
     }
     if ($has_theme_managed) {
         tk_notice('Active theme manages SEO head output. Global SEO Content reuses theme settings and can fill missing metadata when enabled. Canonical tags remain managed by the theme.', 'warning');

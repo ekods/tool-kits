@@ -25,6 +25,7 @@ function tk_lazy_start_html_buffer() {
     if ((int) tk_get_option('lazy_load_html_images', 1) !== 1) {
         return;
     }
+    if (!apply_filters('tk_lazy_html_optimization_enabled', true)) { return; }
     ob_start('tk_lazy_html_buffer');
 }
 
@@ -37,7 +38,7 @@ function tk_lazy_html_buffer($html) {
     $eager = max(0, (int) tk_get_option('lazy_load_eager_images', 2));
     return preg_replace_callback('/<img\b[^>]*>/i', function($m) use (&$count, $eager) {
         $tag = (string) $m[0];
-        if (stripos($tag, 'data:') !== false || stripos($tag, ' loading=') !== false || stripos($tag, ' loading =') !== false || preg_match('/\sfetchpriority\s*=\s*(?:["\']high["\']|high(?=\s|\/?>))/i', $tag)) {
+        if (stripos($tag, 'data:') !== false || preg_match('/\s(?:loading|fetchpriority|data-src|data-lazy-src|data-tk-lazy-src)\s*=/i', $tag)) {
             return $tag;
         }
         $count++;
@@ -48,7 +49,7 @@ function tk_lazy_html_buffer($html) {
             $tag = tk_lazy_html_upsert_attr($tag, 'loading', 'lazy');
             $tag = tk_lazy_html_upsert_attr($tag, 'fetchpriority', 'auto');
         }
-        return tk_lazy_html_upsert_attr($tag, 'decoding', 'async');
+        return preg_match('/\sdecoding\s*=/i', $tag) ? $tag : tk_lazy_html_upsert_attr($tag, 'decoding', 'async');
     }, $html);
 }
 
@@ -70,14 +71,8 @@ function tk_lazy_image_attributes($attr, $attachment, $size) {
     static $count = 0;
     $count++;
     $eager = max(0, (int) tk_get_option('lazy_load_eager_images', 2));
-    if (($attr['loading'] ?? '') === 'lazy' && ($attr['fetchpriority'] ?? '') !== 'high') {
-        // An explicit theme decision takes precedence over the generic image count.
-        $attr['decoding'] = $attr['decoding'] ?? 'async';
-        return $attr;
-    }
-    if (($attr['loading'] ?? '') === 'eager' || ($attr['fetchpriority'] ?? '') === 'high') {
-        $attr['loading'] = 'eager';
-        $attr['decoding'] = $attr['decoding'] ?? 'async';
+    if (array_key_exists('loading', $attr) || array_key_exists('fetchpriority', $attr)
+        || isset($attr['data-src']) || isset($attr['data-lazy-src'])) {
         return $attr;
     }
     if ($count <= $eager) {
@@ -87,7 +82,7 @@ function tk_lazy_image_attributes($attr, $attachment, $size) {
         $attr['loading'] = 'lazy';
         $attr['fetchpriority'] = 'auto';
     }
-    $attr['decoding'] = 'async';
+    $attr['decoding'] = $attr['decoding'] ?? 'async';
     return $attr;
 }
 
@@ -101,7 +96,7 @@ function tk_lazy_oembed_iframe($html, $url, $attr, $post_id) {
     if (!is_string($html) || stripos($html, '<iframe') === false) {
         return $html;
     }
-    if (preg_match('/<iframe\b[^>]*\sloading\s*=\s*(?:["\']eager["\']|eager(?=\s|\/?>))/i', $html)) {
+    if (preg_match('/<iframe\b[^>]*\s(?:loading|data-src|data-lazy-src)\s*=/i', $html)) {
         return $html;
     }
     $html = preg_replace('/\sloading=(["\']).*?\1/i', '', $html);
@@ -159,6 +154,9 @@ function tk_lazy_handles_list(string $key): array {
 
 function tk_lazy_frontend_script() {
     if (!tk_lazy_load_enabled() || is_admin()) {
+        return;
+    }
+    if (!(int) tk_get_option('lazy_load_iframe_video', 1) && !tk_lazy_handles_list('lazy_load_script_delay')) {
         return;
     }
     wp_register_script('tool-kits-lazy', '', array(), TK_VERSION, true);

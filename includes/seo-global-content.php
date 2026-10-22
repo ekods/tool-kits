@@ -76,6 +76,7 @@ function tk_seo_global_save(): void {
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { wp_die('Use the Global SEO Content form to save changes.'); }
     $posted = tk_post('seo_global_content', array());
     if (!is_array($posted)) { wp_die('Enter valid global SEO content.'); }
+    $title_settings = tk_seo_title_posted_settings();
     $resolved = tk_seo_global_content();
     $values = array();
     foreach (tk_seo_global_fields() as $field => $definition) {
@@ -87,6 +88,7 @@ function tk_seo_global_save(): void {
     }
     tk_update_option('seo_global_content', $values);
     tk_update_option('seo_global_enabled', tk_post('seo_global_enabled', '') === '1' ? 1 : 0);
+    foreach ($title_settings as $key => $value) { tk_update_option($key, $value); }
     if (function_exists('tk_page_cache_purge')) { tk_page_cache_purge(); }
     wp_safe_redirect(admin_url('admin.php?page=tool-kits-seo&tk_global_saved=1') . '#global-content');
     exit;
@@ -99,10 +101,11 @@ function tk_seo_global_render_panel(): void {
         <h3>Global SEO Content</h3>
         <p>Review site-wide SEO defaults and their sources. Values supplied by your theme stay linked to Theme Settings and update here automatically.</p>
         <p><a class="button" href="<?php echo esc_url(admin_url(function_exists('myprefix_get_theme_option') ? 'admin.php?page=theme-settings' : 'customize.php')); ?>">Edit Theme Settings</a> <a class="button" href="<?php echo esc_url(admin_url('options-general.php')); ?>">Edit Site Title &amp; Tagline</a></p>
-        <?php if (tk_seo_has_third_party_plugin()): ?><p class="description">Your SEO plugin manages frontend metadata. These defaults remain available for review; Tool Kits global metadata output is disabled.</p><?php endif; ?>
+        <?php if (tk_seo_has_third_party_plugin()): ?><p class="description">Your SEO plugin manages frontend metadata. Global metadata fallbacks are disabled; Meta Title Override below can take control of titles when enabled.</p><?php endif; ?>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
             <?php tk_nonce_field('tk_seo_global_save'); ?>
             <input type="hidden" name="action" value="tk_seo_global_save">
+            <?php tk_seo_title_render_settings(); ?>
             <p><label><input type="checkbox" name="seo_global_enabled" value="1" <?php checked((int) tk_get_option('seo_global_enabled', 0), 1); ?>> Enable global metadata fallbacks</label><br><span class="description">Requires Enable SEO Toolkit. Fill missing metadata while preserving tags provided by the theme or page. Page-specific excerpts, authors and featured images take priority. The SEO title applies to the homepage; keywords do not replace page focus keywords.</span></p>
             <div class="tk-grid tk-grid-2" style="gap:20px;">
             <?php foreach (tk_seo_global_fields() as $field => $definition): $item = $resolved[$field]; ?>

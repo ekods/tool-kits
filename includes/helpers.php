@@ -240,8 +240,7 @@ function tk_get_options() {
     $cache = &tk_request_options_cache();
     $blog_id = function_exists('get_current_blog_id') ? get_current_blog_id() : 0;
     if (!array_key_exists($blog_id, $cache)) {
-        // WordPress caches the serialized option; repeated get_option() calls
-        // would deserialize large audit reports again for every feature check.
+        // WordPress caches serialized options; deserialize report data once per request.
         $opts = get_option('tk_options', array());
         $cache[$blog_id] = is_array($opts) ? $opts : array();
     }
@@ -255,17 +254,24 @@ function tk_clear_request_options_cache($option = 'tk_options') {
         unset($cache[$blog_id]);
     }
 }
-add_action('added_option', 'tk_clear_request_options_cache');
-add_action('updated_option', 'tk_clear_request_options_cache');
-add_action('deleted_option', 'tk_clear_request_options_cache');
+
+// Run after WordPress updates its option cache, before integration callbacks read it.
+function tk_options_cache_invalidate(): void {
+    tk_clear_request_options_cache();
+}
+add_action('add_option_tk_options', 'tk_options_cache_invalidate', -PHP_INT_MAX, 0);
+add_action('update_option_tk_options', 'tk_options_cache_invalidate', -PHP_INT_MAX, 0);
+add_action('delete_option_tk_options', 'tk_options_cache_invalidate', -PHP_INT_MAX, 0);
+add_action('added_option', 'tk_clear_request_options_cache', -PHP_INT_MAX);
+add_action('updated_option', 'tk_clear_request_options_cache', -PHP_INT_MAX);
+add_action('deleted_option', 'tk_clear_request_options_cache', -PHP_INT_MAX);
 
 function tk_update_option($key, $value) {
-    $opts = get_option('tk_options', array());
-    if (!is_array($opts)) { $opts = array(); }
+    $opts = tk_get_options();
     $old = array_key_exists($key, $opts) ? $opts[$key] : null;
     $opts[$key] = $value;
     update_option('tk_options', $opts, false);
-    tk_clear_request_options_cache();
+    tk_options_cache_invalidate();
     $recoverable_key = tk_killswitch_current_recovery_key($key, $opts);
     if ($recoverable_key !== '') {
         update_option('tk_killswitch_last_key', $recoverable_key, false);
@@ -501,7 +507,7 @@ function tk_killswitch_normalize_recovery_key($key, ?array $opts = null): string
 }
 
 function tk_killswitch_snapshot(string $context = ''): void {
-    $opts = get_option('tk_options', array());
+    $opts = tk_get_options();
     if (!is_array($opts)) {
         $opts = array();
     }
@@ -1098,6 +1104,8 @@ function tk_option_init_defaults() {
         'seo_enabled' => 0,
         'seo_global_enabled' => 0,
         'seo_global_content' => array(),
+        'seo_title_override_enabled' => 0,
+        'seo_title_separator' => '-',
         'seo_meta_desc_enabled' => 1,
         'seo_canonical_enabled' => 1,
         'seo_og_enabled' => 1,
@@ -1189,6 +1197,7 @@ function tk_option_init_defaults() {
         'assets_font_display_swap' => 1,
         'assets_disable_google_fonts' => 0,
         'assets_dimensions_enabled' => 1,
+        'assets_theme_version_enabled' => 1,
         'assets_cls_guard_enabled' => 1,
         'assets_lcp_boost_enabled' => 1,
         'assets_lcp_bg_preload_enabled' => 1,
@@ -1254,7 +1263,7 @@ function tk_option_init_defaults() {
         'license_expires_at' => '',
     );
 
-    $opts = get_option('tk_options', array());
+    $opts = tk_get_options();
     if (!is_array($opts)) { $opts = array(); }
     $merged = array_merge($defaults, $opts);
     update_option('tk_options', $merged, false);
@@ -1652,16 +1661,14 @@ function tk_security_events_install_table(): void {
 }
 
 function tk_security_events_table_exists(): bool {
-    static $exists = null;
-    if ($exists !== null) {
-        return $exists;
-    }
-
+    static $tables = array();
     global $wpdb;
     $table = tk_security_events_table();
+    if (!empty($tables[$table])) { return true; }
     $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
-    $exists = is_string($found) && $found === $table;
-    return $exists;
+    // Do not cache a miss: installation can create the table in this request.
+    $tables[$table] = is_string($found) && $found === $table;
+    return $tables[$table];
 }
 
 function tk_security_events_country_from_location(string $location): string {
@@ -1682,7 +1689,7 @@ function tk_security_events_record(array $event): void {
     global $wpdb;
     $location = isset($event['location']) ? sanitize_text_field((string) $event['location']) : '';
     if ($location === '' && !empty($event['ip']) && function_exists('tk_security_alert_ip_location')) {
-        $location = sanitize_text_field(tk_security_alert_ip_location((string) $event['ip']));
+        $location = sanitize_text_field(tk_security_alert_ip_location((string) $event['ip'], false));
     }
     $country = isset($event['country']) ? sanitize_text_field((string) $event['country']) : '';
     if ($country === '') {
@@ -1734,9 +1741,12 @@ function tk_security_events_cleanup(): int {
     $before = gmdate('Y-m-d H:i:s', time() - ($days * DAY_IN_SECONDS));
     global $wpdb;
     $result = $wpdb->query($wpdb->prepare(
-        'DELETE FROM ' . tk_security_events_table() . ' WHERE time < %s',
+        'DELETE FROM ' . tk_security_events_table() . ' WHERE time < %s LIMIT 1000',
         $before
     ));
+    if ((int) $result === 1000 && !wp_next_scheduled('tk_security_events_cleanup_batch')) {
+        wp_schedule_single_event(time() + MINUTE_IN_SECONDS, 'tk_security_events_cleanup_batch');
+    }
     return is_numeric($result) ? (int) $result : 0;
 }
 
@@ -1748,14 +1758,16 @@ function tk_security_events_backfill_geo(): int {
     global $wpdb;
     $table = tk_security_events_table();
     $rows = $wpdb->get_results(
-        "SELECT DISTINCT ip FROM {$table} WHERE ip <> '' AND (location IS NULL OR location = '' OR country IS NULL OR country = '') ORDER BY id DESC LIMIT 100"
+        "SELECT DISTINCT ip FROM {$table} WHERE ip <> '' AND (location IS NULL OR location = '' OR location = 'Unknown' OR country IS NULL OR country = '') ORDER BY ip LIMIT 100"
     );
     if (!is_array($rows) || empty($rows)) {
         return 0;
     }
 
     $updated = 0;
+    $started = microtime(true);
     foreach ($rows as $row) {
+        if (microtime(true) - $started >= 10) { break; }
         $ip = isset($row->ip) ? trim((string) $row->ip) : '';
         if ($ip === '') {
             continue;
@@ -2764,7 +2776,7 @@ function tk_toolkits_audit_log_option_change($key, $old, $new): void {
 }
 
 function tk_toolkits_audit_log(string $action, array $detail = array()): void {
-    $opts = get_option('tk_options', array());
+    $opts = tk_get_options();
     if (!is_array($opts)) {
         $opts = array();
     }
@@ -3226,7 +3238,7 @@ function tk_toolkits_nested_admin_menu_script(): void {
 
         var groups = {
             'tool-kits-settings': ['tool-kits-general', 'tool-kits-access'],
-            'tool-kits-security': ['tool-kits-guard', 'tool-kits-firewall', 'tool-kits-security-hide-login', 'tool-kits-security-spam', 'tool-kits-security-rate-limit', 'tool-kits-security-otp', 'tool-kits-brute-force', 'tool-kits-security-login-log', 'tool-kits-malware-scanner', 'tool-kits-vulnerability-scanner', 'tool-kits-incident-response'],
+            'tool-kits-security': ['tool-kits-guard', 'tool-kits-firewall', 'tool-kits-security-hide-login', 'tool-kits-security-spam', 'tool-kits-security-rate-limit', 'tool-kits-security-otp', 'tool-kits-brute-force', 'tool-kits-security-login-log', 'tool-kits-malware-scanner', 'tool-kits-html-scanner', 'tool-kits-vulnerability-scanner', 'tool-kits-incident-response'],
             'tool-kits-performance': ['tool-kits-cache', 'tool-kits-optimization', 'tool-kits-minify', 'tool-kits-webp', 'tool-kits-image-opt', 'tool-kits-lazy-load', 'tool-kits-assets'],
             'tool-kits-seo': [],
             'tool-kits-system': ['tool-kits-db', 'tool-kits-role-management', 'tool-kits-user-id', 'tool-kits-smtp', 'tool-kits-theme-checker', 'tool-kits-diagnostics']
