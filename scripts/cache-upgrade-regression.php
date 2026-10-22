@@ -15,6 +15,7 @@ function tk_get_option($key, $default = null) { return $GLOBALS['options'][$key]
 function get_option($key, $default = null) { return $GLOBALS['wp_options'][$key] ?? $default; }
 function update_option($key, $value, $autoload = null) { $GLOBALS['wp_options'][$key] = $value; }
 function tk_license_features_enabled() { return $GLOBALS['licensed']; }
+function tk_license_verified_claims() { return $GLOBALS['licensed'] ? array('expires_at' => $GLOBALS['license_deadline'] ?? time() + 86400) : false; }
 function wp_mkdir_p($path) { return is_dir($path) || mkdir($path, 0755, true); }
 function is_multisite() { return $GLOBALS['multisite']; }
 function get_current_blog_id() { return 1; }
@@ -91,6 +92,14 @@ try {
     tk_page_cache_early_sync();
     $renewed = include tk_page_cache_early_config_path();
     check_cache(!is_file(tk_page_cache_dir() . '/old.html') && !is_file(tk_page_cache_dir() . '/old.html.meta.json') && $renewed['valid_until'] > time(), 'Upgrade did not purge old metadata or renew expired snapshot');
+    $license_deadline = time() + 30;
+    tk_page_cache_early_sync(); $bounded = include tk_page_cache_early_config_path();
+    check_cache($bounded['valid_until'] === $license_deadline, 'Early cache outlives signed receipt');
+    $license_deadline = time() - 1;
+    tk_page_cache_early_sync();
+    check_cache(!is_file(tk_page_cache_early_config_path()) && !is_file(WP_CONTENT_DIR . '/advanced-cache.php'), 'Expired signed receipt leaves early cache installed');
+    unset($license_deadline);
+    tk_page_cache_early_sync();
     $options['page_cache_enabled'] = 0; tk_page_cache_early_sync();
     check_cache(!is_file(tk_page_cache_early_config_path()) && !is_file(WP_CONTENT_DIR . '/advanced-cache.php'), 'Disabled page cache left early caching enabled');
     $options['page_cache_enabled'] = 1; tk_page_cache_early_sync();

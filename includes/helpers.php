@@ -1,5 +1,6 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
+require_once __DIR__ . '/license-client.php';
 
 
 
@@ -468,7 +469,7 @@ function tk_license_admin_notice() {
     $status = tk_get_option('license_status', 'inactive');
     $key = tk_get_option('license_key', '');
 
-    if ($status !== 'active' && $status !== 'valid' || $key === '') {
+    if (!tk_license_features_enabled()) {
         ?>
         <div class="notice notice-warning is-dismissible">
             <p>
@@ -1250,6 +1251,7 @@ function tk_option_init_defaults() {
         'license_server_url' => '',
         'license_key' => '',
         'license_status' => 'inactive',
+        'license_receipt' => array(),
         'license_message' => '',
         'license_last_checked' => 0,
         'license_last_success' => 0,
@@ -1994,7 +1996,7 @@ function tk_toolkits_can_manage(): bool {
 function tk_toolkits_install_id(): string {
     $id = (string) tk_get_option('toolkits_install_id', '');
     if ($id === '') {
-        $id = function_exists('wp_generate_uuid4') ? wp_generate_uuid4() : md5(uniqid((string) mt_rand(), true));
+        $id = function_exists('wp_generate_uuid4') ? wp_generate_uuid4() : bin2hex(random_bytes(16));
         tk_update_option('toolkits_install_id', $id);
     }
     return $id;
@@ -2074,32 +2076,26 @@ function tk_toolkits_url_host(string $url): string {
 }
 
 function tk_toolkits_license_server_is_trusted(string $url): bool {
-    if (defined('TK_ALLOW_CUSTOM_LICENSE_SERVER') && TK_ALLOW_CUSTOM_LICENSE_SERVER) {
-        return true;
-    }
-
-    $host = tk_toolkits_url_host($url);
-    if ($host === '') {
-        return false;
-    }
-
-    $trusted_urls = array(
-        tk_toolkits_default_collector_url(),
-        tk_heartbeat_collector_url(),
-    );
-    if (defined('TK_LICENSE_SERVER_URL') && TK_LICENSE_SERVER_URL !== '') {
-        $trusted_urls[] = (string) TK_LICENSE_SERVER_URL;
-    }
-    if (defined('TK_HEARTBEAT_URL') && TK_HEARTBEAT_URL !== '') {
-        $trusted_urls[] = (string) TK_HEARTBEAT_URL;
-    }
-
-    foreach ($trusted_urls as $trusted_url) {
-        if ($host === tk_toolkits_url_host((string) $trusted_url)) {
-            return true;
+    $parts = wp_parse_url($url);
+    if (!is_array($parts) || ($parts['scheme'] ?? '') !== 'https' || empty($parts['host'])
+        || isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])
+        || (isset($parts['port']) && $parts['port'] !== 443)) { return false; }
+    $trusted = array(tk_toolkits_license_server_url_for_collector(tk_toolkits_default_collector_url()),
+        tk_toolkits_license_server_url_for_collector(tk_heartbeat_collector_url()));
+    if (defined('TK_LICENSE_SERVER_URL') && TK_LICENSE_SERVER_URL !== '') { $trusted[] = TK_LICENSE_SERVER_URL; }
+    foreach (array_unique($trusted) as $endpoint) {
+        $origin = wp_parse_url($endpoint);
+        if (!is_array($origin) || ($origin['scheme'] ?? '') !== 'https'
+            || strtolower($parts['host']) !== strtolower($origin['host'] ?? '')) { continue; }
+        $paths = array($origin['path'] ?? '');
+        // Exact known legacy routes on this issuer, not arbitrary same-host URLs.
+        $path = $origin['path'] ?? '';
+        if (preg_match('~/license(?:\.php)?$~D', $path)) {
+            $base = preg_replace('~/license(?:\.php)?$~D', '', $path);
+            $paths[] = $base . '/license'; $paths[] = $base . '/license.php'; $paths[] = $base . '/heartbeat/license.php';
         }
+        if (in_array($parts['path'] ?? '', $paths, true)) { return true; }
     }
-
     return false;
 }
 
@@ -2189,6 +2185,11 @@ function tk_toolkits_signed_post(string $url, string $body, int $timestamp, arra
     if (array_key_exists('sslverify', $args)) {
         $request_args['sslverify'] = (bool) $args['sslverify'];
     }
+    if (!empty($args['license_request'])) {
+        $request_args['sslverify'] = true;
+        $request_args['redirection'] = 0;
+        $request_args['limit_response_size'] = 65536;
+    }
 
     $urls = array($url);
     if (!empty($args['license_request'])) {
@@ -2200,9 +2201,12 @@ function tk_toolkits_signed_post(string $url, string $body, int $timestamp, arra
 
     $last_response = null;
     foreach ($urls as $target_url) {
+        if (!empty($args['license_request']) && !tk_toolkits_license_server_is_trusted($target_url)) {
+            continue;
+        }
         foreach (tk_heartbeat_auth_keys() as $secret) {
             $request_args['headers']['X-Auth-Signature'] = hash_hmac('sha256', $body, $secret);
-            $response = wp_remote_post($target_url, $request_args);
+            $response = !empty($args['license_request']) ? wp_safe_remote_post($target_url, $request_args) : wp_remote_post($target_url, $request_args);
             $last_response = $response;
             if (is_wp_error($response)) {
                 return $response;
@@ -2225,7 +2229,7 @@ function tk_toolkits_signed_post(string $url, string $body, int $timestamp, arra
         }
     }
 
-    return $last_response;
+    return $last_response === null ? new WP_Error('tk_license_endpoint', 'No approved license endpoint or collector token is configured.') : $last_response;
 }
 
 function tk_toolkits_license_validation_message(string $detail = ''): string {
@@ -2256,61 +2260,6 @@ function tk_toolkits_license_http_error_message(int $code, string $raw): string 
     }
 
     return tk_toolkits_license_validation_message('HTTP ' . $code . '.');
-}
-
-function tk_license_signature_payload(string $status = ''): string {
-    if ($status === '') {
-        $status = (string) tk_get_option('license_status', 'inactive');
-    }
-
-    $payload = array(
-        'key' => (string) tk_get_option('license_key', ''),
-        'status' => $status,
-        'site_url' => tk_license_normalize_site_url((string) tk_get_option('license_site_url', '')),
-        'license_type' => (string) tk_get_option('license_type', ''),
-        'expires_at' => (string) tk_get_option('license_expires_at', ''),
-        'install_id' => function_exists('tk_toolkits_install_id') ? tk_toolkits_install_id() : '',
-    );
-
-    return wp_json_encode($payload) ?: '';
-}
-
-function tk_license_expected_signature(string $status = ''): string {
-    if (!defined('AUTH_KEY') || AUTH_KEY === '') {
-        return '';
-    }
-
-    $payload = tk_license_signature_payload($status);
-    if ($payload === '') {
-        return '';
-    }
-
-    return hash_hmac('sha256', $payload, AUTH_KEY);
-}
-
-function tk_license_has_valid_signature(): bool {
-    $status = (string) tk_get_option('license_status', 'inactive');
-    if ($status !== 'valid') {
-        return true;
-    }
-
-    $saved_sig = (string) tk_get_option('license_signature', '');
-    $current_sig = tk_license_expected_signature($status);
-    if ($saved_sig !== '' && $current_sig !== '' && hash_equals($current_sig, $saved_sig)) {
-        return true;
-    }
-
-    $legacy_sig = '';
-    if (defined('AUTH_KEY') && AUTH_KEY !== '') {
-        $legacy_sig = hash_hmac('sha256', (string) tk_get_option('license_key', '') . '|' . $status, AUTH_KEY);
-    }
-
-    if ($saved_sig !== '' && $legacy_sig !== '' && hash_equals($legacy_sig, $saved_sig)) {
-        tk_update_option('license_signature', $current_sig);
-        return true;
-    }
-
-    return false;
 }
 
 function tk_toolkits_license_reachability_message(int $code, string $detail = ''): string {
@@ -2373,6 +2322,7 @@ function tk_license_update_state(array $state): void {
         'license_type',
         'license_site_url',
         'license_expires_at',
+        'license_receipt',
     );
     foreach ($state as $key => $value) {
         if (!in_array($key, $allowed, true)) {
@@ -2384,15 +2334,16 @@ function tk_license_update_state(array $state): void {
     $new_status = isset($state['license_status']) ? (string) $state['license_status'] : $old_status;
     $message = isset($state['license_message']) ? (string) $state['license_message'] : '';
 
-    if ($old_status !== $new_status) {
-        tk_license_maybe_notify($old_status, $new_status, $message);
+    // Local HMACs are no longer an activation credential.
+    tk_update_option('license_signature', '');
+    if ($new_status !== 'valid') { tk_update_option('license_receipt', array()); }
+    elseif (!tk_license_has_valid_signature()) {
+        tk_update_option('license_status', 'invalid');
+        tk_update_option('license_receipt', array());
     }
-
-    // Generate signature for tamper protection.
     $final_status = (string) tk_get_option('license_status', 'inactive');
-    $signature = tk_license_expected_signature($final_status);
-    if ($signature !== '') {
-        tk_update_option('license_signature', $signature);
+    if ($old_status !== $final_status) {
+        tk_license_maybe_notify($old_status, $final_status, $message);
     }
 }
 
@@ -2450,34 +2401,12 @@ function tk_license_reset(): void {
 }
 
 function tk_license_normalize_site_url(string $site_url): string {
-    $site_url = trim($site_url);
-    if ($site_url === '') {
-        return '';
-    }
-
-    $parts = wp_parse_url($site_url);
-    if (!is_array($parts) || empty($parts['host'])) {
-        return untrailingslashit(strtolower($site_url));
-    }
-
-    $scheme = isset($parts['scheme']) && $parts['scheme'] !== '' ? strtolower((string) $parts['scheme']) : 'https';
-    $host = strtolower((string) $parts['host']);
-    $port = isset($parts['port']) ? ':' . (string) $parts['port'] : '';
-    $path = '';
-    if (isset($parts['path']) && trim((string) $parts['path'], '/') !== '') {
-        $path = '/' . trim((string) $parts['path'], '/');
-    }
-
-    return $scheme . '://' . $host . $port . $path;
+    return TK_License_Receipt::normalize_site($site_url);
 }
 
 function tk_license_site_matches_current(): bool {
-    $licensed_site_url = tk_license_normalize_site_url((string) tk_get_option('license_site_url', ''));
-    if ($licensed_site_url === '') {
-        return true;
-    }
-
-    return $licensed_site_url === tk_license_normalize_site_url(home_url('/'));
+    $site = tk_license_normalize_site_url((string) tk_get_option('license_site_url', ''));
+    return $site !== '' && $site === tk_license_normalize_site_url(home_url('/'));
 }
 
 function tk_license_site_mismatch_message(): string {
@@ -2486,166 +2415,6 @@ function tk_license_site_mismatch_message(): string {
 
 function tk_license_integrity_violation_message(): string {
     return 'License integrity violation detected. Please re-activate.';
-}
-
-function tk_license_validate(bool $force = false): array {
-    $status = (string) tk_get_option('license_status', 'inactive');
-    $message = (string) tk_get_option('license_message', '');
-    $last_checked = (int) tk_get_option('license_last_checked', 0);
-    $ttl = 6 * HOUR_IN_SECONDS;
-    if ($status === 'valid' && !tk_license_has_valid_signature()) {
-        $message = tk_license_integrity_violation_message();
-        tk_update_option('license_status', 'inactive');
-        tk_update_option('license_message', $message);
-        tk_update_option('license_signature', '');
-        return array('status' => 'integrity_violation', 'message' => $message);
-    }
-    if ($status === 'valid' && !tk_license_site_matches_current()) {
-        $message = tk_license_site_mismatch_message();
-        tk_license_update_state(array(
-            'license_status' => 'site_mismatch',
-            'license_message' => $message,
-            'license_last_checked' => time(),
-        ));
-        return array('status' => 'site_mismatch', 'message' => $message);
-    }
-    if (!$force && $last_checked > 0 && (time() - $last_checked) < $ttl) {
-        return array('status' => $status, 'message' => $message);
-    }
-    $key = trim((string) tk_get_option('license_key', ''));
-    $url = trim(tk_license_server_url());
-    $secret = tk_heartbeat_auth_key();
-    if ($key === '' && $url === '' && $secret === '') {
-        tk_license_update_state(array(
-            'license_status' => 'inactive',
-            'license_message' => '',
-            'license_last_checked' => 0,
-            'license_env' => '',
-            'license_type' => '',
-            'license_site_url' => '',
-            'license_expires_at' => '',
-        ));
-        return array('status' => 'inactive', 'message' => '');
-    }
-    if ($key === '') {
-        $result = array('status' => 'missing', 'message' => tk_toolkits_missing_config_message('license_key'));
-        tk_license_update_state(array(
-            'license_status' => 'missing',
-            'license_message' => $result['message'],
-            'license_last_checked' => time(),
-        ));
-        tk_license_record_diagnostic_result($result, $url);
-        return $result;
-    }
-    if ($url === '') {
-        $collector_url = tk_heartbeat_collector_url();
-        if ($collector_url !== '') {
-            $url = tk_toolkits_license_server_url_for_collector($collector_url);
-            tk_update_option('license_server_url', $url);
-        }
-    }
-    if ($url === '') {
-        $message = tk_heartbeat_collector_url() === '' ? tk_toolkits_missing_config_message('collector_url') : tk_toolkits_missing_config_message('license_server_url');
-        $result = array('status' => 'missing_server', 'message' => $message);
-        tk_license_update_state(array(
-            'license_status' => 'missing_server',
-            'license_message' => $message,
-            'license_last_checked' => time(),
-        ));
-        tk_license_record_diagnostic_result($result, '');
-        return $result;
-    }
-    if ($secret === '') {
-        $result = array('status' => 'missing_secret', 'message' => tk_toolkits_missing_config_message('collector_token'));
-        tk_license_update_state(array(
-            'license_status' => 'missing_secret',
-            'license_message' => $result['message'],
-            'license_last_checked' => time(),
-        ));
-        tk_license_record_diagnostic_result($result, $url);
-        return $result;
-    }
-
-    $payload = array(
-        'license_key' => $key,
-        'site_url' => home_url('/'),
-        'site_id' => tk_toolkits_install_id(),
-        'env' => tk_license_env(),
-        'plugin' => 'tool-kits',
-        'action' => 'activate',
-        'timestamp' => time(),
-    );
-    $body = wp_json_encode($payload);
-    if ($body === false) {
-        $result = array('status' => 'error', 'message' => tk_toolkits_license_validation_message('failed to encode request payload.'));
-        tk_license_update_state(array(
-            'license_status' => 'error',
-            'license_message' => $result['message'],
-            'license_last_checked' => time(),
-        ));
-        tk_license_record_diagnostic_result($result, $url);
-        return $result;
-    }
-    $ssl_verify = true;
-    if (defined('TK_ALLOW_INSECURE_LICENSE_SSL') && TK_ALLOW_INSECURE_LICENSE_SSL) {
-        $ssl_verify = (bool) tk_get_option('license_ssl_verify', 1);
-    }
-    $response = tk_toolkits_signed_post($url, $body, (int) $payload['timestamp'], array(
-        'timeout' => 15,
-        'sslverify' => $ssl_verify,
-        'license_request' => true,
-    ));
-    if (is_wp_error($response)) {
-        $result = array('status' => 'error', 'message' => tk_toolkits_license_validation_message($response->get_error_message()));
-        tk_license_update_state(array(
-            'license_status' => 'error',
-            'license_message' => $result['message'],
-            'license_last_checked' => time(),
-        ));
-        tk_license_record_diagnostic_result($result, $url);
-        return $result;
-    }
-    $code = (int) wp_remote_retrieve_response_code($response);
-    $raw = (string) wp_remote_retrieve_body($response);
-    $data = json_decode($raw, true);
-    $ok = is_array($data) && !empty($data['ok']) && $code >= 200 && $code < 300;
-    $server_status = is_array($data) && isset($data['status']) ? (string) $data['status'] : '';
-    $new_status = $ok ? 'valid' : 'invalid';
-    $new_message = '';
-    if (is_array($data) && isset($data['message'])) {
-        $new_message = (string) $data['message'];
-    } elseif (!$ok) {
-        $new_message = tk_toolkits_license_http_error_message($code, $raw);
-    }
-    if (!$ok && $new_message !== '') {
-        $new_message = tk_toolkits_license_validation_message($new_message);
-    }
-    if (!$ok && $server_status !== '') {
-        $new_status = $server_status;
-    }
-    $license_state = array(
-        'license_status' => $new_status,
-        'license_message' => $new_message,
-        'license_last_checked' => time(),
-        'license_env' => (string) $payload['env'],
-    );
-    if (is_array($data) && isset($data['license_type'])) {
-        $license_state['license_type'] = (string) $data['license_type'];
-    }
-    if (is_array($data) && isset($data['site_url'])) {
-        $license_state['license_site_url'] = (string) $data['site_url'];
-    }
-    if (is_array($data) && array_key_exists('expires_at', $data)) {
-        $license_state['license_expires_at'] = tk_license_normalize_expires_at($data['expires_at']);
-    } elseif (!$ok && in_array($server_status, array('revoked', 'not_found', 'expired'), true)) {
-        $license_state['license_expires_at'] = '';
-    }
-    tk_license_update_state($license_state);
-    tk_license_record_diagnostic_result(array(
-        'status' => $new_status,
-        'message' => $new_message,
-    ), $url);
-    return array('status' => $new_status, 'message' => $new_message);
 }
 
 function tk_license_test_connection(): array {
@@ -2727,16 +2496,6 @@ function tk_license_test_connection(): array {
     );
     tk_license_record_diagnostic_result($result, $url);
     return $result;
-}
-
-function tk_license_is_valid(): bool {
-    $status = (string) tk_get_option('license_status', 'inactive');
-    $last_checked = (int) tk_get_option('license_last_checked', 0);
-    return $status === 'valid' && tk_license_has_valid_signature() && tk_license_site_matches_current() && $last_checked > 0 && (time() - $last_checked) < DAY_IN_SECONDS;
-}
-
-function tk_license_features_enabled(): bool {
-    return (string) tk_get_option('license_status', 'inactive') === 'valid' && tk_license_has_valid_signature() && tk_license_site_matches_current();
 }
 
 function tk_toolkits_is_locked(): bool {

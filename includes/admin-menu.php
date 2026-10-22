@@ -50,7 +50,7 @@ function tk_register_admin_menus() {
     }
     $license_status = (string) tk_get_option('license_status', 'inactive');
     $license_missing = $license_key === '';
-    $license_valid = $license_status === 'valid';
+    $license_valid = tk_license_features_enabled();
     $license_type = (string) tk_get_option('license_type', '');
     $license_limited = $license_type === 'local';
     $allow_full = $license_valid && !$license_limited;
@@ -606,7 +606,7 @@ function tk_render_geo_audit_page() {
 
 function tk_render_system_tools_page() {
     if (!tk_is_admin_user()) return;
-    $license_valid = (string) tk_get_option('license_status', 'inactive') === 'valid';
+    $license_valid = tk_license_features_enabled();
     $license_limited = (string) tk_get_option('license_type', '') === 'local';
     $allow_full = $license_valid && !$license_limited;
     ?>
@@ -1151,7 +1151,7 @@ function tk_render_toolkits_access_page() {
     $license_site = (string) tk_get_option('license_site_url', '');
     $license_expires = (string) tk_get_option('license_expires_at', '');
     $license_missing = $license_key === '';
-    $license_invalid = $license_status !== 'valid';
+    $license_invalid = !tk_license_features_enabled();
     $license_limited = $license_type === 'local';
     $show_full_tabs = !$license_invalid && !$license_limited;
     $owner_only = (int) tk_get_option('toolkits_owner_only_enabled', 0);
@@ -1322,14 +1322,14 @@ function tk_render_toolkits_access_page() {
                             $expires_remaining = $days . ' days left';
                         }
                     }
-                    $status_color = ($license_status === 'valid') ? '#27ae60' : ($is_expired ? '#e74c3c' : '#f39c12');
+                    $status_color = (tk_license_features_enabled()) ? '#27ae60' : ($is_expired ? '#e74c3c' : '#f39c12');
                     ?>
 
                     <div style="background:var(--tk-bg-soft); border-radius:20px; padding:32px; border:1px solid var(--tk-border-soft); text-align:center;">
                         <div style="width:80px; height:80px; border-radius:40px; background:<?php echo $status_color; ?>; display:flex; align-items:center; justify-content:center; margin:0 auto 20px; box-shadow: 0 10px 15px -3px <?php echo $status_color; ?>44;">
-                            <span class="dashicons <?php echo $license_status === 'valid' ? 'dashicons-yes-alt' : 'dashicons-warning'; ?>" style="font-size:40px; width:40px; height:40px; color:#fff;"></span>
+                            <span class="dashicons <?php echo tk_license_features_enabled() ? 'dashicons-yes-alt' : 'dashicons-warning'; ?>" style="font-size:40px; width:40px; height:40px; color:#fff;"></span>
                         </div>
-                        <h2 style="margin:0; font-size:24px;"><?php echo $license_status === 'valid' ? 'License Active' : 'Activation Required'; ?></h2>
+                        <h2 style="margin:0; font-size:24px;"><?php echo tk_license_features_enabled() ? 'License Active' : 'Activation Required'; ?></h2>
                         <p style="color:var(--tk-muted); margin-top:8px;">Current Status: <strong style="color:<?php echo $status_color; ?>; text-transform:uppercase;"><?php echo esc_html($license_status); ?></strong></p>
                         
                         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:16px; margin-top:32px;">
@@ -1696,7 +1696,7 @@ function tk_toolkits_access_save() {
             }
         }
         
-        tk_update_option('license_ssl_verify', isset($_POST['license_ssl_verify']) ? 0 : 1);
+        tk_update_option('license_ssl_verify', 1);
         tk_update_option('license_notify_email', isset($_POST['license_notify_email']) ? sanitize_email(wp_unslash($_POST['license_notify_email'])) : '');
         
         $license_server_url = tk_toolkits_license_server_url_for_collector($collector_url);
@@ -1937,7 +1937,7 @@ function tk_preflight_check() {
 
     $response = wp_remote_get($url, array(
         'timeout' => 10,
-        'sslverify' => (bool) tk_get_option('license_ssl_verify', 1),
+        'sslverify' => true,
     ));
     if (is_wp_error($response)) {
         wp_send_json_error(array('message' => $response->get_error_message()));

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.7.30
+ * Version: 2.7.31
  * Requires PHP: 7.4
  * GitHub Plugin URI: https://github.com/ekods/tool-kits
  * Update URI: https://github.com/ekods/tool-kits
@@ -31,7 +31,7 @@ if (version_compare(PHP_VERSION, TK_MINIMUM_PHP, '<')) {
     return;
 }
 
-define('TK_VERSION', '2.7.30');
+define('TK_VERSION', '2.7.31');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
@@ -70,6 +70,8 @@ add_action('plugins_loaded', 'tk_killswitch_init', 1);
 add_action('admin_init', 'tk_debug_deprecated_init');
 add_action('admin_init', 'tk_toolkits_guard', 0);
 add_action('init', 'tk_security_events_schedule_maintenance');
+add_action('init', 'tk_license_refresh_schedule');
+add_action('tk_license_refresh', 'tk_license_validate');
 add_action('tk_security_events_maintenance', 'tk_security_events_maintenance');
 add_action('tk_security_events_cleanup_batch', 'tk_security_events_cleanup');
 
@@ -166,6 +168,7 @@ function tk_deactivate() {
     tk_security_events_clear_maintenance();
     wp_clear_scheduled_hook('tk_monitoring_deferred_checks');
     wp_clear_scheduled_hook('tk_security_events_cleanup_batch');
+    wp_clear_scheduled_hook('tk_license_refresh');
 
 }
 register_deactivation_hook(__FILE__, 'tk_deactivate');

@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.30
+Stable tag: 2.7.31
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,6 +66,11 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.31 =
+* Require server-issued RSA-SHA256 license receipts bound to the site, installation, license key, product and expiry; reject unsigned activation and legacy local HMAC credentials.
+* Enforce signed expiry across feature gates and early cache, add independent license refresh, bounded outage tolerance, fresh activation challenges and strict HTTPS license transport.
+* Add issuer provisioning and migration documentation in LICENSE_SECURITY.md. Deploy the matching NexaMonitor signing server before updating the plugin.
+
 = 2.7.30 =
 * Use English throughout the WordPress Health Center widget and manual scan page, including metrics, empty states, progress and error messages.
 * Improve the existing HTML Injection Scanner with contextual CSS/event-handler analysis and whole-token-stream verification of approved Google Analytics/Tag Manager loaders.

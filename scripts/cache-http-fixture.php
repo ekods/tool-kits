@@ -13,6 +13,7 @@ $fixture = json_decode((string) file_get_contents(ABSPATH . 'fixture.json'), tru
 $options = array_merge(array('page_cache_enabled' => 1, 'page_cache_ttl' => 3600, 'page_cache_exclude_paths' => "/excluded\n", 'hardening_csp_strict_enabled' => 1), $fixture);
 function tk_get_option($key, $default = null) { return $GLOBALS['options'][$key] ?? $default; }
 function tk_license_features_enabled() { return empty($GLOBALS['options']['unlicensed']); }
+function tk_license_verified_claims() { return tk_license_features_enabled() ? array('expires_at' => time() + 86400) : false; }
 function wp_mkdir_p($dir) { return is_dir($dir) || mkdir($dir, 0755, true); }
 function trailingslashit($path) { return rtrim($path, '/') . '/'; }
 function is_multisite() { return false; }

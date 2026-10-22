@@ -2,6 +2,7 @@
 // Each case runs in its own process so PHP mocks and browser state stay isolated.
 const { spawnSync } = require('node:child_process');
 const cases = [
+  { "name": "license-security", "runtime": "php", "source": ["<?php", "require __DIR__ . '/license-security-regression.php';"] },
   { "name": "html-injection-engine", "runtime": "php", "source": ["<?php", "require __DIR__ . '/html-injection-engine-regression.php';"] },
   { "name": "html-injection-context", "runtime": "php", "source": ["<?php", "require __DIR__ . '/html-injection-context-regression.php';"] },
   { "name": "html-injection-scanner", "runtime": "php", "source": ["<?php", "require __DIR__ . '/html-injection-scanner-regression.php';"] },
@@ -1400,12 +1401,13 @@ const cases = [
       "    $GLOBALS['checks']++;",
       "    echo 'PASS: ', $label, PHP_EOL;",
       "}",
-      "$options['tk_options']['license_signature'] = tk_license_expected_signature();",
+      "require __DIR__ . '/license-test-fixture.php';",
+      "$options['tk_options']['license_receipt'] = tk_test_license_receipt($options['tk_options']);",
       "tk_options_cache_invalidate();",
       "verify(tk_license_validate()['status'] === 'valid', 'Signed cached license validates without a network call');",
-      "$options['tk_options']['license_signature'] = 'tampered';",
+      "$options['tk_options']['license_receipt']['signature'] = 'tampered';",
       "tk_options_cache_invalidate();",
-      "verify(tk_license_validate()['status'] === 'integrity_violation', 'Cached license still enforces signature integrity');",
+      "verify(!tk_license_features_enabled(), 'Cached license still enforces signature integrity');",
       "verify(tk_healthcheck_cpu_cores() === 4, 'CPU capacity uses its cached value');",
       "$transients['tk_healthcheck_cpu_cores'] = 0;",
       "verify(tk_healthcheck_cpu_cores() === null, 'Unavailable CPU capacity is cached without shell retries');",

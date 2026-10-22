@@ -120,13 +120,14 @@ function tk_page_cache_early_sync(): void {
     $previous = is_array($existing) ? $existing : array();
     unset($previous['valid_until']);
     if (isset($previous['version']) && $previous['version'] !== $config['version']) { tk_page_cache_purge(); }
-    $expiry = tk_get_option('license_expires_at', '');
-    $license_until = is_string($expiry) && $expiry !== '' ? strtotime($expiry) : false;
-    if ($license_until !== false && $license_until <= time()) { tk_page_cache_early_remove(); return; }
+    $claims = tk_license_verified_claims();
+    if ($claims === false) { tk_page_cache_early_remove(); return; }
+    $license_until = $claims['expires_at'];
+    if ($license_until <= time()) { tk_page_cache_early_remove(); return; }
     // Bound the lifetime of the signed-license snapshot; expired snapshots fall
     // through to WP, which refreshes this file without an admin visit.
-    if ($previous !== $config || (int) ($existing['valid_until'] ?? 0) <= time() + 300) {
-        $config['valid_until'] = min(time() + 21600, $license_until !== false ? $license_until : PHP_INT_MAX);
+    if ($previous !== $config || (int) ($existing['valid_until'] ?? 0) <= time() + 300 || (int) ($existing['valid_until'] ?? 0) > $license_until) {
+        $config['valid_until'] = min(time() + 21600, $license_until);
         if (!tk_page_cache_early_atomic_write($path, "<?php\nif (!defined('ABSPATH')) { return array(); }\nreturn " . var_export($config, true) . ";\n")) {
             tk_page_cache_early_remove();
             $GLOBALS['tk_page_cache_early_notice'] = 'Tool Kits cannot write its early-cache config. Check wp-content/cache/tool-kits permissions. Normal page caching remains available.';
@@ -147,7 +148,7 @@ function tk_page_cache_early_sync(): void {
 function tk_page_cache_early_option_changed($option, $old = null, $new = null): void {
     if ($option !== 'tk_options' && $option !== 'active_plugins' && $option !== 'home' && $option !== 'siteurl') { return; }
     if ($option === 'tk_options' && is_array($old) && is_array($new)) {
-        $keys = array('page_cache_enabled', 'page_cache_ttl', 'page_cache_exclude_paths', 'license_status', 'license_key', 'license_signature', 'license_site_url', 'license_expires_at', 'toolkits_install_id', 'hardening_waf_enabled', 'hardening_httpauth_enabled');
+        $keys = array('page_cache_enabled', 'page_cache_ttl', 'page_cache_exclude_paths', 'license_status', 'license_key', 'license_signature', 'license_receipt', 'license_site_url', 'license_expires_at', 'toolkits_install_id', 'hardening_waf_enabled', 'hardening_httpauth_enabled');
         $changed = false;
         foreach ($keys as $key) { if (($old[$key] ?? null) !== ($new[$key] ?? null)) { $changed = true; break; } }
         if (!$changed) { return; }

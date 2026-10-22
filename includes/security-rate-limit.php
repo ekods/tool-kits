@@ -15,7 +15,7 @@ function tk_rate_limit_init() {
 }
 
 function tk_rate_limit_register_brute_force_page(): void {
-    $license_valid = (string) tk_get_option('license_status', 'inactive') === 'valid';
+    $license_valid = tk_license_features_enabled();
     $license_limited = (string) tk_get_option('license_type', '') === 'local';
     if (!tk_toolkits_can_manage() || !$license_valid || $license_limited) {
         return;

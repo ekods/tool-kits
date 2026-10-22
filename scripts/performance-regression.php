@@ -2,6 +2,7 @@
 error_reporting(E_ALL);
 set_error_handler(function($level, $message) { if (error_reporting() & $level) { throw new RuntimeException($message); } return false; });
 require __DIR__ . '/performance-core-fixture.php';
+require __DIR__ . '/license-test-fixture.php';
 require dirname(__DIR__) . '/includes/helpers.php';
 require dirname(__DIR__) . '/includes/cache.php';
 require dirname(__DIR__) . '/includes/asset-optimization.php';
@@ -16,7 +17,7 @@ function check_perf($ok, $message) {
 }
 $base = array('license_status' => 'valid', 'license_key' => 'fixture', 'license_site_url' => home_url(), 'toolkits_install_id' => 'fixture', 'license_last_checked' => time(), 'page_cache_enabled' => 1);
 tk_perf_seed($base);
-$base['license_signature'] = tk_license_expected_signature();
+$base['license_receipt'] = tk_test_license_receipt($base);
 update_option('tk_options', $base, false);
 check_perf(tk_license_validate()['status'] === 'valid', 'Signed license must validate');
 $reads = 0;
@@ -48,13 +49,13 @@ check_perf(tk_get_option('test') === 'second', 'Multisite config is isolated');
 restore_current_blog();
 tk_perf_seed($base);
 check_perf(tk_get_option('license_key') === 'fixture', 'Restored blog reads its own config');
-$tampered = $base; $tampered['license_signature'] = 'bad';
+$tampered = $base; $tampered['license_receipt']['signature'] = 'bad';
 update_option('tk_options', $tampered, false);
 check_perf(!tk_license_features_enabled(), 'Tampering immediately disables features');
 update_option('tk_options', $base, false);
 $mismatch = $base; $mismatch['license_site_url'] = 'https://another.test';
 update_option('tk_options', $mismatch, false);
-$mismatch['license_signature'] = tk_license_expected_signature();
+$mismatch['license_receipt'] = tk_test_license_receipt($mismatch);
 update_option('tk_options', $mismatch, false);
 check_perf(!tk_license_features_enabled(), 'Valid signature cannot bypass site match');
 update_option('tk_options', $base, false);

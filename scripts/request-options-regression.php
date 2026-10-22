@@ -1,7 +1,7 @@
 <?php
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit; }
 error_reporting(E_ALL);
-set_error_handler(function ($level, $message) { throw new RuntimeException($message); });
+set_error_handler(function ($level, $message) { if (error_reporting() & $level) { throw new RuntimeException($message); } return false; });
 define('ABSPATH', rtrim((string) getenv('TK_WP_ROOT'), '/') . '/');
 define('AUTH_KEY', 'request-cache-test-key');
 require ABSPATH . 'wp-includes/plugin.php';
@@ -23,22 +23,23 @@ function wp_parse_url($url, $component = -1) { return parse_url($url, $component
 function home_url($path = '/') { return 'https://example.test' . $path; }
 function untrailingslashit($value) { return rtrim($value, '/'); }
 function verify($condition, $message) { if (!$condition) { throw new RuntimeException($message); } $GLOBALS['checks']++; echo 'PASS ' . $message . PHP_EOL; }
+require __DIR__ . '/license-test-fixture.php';
 require dirname(__DIR__) . '/includes/helpers.php';
 $options = array('license_status' => 'valid', 'license_key' => 'fixture', 'license_site_url' => 'https://example.test', 'toolkits_install_id' => 'fixture-install', 'report' => str_repeat('x', 262144));
 update_option('tk_options', $options);
 for ($i = 0; $i < 1000; $i++) { tk_get_option('license_status'); }
 verify($reads === 1, '1000 option reads deserialize the report-bearing option once');
-$options['license_signature'] = tk_license_expected_signature();
+$options['license_receipt'] = tk_test_license_receipt($options);
 update_option('tk_options', $options);
 verify(tk_license_features_enabled(), 'valid signed license remains enabled');
 $copy = tk_get_options(); $copy['license_status'] = 'inactive';
 verify(tk_get_option('license_status') === 'valid', 'callers cannot mutate the cached option through a returned copy');
-$options['license_signature'] = 'tampered'; update_option('tk_options', $options);
+$options['license_receipt']['signature'] = 'tampered'; update_option('tk_options', $options);
 verify(!tk_license_features_enabled(), 'signature tampering is rejected immediately after an update');
-$options['license_signature'] = tk_license_expected_signature(); update_option('tk_options', $options);
+$options['license_receipt'] = tk_test_license_receipt($options); update_option('tk_options', $options);
 verify(tk_license_features_enabled(), 'restored signature is revalidated after an update');
 $options['license_site_url'] = 'https://other.test'; update_option('tk_options', $options);
-$options['license_signature'] = tk_license_expected_signature(); update_option('tk_options', $options);
+$options['license_receipt'] = tk_test_license_receipt($options); update_option('tk_options', $options);
 verify(!tk_license_features_enabled(), 'a valid signature for another site does not enable features');
 $blog = 2; update_option('tk_options', array('license_status' => 'inactive'));
 verify(tk_get_option('license_status') === 'inactive', 'multisite has a separate parsed option cache');
