@@ -295,11 +295,12 @@ function tk_seo_add_geo_meta_boxes(): void {
 
     foreach (tk_seo_selected_post_types() as $post_type) {
         add_meta_box(
-            'tk-seo-geo-signals',
+            // A new ID prevents a saved legacy "normal" order from moving it back below the editor.
+            'tk-seo-geo-sidebar',
             'Tool Kits SEO / GEO',
             'tk_seo_render_geo_meta_box',
             $post_type,
-            'normal',
+            'side',
             'default'
         );
     }
@@ -307,21 +308,6 @@ function tk_seo_add_geo_meta_boxes(): void {
 
 function tk_seo_render_geo_meta_box($post): void {
     $post_id = is_object($post) ? (int) $post->ID : 0;
-    $references = get_post_meta($post_id, '_tk_geo_reference_urls', true);
-    $related_ids = get_post_meta($post_id, '_tk_geo_related_posts', true);
-    $references = is_array($references) ? $references : array();
-    $related_ids = is_array($related_ids) ? array_map('intval', $related_ids) : array();
-    $post_types = get_post_types(array('public' => true), 'names');
-    unset($post_types['attachment']);
-    $choices = get_posts(array(
-        'post_type' => array_values($post_types),
-        'post_status' => 'publish',
-        'posts_per_page' => 80,
-        'post__not_in' => array($post_id),
-        'orderby' => 'modified',
-        'order' => 'DESC',
-        'no_found_rows' => true,
-    ));
 
     wp_nonce_field('tk_seo_geo_meta_box', 'tk_seo_geo_meta_nonce');
     ?>
@@ -380,27 +366,6 @@ function tk_seo_render_geo_meta_box($post): void {
     <?php tk_seo_content_editor_render((int) $post_id); ?>
     <p><label for="tk-seo-keyword"><strong>Focus Keyword</strong></label></p>
     <input id="tk-seo-keyword" name="tk_seo_focus_keyword" type="text" style="width:100%;" value="<?php echo esc_attr((string) get_post_meta($post_id, '_tk_seo_focus_keyword', true)); ?>">
-    <p><label for="tk-schema-type"><strong>Schema Type</strong></label></p>
-    <select id="tk-schema-type" name="tk_schema_type" style="width:100%;">
-        <?php $selected_schema_type = (string) get_post_meta($post_id, '_tk_schema_type', true); ?>
-        <?php foreach (tk_seo_schema_type_choices() as $value => $label) : ?>
-            <option value="<?php echo esc_attr($value); ?>" <?php selected($selected_schema_type !== '' ? $selected_schema_type : 'auto', $value); ?>><?php echo esc_html($label); ?></option>
-        <?php endforeach; ?>
-    </select>
-    <p class="description">Override the post-type mapping only when this content needs a different schema.</p>
-    <p><strong>References / Sources</strong></p>
-    <textarea name="tk_geo_reference_urls" rows="5" style="width:100%;" placeholder="One source URL per line"><?php echo esc_textarea(implode("\n", $references)); ?></textarea>
-    <p class="description">Used for GEO audit and Schema.org <code>citation</code>.</p>
-
-    <p><strong>Related Content</strong></p>
-    <select name="tk_geo_related_posts[]" multiple size="6" style="width:100%;">
-        <?php foreach ($choices as $choice) : ?>
-            <option value="<?php echo esc_attr((string) $choice->ID); ?>" <?php selected(in_array((int) $choice->ID, $related_ids, true)); ?>>
-                <?php echo esc_html(get_the_title($choice) ?: ('#' . $choice->ID)); ?>
-            </option>
-        <?php endforeach; ?>
-    </select>
-    <p class="description">Manual related content for audit and Schema.org <code>relatedLink</code>.</p>
     <?php
 }
 
@@ -444,36 +409,8 @@ function tk_seo_save_geo_meta_box($post_id, $post): void {
             update_post_meta((int) $post_id, '_tk_seo_target_location', $location);
         }
     }
-    if (isset($_POST['tk_schema_type']) && is_string($_POST['tk_schema_type'])) {
-        $schema_type = sanitize_text_field(wp_unslash($_POST['tk_schema_type']));
-        $schema_choices = tk_seo_schema_type_choices();
-        if (isset($schema_choices[$schema_type])) {
-            update_post_meta((int) $post_id, '_tk_schema_type', $schema_type);
-        }
-    }
-
-    $raw_refs = isset($_POST['tk_geo_reference_urls']) ? (string) wp_unslash($_POST['tk_geo_reference_urls']) : '';
-    $refs = array();
-    foreach (preg_split('/\r\n|\r|\n/', $raw_refs) ?: array() as $line) {
-        $url = esc_url_raw(trim((string) $line));
-        if ($url !== '' && (strpos($url, 'http://') === 0 || strpos($url, 'https://') === 0)) {
-            $refs[] = $url;
-        }
-    }
-    $refs = array_values(array_unique($refs));
-    if (!empty($refs)) {
-        update_post_meta((int) $post_id, '_tk_geo_reference_urls', $refs);
-    } else {
-        delete_post_meta((int) $post_id, '_tk_geo_reference_urls');
-    }
-
-    $related = isset($_POST['tk_geo_related_posts']) && is_array($_POST['tk_geo_related_posts']) ? $_POST['tk_geo_related_posts'] : array();
-    $related = array_slice(array_values(array_unique(array_filter(array_map('intval', $related)))), 0, 10);
-    if (!empty($related)) {
-        update_post_meta((int) $post_id, '_tk_geo_related_posts', $related);
-    } else {
-        delete_post_meta((int) $post_id, '_tk_geo_related_posts');
-    }
+    // Schema, references and related content are derived when read. Preserve legacy
+    // metadata without accepting hidden overrides from older editor forms.
 }
 
 function tk_seo_collect_urls_from_value($value): array {
@@ -506,6 +443,41 @@ function tk_seo_collect_urls_from_value($value): array {
     return $urls;
 }
 
+function tk_seo_content_reference_urls(string $content): array {
+    if (trim($content) === '' || !class_exists('DOMDocument')) {
+        return array();
+    }
+
+    $document = new DOMDocument();
+    $previous = libxml_use_internal_errors(true);
+    try {
+        $loaded = $document->loadHTML('<?xml encoding="UTF-8">' . $content, LIBXML_NONET);
+    } finally {
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+    }
+    if (!$loaded) {
+        return array();
+    }
+
+    $home_host = (string) wp_parse_url(home_url('/'), PHP_URL_HOST);
+    $urls = array();
+    foreach ($document->getElementsByTagName('a') as $link) {
+        $url = esc_url_raw(trim($link->getAttribute('href')));
+        if (strpos($url, '//') === 0) {
+            $url = 'https:' . $url;
+        }
+        $host = (string) wp_parse_url($url, PHP_URL_HOST);
+        if (!preg_match('~^https?://~i', $url) || $host === '' || strcasecmp($host, $home_host) === 0
+            || preg_match('/\b(?:sponsored|ugc)\b/i', $link->getAttribute('rel'))) {
+            continue;
+        }
+        $urls[] = $url;
+    }
+
+    return array_values(array_unique($urls));
+}
+
 function tk_seo_reference_urls($post_id): array {
     $post_id = (int) $post_id;
     if ($post_id <= 0) {
@@ -513,7 +485,6 @@ function tk_seo_reference_urls($post_id): array {
     }
 
     $keys = array(
-        '_tk_geo_reference_urls',
         '_source_url',
         'source_url',
         'source',
@@ -530,6 +501,11 @@ function tk_seo_reference_urls($post_id): array {
         foreach (get_post_meta($post_id, $key, false) as $value) {
             $urls = array_merge($urls, tk_seo_collect_urls_from_value($value));
         }
+    }
+
+    $post = get_post($post_id);
+    if (is_object($post)) {
+        $urls = array_merge($urls, tk_seo_content_reference_urls((string) $post->post_content));
     }
 
     $urls = array_filter(array_map('esc_url_raw', $urls));
@@ -634,54 +610,38 @@ function tk_seo_organization_data(): array {
 
 function tk_seo_related_urls($post_id, $limit = 3): array {
     $post_id = (int) $post_id;
+    $limit = min(10, max(0, (int) $limit));
     $post_type = $post_id > 0 ? (string) get_post_type($post_id) : '';
-    if ($post_id <= 0 || $post_type === '') {
+    if ($post_id <= 0 || $post_type === '' || $limit === 0) {
         return array();
     }
 
-    $manual_related = get_post_meta($post_id, '_tk_geo_related_posts', true);
-    if (is_array($manual_related) && !empty($manual_related)) {
-        $urls = array();
-        foreach (array_slice(array_map('intval', $manual_related), 0, (int) $limit) as $related_id) {
-            if ($related_id <= 0 || get_post_status($related_id) !== 'publish') {
-                continue;
-            }
-            $url = get_permalink($related_id);
-            if (is_string($url) && $url !== '') {
-                $urls[] = $url;
-            }
+    $tax_query = array('relation' => 'OR');
+    foreach (get_object_taxonomies($post_type) as $taxonomy) {
+        if ($taxonomy === 'post_format') {
+            continue;
         }
-        if (!empty($urls)) {
-            return array_values(array_unique($urls));
+        $terms = wp_get_post_terms($post_id, $taxonomy, array('fields' => 'ids'));
+        if (is_wp_error($terms) || empty($terms)) {
+            continue;
         }
+        $tax_query[] = array(
+            'taxonomy' => $taxonomy,
+            'field' => 'term_id',
+            'terms' => $terms,
+        );
     }
-
-    $taxonomies = get_object_taxonomies($post_type);
-    $taxonomy = in_array('category', $taxonomies, true) ? 'category' : '';
-    if ($taxonomy === '' && !empty($taxonomies)) {
-        $taxonomy = (string) reset($taxonomies);
-    }
-    if ($taxonomy === '') {
-        return array();
-    }
-
-    $terms = wp_get_post_terms($post_id, $taxonomy, array('fields' => 'ids'));
-    if (is_wp_error($terms) || empty($terms)) {
+    if (count($tax_query) === 1) {
         return array();
     }
 
     $related = get_posts(array(
         'post_type' => $post_type,
         'post_status' => 'publish',
-        'posts_per_page' => (int) $limit,
+        'has_password' => false,
+        'posts_per_page' => $limit,
         'post__not_in' => array($post_id),
-        'tax_query' => array(
-            array(
-                'taxonomy' => $taxonomy,
-                'field' => 'term_id',
-                'terms' => $terms,
-            ),
-        ),
+        'tax_query' => $tax_query,
         'fields' => 'ids',
         'no_found_rows' => true,
     ));
@@ -715,17 +675,6 @@ function tk_seo_schema_type_for_post($post): string {
     $post = is_object($post) ? $post : get_post((int) $post);
     if (!is_object($post)) {
         return 'none';
-    }
-    $choices = tk_seo_schema_type_choices();
-    $override = (string) get_post_meta((int) $post->ID, '_tk_schema_type', true);
-    if ($override !== '' && $override !== 'auto' && isset($choices[$override])) {
-        return $override;
-    }
-    $map = tk_get_option('seo_schema_post_type_map', array());
-    $map = is_array($map) ? $map : array();
-    $mapped = isset($map[$post->post_type]) ? (string) $map[$post->post_type] : 'auto';
-    if ($mapped !== 'auto' && isset($choices[$mapped])) {
-        return $mapped;
     }
     if ($post->post_type === 'post') {
         return 'BlogPosting';

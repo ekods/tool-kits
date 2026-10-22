@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.31
+Stable tag: 2.7.32
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,7 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.32 is a GitHub pre-release and inherits signed license verification from 2.7.31. Deploy the matching NexaMonitor signing API and key before installing; see LICENSE_SECURITY.md.
 - Change DB Prefix: the plugin renames tables and updates related meta keys, but you still need to update `$table_prefix` in wp-config.php manually.
 - Export SQL: best-effort via WPDB. For large databases, use phpMyAdmin or WP-CLI.
 - The update checker retrieves releases from GitHub. The `tool-kits.zip` release asset is recommended for automatic installation.
@@ -66,6 +67,15 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.32 =
+**Automatic SEO/GEO and Lightweight Health Center**
+- Move the SEO/GEO editor panel to the sidebar. Detect schema types, references and related content automatically, and remove manual per-post and global schema mappings without deleting legacy data.
+- Refine the Health Center widget with clear scores, compact status cards, collapsible metrics, and up to three priority actions linked to saved check details.
+- Add a local PHP2Shell version assessment to manual Health Center and Vulnerability scans. Vendor/prerelease builds require verification; CLI and unknown branches cannot establish a patched web runtime.
+- Mark saved reports for a new manual scan after 24 hours or tracked configuration changes. Show four-stage progress with distinct success and error states and bounded requests.
+- Reuse the saved web PHP assessment in the existing NexaMonitor heartbeat. No new cron, automatic scans, file crawling or network requests are added.
+- Pre-release: requires the signed license API and matching public-key deployment introduced in 2.7.31. This release does not update PHP or deploy the NexaMonitor server.
+
 = 2.7.31 =
 * Require server-issued RSA-SHA256 license receipts bound to the site, installation, license key, product and expiry; reject unsigned activation and legacy local HMAC credentials.
 * Enforce signed expiry across feature gates and early cache, add independent license refresh, bounded outage tolerance, fresh activation challenges and strict HTTPS license transport.

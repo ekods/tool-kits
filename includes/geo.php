@@ -2008,14 +2008,7 @@ function tk_geo_save(): void {
     tk_update_option('geo_enabled', !empty($_POST['geo_enabled']) ? 1 : 0);
     tk_update_option('seo_schema_enabled', !empty($_POST['seo_schema_enabled']) ? 1 : 0);
     tk_update_option('seo_breadcrumb_enabled', !empty($_POST['seo_breadcrumb_enabled']) ? 1 : 0);
-    $schema_choices = function_exists('tk_seo_schema_type_choices') ? tk_seo_schema_type_choices() : array('auto' => 'Auto detect');
-    $schema_map_input = isset($_POST['seo_schema_post_type_map']) && is_array($_POST['seo_schema_post_type_map']) ? $_POST['seo_schema_post_type_map'] : array();
-    $schema_map = array();
-    foreach ($post_types as $schema_post_type => $schema_post_type_object) {
-        $schema_type = isset($schema_map_input[$schema_post_type]) ? sanitize_text_field(wp_unslash((string) $schema_map_input[$schema_post_type])) : 'auto';
-        $schema_map[$schema_post_type] = isset($schema_choices[$schema_type]) ? $schema_type : 'auto';
-    }
-    tk_update_option('seo_schema_post_type_map', $schema_map);
+    // Schema types are detected automatically. Legacy maps are preserved but no longer read or edited.
     tk_update_option('geo_custom_jsonld', $custom_json);
     tk_update_option('geo_faq_enabled', !empty($_POST['geo_faq_enabled']) ? 1 : 0);
     tk_update_option('geo_faq_items', tk_geo_normalize_faq_items($faq_items));
@@ -2073,8 +2066,6 @@ function tk_render_geo_panel(): void {
     $enabled = (int) tk_get_option('geo_enabled', 0);
     $seo_schema = (int) tk_get_option('seo_schema_enabled', 1);
     $seo_breadcrumb = (int) tk_get_option('seo_breadcrumb_enabled', 1);
-    $seo_schema_post_type_map = tk_get_option('seo_schema_post_type_map', array());
-    $seo_schema_post_type_map = is_array($seo_schema_post_type_map) ? $seo_schema_post_type_map : array();
     $custom_json = (string) tk_get_option('geo_custom_jsonld', '');
     $faq_enabled = (int) tk_get_option('geo_faq_enabled', 0);
     $faq_items = tk_geo_normalize_faq_items(tk_get_option('geo_faq_items', array()));
@@ -2259,28 +2250,7 @@ function tk_render_geo_panel(): void {
                 <?php tk_render_switch('seo_schema_enabled', 'SEO JSON-LD Schema', 'Generate WebSite, Organization, WebPage, Article, and Service schema through GEO output.', $seo_schema); ?>
                 <?php tk_render_switch('seo_breadcrumb_enabled', 'BreadcrumbList Schema', 'Generate a hierarchy-aware breadcrumb graph and connect it to WebPage.', $seo_breadcrumb); ?>
                 <p class="description">This setting was moved from SEO so all JSON-LD output is managed from GEO.</p>
-                <?php if (function_exists('tk_seo_schema_type_choices')) : ?>
-                    <h3 style="margin-top:20px;">Schema by Post Type</h3>
-                    <p class="description">Choose the content entity emitted beside WebPage. Auto detection uses the post type name and adds no extra frontend request.</p>
-                    <table class="widefat striped" style="max-width:720px;margin-top:10px;">
-                        <thead><tr><th>Post Type</th><th>Schema Type</th></tr></thead>
-                        <tbody>
-                        <?php foreach ($post_types as $schema_post_type => $schema_post_type_object) : ?>
-                            <?php $mapped_schema = isset($seo_schema_post_type_map[$schema_post_type]) ? (string) $seo_schema_post_type_map[$schema_post_type] : 'auto'; ?>
-                            <tr>
-                                <td><label for="tk-schema-map-<?php echo esc_attr($schema_post_type); ?>"><?php echo esc_html($schema_post_type_object->labels->singular_name); ?></label></td>
-                                <td>
-                                    <select id="tk-schema-map-<?php echo esc_attr($schema_post_type); ?>" name="seo_schema_post_type_map[<?php echo esc_attr($schema_post_type); ?>]">
-                                        <?php foreach (tk_seo_schema_type_choices() as $schema_value => $schema_label) : ?>
-                                            <option value="<?php echo esc_attr($schema_value); ?>" <?php selected($mapped_schema, $schema_value); ?>><?php echo esc_html($schema_label); ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                <?php endif; ?>
+                <p class="description">Schema types are detected automatically from the content type. No manual mapping is required.</p>
             </div>
         </div>
 

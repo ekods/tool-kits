@@ -1,5 +1,6 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
+require_once __DIR__ . '/health-center-summary.php';
 
 if (!defined('TK_HEARTBEAT_URL')) {
     define('TK_HEARTBEAT_URL', 'https://nexamonitor.theteamtheteam.com/api/toolkits/heartbeat');
@@ -240,6 +241,7 @@ function tk_heartbeat_send(): array {
         'active' => true,
         'wp_version' => get_bloginfo('version'),
         'php_version' => PHP_VERSION,
+        'php_security' => tk_health_center_php_summary(),
         'hide_login_enabled' => $hide_login_enabled,
         'hide_login_slug' => $hide_login_enabled ? tk_hide_login_slug() : '',
         'hide_login_url' => $hide_login_enabled ? tk_hide_login_custom_url() : '',

@@ -3,11 +3,17 @@ if (!defined('ABSPATH')) { exit; }
 require_once __DIR__ . '/health-center-engine.php';
 require_once __DIR__ . '/health-center-probe.php';
 require_once __DIR__ . '/health-center-view.php';
+require_once __DIR__ . '/php-runtime-security.php';
+require_once __DIR__ . '/health-center-summary.php';
 
 function tk_health_center_init(): void {
     add_action('admin_menu', 'tk_health_center_menu', 22);
     add_action('wp_dashboard_setup', 'tk_health_center_widget');
     add_action('admin_enqueue_scripts', 'tk_health_center_assets');
+    // Rare lifecycle events invalidate the saved report; they never start a scan.
+    foreach (array('activated_plugin', 'deactivated_plugin', 'switch_theme', 'upgrader_process_complete') as $hook) {
+        add_action($hook, 'tk_health_center_invalidate');
+    }
     foreach (array('start', 'step') as $action) { add_action('wp_ajax_tk_health_center_' . $action, 'tk_health_center_' . $action . '_ajax'); }
 }
 
@@ -44,7 +50,7 @@ function tk_health_center_start_ajax(): void {
     if (!add_option('tk_health_center_lock', $lock, '', false)) { wp_send_json_error(array('message' => 'Another scan is running. Wait for it to finish or for the session to expire (10 minutes).'), 409); return; }
     $state = $lock + array('phase' => 0, 'report' => array('started' => time(), 'checks' => array(), 'server' => array(), 'performance' => array('ttfb' => null, 'slow_http' => null, 'queries' => null, 'failed_jobs' => null, 'failed_jobs_limited' => false, 'overdue_cron' => null, 'cron_limited' => false, 'cache' => 'Not reported')));
     set_transient('tk_health_center_job_' . $token, $state, 600);
-    wp_send_json_success(array('token' => $token, 'done' => false, 'message' => 'Checking server, compatibility, and cron…'));
+    wp_send_json_success(array('token' => $token, 'done' => false, 'progress' => 0, 'message' => 'Step 1 of 4: checking server, compatibility, and cron…'));
 }
 
 function tk_health_center_step_ajax(): void {
@@ -63,13 +69,13 @@ function tk_health_center_step_ajax(): void {
         if (!is_array($state)) { throw new RuntimeException('Scan session expired.'); }
         if ($state['phase'] === 0) {
             tk_health_center_local($state['report']);
-            $message = 'Measuring TTFB and checking homepage HTML and headers…';
+            $message = 'Step 2 of 4: measuring TTFB and checking homepage HTML and headers…';
         } elseif ($state['phase'] === 1) {
             tk_health_analyze_public($state['report'], tk_health_center_public_request());
-            $message = 'Measuring database queries and HTTP requests in the homepage profile…';
+            $message = 'Step 3 of 4: measuring database queries and HTTP requests in the homepage profile…';
         } elseif ($state['phase'] === 2) {
             tk_health_center_request_profile($state);
-            $message = 'Preparing scan results…';
+            $message = 'Step 4 of 4: preparing scan results…';
         } else {
             tk_health_center_finish_profile($state);
             $state['report']['completed'] = time();
@@ -86,13 +92,17 @@ function tk_health_center_step_ajax(): void {
         wp_send_json_error(array('message' => 'Scan failed. Previous results remain available. Please try again.'), 500); return;
     }
     delete_option($step_key);
-    $result = array('token' => $token, 'done' => $done, 'message' => $message);
+    $result = array('token' => $token, 'done' => $done, 'progress' => min(100, $state['phase'] * 25), 'message' => $message);
     if ($done) { ob_start(); tk_health_center_report_html($state['report'], !empty($_POST['full'])); $result['html'] = ob_get_clean(); }
     wp_send_json_success($result);
 }
 
 function tk_health_center_local(array &$report): void {
     global $wpdb, $wp_version;
+    $report['environment'] = tk_health_center_environment();
+    $report['php_security'] = tk_php2shell_assessment();
+    $php = $report['php_security'];
+    tk_health_check($report, 'Security', 'PHP2Shell runtime patch', $php['status'] === 'patched' ? 'passed' : ($php['status'] === 'affected' ? 'critical' : 'unknown'), $php['message']);
     $report['performance'] += array('cron_limited' => false, 'failed_jobs' => null, 'failed_jobs_limited' => false);
     $memory = (string) ini_get('memory_limit'); $bytes = tk_health_memory_bytes($memory);
     $database = method_exists($wpdb, 'db_server_info') ? $wpdb->db_server_info() : $wpdb->db_version();

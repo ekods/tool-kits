@@ -132,4 +132,19 @@ $profile = $transients['tk_health_center_profile_' . $id]; verify_health($profil
 require dirname(__DIR__) . '/includes/cache.php';
 verify_health(tk_page_cache_should_ignore_option_change('tk_health_center_report') && tk_page_cache_should_ignore_option_change('tk_health_center_lock') && tk_page_cache_should_ignore_option_change('tk_health_center_step_lock'), 'Manual scan purges page cache while measuring it');
 verify_health(!TK_Page_Cache_Runtime::request_allowed(array(), array('REQUEST_METHOD' => 'GET', 'HTTP_HOST' => 'site.test', 'REQUEST_URI' => '/'), array('tk_health_center_session' => '1')), 'Manual profile can receive early cache HTML');
+$priority_report = $saved;
+$priority_report['completed'] = time() - 86401;
+$priority_report['checks'] = array(
+    array('category' => 'Security', 'label' => 'Warning first', 'status' => 'warning', 'detail' => 'Warning'),
+    array('category' => 'Security', 'label' => 'Critical one', 'status' => 'critical', 'detail' => 'Critical'),
+    array('category' => 'Security', 'label' => 'Critical two', 'status' => 'critical', 'detail' => 'Critical'),
+    array('category' => 'Performance', 'label' => 'Warning second', 'status' => 'warning', 'detail' => 'Warning'),
+);
+$before_options = $options; $before_requests = count($requests);
+ob_start(); tk_health_center_report_html($priority_report, false); $priority_html = ob_get_clean();
+verify_health(substr_count($priority_html, 'tk-health-finding-status ') === 3, 'Priority actions must be capped at three');
+verify_health(strpos($priority_html, 'Critical two') < strpos($priority_html, 'Warning first'), 'Critical findings must appear before warnings');
+verify_health(strpos($priority_html, 'Scan again') !== false, 'Old report must show scan-again notice');
+verify_health(strpos($priority_html, '#tk-health-check-1') !== false, 'Priority action must link to saved check details');
+verify_health($options === $before_options && count($requests) === $before_requests, 'Priority/freshness rendering must be read-only without HTTP');
 echo 'PASS: Health Center (' . $checks . " checks)\n";

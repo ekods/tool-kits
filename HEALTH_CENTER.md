@@ -30,10 +30,21 @@ Setiap pemeriksaan terukur bernilai **passed=100, warning=50, critical=0**. Skor
 
 Laporan disimpan pada option non-autoload `tk_health_center_report`. Job memakai transient 10 menit dan lock satu scan/step, terikat admin yang memulainya. Hasil sebelumnya tetap tersedia selama scan baru berlangsung atau gagal. Tab perlu tetap terbuka hingga selesai. Jika terputus, sesi akan kedaluwarsa dalam 10 menit sebelum scan baru dapat dimulai. Option/transient internal scan tidak menyebabkan purge page cache.
 
-## Verifikasi pengembangan
+## PHP2Shell, prioritas, dan batas beban
+
+Pemeriksaan **PHP2Shell runtime patch** membandingkan versi PHP yang menjalankan scan web dengan rilis perbaikan pertama: 8.2.35, 8.3.36, 8.4.27, dan 8.5.12. Sumber: [advisory resmi PHP 21 Oktober 2026](https://www.php.net/archive/2026.php). Build vendor/prerelease memerlukan verifikasi vendor; cabang baru yang belum terdaftar dan runtime CLI tidak dianggap lolos. Pemeriksaan versi tidak mendeteksi kompromi atau menjamin semua worker/host memakai build yang sama. Tidak ada payload eksploitasi, shell command, perubahan php.ini, lookup API CVE, atau scan file.
+
+Widget menampilkan maksimal tiga tindakan prioritas dari laporan tersimpan, dengan Critical lebih dahulu. Tautan membuka baris pemeriksaan di halaman lengkap. Indikator AJAX menampilkan empat tahap scan dan membedakan sukses/gagal; klien dibatasi satu start dan maksimal empat step, tanpa polling/retry otomatis.
+
+Laporan meminta scan ulang setelah 24 jam, bila cap waktu tidak valid, atau bila fingerprint konfigurasi berubah. Fingerprint hanya memakai nilai lokal kecil: versi runtime/WordPress/Tool Kits, batas memori dan konstanta relevan, nama tema, daftar plugin aktif, URL homepage, dan pilihan keamanan/SEO Tool Kits tertentu. Upgrade/aktivasi/deaktivasi plugin dan pergantian tema menulis penanda invalidasi sekali per kejadian. Tidak ada pemeriksaan isi file atau pendeteksian setiap perubahan konfigurasi eksternal; perubahan web server, proxy, atau file konfigurasi di luar nilai ini tetap memerlukan scan manual.
+
+Heartbeat yang sudah ada membawa ringkasan hasil PHP tersimpan beserta sumber, waktu, dan penanda stale; tidak menjalankan scan atau menambah request. NexaMonitor menerima field opsional ini tanpa migrasi database dan hanya memberi badge hijau untuk laporan web yang masih berlaku. Klien lama tetap didukung. Seluruh tambahan tidak membuat cron baru, crawl situs, pemeriksaan berkala, enumerasi file, atau query database tabel besar. Dua request homepage pada scan Health Center manual yang sudah ada tetap berlaku.
+
+## Verifikasi tambahan
 
 ```
 php scripts/health-center-regression.php
+php scripts/php-runtime-security-regression.php
 node scripts/health-center-ui-regression.cjs
 python3 scripts/health-center-http-regression.py
 ```
