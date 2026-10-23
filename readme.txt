@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.33
+Stable tag: 2.7.34
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,7 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.34 is a GitHub pre-release patch for Collector recheck rate limiting. Fully authenticated heartbeat requests are excluded from public Form Guard checks; ordinary forms and unauthenticated requests retain their existing protection.
 - Version 2.7.33 is a GitHub pre-release and adds authenticated on-demand heartbeat replies for NexaMonitor's Check Ulang action. Deploy the matching NexaMonitor update and use the same collector token on both sides.
 - Version 2.7.32 is a GitHub pre-release and inherits signed license verification from 2.7.31. Deploy the matching NexaMonitor signing API and key before installing; see LICENSE_SECURITY.md.
 - Change DB Prefix: the plugin renames tables and updates related meta keys, but you still need to update `$table_prefix` in wp-config.php manually.
@@ -68,6 +69,10 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.34 =
+* Prevent authenticated Collector heartbeat requests from being counted as public form submissions before REST_REQUEST is defined during WordPress init.
+* Keep signature, timestamp, website, installation, replay and concurrency validation. Report the remaining heartbeat cooldown with HTTP 429 responses.
+
 = 2.7.33 =
 * Add authenticated on-demand heartbeat replies for NexaMonitor Check Ulang. Fresh, verified plugin data reconnects the Collector and updates PHP, WordPress, plugin versions and monitoring summaries.
 * Bind requests and responses to the website, installation, timestamp and a random challenge. Reject replayed or concurrent requests and apply a short cooldown.

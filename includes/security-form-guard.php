@@ -54,6 +54,12 @@ function tk_form_guard_is_public_post(): bool {
         return false;
     }
 
+    // REST_REQUEST is not set yet during init. Authenticate this endpoint before
+    // treating its server-to-server POST as a public form submission.
+    if (function_exists('tk_heartbeat_recheck_is_authenticated_request') && tk_heartbeat_recheck_is_authenticated_request()) {
+        return false;
+    }
+
     $context = tk_form_guard_request_context();
     if (in_array($context, array('login', 'comment', 'frontend'), true)) {
         return true;

@@ -1,7 +1,7 @@
 <?php
 if (PHP_SAPI !== 'cli') { exit; }
 define('ABSPATH', __DIR__ . '/');
-define('TK_VERSION', '2.7.33');
+define('TK_VERSION', '2.7.34');
 define('MINUTE_IN_SECONDS', 60);
 $options = array(); $transients = array(); $actions = array(); $requests = array(); $queries = 0; $checks = 0;
 error_reporting(E_ALL);
@@ -98,6 +98,57 @@ foreach (array(challenge(array(), ''), challenge(array('timestamp' => time() - 3
 }
 $request = challenge();
 verify_recheck(tk_heartbeat_recheck_authorize($request) === true, 'Genuine collector challenge rejected');
+$_SERVER['REQUEST_METHOD'] = 'POST';
+$_SERVER['REQUEST_URI'] = '/?rest_route=%2Ftool-kits%2Fv1%2Fheartbeat';
+$_SERVER['HTTP_X_AUTH_SIGNATURE'] = $request->signature;
+$_GET['rest_route'] = '/tool-kits/v1/heartbeat';
+verify_recheck(!defined('REST_REQUEST') && tk_heartbeat_recheck_is_authenticated_request($request->body), 'Authenticated heartbeat was not recognized before REST_REQUEST');
+$_SERVER['HTTP_X_AUTH_SIGNATURE'] = str_repeat('0', 64);
+verify_recheck(!tk_heartbeat_recheck_is_authenticated_request($request->body), 'Forged heartbeat skipped public form checks');
+$_SERVER['HTTP_X_AUTH_SIGNATURE'] = $request->signature;
+$_GET['rest_route'] = '/other-endpoint';
+verify_recheck(!tk_heartbeat_recheck_is_authenticated_request($request->body), 'Signed body bypassed checks on another endpoint');
+unset($_GET['rest_route']);
+$_SERVER['REQUEST_URI'] = '/wp-json/tool-kits/v1/heartbeat';
+verify_recheck(tk_heartbeat_recheck_is_authenticated_request($request->body), 'Authenticated pretty REST URL was not recognized');
+$_SERVER['REQUEST_METHOD'] = 'GET';
+verify_recheck(!tk_heartbeat_recheck_is_authenticated_request($request->body), 'Non-POST bypassed form checks');
+$expired = challenge(array('timestamp' => time() - 301));
+$_SERVER['REQUEST_METHOD'] = 'POST';
+$_SERVER['HTTP_X_AUTH_SIGNATURE'] = $expired->signature;
+verify_recheck(!tk_heartbeat_recheck_is_authenticated_request($expired->body), 'Expired signed request skipped form checks');
+$wrongSite = challenge(array('site_url' => 'https://another.test'));
+$_SERVER['HTTP_X_AUTH_SIGNATURE'] = $wrongSite->signature;
+verify_recheck(!tk_heartbeat_recheck_is_authenticated_request($wrongSite->body), 'Cross-site request skipped form checks');
+// Exercise the real Form Guard before REST_REQUEST exists, with a bounded input stream.
+require dirname(__DIR__) . '/includes/security-form-guard.php';
+class RecheckInputStream {
+    public $context; private $offset = 0;
+    public function stream_open($path, $mode, $options, &$opened) { return $path === 'php://input'; }
+    public function stream_read($count) {
+        $chunk = substr($GLOBALS['fixture_input'], $this->offset, $count);
+        $this->offset += strlen($chunk); return $chunk;
+    }
+    public function stream_eof() { return $this->offset >= strlen($GLOBALS['fixture_input']); }
+    public function stream_stat() { return array(); }
+}
+$GLOBALS['fixture_input'] = $request->body;
+$_GET['rest_route'] = '/tool-kits/v1/heartbeat';
+$_SERVER['REQUEST_URI'] = '/?rest_route=%2Ftool-kits%2Fv1%2Fheartbeat';
+$_SERVER['HTTP_X_AUTH_SIGNATURE'] = $request->signature;
+stream_wrapper_unregister('php');
+stream_wrapper_register('php', RecheckInputStream::class);
+try {
+    verify_recheck(!tk_form_guard_is_public_post(), 'Authenticated heartbeat was counted as a public form POST at init');
+    $_SERVER['HTTP_X_AUTH_SIGNATURE'] = str_repeat('0', 64);
+    verify_recheck(tk_form_guard_is_public_post(), 'Unauthenticated heartbeat bypassed Form Guard');
+    $_SERVER['HTTP_X_AUTH_SIGNATURE'] = $request->signature;
+    unset($_GET['rest_route']);
+    $_SERVER['REQUEST_URI'] = '/contact/';
+    verify_recheck(tk_form_guard_is_public_post(), 'Signed payload bypassed Form Guard on an ordinary form URL');
+} finally {
+    stream_wrapper_restore('php');
+}
 $reply = tk_heartbeat_recheck_response($request);
 verify_recheck($reply instanceof WP_REST_Response && $reply->status === 200, 'Genuine request did not return heartbeat');
 $heartbeat = json_decode($reply->data['heartbeat'], true);
@@ -105,12 +156,13 @@ verify_recheck(hash_equals(hash_hmac('sha256', $reply->data['heartbeat'], 'colle
 verify_recheck($heartbeat['recheck_nonce'] === json_decode($request->body, true)['nonce'] && $heartbeat['active'] === true
     && $heartbeat['site_url'] === home_url('/') && $heartbeat['site_id'] === 'fixture-install', 'Heartbeat did not bind challenge and installation');
 verify_recheck($heartbeat['php_version'] === PHP_VERSION && $heartbeat['wp_version'] === '6.6.2'
-    && $heartbeat['version'] === '2.7.33' && $heartbeat['maintenance']['revisions_total'] === 12
+    && $heartbeat['version'] === '2.7.34' && $heartbeat['maintenance']['revisions_total'] === 12
     && $heartbeat['seo_geo']['seo_score'] === 87, 'Heartbeat did not use current real payload builder');
 verify_recheck($reply->headers['Cache-Control'] === 'no-store, private' && !$requests, 'Telemetry cached or additional callback request sent');
 verify_recheck(!isset($options['tk_heartbeat_recheck_lock']) && $queries === 1, 'Completed request leaked a lock or repeated database collection');
 verify_recheck(tk_heartbeat_recheck_response($request)->code === 'tk_recheck_replay' && $queries === 1, 'Replayed nonce gathered data again');
-verify_recheck(tk_heartbeat_recheck_response(challenge())->data['status'] === 429 && $queries === 1, 'Rapid requests bypassed cooldown');
+$busy = tk_heartbeat_recheck_response(challenge());
+verify_recheck($busy->data['status'] === 429 && $busy->data['retry_after'] >= 1 && $busy->data['retry_after'] <= 10 && $queries === 1, 'Cooldown or its remaining wait was incorrect');
 unset($transients['tk_hb_recheck_cooldown']);
 $options['tk_heartbeat_recheck_lock'] = time();
 verify_recheck(tk_heartbeat_recheck_response(challenge())->data['status'] === 429 && $queries === 1, 'Concurrent recheck bypassed atomic lock');

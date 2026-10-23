@@ -37,6 +37,30 @@ function tk_heartbeat_recheck_authorize($request) {
     return true;
 }
 
+/** Only a fully authenticated Collector request may skip public form checks at init. */
+function tk_heartbeat_recheck_is_authenticated_request(?string $rawBody = null): bool {
+    if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? '')) !== 'POST') { return false; }
+    $route = isset($_GET['rest_route']) && is_string($_GET['rest_route']) ? $_GET['rest_route'] : '';
+    $homePath = rtrim((string) parse_url(home_url('/'), PHP_URL_PATH), '/');
+    $path = rtrim((string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH), '/');
+    if ($route !== '/tool-kits/v1/heartbeat' && $path !== $homePath . '/wp-json/tool-kits/v1/heartbeat') { return false; }
+    $signature = $_SERVER['HTTP_X_AUTH_SIGNATURE'] ?? '';
+    if (!is_string($signature)) { return false; }
+    $rawBody = $rawBody ?? file_get_contents('php://input', false, null, 0, 4097);
+    if (!is_string($rawBody)) { return false; }
+    $request = new class($rawBody, $signature) {
+        private $body; private $signature;
+        public function __construct($body, $signature) { $this->body = $body; $this->signature = $signature; }
+        public function get_body() { return $this->body; }
+        public function get_header($name) { return $name === 'x-auth-signature' ? $this->signature : ''; }
+    };
+    return tk_heartbeat_recheck_authorize($request) === true;
+}
+
+function tk_heartbeat_recheck_busy(string $message, int $retryAfter) {
+    return new WP_Error('tk_recheck_busy', $message, array('status' => 429, 'retry_after' => max(1, $retryAfter)));
+}
+
 function tk_heartbeat_recheck_response($request) {
     // Revalidate before returning private telemetry, including when called programmatically.
     $authorized = tk_heartbeat_recheck_authorize($request);
@@ -46,7 +70,7 @@ function tk_heartbeat_recheck_response($request) {
     $previous = (int) get_option($lock, 0);
     if ($previous > 0 && $previous < time() - 30) { delete_option($lock); }
     if (!add_option($lock, time(), '', false)) {
-        return new WP_Error('tk_recheck_busy', 'Another heartbeat request is in progress.', array('status' => 429));
+        return tk_heartbeat_recheck_busy('Another heartbeat request is in progress.', max(1, $previous + 30 - time()));
     }
 
     try {
@@ -55,11 +79,12 @@ function tk_heartbeat_recheck_response($request) {
         if (get_transient($nonceKey)) {
             return new WP_Error('tk_recheck_replay', 'This heartbeat request has already been used.', array('status' => 409));
         }
-        if (get_transient('tk_hb_recheck_cooldown')) {
-            return new WP_Error('tk_recheck_busy', 'Please wait a few seconds before requesting another heartbeat.', array('status' => 429));
+        $cooldown = (int) get_transient('tk_hb_recheck_cooldown');
+        if ($cooldown) {
+            return tk_heartbeat_recheck_busy('Please wait a few seconds before requesting another heartbeat.', $cooldown > time() ? $cooldown - time() : 10);
         }
         set_transient($nonceKey, 1, 600);
-        set_transient('tk_hb_recheck_cooldown', 1, 10);
+        set_transient('tk_hb_recheck_cooldown', time() + 10, 10);
 
         $payload = tk_heartbeat_payload();
         $payload['recheck_nonce'] = $data['nonce'];
