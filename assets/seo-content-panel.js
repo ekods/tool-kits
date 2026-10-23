@@ -183,6 +183,12 @@
             var socialCard = root.querySelector('.tk-seo-social-card');
             var socialImage = root.querySelector('.tk-seo-social-image');
             var socialImageEmpty = root.querySelector('.tk-seo-social-image-empty');
+            var socialImageId = root.querySelector('#tk-seo-social-image-id');
+            var socialImageSelect = root.querySelector('.tk-seo-social-image-select');
+            var socialImageReset = root.querySelector('.tk-seo-social-image-reset');
+            var socialImageStatus = root.querySelector('.tk-seo-social-image-status');
+            var fallbackImage = socialImageId.dataset.fallbackUrl || '', fallbackLoading = false;
+            var mediaFrame;
             function updateLength(field, length) {
                 var feedback = root.querySelector('[data-length-feedback="' + field + '"]');
                 var min = Number(feedback.dataset.min), max = Number(feedback.dataset.max);
@@ -193,6 +199,8 @@
                 feedback.querySelector('[data-' + field + '-length]').textContent = length + ' characters (suggested: ' + min + '–' + max + ').';
             }
             function setSocialImage(value, loading) {
+                fallbackImage = value || ''; fallbackLoading = !!loading;
+                if (Number(socialImageId.value) > 0) { value = socialImageId.dataset.customUrl; loading = false; }
                 var url = '';
                 try { if (value) { var parsed = new URL(value, window.location.href); if (/^https?:$/.test(parsed.protocol)) url = parsed.href; } } catch (error) { /* Show the empty-image state for unusable URLs. */ }
                 if (url) {
@@ -203,6 +211,40 @@
                     socialImageEmpty.textContent = loading ? 'Loading social image…' : 'No social image';
                 }
             }
+            function updateSocialImageChoice() {
+                var custom = Number(socialImageId.value) > 0;
+                socialImageReset.hidden = !custom;
+                socialImageStatus.textContent = custom ? 'Using a custom Open Graph image.' : 'Using the Featured Image (thumbnail), with the site image as a fallback.';
+                setSocialImage(fallbackImage, fallbackLoading);
+            }
+            if (socialImageSelect && window.wp && typeof window.wp.media === 'function') {
+                socialImageSelect.hidden = false;
+                socialImageSelect.addEventListener('click', function () {
+                    if (!mediaFrame) {
+                        mediaFrame = window.wp.media({title: 'Choose an Open Graph image', button: {text: 'Use this image'}, library: {type: 'image'}, multiple: false});
+                        mediaFrame.on('select', function () {
+                            var selected = mediaFrame.state().get('selection').first();
+                            if (!selected) return;
+                            var image = selected.toJSON();
+                            if (image.type !== 'image' || !image.id || !image.url) return;
+                            socialImageId.value = String(image.id); socialImageId.dataset.customUrl = image.url;
+                            socialImageId.dispatchEvent(new Event('change', {bubbles: true}));
+                            updateSocialImageChoice();
+                        });
+                        mediaFrame.on('open', function () {
+                            var selection = mediaFrame.state().get('selection'); selection.reset();
+                            if (Number(socialImageId.value) > 0) selection.add(window.wp.media.attachment(Number(socialImageId.value)));
+                        });
+                    }
+                    mediaFrame.open();
+                });
+            }
+            socialImageReset.addEventListener('click', function () {
+                socialImageId.value = '0'; socialImageId.dataset.customUrl = '';
+                socialImageId.dispatchEvent(new Event('change', {bubbles: true}));
+                updateSocialImageChoice();
+            });
+            updateSocialImageChoice();
             socialImage.addEventListener('load', function () { socialImage.hidden = false; socialImageEmpty.hidden = true; });
             socialImage.addEventListener('error', function () { socialImage.hidden = true; socialImageEmpty.hidden = false; socialImageEmpty.textContent = 'Image unavailable'; });
             function expand(value) {

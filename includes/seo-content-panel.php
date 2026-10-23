@@ -5,6 +5,7 @@ function tk_seo_content_panel_enqueue(): void {
     $screen = get_current_screen();
     if (!tk_seo_editor_panel_visible('content') || !$screen || $screen->base !== 'post' || !tk_is_admin_user()
         || !in_array($screen->post_type, tk_seo_selected_post_types(), true)) { return; }
+    if (current_user_can('upload_files')) { wp_enqueue_media(); }
     wp_enqueue_style('tk-seo-content-panel', TK_URL . 'assets/seo-content-panel.css', array(), tk_asset_version('assets/seo-content-panel.css'));
     wp_enqueue_script('tk-seo-content-panel', TK_URL . 'assets/seo-content-panel.js', array(), tk_asset_version('assets/seo-content-panel.js'), true);
 }
@@ -43,7 +44,16 @@ function tk_seo_length_feedback(string $field, string $text, int $min, int $max)
     <?php
 }
 
-function tk_seo_social_preview_image(int $post_id): string {
+function tk_seo_custom_social_image_url(int $post_id): string {
+    if ($post_id <= 0) { return ''; }
+    $image_id = (int) get_post_meta($post_id, '_tk_seo_social_image_id', true);
+    if ($image_id <= 0 || !wp_attachment_is_image($image_id)) { return ''; }
+    return esc_url_raw((string) wp_get_attachment_image_url($image_id, 'full'), array('http', 'https'));
+}
+
+function tk_seo_social_preview_image(int $post_id, bool $use_custom = true): string {
+    $custom = $use_custom ? tk_seo_custom_social_image_url($post_id) : '';
+    if ($custom !== '') { return $custom; }
     if (tk_seo_has_theme_managed_seo() && function_exists('cst_get_social_share_image_data')) {
         $image = cst_get_social_share_image_data($post_id);
         if (is_array($image) && is_string($image['url'] ?? null)) {
@@ -51,7 +61,7 @@ function tk_seo_social_preview_image(int $post_id): string {
             if ($url !== '') { return $url; }
         }
     }
-    return esc_url_raw((string) tk_seo_og_image_url($post_id), array('http', 'https'));
+    return esc_url_raw((string) tk_seo_og_image_url($post_id, $use_custom), array('http', 'https'));
 }
 
 function tk_seo_render_content_meta_box($post): void {
@@ -75,6 +85,9 @@ function tk_seo_render_content_meta_box($post): void {
     $preview_description = tk_seo_expand_variables($description, $post_id, $variables);
     $social_image = tk_seo_social_preview_image($post_id);
     $social_default_image = tk_seo_social_preview_image(0);
+    $social_custom_image = tk_seo_custom_social_image_url($post_id);
+    $social_image_id = $social_custom_image !== '' ? (int) get_post_meta($post_id, '_tk_seo_social_image_id', true) : 0;
+    $social_fallback_image = tk_seo_social_preview_image($post_id, false);
     wp_nonce_field('tk_seo_content_meta_box', 'tk_seo_content_meta_nonce');
     ?>
     <div class="tk-seo-post-editor" data-site-name="<?php echo esc_attr($site_name); ?>" data-page-title="<?php echo esc_attr($page_title); ?>" data-separator="<?php echo esc_attr($separator); ?>" data-variables="<?php echo esc_attr(wp_json_encode($variables)); ?>" data-default-title="<?php echo esc_attr($default_title); ?>" data-default-description="<?php echo esc_attr($defaults['description']); ?>" data-social-default-image="<?php echo esc_url($social_default_image); ?>" data-homepage="<?php echo (int) get_option('page_on_front') === $post_id ? '1' : '0'; ?>" data-url="<?php echo esc_url($url); ?>" data-slug="<?php echo esc_attr((string) $post->post_name); ?>">
@@ -131,7 +144,13 @@ function tk_seo_render_content_meta_box($post): void {
         <details class="tk-seo-editor-section" open>
             <summary>Social media preview</summary>
             <div class="tk-seo-editor-body">
-                <p class="description">Uses your SEO title, meta description and featured image, with the site's social image as a fallback. Change the Featured Image in the page editor to update the image.</p>
+                <p class="description">Uses your SEO title and meta description. Upload or choose a custom Open Graph image, or leave it unset to use the Featured Image (thumbnail), with the site's social image as a fallback.</p>
+                <input type="hidden" id="tk-seo-social-image-id" name="tk_seo_social_image_id" value="<?php echo esc_attr((string) $social_image_id); ?>" data-custom-url="<?php echo esc_url($social_custom_image); ?>" data-fallback-url="<?php echo esc_url($social_fallback_image); ?>">
+                <div class="tk-seo-social-image-controls">
+                    <?php if (current_user_can('upload_files')) : ?><button type="button" class="button tk-seo-social-image-select" hidden>Upload / choose image</button><?php endif; ?>
+                    <button type="button" class="button tk-seo-social-image-reset" hidden>Use thumbnail</button>
+                </div>
+                <p class="description tk-seo-social-image-status" role="status" aria-live="polite"><?php echo $social_image_id > 0 ? 'Using a custom Open Graph image.' : 'Using the Featured Image (thumbnail), with the site image as a fallback.'; ?></p>
                 <div class="tk-seo-social-preview">
                     <input class="tk-seo-device-choice tk-seo-social-choice" type="radio" id="tk-seo-social-facebook" name="tk_seo_social_network" value="facebook" checked>
                     <input class="tk-seo-device-choice tk-seo-social-choice" type="radio" id="tk-seo-social-linkedin" name="tk_seo_social_network" value="linkedin">
@@ -183,6 +202,15 @@ function tk_seo_save_content_meta_box($post_id, $post): void {
         if ((string) get_post_meta((int) $post_id, '_' . $field, true) === '' && is_string($initial)
             && $value === sanitize_text_field(wp_unslash($initial))) { continue; }
         update_post_meta((int) $post_id, '_' . $field, $value);
+    }
+    if (isset($_POST['tk_seo_social_image_id']) && is_string($_POST['tk_seo_social_image_id'])) {
+        $raw_id = wp_unslash($_POST['tk_seo_social_image_id']);
+        if (preg_match('/^\d+$/D', $raw_id)) {
+            $image_id = (int) $raw_id;
+            if ($image_id === 0 || (current_user_can('upload_files') && wp_attachment_is_image($image_id))) {
+                update_post_meta((int) $post_id, '_tk_seo_social_image_id', $image_id);
+            }
+        }
     }
 }
 

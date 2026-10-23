@@ -14,6 +14,10 @@ function tk_seo_content_output_values(int $post_id): array {
         $value = tk_seo_expand_variables((string) get_post_meta($post_id, $key, true), $post_id);
         if ($value !== '') { $values[$field] = $value; }
     }
+    if ((int) tk_get_option('seo_og_enabled', 1) === 1) {
+        $image = tk_seo_custom_social_image_url($post_id);
+        if ($image !== '') { $values['image'] = $image; }
+    }
     return $values;
 }
 
@@ -47,11 +51,11 @@ function tk_seo_content_replace_html(string $html, array $values, bool $add_soci
         $targets['og:' . $field] = $targets['twitter:' . $field] = $values[$field];
         if ($add_social) { $required['og:' . $field] = true; }
     }
-    if (!$targets) { return $html; }
     if ($add_social && !empty($values['image'])) {
         $targets['og:image'] = $targets['twitter:image'] = $values['image'];
         $required['og:image'] = true;
     }
+    if (!$targets) { return $html; }
     $tag_for = function (string $key) use ($targets): string {
         if ($key === 'title') { return '<title>' . esc_html($targets[$key]) . '</title>'; }
         $attribute = strpos($key, 'og:') === 0 ? 'property' : 'name';

@@ -273,9 +273,11 @@ function tk_seo_generate_description() {
     return $description;
 }
 
-function tk_seo_og_image_url(?int $post_id = null) {
+function tk_seo_og_image_url(?int $post_id = null, bool $use_custom = true) {
     if ($post_id === null) { $post_id = is_singular() ? (int) get_queried_object_id() : 0; }
     if ($post_id > 0) {
+        $custom = $use_custom ? tk_seo_custom_social_image_url($post_id) : '';
+        if ($custom !== '') { return $custom; }
         $thumb = get_the_post_thumbnail_url($post_id, 'full');
         if (is_string($thumb) && $thumb !== '') {
             return $thumb;

@@ -58,7 +58,16 @@ const path = require('node:path');
             if (width === 390) await page.screenshot({path: '/tmp/toolkits-seo-content-mobile.png', fullPage: true});
         }
         const editor = `<script>window.edited = {title: 'Company', slug: 'company', featured_media: 0}; window.media = {}; window.editorListeners = []; window.wp = {data: {select: name => name === 'core' ? {getMedia: id => window.media[id]} : {getEditedPostAttribute: key => window.edited[key]}, dispatch: () => ({editPost: changes => {Object.assign(window.edited, changes); window.editorListeners.forEach(fn => fn());}}), subscribe: fn => window.editorListeners.push(fn)}};</script>`;
-        await page.setContent(html.replace('<script>', editor + '<script>'));
+        const mediaPicker = `<script>
+            window.mediaCallbacks = {}; window.mediaPickerCalls = 0; window.selectedAttachment = null;
+            window.wp.media = options => {
+                window.mediaPickerCalls++; window.mediaPickerOptions = options;
+                const selection = {first: () => ({toJSON: () => window.chosenSocialImage}), reset: () => {window.selectedAttachment = null;}, add: attachment => {window.selectedAttachment = attachment.id;}};
+                return {on: (name, callback) => {window.mediaCallbacks[name] = callback;}, state: () => ({get: () => selection}), open: () => window.mediaCallbacks.open()};
+            };
+            window.wp.media.attachment = id => ({id});
+        </script>`;
+        await page.setContent(html.replace('<script>', editor + mediaPicker + '<script>'));
         await page.$eval('#tk-seo-slug', node => { node.value = 'block-editor-slug'; node.dispatchEvent(new Event('input', {bubbles: true})); });
         assert.equal(await page.evaluate(() => window.edited.slug), 'block-editor-slug', 'Slug must update Gutenberg state');
         await page.evaluate(() => window.wp.data.dispatch().editPost({slug: 'native-slug', title: 'Changed page title'}));
@@ -77,6 +86,22 @@ const path = require('node:path');
         await page.$eval('.tk-seo-post-editor', node => { node.dataset.socialDefaultImage = 'https://brandkraft.id/default-social.jpg'; });
         await page.evaluate(() => window.wp.data.dispatch().editPost({featured_media: 0}));
         assert.equal(await page.$eval('.tk-seo-social-image', node => node.src), 'https://brandkraft.id/default-social.jpg');
+        await page.click('.tk-seo-social-image-select');
+        assert.equal(await page.$eval('#tk-seo-social-image-id', node => node.value), '0', 'Opening or cancelling the picker must preserve the default');
+        assert.deepEqual(await page.evaluate(() => window.mediaPickerOptions.library), {type: 'image'});
+        await page.evaluate(() => { window.chosenSocialImage = {id: 90, type: 'image', url: 'https://brandkraft.id/custom-og.jpg'}; window.mediaCallbacks.select(); });
+        assert.equal(await page.$eval('#tk-seo-social-image-id', node => node.value), '90');
+        assert.equal(await page.$eval('.tk-seo-social-image', node => node.src), 'https://brandkraft.id/custom-og.jpg');
+        assert.equal(await page.evaluate(() => window.edited.featured_media), 0, 'Choosing an OG image must preserve the post thumbnail');
+        await page.evaluate(() => { window.media[11] = {source_url: 'https://brandkraft.id/new-thumbnail.jpg'}; window.wp.data.dispatch().editPost({featured_media: 11}); });
+        assert.equal(await page.$eval('.tk-seo-social-image', node => node.src), 'https://brandkraft.id/custom-og.jpg', 'Thumbnail edits must not overwrite a custom OG preview');
+        await page.click('.tk-seo-social-image-select');
+        assert.equal(await page.evaluate(() => window.mediaPickerCalls), 1, 'Reuse the media picker');
+        assert.equal(await page.evaluate(() => window.selectedAttachment), 90, 'Preselect the saved custom image');
+        await page.click('.tk-seo-social-image-reset');
+        assert.equal(await page.$eval('#tk-seo-social-image-id', node => node.value), '0');
+        assert.equal(await page.$eval('.tk-seo-social-image', node => node.src), 'https://brandkraft.id/new-thumbnail.jpg', 'Reset must use the latest thumbnail');
+        assert.equal(await page.$eval('.tk-seo-social-image-reset', node => node.hidden), true);
         // Classic editor may have no core/editor store even when wp.data exists.
         const classic = '<script>window.wp = {data: {select() {throw new Error("Store unavailable");}}};</script>';
         await page.setContent(html.replace('<script>', '<div id="postimagediv"></div>' + classic + '<script>'));

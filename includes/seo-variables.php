@@ -9,7 +9,7 @@ function tk_seo_variable_labels(): array {
         '%%sep%%' => 'Separator',
         '%%page%%' => 'Page',
         '%%excerpt%%' => 'Excerpt',
-        '%%sitedesc%%' => 'Site description',
+        '%%sitedesc%%' => 'Tagline',
     );
 }
 

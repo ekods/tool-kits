@@ -26,7 +26,7 @@ function update_post_meta($id, $key, $value) {
     $GLOBALS['meta'][$id][$key] = wp_unslash($value);
     return true;
 }
-function current_user_can($cap, $id) { return !in_array($id, $GLOBALS['denied'], true); }
+function current_user_can($cap, $id = null) { return !in_array($id, $GLOBALS['denied'], true); }
 function tk_is_admin_user() { return $GLOBALS['admin']; }
 function wp_verify_nonce($nonce, $action) { return $GLOBALS['valid_nonce'] && $nonce === 'fixture' && $action === 'tk_seo_copy_locale_42'; }
 function wp_create_nonce($action) { return 'fixture'; }
@@ -44,6 +44,7 @@ function get_current_screen() { return (object) array('base' => 'post', 'post_ty
 function tk_asset_version($path) { return 'fixture'; }
 function wp_enqueue_style($handle, ...$args) { $GLOBALS['assets'][] = $handle; }
 function wp_enqueue_script($handle, ...$args) { $GLOBALS['assets'][] = $handle; }
+function wp_enqueue_media() { $GLOBALS['assets'][] = 'media-editor'; }
 class WP_Error {
     private $code; private $message;
     function __construct($code, $message) { $this->code = $code; $this->message = $message; }
@@ -83,6 +84,7 @@ tk_seo_add_geo_meta_boxes();
 verify_locale(count($boxes) === 1 && $boxes[0][0] === 'tk-seo-content', 'Only SEO Content must be registered when GEO panel is hidden');
 tk_seo_content_panel_enqueue(); tk_seo_enqueue_faq_editor();
 verify_locale(in_array('tk-seo-content-panel', $assets, true) && !in_array('tk-post-faq', $assets, true), 'Skip hidden GEO assets');
+verify_locale(in_array('media-editor', $assets, true), 'Load the WordPress media picker for Open Graph uploads');
 tk_seo_save_panel_visibility(array('tk_seo_panels_present' => '1', 'seo_geo_panel_enabled' => '1'));
 $boxes = array(); $assets = array(); tk_seo_add_geo_meta_boxes();
 verify_locale(count($boxes) === 1 && $boxes[0][0] === 'tk-seo-geo-sidebar', 'Only GEO must be registered when Content panel is hidden');

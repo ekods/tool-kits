@@ -109,6 +109,43 @@ verify_output(render_output_fixture($html) === $html, 'License guard ignored');
 $state['licensed'] = true;
 $meta['_tk_seo_title'] = $meta['_tk_seo_meta_description'] = '';
 verify_output(render_output_fixture($html) === $html, 'Clearing custom values must restore theme/plugin ownership');
+$attachment_urls = array(90 => 'https://brandkraft.id/custom-og.jpg');
+$featured = array(42 => 'https://brandkraft.id/thumbnail.jpg');
+$_POST = array('tk_seo_content_meta_nonce' => 'fixture', 'tk_seo_social_image_id' => '90');
+tk_seo_save_content_meta_box(42, $post);
+verify_output($meta['_tk_seo_social_image_id'] === 90 && tk_seo_social_preview_image(42) === $attachment_urls[90]
+    && tk_seo_og_image_url(42) === $attachment_urls[90], 'A saved custom image must override thumbnails in previews and public OG output');
+$image_only_html = '<html><head><title>Theme title</title><meta property="og:image" content="old"><meta property="og:image" content="duplicate"><meta name="twitter:image" content="old"></head><body>Keep</body></html>';
+$image_only = render_output_fixture($image_only_html);
+verify_output(strpos($image_only, '<title>Theme title</title>') !== false && substr_count($image_only, 'property="og:image"') === 1
+    && strpos($image_only, 'property="og:image" content="' . $attachment_urls[90] . '"') !== false
+    && strpos($image_only, 'name="twitter:image" content="' . $attachment_urls[90] . '"') !== false, 'An image-only edit must reach the public head without requiring title or description overrides');
+$post->post_status = 'auto-draft';
+ob_start(); tk_seo_render_content_meta_box($post); $image_panel = ob_get_clean();
+$post->post_status = 'publish';
+verify_output(strpos($image_panel, 'name="tk_seo_social_image_id" value="90"') !== false
+    && strpos($image_panel, 'Using a custom Open Graph image.') !== false, 'Reloading the editor must preserve the chosen image');
+foreach (array('999', '-90', '90invalid', array('90')) as $bad_image) {
+    $_POST['tk_seo_social_image_id'] = $bad_image; tk_seo_save_content_meta_box(42, $post);
+    verify_output($meta['_tk_seo_social_image_id'] === 90, 'Invalid or non-image attachment values must not overwrite the saved image');
+}
+foreach (array('nonce', 'can_edit', 'can_upload') as $guard) {
+    $state[$guard] = false; $_POST['tk_seo_social_image_id'] = '90'; $meta['_tk_seo_social_image_id'] = 0;
+    tk_seo_save_content_meta_box(42, $post);
+    verify_output($meta['_tk_seo_social_image_id'] === 0, 'Custom image save must respect ' . $guard);
+    $state[$guard] = true;
+}
+$_POST['tk_seo_social_image_id'] = '90'; tk_seo_save_content_meta_box(42, $post);
+$options['seo_og_enabled'] = 0;
+verify_output(render_output_fixture($image_only_html) === $image_only_html, 'Disabled OG output must ignore image-only overrides');
+$options['seo_og_enabled'] = 1;
+unset($attachment_urls[90]);
+verify_output(tk_seo_social_preview_image(42) === $featured[42], 'A deleted custom attachment must fall back to the thumbnail');
+$attachment_urls[90] = 'https://brandkraft.id/custom-og.jpg';
+$_POST['tk_seo_social_image_id'] = '0'; tk_seo_save_content_meta_box(42, $post);
+verify_output($meta['_tk_seo_social_image_id'] === 0 && tk_seo_social_preview_image(42) === $featured[42]
+    && tk_seo_og_image_url(42) === $featured[42], 'Use thumbnail must clear the custom selection and restore the Featured Image');
+verify_output(render_output_fixture($image_only_html) === $image_only_html, 'Clearing the custom image must restore theme metadata ownership');
 define('REST_REQUEST', true);
 verify_output(render_output_fixture($html) === $html, 'REST request overridden');
 echo 'PASS: ' . $output_checks . " saved-content/public-output checks, including theme/plugin conflicts, duplicate removal, audit mismatches, escaping, full descriptions and request guards\n";

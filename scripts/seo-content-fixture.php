@@ -23,7 +23,7 @@ function wp_is_post_revision($id) { return $GLOBALS['state']['revision']; }
 function wp_is_post_autosave($id) { return $GLOBALS['state']['autosave']; }
 function wp_verify_nonce($nonce, $action) { return $GLOBALS['state']['nonce'] && $nonce === 'fixture' && $action === 'tk_seo_content_meta_box'; }
 function wp_nonce_field($action, $field) { echo '<input type="hidden" name="' . $field . '" value="fixture">'; }
-function current_user_can($cap, $id) { return $GLOBALS['state']['can_edit']; }
+function current_user_can($cap, $id = null) { return $cap === 'upload_files' ? ($GLOBALS['state']['can_upload'] ?? true) : $GLOBALS['state']['can_edit']; }
 function wp_unslash($text) { return stripslashes($text); }
 function sanitize_text_field($text) { return trim(strip_tags($text)); }
 function sanitize_textarea_field($text) { return trim(strip_tags($text)); }
@@ -49,6 +49,7 @@ function get_the_excerpt() { return $GLOBALS['post']->post_excerpt; }
 function get_site_icon_url($size) { return $GLOBALS['site_icon'] ?? ''; }
 function get_the_post_thumbnail_url($id, $size) { return $GLOBALS['featured'][$id] ?? ''; }
 function wp_get_attachment_image_url($id, $size) { return $GLOBALS['attachment_urls'][$id] ?? ''; }
+function wp_attachment_is_image($id) { return isset($GLOBALS['attachment_urls'][$id]); }
 function cst_get_social_share_image_data($id) { return $GLOBALS['theme_social'][$id] ?? array(); }
 function get_permalink($id) { return 'https://brandkraft.id/company/'; }
 function home_url($path) { return 'https://brandkraft.id' . $path; }
