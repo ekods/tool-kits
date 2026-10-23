@@ -1,6 +1,7 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
 require_once __DIR__ . '/health-center-summary.php';
+require_once __DIR__ . '/monitoring-heartbeat-recheck.php';
 
 if (!defined('TK_HEARTBEAT_URL')) {
     define('TK_HEARTBEAT_URL', 'https://nexamonitor.theteamtheteam.com/api/toolkits/heartbeat');
@@ -19,6 +20,7 @@ if (!defined('TK_LICENSE_SERVER_URL')) {
 }
 
 function tk_heartbeat_init() {
+    add_action('rest_api_init', 'tk_heartbeat_recheck_register');
     add_action('tk_heartbeat_cron', 'tk_heartbeat_cron_run');
     add_action('init', 'tk_heartbeat_schedule');
     add_action('init', 'tk_heartbeat_register_cron_monitors', PHP_INT_MAX);
@@ -207,15 +209,7 @@ function tk_heartbeat_operations_summary(): array {
     );
 }
 
-function tk_heartbeat_send(): array {
-    $url = tk_heartbeat_collector_url();
-    $secret = tk_heartbeat_auth_key();
-    if ($url === '' || $secret === '') {
-        if ($url === '') {
-            return array('ok' => false, 'message' => tk_toolkits_missing_config_message('collector_url'));
-        }
-        return array('ok' => false, 'message' => tk_toolkits_missing_config_message('collector_token'));
-    }
+function tk_heartbeat_payload(): array {
     $hide_login_enabled = (int) tk_get_option('hide_login_enabled', 0) === 1;
     $acf_cleanup = get_option('tk_db_cleanup_acf_last_run', array());
     global $wpdb;
@@ -223,7 +217,7 @@ function tk_heartbeat_send(): array {
         ? tk_db_cleanup_effective_revision_limit()
         : 5;
     $site_url = home_url('/');
-    $payload = array(
+    return array(
         'action' => 'heartbeat',
         'license_key' => trim((string) tk_get_option('license_key', '')),
         'license_status' => (string) tk_get_option('license_status', 'inactive'),
@@ -263,6 +257,18 @@ function tk_heartbeat_send(): array {
         'seo_geo' => tk_heartbeat_seo_geo_summary(),
         'operations' => tk_heartbeat_operations_summary(),
     );
+}
+
+function tk_heartbeat_send(): array {
+    $url = tk_heartbeat_collector_url();
+    $secret = tk_heartbeat_auth_key();
+    if ($url === '' || $secret === '') {
+        if ($url === '') {
+            return array('ok' => false, 'message' => tk_toolkits_missing_config_message('collector_url'));
+        }
+        return array('ok' => false, 'message' => tk_toolkits_missing_config_message('collector_token'));
+    }
+    $payload = tk_heartbeat_payload();
     $body = wp_json_encode($payload);
     if ($body === false) {
         return array('ok' => false, 'message' => 'Failed to encode heartbeat payload.');
