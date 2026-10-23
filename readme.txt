@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.34
+Stable tag: 2.7.42
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -69,6 +69,50 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.42 =
+* Apply explicitly saved page SEO titles and meta descriptions to public HTML even when the theme, another SEO plugin or the global title format also supplies metadata. Requires SEO Toolkit and the page's SEO switch to be enabled.
+* Keep one title and meta description, resolve variables, align existing social text and preserve full descriptions. Leave body content, canonical, robots and schema unchanged.
+* Compare saved values with fetched public metadata in Audit Public Page. Show matches, duplicates, cached-value mismatches and stale audit results with the actual title and description.
+* Search previews remain illustrative: Google can select different title links and snippets after crawling the page.
+
+= 2.7.41 =
+* Show Too short, Ideal and Too long guidance for resolved SEO title and meta description lengths. Preserve complete text without enforcing a character limit.
+* Add inline Facebook and LinkedIn Open Graph previews that follow live title, description, variables and URL edits.
+* Use the edited page's featured image, theme-managed social image or site fallback. Follow featured-image changes in both Gutenberg and Classic Editor, with loading and empty-image states.
+* Keep preview network controls usable without JavaScript, preserve the native Save/Update workflow and retain existing SEO output conflict protection.
+
+= 2.7.40 =
+* Stop cutting meta descriptions at 160 characters in editor defaults, excerpt variables and generated frontend metadata.
+* Preserve complete words and Unicode text throughout the description field, live preview, native save and public output. Keep length indicators as guidance only.
+
+= 2.7.39 =
+* Rename the standalone page-editor panel to Tool Kits SEO Content.
+* Remove the Edit SEO Content popup and its triggers from the page editor, dashboard and Content Audit. Stop enqueuing the retired popup script.
+* Open the native WordPress editor at the SEO content panel from content audit results, retaining the inline SEO fields, preview and analysis.
+
+= 2.7.38 =
+* Fix the page-editor fatal error on PHP 8.1+ by emitting the homepage slug's readonly attribute without calling the unavailable readonly() helper.
+* Render SEO variable chips in server HTML so templates do not appear as raw percent placeholders while editor scripts are delayed or blocked.
+* Reuse the rendered chips for editing, preserve raw templates for native saves, and keep a plain-text fallback when JavaScript is disabled.
+* Remove the obsolete helper stub from regression fixtures and verify both editable page slugs and readonly homepage slugs.
+
+= 2.7.37 =
+* Add editable variable pills to SEO title and meta description, with Insert variable menus, percent-key completion, keyboard navigation and removable tokens.
+* Resolve title, page, separator, site title, primary category, excerpt and site description variables in live previews and frontend SEO output. Keep templates dynamic when saving.
+* Update search preview text and length indicators immediately while editing. Preserve plain text fields when JavaScript is unavailable.
+* Reuse configured theme favicons, WordPress Site Icons, existing theme favicon files or the page's favicon, with a site-initial fallback for missing or broken images.
+
+= 2.7.36 =
+* Make Mobile/Desktop search previews use native radio controls, with distinct layouts that switch even when JavaScript is unavailable.
+* Populate SEO title and meta description as real input values, resolving page excerpts, content and theme/site defaults for the edited post.
+* Use generic English placeholders. Preserve automatic defaults when unchanged and save explicit edits without freezing inherited values.
+* Keep preview controls independent of the WordPress block editor data store and support Classic Editor when that store is unavailable.
+
+= 2.7.35 =
+* Separate Edit SEO Content from the SEO/GEO sidebar into a full-width, low-priority panel below the page editor.
+* Add collapsible focus keyphrase, search appearance and SEO analysis sections with live mobile/desktop previews, SEO title, slug and meta description fields.
+* Save search settings through the native WordPress Save/Update action, preserve native slug edits and duplicate resolution, and retain existing SEO output conflict protection.
+
 = 2.7.34 =
 * Prevent authenticated Collector heartbeat requests from being counted as public form submissions before REST_REQUEST is defined during WordPress init.
 * Keep signature, timestamp, website, installation, replay and concurrency validation. Report the remaining heartbeat cooldown with HTTP 429 responses.

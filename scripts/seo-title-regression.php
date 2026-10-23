@@ -42,6 +42,10 @@ function is_404() { return $GLOBALS['state']['404']; }
 function get_bloginfo($key) { return $key === 'name' ? $GLOBALS['site'] : $GLOBALS['tagline']; }
 function get_the_title($id) { check($id === 42, 'Title taken from the loop instead of queried page'); return $GLOBALS['page_title']; }
 function get_queried_object_id() { return 42; }
+function get_post_type($id) { return 'page'; }
+function get_post_types($args, $output) { return array('page' => (object) array('name' => 'page')); }
+function is_post_type_viewable($type) { return true; }
+function get_post_meta($id, $key, $single) { return ''; }
 function get_query_var($key) { return $GLOBALS['query'][$key] ?? 0; }
 function get_the_archive_title() { return 'Category: News'; }
 function get_search_query($escaped) { return 'design & code'; }

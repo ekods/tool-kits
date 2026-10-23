@@ -3,6 +3,9 @@ if (!defined('ABSPATH')) { exit; }
 require_once __DIR__ . '/seo-rendered-audit.php';
 require_once __DIR__ . '/seo-content-fixes.php';
 require_once __DIR__ . '/seo-content-modal.php';
+require_once __DIR__ . '/seo-content-panel.php';
+require_once __DIR__ . '/seo-variables.php';
+require_once __DIR__ . '/seo-content-output.php';
 require_once __DIR__ . '/seo-global-content.php';
 require_once __DIR__ . '/seo-title.php';
 require_once __DIR__ . '/seo-indexability.php';
@@ -13,6 +16,7 @@ function tk_seo_opt_init() {
     add_action('admin_post_tk_seo_opt_save', 'tk_seo_opt_save');
     add_action('admin_post_tk_seo_global_save', 'tk_seo_global_save');
     add_action('template_redirect', 'tk_seo_global_start', 990);
+    add_action('template_redirect', 'tk_seo_content_output_start', 2);
     add_filter('pre_get_document_title', 'tk_seo_global_document_title', 20);
     add_action('admin_post_tk_seo_redirect_add', 'tk_seo_redirect_add');
     add_action('admin_post_tk_seo_redirect_delete', 'tk_seo_redirect_delete');
@@ -27,12 +31,17 @@ function tk_seo_opt_init() {
     add_action('wp_ajax_tk_seo_content_fix', 'tk_seo_content_fix_ajax');
     add_action('wp_ajax_tk_seo_content_fix_finish', 'tk_seo_content_fix_finish_ajax');
     add_action('wp_ajax_tk_seo_content_editor', 'tk_seo_content_editor_ajax');
-    add_action('admin_enqueue_scripts', 'tk_seo_content_editor_enqueue');
+    add_action('admin_enqueue_scripts', 'tk_seo_content_checks_enqueue');
+    add_action('admin_enqueue_scripts', 'tk_seo_content_panel_enqueue');
 
     add_action('init', 'tk_seo_sitemap_maybe_render', 1);
     add_action('template_redirect', 'tk_seo_redirect_maybe_handle', 1);
     add_action('add_meta_boxes', 'tk_seo_add_geo_meta_boxes');
     add_action('save_post', 'tk_seo_save_geo_meta_box', 10, 2);
+    add_action('save_post', 'tk_seo_save_content_meta_box', 10, 2);
+    add_filter('wp_insert_post_data', 'tk_seo_content_slug_filter', 10, 2);
+    add_filter('pre_get_document_title', 'tk_seo_content_title_filter', PHP_INT_MAX);
+    add_filter('wp_title', 'tk_seo_content_title_filter', PHP_INT_MAX);
     add_action('admin_enqueue_scripts', 'tk_seo_enqueue_faq_editor');
     add_action('admin_post_tk_seo_post_rendered_audit', 'tk_seo_post_rendered_audit');
 
@@ -223,6 +232,8 @@ function tk_seo_generate_description() {
     $global = tk_seo_global_enabled() ? tk_seo_global_content() : array();
     $default = $global['description']['value'] ?? get_bloginfo('description');
     if (is_singular()) {
+        $description = tk_seo_expand_variables((string) get_post_meta(get_queried_object_id(), '_tk_seo_meta_description', true), (int) get_queried_object_id());
+        if ($description !== '') { return trim((string) preg_replace('/\s+/', ' ', wp_strip_all_tags($description))); }
         $description = trim(wp_strip_all_tags(strip_shortcodes(get_the_excerpt())));
         if ($description === '' && $global && is_front_page()) { $description = (string) $default; }
         if ($description === '') {
@@ -243,15 +254,13 @@ function tk_seo_generate_description() {
 
     $description = preg_replace('/\s+/', ' ', (string) $description);
     $description = trim((string) $description);
-    if (strlen($description) > 160) {
-        $description = trim(substr($description, 0, 157)) . '...';
-    }
     return $description;
 }
 
-function tk_seo_og_image_url() {
-    if (is_singular()) {
-        $thumb = get_the_post_thumbnail_url(get_queried_object_id(), 'full');
+function tk_seo_og_image_url(?int $post_id = null) {
+    if ($post_id === null) { $post_id = is_singular() ? (int) get_queried_object_id() : 0; }
+    if ($post_id > 0) {
+        $thumb = get_the_post_thumbnail_url($post_id, 'full');
         if (is_string($thumb) && $thumb !== '') {
             return $thumb;
         }
@@ -303,6 +312,14 @@ function tk_seo_add_geo_meta_boxes(): void {
             'side',
             'default'
         );
+        add_meta_box(
+            'tk-seo-content',
+            'Tool Kits SEO Content',
+            'tk_seo_render_content_meta_box',
+            $post_type,
+            'normal',
+            'low'
+        );
     }
 }
 
@@ -311,30 +328,6 @@ function tk_seo_render_geo_meta_box($post): void {
 
     wp_nonce_field('tk_seo_geo_meta_box', 'tk_seo_geo_meta_nonce');
     ?>
-    <?php if (is_object($post) && $post->post_status !== 'auto-draft') : ?>
-        <?php
-        $score_report = tk_seo_run_content_audit($post_id);
-        $score_item = $score_report['items'][0] ?? null;
-        ?>
-        <?php if (is_array($score_item)) : ?>
-            <p><strong>SEO Score: <?php echo esc_html((string) $score_item['score']); ?>/100</strong>
-                <span><?php echo esc_html(ucfirst($score_item['priority'])); ?></span>
-            </p>
-            <meter min="0" max="100" low="50" high="85" optimum="100" value="<?php echo esc_attr((string) $score_item['score']); ?>" aria-label="SEO content score" style="width:100%;height:16px;"></meter>
-            <p class="description">Saved content audit. Page-builder fields and rendered GEO/schema require separate review.</p>
-            <details>
-                <summary>Findings (<?php echo esc_html((string) count($score_item['issues'])); ?>)</summary>
-                <ul>
-                    <?php foreach ($score_item['issues'] as $issue) : ?>
-                        <li><?php echo esc_html($issue); ?></li>
-                    <?php endforeach; ?>
-                </ul>
-            </details>
-        <?php endif; ?>
-    <?php else : ?>
-        <p><strong>SEO Score: -</strong></p>
-        <p class="description">Save a draft to calculate the score.</p>
-    <?php endif; ?>
     <?php tk_seo_render_public_audit_panel($post); ?>
     <?php foreach (array('seo' => 'SEO', 'geo' => 'GEO') as $feature => $label) : ?>
         <p>
@@ -363,9 +356,6 @@ function tk_seo_render_geo_meta_box($post): void {
             </div>
         </dialog>
     </div>
-    <?php tk_seo_content_editor_render((int) $post_id); ?>
-    <p><label for="tk-seo-keyword"><strong>Focus Keyword</strong></label></p>
-    <input id="tk-seo-keyword" name="tk_seo_focus_keyword" type="text" style="width:100%;" value="<?php echo esc_attr((string) get_post_meta($post_id, '_tk_seo_focus_keyword', true)); ?>">
     <?php
 }
 
@@ -2890,7 +2880,7 @@ function tk_render_seo_opt_panel() {
                                 echo empty($issues) ? 'OK' : esc_html(implode('; ', $issues));
                                 ?>
                                 <?php if ($pid > 0 && current_user_can('edit_post', $pid)) : ?>
-                                    <p><button type="button" class="button button-small tk-seo-content-audit-open" data-post-id="<?php echo esc_attr((string) $pid); ?>">Validate &amp; Edit</button></p>
+                                    <p><a class="button button-small" href="<?php echo esc_url(get_edit_post_link($pid) . '#tk-seo-content'); ?>">Tool Kits SEO Content</a></p>
                                 <?php endif; ?>
                                 <?php tk_seo_content_checks_render($item); ?>
                             </td>
@@ -2905,7 +2895,6 @@ function tk_render_seo_opt_panel() {
             <p class="description">No audit report yet.</p>
         <?php endif; ?>
     </div>
-    <?php tk_seo_content_editor_render(0, true); ?>
     <?php if (function_exists('tk_indexnow_render_panel')) { tk_indexnow_render_panel(); } ?>
         </div>
     </div>

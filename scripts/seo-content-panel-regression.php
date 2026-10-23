@@ -1,0 +1,161 @@
+<?php
+require __DIR__ . '/seo-content-fixture.php';
+function verify_panel($ok, $message) { if (!$ok) throw new RuntimeException($message); }
+if (in_array('--preview', $argv, true)) {
+    echo '<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;padding:24px;background:#f0f0f1;font:14px/1.5 Arial,sans-serif}#tk-seo-content{max-width:960px;margin:auto;border:1px solid #c3c4c7;background:#fff}h1{padding:12px 24px;margin:0;border-bottom:1px solid #dcdcde;font-size:16px}</style><style>';
+    echo file_get_contents(dirname(__DIR__) . '/assets/seo-content-panel.css');
+    echo '</style><div id="tk-seo-content"><h1>Tool Kits SEO Content</h1><div class="inside">';
+    tk_seo_render_content_meta_box($post);
+    echo '</div></div><script>' . file_get_contents(dirname(__DIR__) . '/assets/seo-content-panel.js') . '</script></html>';
+    exit;
+}
+$defaults = tk_seo_content_defaults($post);
+verify_panel($defaults === array('title' => 'Company - BRANDKRAFT', 'description' => 'Original page content'), 'Resolve defaults for the explicit editor post');
+$post->post_excerpt = 'Existing manual description.';
+ob_start(); tk_seo_render_content_meta_box($post); $prefilled = ob_get_clean();
+verify_panel(strpos($prefilled, 'value="%%title%% %%page%% %%sep%% %%sitename%%" placeholder="Enter an SEO title"') !== false, 'Automatic title must contain editable variables with a generic placeholder');
+verify_panel(strpos($prefilled, '>Existing manual description.</textarea>') !== false, 'Existing description must be the textarea value');
+preg_match('/<input[^>]+id="tk-seo-slug"[^>]*>/', $prefilled, $slug_field);
+verify_panel(strpos($slug_field[0], 'readonly=') === false, 'Ordinary page slug must remain editable without a readonly helper');
+verify_panel(strpos($prefilled, 'data-token-display') !== false, 'Variable chips must be rendered before JavaScript loads');
+verify_panel(strpos($prefilled, 'tk-seo-content-open') === false && strpos($prefilled, '<dialog') === false, 'The content panel must not render the retired popup for authorized administrators');
+verify_panel(strpos($prefilled, 'Social media preview') !== false && strpos($prefilled, 'Facebook') !== false && strpos($prefilled, 'LinkedIn') !== false, 'Social previews must be present without a popup');
+verify_panel(strpos($prefilled, 'data-state="short">Too short') !== false, 'Initial length status must count expanded values');
+foreach (array(0 => 'empty', 29 => 'short', 30 => 'ideal', 60 => 'ideal', 61 => 'long') as $length => $expected_state) {
+    ob_start(); tk_seo_length_feedback('title', str_repeat('🧭', $length), 30, 60); $feedback = ob_get_clean();
+    verify_panel(strpos($feedback, 'data-state="' . $expected_state . '"') !== false && strpos($feedback, $length . ' characters') !== false, 'Title length guidance boundary ' . $length);
+}
+$featured = array(42 => 'https://brandkraft.id/page-image.jpg', 43 => 'https://brandkraft.id/other-image.jpg');
+$options['seo_global_enabled'] = 1;
+$options['seo_global_content'] = array('image' => 'https://brandkraft.id/default-social.jpg');
+verify_panel(tk_seo_social_preview_image(42) === $featured[42] && tk_seo_og_image_url(43) === $featured[43], 'Social image must use the explicit edited post');
+verify_panel(tk_seo_social_preview_image(0) === $options['seo_global_content']['image'], 'Missing featured images must use the configured social default');
+ob_start(); tk_seo_render_content_meta_box($post); $social_panel = ob_get_clean();
+verify_panel(strpos($social_panel, 'src="https://brandkraft.id/page-image.jpg"') !== false, 'Social card must render the existing featured image');
+$state['theme'] = true;
+$theme_social = array(42 => array('url' => 'https://brandkraft.id/theme-social.jpg'));
+verify_panel(tk_seo_social_preview_image(42) === $theme_social[42]['url'], 'Theme-managed social image must be respected');
+$state['theme'] = false; $theme_social = array(); $featured = array();
+unset($options['seo_global_enabled'], $options['seo_global_content']);
+ob_start(); tk_seo_render_variable_tokens('%%title%% %%page%% %%sep%% %%sitename%%'); $tokens = ob_get_clean();
+verify_panel(strip_tags($tokens) === 'Title Page Separator Site title' && substr_count($tokens, 'class="tk-seo-token"') === 4, 'Server-rendered variables must use chip labels instead of raw placeholders');
+ob_start(); tk_seo_render_variable_tokens('<script>alert(1)</script> %%title%%'); $escaped_tokens = ob_get_clean();
+verify_panel(strpos($escaped_tokens, '<script>') === false && strpos($escaped_tokens, '&lt;script&gt;') !== false, 'Server-rendered template text must be escaped');
+$options['page_on_front'] = 42;
+ob_start(); tk_seo_render_content_meta_box($post); $front_panel = ob_get_clean();
+preg_match('/<input[^>]+id="tk-seo-slug"[^>]*>/', $front_panel, $slug_field);
+verify_panel(strpos($slug_field[0], 'readonly="readonly"') !== false, 'Front-page slug must stay readonly without calling a PHP helper');
+unset($options['page_on_front']);
+$_POST = array('tk_seo_content_meta_nonce' => 'fixture', 'tk_seo_title' => $defaults['title'], 'tk_seo_meta_description' => $post->post_excerpt,
+    'tk_seo_initial' => array('tk_seo_title' => $defaults['title'], 'tk_seo_meta_description' => $post->post_excerpt));
+tk_seo_save_content_meta_box(42, $post);
+verify_panel($meta === array(), 'Unchanged prefilled defaults must not become frozen overrides');
+$_POST['tk_seo_title'] = 'Edited SEO title';
+$_POST['tk_seo_meta_description'] = 'Edited description';
+tk_seo_save_content_meta_box(42, $post);
+verify_panel($meta['_tk_seo_title'] === 'Edited SEO title' && $meta['_tk_seo_meta_description'] === 'Edited description', 'Changed prefilled fields must save');
+$meta = array(); $post->post_excerpt = ''; $original_content = $post->post_content; $post->post_content = '';
+$theme_mods = array('meta_description' => 'Existing theme description');
+verify_panel(tk_seo_content_defaults($post)['description'] === 'Existing theme description', 'Theme description fallback must appear when page content is empty');
+$options['page_on_front'] = 42;
+$post->post_content = $original_content;
+verify_panel(tk_seo_content_defaults($post)['description'] === 'Existing theme description', 'Homepage must use the site description before generated content');
+unset($options['page_on_front']); $theme_mods = array();
+$post->post_content = str_repeat('🧭', 170);
+$complete = tk_seo_content_defaults($post)['description'];
+verify_panel($complete === $post->post_content && mb_check_encoding($complete, 'UTF-8'), 'Generated descriptions must keep all Unicode characters without truncation');
+verify_panel(tk_seo_generate_description() === $post->post_content, 'Frontend fallback must not truncate the description shown in the editor');
+$long_description = str_repeat('Deskripsi lengkap dengan kata utuh. ', 12) . 'KALIMAT TERAKHIR 🧭';
+$post->post_excerpt = $long_description;
+verify_panel(tk_seo_content_defaults($post)['description'] === $long_description, 'Existing excerpts longer than 160 characters must remain complete');
+verify_panel(tk_seo_variable_values($post)['%%excerpt%%'] === $long_description, 'Excerpt variables must not lose the final words');
+ob_start(); tk_seo_render_content_meta_box($post); $long_panel = ob_get_clean();
+verify_panel(strpos($long_panel, esc_textarea($long_description) . '</textarea>') !== false, 'The field must contain the entire description');
+verify_panel(strpos($long_panel, 'KALIMAT TERAKHIR 🧭</div>') !== false, 'Server preview must include the end of a long description');
+$_POST = array('tk_seo_content_meta_nonce' => 'fixture', 'tk_seo_meta_description' => $long_description);
+tk_seo_save_content_meta_box(42, $post);
+verify_panel($meta['_tk_seo_meta_description'] === $long_description && tk_seo_generate_description() === $long_description, 'Saving and public output must preserve every word');
+$meta = array(); $post->post_excerpt = '';
+$post->post_content = $original_content;
+$variables = tk_seo_variable_values($post);
+verify_panel(tk_seo_expand_variables('%%title%% %%page%% %%sep%% %%sitename%%', 42, $variables) === 'Company - BRANDKRAFT', 'Title variables must resolve without empty page spacing');
+$categories = array((object) array('term_id' => 7, 'name' => 'Design'), (object) array('term_id' => 9, 'name' => 'Strategy'));
+$meta['_yoast_wpseo_primary_category'] = 9;
+verify_panel(tk_seo_variable_values($post, 2)['%%primary_category%%'] === 'Strategy', 'Primary category must be assigned to the post');
+$meta['_yoast_wpseo_primary_category'] = 999;
+verify_panel(tk_seo_variable_values($post)['%%primary_category%%'] === 'Design', 'Unassigned primary category must fall back to an assigned category');
+$categories = array(); $meta = array();
+$meta['_tk_seo_title'] = '%%title%% %%page%% %%sep%% %%sitename%%';
+$meta['_tk_seo_meta_description'] = 'Learn about %%title%% at %%sitename%%: %%excerpt%%';
+$_POST = array('tk_seo_content_meta_nonce' => 'fixture', 'tk_seo_title' => $meta['_tk_seo_title'], 'tk_seo_meta_description' => $meta['_tk_seo_meta_description']);
+tk_seo_save_content_meta_box(42, $post);
+verify_panel($meta['_tk_seo_title'] === $_POST['tk_seo_title'] && $meta['_tk_seo_meta_description'] === $_POST['tk_seo_meta_description'], 'Variable templates must persist without being replaced with snapshot values');
+verify_panel(tk_seo_content_title_filter('Automatic') === 'Company - BRANDKRAFT' && tk_seo_title_value() === 'Company - BRANDKRAFT', 'Both title output paths must expand saved templates');
+verify_panel(tk_seo_generate_description() === 'Learn about Company at BRANDKRAFT: Original page content', 'Saved meta description template must resolve on the frontend');
+$query['page'] = 3;
+verify_panel(tk_seo_content_title_filter('Automatic') === 'Company Page 3 - BRANDKRAFT', 'Page variable must use frontend pagination');
+$query = array(); $meta = array();
+$site_icon = 'https://brandkraft.id/site-icon.png';
+verify_panel(tk_seo_preview_favicon() === $site_icon, 'Use the existing WordPress site icon');
+$theme_options = array('themes_favicon' => 'https://brandkraft.id/theme-icon.png');
+verify_panel(tk_seo_preview_favicon() === $theme_options['themes_favicon'], 'Use the explicitly configured theme favicon');
+$theme_options = array('themes_favicon' => 'javascript:alert(1)');
+verify_panel(tk_seo_preview_favicon() === $site_icon, 'Reject unsafe favicon protocols and retain a valid site icon');
+$theme_options = array(); $site_icon = '';
+$_POST = array('tk_seo_content_meta_nonce' => 'fixture', 'tk_seo_focus_keyword' => 'brand design', 'tk_seo_title' => '<b>Brand & Design</b>', 'tk_seo_meta_description' => 'A useful description.', 'tk_seo_slug' => 'existing', 'tk_seo_original_slug' => 'company');
+tk_seo_save_content_meta_box(42, $post);
+verify_panel($meta['_tk_seo_title'] === 'Brand & Design' && $meta['_tk_seo_meta_description'] === 'A useful description.' && $meta['_tk_seo_focus_keyword'] === 'brand design', 'Independent panel must sanitize and save its fields without sidebar nonce');
+$data = array('post_name' => 'company', 'post_status' => 'publish', 'post_type' => 'page', 'post_parent' => 0);
+verify_panel(tk_seo_content_slug_filter($data, array('ID' => 42))['post_name'] === 'existing-2', 'Slug must use native duplicate resolution');
+$_POST['tk_seo_slug'] = 'company';
+$native = $data; $native['post_name'] = 'edited-in-wordpress';
+verify_panel(tk_seo_content_slug_filter($native, array('ID' => 42)) === $native, 'Untouched panel must preserve slug changes in native controls');
+$_POST['tk_seo_slug'] = 'existing';
+foreach (array('nonce', 'can_edit', 'revision', 'autosave') as $flag) {
+    $state[$flag] = in_array($flag, array('revision', 'autosave'), true);
+    $before = $meta;
+    $_POST['tk_seo_title'] = 'Rejected';
+    tk_seo_save_content_meta_box(42, $post);
+    verify_panel($meta === $before && tk_seo_content_slug_filter($data, array('ID' => 42)) === $data, 'Save guard failed: ' . $flag);
+    $state[$flag] = !$state[$flag];
+}
+$_POST['tk_seo_title'] = 'Brand & Design';
+$options['seo_geo_post_types'] = array();
+verify_panel(!tk_seo_content_can_save(42), 'Excluded post types must not save');
+$options['seo_geo_post_types'] = array('page');
+$options['page_on_front'] = 42;
+verify_panel(tk_seo_content_slug_filter($data, array('ID' => 42)) === $data, 'Front page URL must be preserved');
+unset($options['page_on_front']);
+$_POST['tk_seo_slug'] = '';
+verify_panel(tk_seo_content_slug_filter($data, array('ID' => 42)) === $data, 'Blank slug must preserve core-generated slug');
+foreach (array('tk_seo_title', 'tk_seo_meta_description', 'tk_seo_focus_keyword', 'tk_seo_content_meta_nonce') as $field) {
+    $saved = $_POST[$field]; $_POST[$field] = array('malformed'); $before = $meta;
+    tk_seo_save_content_meta_box(42, $post);
+    verify_panel($meta === $before, 'Array input accepted: ' . $field);
+    $_POST[$field] = $saved;
+}
+verify_panel(tk_seo_content_title_filter('Automatic') === 'Brand &amp; Design' && tk_seo_title_value() === 'Brand & Design', 'Saved title must reach native and forced-title output');
+verify_panel(tk_seo_generate_description() === 'A useful description.', 'Saved description must reach frontend output');
+$state['theme'] = true;
+verify_panel(tk_seo_content_title_filter('Theme title') === 'Brand &amp; Design', 'An explicitly saved page title must override theme metadata');
+$state['theme'] = false;
+$meta['_tk_seo_enabled'] = '0';
+verify_panel(tk_seo_content_title_filter('Original') === 'Original', 'Per-content SEO toggle bypassed');
+$meta['_tk_seo_enabled'] = '1';
+$meta['_tk_seo_title'] = $meta['_tk_seo_meta_description'] = '';
+verify_panel(tk_seo_content_title_filter('Automatic') === 'Automatic' && tk_seo_generate_description() === 'Original page content', 'Empty overrides must restore automatic values');
+$meta['_tk_seo_title'] = '"><script>alert(1)</script>';
+ob_start(); tk_seo_render_content_meta_box($post); $html = ob_get_clean();
+verify_panel(strpos($html, '<script>') === false && strpos($html, '&lt;script&gt;') !== false, 'Panel must escape saved values');
+foreach (array('Focus keyphrase', 'Search appearance', 'Google preview', 'SEO title', 'Slug', 'Meta description', 'SEO analysis', 'tk_seo_content_meta_nonce') as $label) {
+    verify_panel(strpos($html, $label) !== false, 'Missing panel section: ' . $label);
+}
+$meta['_tk_seo_title'] = 'Custom';
+foreach (array('admin', 'ajax', 'feed') as $flag) {
+    $state[$flag] = true;
+    verify_panel(tk_seo_content_title_filter('Original') === 'Original', 'Request guard failed: ' . $flag);
+    $state[$flag] = false;
+}
+define('WPSEO_VERSION', 'fixture');
+verify_panel(tk_seo_content_title_filter('Plugin title') === 'Custom', 'An explicitly saved page title must override plugin metadata');
+echo "PASS: rendering without readonly(), server variable chips, independent save, nonce/capability/autosave guards, escaped values, slugs, title/description templates and automatic fallback\n";

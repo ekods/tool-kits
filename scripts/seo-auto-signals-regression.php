@@ -121,11 +121,13 @@ verify_auto($meta === $saved, 'Missing edit permission cannot save changes');
 
 tk_seo_add_geo_meta_boxes();
 verify_auto($boxes[0][4] === 'side' && $boxes[0][0] !== 'tk-seo-geo-signals', 'Panel must use sidebar without inheriting legacy bottom placement');
+verify_auto($boxes[1][0] === 'tk-seo-content' && $boxes[1][4] === 'normal' && $boxes[1][5] === 'low', 'SEO content must have a separate panel below the editor');
+verify_auto($boxes[1][1] === 'Tool Kits SEO Content', 'The standalone panel must use the Tool Kits SEO Content name');
 ob_start();
 tk_seo_render_geo_meta_box($posts[1]);
 $html = ob_get_clean();
 foreach (array('tk_schema_type', 'tk_geo_reference_urls', 'tk_geo_related_posts', 'Schema Type', 'References / Sources', 'Related Content') as $removed) {
     verify_auto(strpos($html, $removed) === false, 'Removed field still rendered: ' . $removed);
 }
-verify_auto(strpos($html, 'tk_seo_focus_keyword') !== false && strpos($html, 'FAQ GEO') !== false, 'Keyword and FAQ controls must remain available');
+verify_auto(strpos($html, 'tk_seo_focus_keyword') === false && strpos($html, 'tk-seo-content-open') === false && strpos($html, 'FAQ GEO') !== false, 'Sidebar must keep FAQ and separate content editing');
 echo 'PASS: ' . $checks . " automatic SEO/GEO signal checks\n";

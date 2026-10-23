@@ -25,6 +25,10 @@ function tk_seo_title_separator(): string {
 
 /** Build from WordPress content, never from an already formatted SEO title. */
 function tk_seo_title_value(): string {
+    if (is_singular() && tk_seo_content_output_enabled()) {
+        $custom = tk_seo_expand_variables((string) get_post_meta(get_queried_object_id(), '_tk_seo_title', true), (int) get_queried_object_id());
+        if ($custom !== '') { return $custom; }
+    }
     $site = tk_seo_title_text((string) get_bloginfo('name'));
     if (is_front_page()) {
         $parts = array($site, tk_seo_title_text((string) get_bloginfo('description')));
@@ -120,7 +124,7 @@ function tk_seo_title_render_settings(): void {
         <legend><strong>Meta Title Override</strong></legend>
         <input type="hidden" name="tk_seo_title_settings_present" value="1">
         <p><label><input type="checkbox" role="switch" name="seo_title_override_enabled" value="1" <?php checked((int) tk_get_option('seo_title_override_enabled', 0), 1); ?>> Override theme and plugin titles</label></p>
-        <p class="description">Requires Enable SEO Toolkit. Applies to all frontend pages independently of global metadata fallbacks. Replaces theme/plugin titles and keeps a single &lt;title&gt; tag. This format takes priority over the Homepage SEO title below.</p>
+        <p class="description">Requires Enable SEO Toolkit. Applies to all frontend pages independently of global metadata fallbacks. Replaces theme/plugin titles and keeps a single &lt;title&gt; tag. This format takes priority over the Homepage SEO title below. Saved page SEO titles take priority over this format.</p>
         <p><label for="tk-title-separator"><strong>Title separator</strong></label><br>
             <input id="tk-title-separator" name="seo_title_separator" type="text" maxlength="10" value="<?php echo esc_attr($separator); ?>" class="small-text">
             <span class="description">Examples: - | &ndash; &mdash; &bull; / (blank uses -)</span></p>
