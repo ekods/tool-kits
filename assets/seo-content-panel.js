@@ -123,10 +123,53 @@
         document.addEventListener('mousedown', function (event) { if (!wrapper.contains(event.target)) close(); });
     }
 
+    function localeCopy(root) {
+        var block = root.querySelector('.tk-seo-locale-copy');
+        if (!block) return;
+        var select = block.querySelector('select'), button = block.querySelector('.tk-seo-copy-locale-button');
+        if (!select || !button) return;
+        var replace = block.querySelector('.tk-seo-copy-replace');
+        var status = block.querySelector('.tk-seo-copy-status'), link = block.querySelector('.tk-seo-copy-edit');
+        var busy = false;
+        function toggle() { button.disabled = busy || !select.value; select.disabled = busy; replace.disabled = busy; }
+        select.addEventListener('change', function () { status.hidden = true; link.hidden = true; toggle(); });
+        button.addEventListener('click', async function () {
+            if (busy || !select.value) return;
+            var body = new URLSearchParams({action: 'tk_seo_copy_locale', post_id: block.dataset.postId, nonce: block.dataset.copyNonce, locale: select.value, replace: replace.checked ? '1' : '0'});
+            ['tk_seo_focus_keyword', 'tk_seo_title', 'tk_seo_meta_description'].forEach(function (name) {
+                var input = root.querySelector('[name="' + name + '"]');
+                if (input) body.set(name, input.value);
+                var initial = root.querySelector('[name="tk_seo_initial[' + name + ']"]');
+                if (initial) body.set('initial[' + name + ']', initial.value);
+            });
+            busy = true; toggle(); block.setAttribute('aria-busy', 'true');
+            status.hidden = false; status.textContent = 'Copying SEO fields…'; link.hidden = true;
+            var controller = new AbortController(), timeout = setTimeout(function () { controller.abort(); }, 20000);
+            try {
+                var response = await fetch(block.dataset.copyUrl, {method: 'POST', credentials: 'same-origin', body: body, signal: controller.signal});
+                var result = await response.json();
+                if (!response.ok || !result.success) throw new Error(result.data && result.data.message || 'Unable to copy SEO fields.');
+                status.textContent = result.data.message;
+                if (result.data.edit_url) {
+                    var target = new URL(result.data.edit_url, block.dataset.copyUrl);
+                    if (/^https?:$/.test(target.protocol) && target.origin === new URL(block.dataset.copyUrl).origin) {
+                        target.hash = 'tk-seo-content'; link.href = target.href; link.hidden = false;
+                    }
+                }
+            } catch (error) {
+                status.textContent = error.name === 'AbortError' ? 'The copy request timed out. Check the target translation before retrying.' : (error.message || 'Unable to copy SEO fields. Check the target translation before retrying.');
+            } finally {
+                clearTimeout(timeout); busy = false; toggle(); block.removeAttribute('aria-busy');
+            }
+        });
+        toggle();
+    }
+
     function init() {
         document.querySelectorAll('.tk-seo-post-editor').forEach(function (root) {
             if (root.dataset.initialized) return;
             root.dataset.initialized = '1';
+            localeCopy(root);
             var title = root.querySelector('#tk-seo-title');
             var description = root.querySelector('#tk-seo-description');
             var slug = root.querySelector('#tk-seo-slug');

@@ -3,7 +3,7 @@ if (!defined('ABSPATH')) { exit; }
 
 function tk_seo_content_panel_enqueue(): void {
     $screen = get_current_screen();
-    if (!$screen || $screen->base !== 'post' || !tk_is_admin_user()
+    if (!tk_seo_editor_panel_visible('content') || !$screen || $screen->base !== 'post' || !tk_is_admin_user()
         || !in_array($screen->post_type, tk_seo_selected_post_types(), true)) { return; }
     wp_enqueue_style('tk-seo-content-panel', TK_URL . 'assets/seo-content-panel.css', array(), tk_asset_version('assets/seo-content-panel.css'));
     wp_enqueue_script('tk-seo-content-panel', TK_URL . 'assets/seo-content-panel.js', array(), tk_asset_version('assets/seo-content-panel.js'), true);
@@ -78,6 +78,7 @@ function tk_seo_render_content_meta_box($post): void {
     wp_nonce_field('tk_seo_content_meta_box', 'tk_seo_content_meta_nonce');
     ?>
     <div class="tk-seo-post-editor" data-site-name="<?php echo esc_attr($site_name); ?>" data-page-title="<?php echo esc_attr($page_title); ?>" data-separator="<?php echo esc_attr($separator); ?>" data-variables="<?php echo esc_attr(wp_json_encode($variables)); ?>" data-default-title="<?php echo esc_attr($default_title); ?>" data-default-description="<?php echo esc_attr($defaults['description']); ?>" data-social-default-image="<?php echo esc_url($social_default_image); ?>" data-homepage="<?php echo (int) get_option('page_on_front') === $post_id ? '1' : '0'; ?>" data-url="<?php echo esc_url($url); ?>" data-slug="<?php echo esc_attr((string) $post->post_name); ?>">
+        <?php tk_seo_render_locale_copy($post_id); ?>
         <details class="tk-seo-editor-section" open>
             <summary>Focus keyphrase</summary>
             <div class="tk-seo-editor-body">

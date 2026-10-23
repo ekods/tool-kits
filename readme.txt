@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.42
+Stable tag: 2.7.43
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,7 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.43 is a stable release with the inline SEO Content editor, Polylang locale copying and independent editor-panel visibility settings. The signed license API and matching key introduced in 2.7.31 remain required; see LICENSE_SECURITY.md.
 - Version 2.7.34 is a GitHub pre-release patch for Collector recheck rate limiting. Fully authenticated heartbeat requests are excluded from public Form Guard checks; ordinary forms and unauthenticated requests retain their existing protection.
 - Version 2.7.33 is a GitHub pre-release and adds authenticated on-demand heartbeat replies for NexaMonitor's Check Ulang action. Deploy the matching NexaMonitor update and use the same collector token on both sides.
 - Version 2.7.32 is a GitHub pre-release and inherits signed license verification from 2.7.31. Deploy the matching NexaMonitor signing API and key before installing; see LICENSE_SECURITY.md.
@@ -69,6 +70,12 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.43 =
+* Add Copy to locale to SEO Content when Polylang is active. Select a target locale from linked, editable translations, including sites with more than two languages. Copy current SEO titles, meta descriptions and focus keyphrases; preserve existing target values unless replacement is selected.
+* Preserve dynamic variable templates and automatic defaults. Validate the request nonce, language relationship and edit permissions; copy no slugs, core content or audit data.
+* Add separate SEO Settings checkboxes for showing Tool Kits SEO Content and Tool Kits SEO / GEO in the editor. Both are enabled by default; hiding panels preserves saved metadata and public output.
+* Keep public metadata audits accurate on older libxml/PHP 7.4 installations when the page head contains non-rendered HTML5 examples.
+
 = 2.7.42 =
 * Apply explicitly saved page SEO titles and meta descriptions to public HTML even when the theme, another SEO plugin or the global title format also supplies metadata. Requires SEO Toolkit and the page's SEO switch to be enabled.
 * Keep one title and meta description, resolve variables, align existing social text and preserve full descriptions. Leave body content, canonical, robots and schema unchanged.

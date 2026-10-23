@@ -1,7 +1,49 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
 
+/** Keep unsupported inert HTML5 blocks out of older libxml's head parser. */
+function tk_seo_audit_readable_html(string $html): string {
+    $attributes = '(?:"[^"]*"|\'[^\']*\'|[^\'">])*';
+    $pattern = '~<!--.*?-->|<(script|style|textarea|title)(?=[\s>])' . $attributes . '>.*?</\1\s*>|</?[a-z][a-z0-9:-]*(?=[\s/>])' . $attributes . '>~is';
+    preg_match_all($pattern, $html, $tokens, PREG_OFFSET_CAPTURE);
+    $inert = array('script', 'style', 'noscript', 'svg', 'template', 'math');
+    $stack = array(); $edits = array(); $start = 0;
+    foreach ($tokens[0] as $token) {
+        $tag = $token[0];
+        if (strpos($tag, '<!--') === 0) {
+            if (!$stack) { $edits[] = array($token[1], strlen($tag)); }
+            continue;
+        }
+        if (!preg_match('~^<(script|style|textarea|title)(?=[\s>]).*</\1\s*>$~is', $tag)
+            && preg_match('~^<(/?)([a-z][a-z0-9:-]*)~i', $tag, $match) && in_array(strtolower($match[2]), $inert, true)) {
+            $name = strtolower($match[2]);
+            if ($match[1] === '') {
+                if (in_array($name, array('svg', 'math'), true) && preg_match('~/\s*>$~', $tag)) {
+                    if (!$stack) { $edits[] = array($token[1], strlen($tag)); }
+                    continue;
+                }
+                if (!$stack) { $start = $token[1]; }
+                $stack[] = $name;
+            } else {
+                $index = array_search($name, array_reverse($stack, true), true);
+                if ($index !== false) {
+                    $stack = array_slice($stack, 0, $index);
+                    if (!$stack) { $edits[] = array($start, $token[1] + strlen($tag) - $start); }
+                }
+            }
+        } elseif (!$stack && preg_match('~^<(script|style)(?=[\s>])~i', $tag)) {
+            $edits[] = array($token[1], strlen($tag));
+        }
+    }
+    if ($stack) { $edits[] = array($start, strlen($html) - $start); }
+    foreach (array_reverse($edits) as $edit) { $html = substr_replace($html, '', $edit[0], $edit[1]); }
+    return $html;
+}
+
 function tk_seo_parse_rendered_audit(string $html): array {
+    // Removing inert blocks before parsing prevents old libxml from relocating
+    // actual head metadata into body. Nested templates remain excluded as a whole.
+    $html = tk_seo_audit_readable_html($html);
     $document = new DOMDocument();
     $previous = libxml_use_internal_errors(true);
     try {

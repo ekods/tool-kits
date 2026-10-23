@@ -141,6 +141,43 @@ const path = require('node:path');
         await page.click('[data-preview-device="desktop"]');
         await page.click('[data-template-field]:has(#tk-seo-title) .tk-seo-insert-variable');
         await page.screenshot({path: '/tmp/toolkits-seo-variables-desktop.png', fullPage: true});
+        // Polylang copy uses current raw field values and explicit replacement opt-in.
+        const localeHtml = execFileSync('php', [path.join(__dirname, 'seo-content-locale-regression.php'), '--preview'], {encoding: 'utf8'});
+        for (const width of [1440, 390, 320]) {
+            await page.setViewport({width, height: 1000});
+            await page.setContent(html.replace(/<div class="tk-seo-post-editor"[^>]*>/, match => match + localeHtml));
+            assert.equal(await page.$eval('.tk-seo-copy-locale-button', node => node.disabled), true);
+            await page.select('#tk-seo-copy-locale', 'en');
+            assert.equal(await page.$eval('.tk-seo-copy-locale-button', node => node.disabled), false);
+            await page.evaluate(() => {
+                window.copyRequests = [];
+                window.fetch = (url, options) => { window.copyRequests.push(Object.fromEntries(options.body)); return new Promise(resolve => { window.copyResolve = resolve; }); };
+                const title = document.querySelector('#tk-seo-title'); title.value = 'New %%title%%'; title.dispatchEvent(new Event('input', {bubbles: true}));
+            });
+            await page.click('.tk-seo-copy-locale-button');
+            assert.equal(await page.$eval('.tk-seo-copy-locale-button', node => node.disabled), true, 'Block duplicate copy clicks');
+            assert.equal(await page.$eval('#tk-seo-copy-locale', node => node.disabled), true);
+            const request = await page.evaluate(() => window.copyRequests[0]);
+            assert.equal(request.locale, 'en'); assert.equal(request.replace, '0');
+            assert.equal(request.tk_seo_title, 'New %%title%%');
+            assert.equal(request['initial[tk_seo_title]'], '%%title%% %%page%% %%sep%% %%sitename%%');
+            assert.equal(request.tk_seo_meta_description, 'Original page content');
+            await page.evaluate(() => window.copyResolve({ok: true, json: async () => ({success: true, data: {message: '2 fields copied. Existing title preserved.', edit_url: 'https://example.com/wp-admin/post.php?post=43&action=edit'}})}));
+            await page.waitForFunction(() => !document.querySelector('.tk-seo-copy-edit').hidden);
+            assert.match(await page.$eval('.tk-seo-copy-status', node => node.textContent), /2 fields copied/);
+            assert.match(await page.$eval('.tk-seo-copy-edit', node => node.href), /post=43.*#tk-seo-content$/);
+            assert.equal(await page.$eval('#tk-seo-title', node => node.value), 'New %%title%%', 'Copy must not save or reset the source fields');
+            await page.click('.tk-seo-copy-replace');
+            await page.click('.tk-seo-copy-locale-button');
+            assert.equal(await page.evaluate(() => window.copyRequests[1].replace), '1');
+            await page.evaluate(() => window.copyResolve({ok: false, json: async () => ({success: false, data: {message: 'Translation is no longer editable.'}})}));
+            await page.waitForFunction(() => !document.querySelector('.tk-seo-copy-locale-button').disabled);
+            assert.equal(await page.$eval('.tk-seo-copy-status', node => node.textContent), 'Translation is no longer editable.');
+            assert.equal(await page.$eval('.tk-seo-copy-edit', node => node.hidden), true);
+            assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Locale controls overflow at ' + width);
+            await page.select('#tk-seo-copy-locale', '');
+            assert.equal(await page.$eval('.tk-seo-copy-locale-button', node => node.disabled), true);
+        }
         // When a script is delayed or blocked, the server HTML still shows chips.
         await page.setContent(html.replace(/<script>[\s\S]*?<\/script>/g, ''));
         assert.equal(await page.$$eval('#tk-seo-title-editor .tk-seo-token', nodes => nodes.length), 4);
@@ -164,6 +201,6 @@ const path = require('node:path');
         await page.click('[for="tk-seo-social-linkedin"]');
         assert.equal(await page.$eval('#tk-seo-social-linkedin', node => node.checked), true);
         assert.deepEqual(errors, []);
-        console.log('PASS: length status boundaries, full text, live social title/description/URL, Facebook/LinkedIn, Gutenberg/Classic featured images and defaults, variable chips, mobile and no-JS controls');
+        console.log('PASS: Polylang copy current values, replacement opt-in, busy/error states, responsive locale controls, length statuses, social previews, variables, mobile and no-JS controls');
     } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

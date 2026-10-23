@@ -54,6 +54,11 @@ $output = render_output_fixture($html, true);
 $report = tk_seo_parse_rendered_audit($output);
 verify_output($report['title'] === $values['title'] && $report['description'] === $description, 'Rendered head metadata must equal saved values with theme/plugin/global overrides active');
 verify_output($report['title_count'] === 1 && $report['description_count'] === 1, 'There must be one real title and meta description');
+$nested = '<template data-example=">"><template><title>Inner fake</title></template><title>Outer fake</title><script>const demo = "</template>";</script></template>';
+$nested_report = tk_seo_parse_rendered_audit('<html><head>' . $nested . '<title>Actual title</title><meta name="description" content="Actual description"></head><body><main>Readable</main></body></html>');
+verify_output($nested_report['title'] === 'Actual title' && $nested_report['description'] === 'Actual description' && $nested_report['title_count'] === 1,
+    'Nested inert HTML5 examples must not hide or impersonate public metadata on older libxml');
+verify_output(tk_seo_audit_readable_html('<svg/><math /><title>Keep</title>') === '<title>Keep</title>', 'Self-closing foreign content must not consume following metadata');
 verify_output(strpos($output, $samples) !== false && strpos($output, $untouched) !== false && substr($output, -strlen($body)) === $body, 'Examples, robots, canonical, author, image, schema and body must stay unchanged');
 verify_output(strpos($output, '%%title%%') === false && strpos($output, '%%sitename%%') === false, 'Variable placeholders must not leak into public metadata');
 verify_output(substr_count($output, '<meta property="og:title" content="Company | BRANDKRAFT">') === 1, 'Social title duplicates must collapse to the saved title');

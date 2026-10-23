@@ -4,6 +4,7 @@ require_once __DIR__ . '/seo-rendered-audit.php';
 require_once __DIR__ . '/seo-content-fixes.php';
 require_once __DIR__ . '/seo-content-modal.php';
 require_once __DIR__ . '/seo-content-panel.php';
+require_once __DIR__ . '/seo-content-locale.php';
 require_once __DIR__ . '/seo-variables.php';
 require_once __DIR__ . '/seo-content-output.php';
 require_once __DIR__ . '/seo-global-content.php';
@@ -33,6 +34,7 @@ function tk_seo_opt_init() {
     add_action('wp_ajax_tk_seo_content_editor', 'tk_seo_content_editor_ajax');
     add_action('admin_enqueue_scripts', 'tk_seo_content_checks_enqueue');
     add_action('admin_enqueue_scripts', 'tk_seo_content_panel_enqueue');
+    add_action('wp_ajax_tk_seo_copy_locale', 'tk_seo_copy_locale_ajax');
 
     add_action('init', 'tk_seo_sitemap_maybe_render', 1);
     add_action('template_redirect', 'tk_seo_redirect_maybe_handle', 1);
@@ -64,6 +66,20 @@ function tk_seo_selected_post_types(): array {
     return array_keys(array_filter($types, function ($type) {
         return is_post_type_viewable($type);
     }));
+}
+
+/** Editor visibility is independent of public SEO/GEO output and saved metadata. */
+function tk_seo_editor_panel_visible(string $panel): bool {
+    return in_array($panel, array('content', 'geo'), true)
+        && (int) tk_get_option('seo_' . $panel . '_panel_enabled', 1) === 1;
+}
+
+function tk_seo_save_panel_visibility(array $input): void {
+    if (!isset($input['tk_seo_panels_present'])) { return; }
+    foreach (array('content', 'geo') as $panel) {
+        $key = 'seo_' . $panel . '_panel_enabled';
+        tk_update_option($key, isset($input[$key]) && $input[$key] === '1' ? 1 : 0);
+    }
 }
 
 function tk_seo_post_feature_enabled(string $feature, int $post_id = 0): bool {
@@ -289,7 +305,7 @@ function tk_seo_current_url() {
 
 function tk_seo_enqueue_faq_editor(): void {
     $screen = get_current_screen();
-    if (!$screen || $screen->base !== 'post' || !tk_is_admin_user()
+    if (!tk_seo_editor_panel_visible('geo') || !$screen || $screen->base !== 'post' || !tk_is_admin_user()
         || !in_array($screen->post_type, tk_seo_selected_post_types(), true)) {
         return;
     }
@@ -303,6 +319,7 @@ function tk_seo_add_geo_meta_boxes(): void {
     }
 
     foreach (tk_seo_selected_post_types() as $post_type) {
+        if (tk_seo_editor_panel_visible('geo')) {
         add_meta_box(
             // A new ID prevents a saved legacy "normal" order from moving it back below the editor.
             'tk-seo-geo-sidebar',
@@ -312,6 +329,8 @@ function tk_seo_add_geo_meta_boxes(): void {
             'side',
             'default'
         );
+        }
+        if (tk_seo_editor_panel_visible('content')) {
         add_meta_box(
             'tk-seo-content',
             'Tool Kits SEO Content',
@@ -320,6 +339,7 @@ function tk_seo_add_geo_meta_boxes(): void {
             'normal',
             'low'
         );
+        }
     }
 }
 
@@ -2454,6 +2474,14 @@ function tk_render_seo_opt_panel() {
             </div>
 
             <fieldset style="margin-bottom:24px;">
+                <legend><strong>Editor Panels</strong></legend>
+                <input type="hidden" name="tk_seo_panels_present" value="1">
+                <p><label><input type="checkbox" name="seo_content_panel_enabled" value="1" <?php checked(tk_seo_editor_panel_visible('content')); ?>> Show Tool Kits SEO Content</label></p>
+                <p><label><input type="checkbox" name="seo_geo_panel_enabled" value="1" <?php checked(tk_seo_editor_panel_visible('geo')); ?>> Show Tool Kits SEO / GEO</label></p>
+                <p class="description">Choose which panels appear in the content editor. Hiding a panel preserves saved metadata and public SEO/GEO output.</p>
+            </fieldset>
+
+            <fieldset style="margin-bottom:24px;">
                 <legend><strong>SEO / GEO Content Types</strong></legend>
                 <input type="hidden" name="tk_seo_post_types_present" value="1">
                 <?php $selected_types = tk_seo_selected_post_types(); ?>
@@ -2932,6 +2960,7 @@ function tk_render_seo_opt_panel() {
 
 function tk_seo_opt_save() {
     tk_require_admin_post('tk_seo_opt_save');
+    tk_seo_save_panel_visibility($_POST);
     if (isset($_POST['tk_seo_post_types_present'])) {
         $requested = isset($_POST['seo_geo_post_types']) && is_array($_POST['seo_geo_post_types']) ? wp_unslash($_POST['seo_geo_post_types']) : array();
         $requested = array_map('sanitize_key', array_filter($requested, 'is_string'));
