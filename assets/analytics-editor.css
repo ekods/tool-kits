@@ -1,5 +1,9 @@
 .tk-analytics-settings { margin-top: 24px; min-width: 0; }
 .tk-analytics-settings h2 { margin-top: 0; }
+.tk-analytics-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.tk-analytics-heading h2 { margin-bottom: 0; }
+.tk-analytics-heading .tk-badge { white-space: normal; overflow-wrap: anywhere; }
+.tk-analytics-status-message { margin: 12px 0; }
 .tk-analytics-field { margin: 24px 0; min-width: 0; }
 .tk-analytics-field label { display: block; margin-bottom: 6px; }
 .tk-analytics-field .description { margin: 6px 0 10px; }

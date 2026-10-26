@@ -16,6 +16,8 @@ const {execFileSync} = require('node:child_process');
         const errors = [];
         page.on('pageerror', error => errors.push(error.message));
         await page.setContent(html);
+        assert.equal(await page.$eval('[data-tk-gtm-status]', node => node.dataset.tkGtmStatus), 'configured');
+        assert.match(await page.$eval('[data-tk-gtm-status]', node => node.textContent), /Configured: GTM-TEST123/);
         await page.addStyleTag({content: 'body{margin:0;padding:16px;box-sizing:border-box;background:#f0f0f1;font:13px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;color:#1d2327}main{max-width:960px;margin:auto;min-width:0}*{box-sizing:border-box}'});
         for (const file of ['wp-admin/css/forms.min.css', 'wp-admin/css/buttons.min.css', 'wp-includes/js/codemirror/codemirror.min.css']) {
             const asset = path.join(core, file);
@@ -47,6 +49,7 @@ const {execFileSync} = require('node:child_process');
         }
         await page.$$eval('.CodeMirror', nodes => nodes[0].CodeMirror.setValue(''));
         assert.equal(await page.$eval('form', form => new FormData(form).get('google_tag_manager_head')), '', 'Clearing the editor clears the submitted value');
+        assert.equal(await page.$eval('[data-tk-gtm-status]', node => node.dataset.tkGtmStatus), 'configured', 'Badge represents saved configuration until the edited form is saved');
         await page.addScriptTag({path: path.join(root, 'assets/analytics-editor.js')});
         assert.equal(await page.$$eval('.CodeMirror', nodes => nodes.length), 2, 'No duplicate editor initialization');
         const fallback = await browser.newPage();
@@ -57,7 +60,13 @@ const {execFileSync} = require('node:child_process');
         assert.equal(await fallback.$eval('[name="google_tag_manager_head"]', field => getComputedStyle(field).display !== 'none'), true, 'Plain textarea fallback stays editable');
         await fallback.setJavaScriptEnabled(false); await fallback.setContent(html);
         assert.match(await fallback.$eval('form', form => new FormData(form).get('google_tag_manager_body')), /<noscript><iframe/);
+        for (const [flag, state] of [['--empty', 'not-set'], ['--incomplete', 'incomplete'], ['--mismatch', 'mismatch']]) {
+            const preview = execFileSync(process.env.TK_PHP_BINARY || 'php', [path.join(__dirname, 'analytics-gtm-regression.php'), '--preview', flag], {encoding: 'utf8'});
+            await page.setContent(preview);
+            assert.equal(await page.$eval('[data-tk-gtm-status]', node => node.dataset.tkGtmStatus), state);
+            assert.equal(await page.$eval('[data-tk-gtm-status]', node => node.classList.contains('tk-on')), false, 'Incomplete or mismatched config must not show green');
+        }
         assert.deepEqual(errors, []);
-        console.log('PASS: real WordPress CodeMirror, two HTML editors, exact submitted snippets, no admin execution, clear, responsive layout and textarea fallback');
+        console.log('PASS: saved GTM configuration indicators, mismatch/incomplete/empty states, real WordPress CodeMirror, submitted snippets, responsive layout and textarea fallback');
     } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

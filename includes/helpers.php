@@ -46,6 +46,17 @@ function tk_render_header_branding() {
                 </div>
             <?php endif; ?>
 
+            <?php if (function_exists('tk_analytics_gtm_status')) :
+                $gtm_status = tk_analytics_gtm_status();
+                $gtm_color = $gtm_status['state'] === 'configured' ? '#166534' : ($gtm_status['state'] === 'not-set' ? '#64748b' : '#92400e');
+                $gtm_dot = $gtm_status['state'] === 'configured' ? '#22c55e' : ($gtm_status['state'] === 'not-set' ? '#94a3b8' : '#f59e0b');
+            ?>
+                <div class="tk-header-status" style="color:<?php echo esc_attr($gtm_color); ?>;" title="<?php echo esc_attr($gtm_status['message']); ?>" data-tk-gtm-status="<?php echo esc_attr($gtm_status['state']); ?>">
+                    <div class="tk-status-dot" style="background:<?php echo esc_attr($gtm_dot); ?>;"></div>
+                    <span>GTM <?php echo esc_html($gtm_status['label'] . ($gtm_status['id'] !== '' ? ': ' . $gtm_status['id'] : '')); ?></span>
+                </div>
+            <?php endif; ?>
+
             <?php
             $heartbeat_success = (int) tk_get_option('heartbeat_last_success', 0);
             $heartbeat_fail = (int) tk_get_option('heartbeat_last_failure', 0);
@@ -137,6 +148,12 @@ function tk_render_header_branding() {
             box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
             animation: tk-pulse 2s infinite;
         }
+        .tk-header-status[data-tk-gtm-status] {
+            max-width: 100%;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+        .tk-header-status[data-tk-gtm-status] .tk-status-dot { flex-shrink: 0; }
         .tk-external-notices {
             margin: 0 0 24px;
         }

@@ -23,6 +23,8 @@ function wp_doing_ajax() { return $GLOBALS['ajax']; }
 function is_feed() { return $GLOBALS['feed']; }
 function esc_url($value) { return htmlspecialchars($value, ENT_QUOTES); }
 function esc_textarea($value) { return htmlspecialchars($value, ENT_QUOTES); }
+function esc_html($value) { return htmlspecialchars($value, ENT_QUOTES); }
+function esc_attr($value) { return htmlspecialchars($value, ENT_QUOTES); }
 function tk_nonce_field($action) { echo '<input type="hidden" name="_wpnonce" value="fixture">'; }
 function tk_csp_add_nonce_to_tag($tag, $element = 'script') { return $GLOBALS['nonce'] ? str_replace('<script', '<script nonce="test-nonce"', $tag) : $tag; }
 function tk_asset_version($file) { return 'fixture'; }
@@ -39,14 +41,40 @@ function save_gtm(array $data, $expected = 'Redirect') {
     try { tk_analytics_save(); } catch (RuntimeException $error) { check_gtm($error->getMessage() === $expected, 'Save result: ' . $error->getMessage()); return; }
     throw new RuntimeException('Save did not redirect or reject');
 }
-$head = "<!-- Google Tag Manager -->\n<script>(function(w){w.dataLayer=w.dataLayer||[];w.dataLayer.push({'event':'gtm.js','path':'a\\\\b'});})(window);</script>";
+$head = "<!-- Google Tag Manager -->\n<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'event':'gtm.js','path':'a\\\\b'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s);j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-TEST123');</script>";
 $body = '<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-TEST123&amp;gtm_auth=example" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>';
 if (in_array('--preview', $argv, true)) {
     $options['google_tag_manager_head'] = $head; $options['google_tag_manager_body'] = $body;
+    if (in_array('--empty', $argv, true)) { $options['google_tag_manager_head'] = ''; $options['google_tag_manager_body'] = ''; }
+    if (in_array('--incomplete', $argv, true)) { $options['google_tag_manager_body'] = ''; }
+    if (in_array('--mismatch', $argv, true)) { $options['google_tag_manager_body'] = str_replace('GTM-TEST123', 'GTM-OTHER123', $body); }
     echo '<!doctype html><html><head><meta charset="utf-8"></head><body><main class="tk-overview-main">';
     tk_analytics_render_gtm_form(); echo '</main></body></html>'; exit;
 }
 tk_analytics_init();
+check_gtm(tk_analytics_gtm_status()['state'] === 'not-set', 'Unset configuration is neutral');
+$options['google_tag_manager_head'] = $head;
+check_gtm(tk_analytics_gtm_status()['state'] === 'incomplete', 'Head alone does not show configured');
+$options['google_tag_manager_body'] = $body;
+check_gtm(tk_analytics_gtm_status()['state'] === 'configured' && tk_analytics_gtm_status()['id'] === 'GTM-TEST123', 'Both saved snippets with matching ID show configured');
+$options['google_tag_manager_body'] = str_replace('GTM-TEST123', 'GTM-OTHER123', $body);
+check_gtm(tk_analytics_gtm_status()['state'] === 'mismatch', 'Different container IDs are flagged');
+foreach (array('hello GTM-TEST123', '<!-- ' . preg_replace('/<!--.*?-->/s', '', $head) . ' -->', str_replace('www.googletagmanager.com', 'www.googletagmanager.com.evil.test', $head)) as $invalid_head) {
+    $options['google_tag_manager_head'] = $invalid_head; $options['google_tag_manager_body'] = $body;
+    check_gtm(tk_analytics_gtm_status()['state'] === 'check-snippets', 'Arbitrary text, comments or wrong script host cannot show configured');
+}
+$options['google_tag_manager_head'] = $head;
+foreach (array('GTM-TEST123', str_replace('www.googletagmanager.com', 'attacker.test', $body), str_replace('<noscript>', '<div>', $body)) as $invalid_body) {
+    $options['google_tag_manager_body'] = $invalid_body;
+    check_gtm(tk_analytics_gtm_status()['state'] === 'check-snippets', 'Incomplete noscript or wrong iframe URL cannot show configured');
+}
+$options['google_tag_manager_head'] = ''; $options['google_tag_manager_body'] = $body;
+check_gtm(tk_analytics_gtm_status()['state'] === 'incomplete' && strpos(tk_analytics_gtm_status()['message'], 'Head') !== false, 'Missing head is identified');
+$options['google_tag_manager_head'] = $head; $options['google_tag_manager_body'] = $body;
+$form_status = capture_gtm('tk_analytics_render_gtm_form');
+check_gtm(strpos($form_status, 'data-tk-gtm-status="configured"') !== false && strpos($form_status, 'Configured: GTM-TEST123') !== false, 'Configured badge includes container ID');
+check_gtm(strpos($form_status, 'verify live tag firing') !== false, 'Configuration badge does not claim a verified live connection');
+unset($options['google_tag_manager_head'], $options['google_tag_manager_body']);
 check_gtm(isset($hooks['wp_head'][-100]) && $hooks['wp_head'][-100][0] === 'tk_analytics_render_gtm_head', 'Head renders early');
 check_gtm($hooks['wp_body_open'][1][0] === 'tk_analytics_render_gtm_body', 'Body uses opening body hook');
 save_gtm(array('google_tag_manager_head' => $head, 'google_tag_manager_body' => $body));
@@ -88,5 +116,5 @@ check_gtm($assets['editor']['type'] === 'text/html' && $assets['scripts'][0][2] 
 $assets = array(); $editor_settings = false; tk_analytics_enqueue_editor('toplevel_page_tool-kits');
 check_gtm($assets['localized'][0][2]['settings'] === false && $assets['scripts'][0][2] === array(), 'Plain textarea fallback for disabled highlighting');
 $assets = array(); $unfiltered = false; tk_analytics_enqueue_editor('toplevel_page_tool-kits');
-check_gtm(!$assets, 'No script editor assets without permission');
+check_gtm(empty($assets['scripts']) && !empty($assets['styles']), 'Status styling available without loading script editor for restricted accounts');
 echo 'PASS: ', $checks, ' GTM save, permission, nonce, import, output, CSP and editor checks', PHP_EOL;

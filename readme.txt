@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.47
+Stable tag: 2.7.48
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -71,6 +71,10 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.48 =
+- Show the saved Google Tag Manager configuration status and matching container ID in the GTM panel and Tool Kits header.
+- Distinguish configured, missing snippets, mismatched container IDs and unrecognised snippets without claiming live tag firing has been verified.
+
 = 2.7.47 =
 - Add separate Head and Body code editors for Google Tag Manager in the Overview page, using WordPress CodeMirror with a plain textarea fallback.
 - Print saved snippets early in the page head and at the opening body hook, once per location, with CSP nonce support.
