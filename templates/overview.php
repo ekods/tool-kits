@@ -67,7 +67,7 @@ $geo_score = (int) ($geo_score_data['score'] ?? 0);
     <?php endif; ?>
 
     <?php if (isset($_GET['tk_analytics_saved']) && $_GET['tk_analytics_saved'] === '1') : ?>
-        <?php tk_notice(__('Google Analytics settings updated.', 'tool-kits'), 'success'); ?>
+        <?php tk_notice(__('Tracking settings updated.', 'tool-kits'), 'success'); ?>
     <?php endif; ?>
 
     <div class="tk-overview-grid">
@@ -76,6 +76,8 @@ $geo_score = (int) ($geo_score_data['score'] ?? 0);
             <p class="tk-overview-section-desc"><?php _e('Quick overview of your active protection layers.', 'tool-kits'); ?></p>
             
             <?php tk_render_security_table(); ?>
+
+            <?php tk_analytics_render_gtm_form(); ?>
 
             <div class="tk-card" style="margin-top: 40px; border-radius: 16px;">
                 <h2 style="margin-top: 0;"><?php _e('Confidence Guide', 'tool-kits'); ?></h2>

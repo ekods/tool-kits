@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.46
+Stable tag: 2.7.47
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -71,6 +71,11 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.47 =
+- Add separate Head and Body code editors for Google Tag Manager in the Overview page, using WordPress CodeMirror with a plain textarea fallback.
+- Print saved snippets early in the page head and at the opening body hook, once per location, with CSP nonce support.
+- Require unfiltered_html permission to save or import tracking scripts and preserve Google Analytics settings when saving GTM.
+
 = 2.7.46 =
 - Keep the SEO Social Image preview in sync with the current image load state, including cached images and late events from previous requests.
 - Add Retry image and Open image controls when the preview fails, preserving the selected image and its original URL.

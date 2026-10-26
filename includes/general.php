@@ -456,6 +456,10 @@ function tk_general_clean_import_options(array $incoming): array {
         if ($key === 'toolkits_audit_log') {
             continue;
         }
+        if (in_array($key, array('google_tag_manager_head', 'google_tag_manager_body'), true)
+            && (!current_user_can('unfiltered_html') || !is_string($value))) {
+            continue;
+        }
         if (is_object($value)) {
             continue;
         }
