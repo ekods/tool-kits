@@ -14,6 +14,7 @@ function check_cache($condition, $message) { if (!$condition) { throw new Runtim
 function tk_get_option($key, $default = null) { return $GLOBALS['options'][$key] ?? $default; }
 function get_option($key, $default = null) { return $GLOBALS['wp_options'][$key] ?? $default; }
 function update_option($key, $value, $autoload = null) { $GLOBALS['wp_options'][$key] = $value; }
+function get_transient($key) { return $key === 'tk_server_cache_status' ? array('detected' => false, 'detail' => 'Isolated fixture') : false; }
 function tk_license_features_enabled() { return $GLOBALS['licensed']; }
 function tk_license_verified_claims() { return $GLOBALS['licensed'] ? array('expires_at' => $GLOBALS['license_deadline'] ?? time() + 86400) : false; }
 function wp_mkdir_p($path) { return is_dir($path) || mkdir($path, 0755, true); }
@@ -24,6 +25,9 @@ function apply_filters($name, $value) { return $value; }
 function add_action($name, $callback, $priority = 10) { $GLOBALS['actions'][] = array($name, $callback, $priority); }
 function is_ssl() { return isset($_SERVER['HTTPS']) ? in_array(strtolower((string) $_SERVER['HTTPS']), array('on', '1'), true) : (($_SERVER['SERVER_PORT'] ?? '') == '443'); }
 function insert_with_markers($path, $marker, $lines) { $GLOBALS['writes']++; file_put_contents($path, '# BEGIN ' . $marker . "\n" . implode("\n", $lines) . "\n# END " . $marker); return true; }
+function tk_is_admin_user() { return true; }
+function tk_notice($message, $type) { $GLOBALS['notices'][] = array($message, $type); }
+function esc_html($value) { return htmlspecialchars((string) $value, ENT_QUOTES); }
 require dirname(__DIR__) . '/includes/cache.php';
 require dirname(__DIR__) . '/includes/security-hardening.php';
 function cleanup_cache_fixture($directory) { foreach (new FilesystemIterator($directory) as $entry) { if ($entry->isDir()) { cleanup_cache_fixture($entry->getPathname()); } else { unlink($entry->getPathname()); } } rmdir($directory); }
@@ -117,11 +121,27 @@ try {
     tk_page_cache_early_remove();
     check_cache(file_get_contents($config_file) === "<?php\ndefine('WP_CACHE', false);\n", 'User-owned WP_CACHE removed');
     file_put_contents($config_file, $original_config);
-    foreach (array('hardening_waf_enabled', 'hardening_httpauth_enabled') as $key) {
+    check_cache(tk_page_cache_early_hook_requirements() === array(), 'Inactive features reported as cache blockers');
+    foreach (array('hardening_waf_enabled' => 'PHP firewall', 'hardening_httpauth_enabled' => 'HTTP authentication') as $key => $reason) {
+        tk_page_cache_early_sync(); // Begin with an installed early cache.
         $options[$key] = 1; tk_page_cache_early_sync();
-        check_cache(!is_file(tk_page_cache_early_config_path()), 'Early cache bypasses security hook: ' . $key);
+        check_cache(!is_file(tk_page_cache_early_config_path()) && !is_file(WP_CONTENT_DIR . '/advanced-cache.php'), 'Early cache bypasses security hook: ' . $key);
+        check_cache(tk_cache_page_enabled() && tk_page_cache_early_hook_requirements() === array($reason), 'Normal cache or active reason incorrect: ' . $key);
+        ob_start(); tk_cache_render_status_rows(); $status_html = ob_get_clean();
+        check_cache(strpos($status_html, 'Mode: Normal page cache.') !== false && strpos($status_html, 'Active features: ' . $reason . '.') !== false, 'Cache Status did not explain the specific normal-mode requirement: ' . $key);
+        $notices = array(); tk_page_cache_early_admin_notice();
+        check_cache($GLOBALS['tk_page_cache_early_notice'] === '' && $notices === array(), 'Expected normal mode still raises a warning: ' . $key);
         $options[$key] = 0;
     }
+    $multisite = true; tk_page_cache_early_sync();
+    check_cache(tk_page_cache_early_hook_requirements() === array('Multisite') && $GLOBALS['tk_page_cache_early_notice'] === '' && !is_file(tk_page_cache_early_config_path()), 'Multisite should select normal cache without a warning');
+    $options['hardening_waf_enabled'] = 1; $options['hardening_httpauth_enabled'] = 1;
+    check_cache(tk_page_cache_early_hook_requirements() === array('Multisite', 'HTTP authentication', 'PHP firewall'), 'Status must show only active requirements');
+    $options['hardening_waf_enabled'] = 0; $options['hardening_httpauth_enabled'] = 0; $multisite = false;
+    ob_start(); tk_cache_render_status_rows(); $status_html = ob_get_clean();
+    check_cache(strpos($status_html, 'Mode: Normal page cache.') === false, 'Status shows normal-mode reason when no feature requires it');
+    $GLOBALS['tk_page_cache_early_notice'] = 'Actual setup failure'; $notices = array(); tk_page_cache_early_admin_notice();
+    check_cache($notices === array(array('Actual setup failure', 'warning')), 'Actionable early cache warning was hidden');
     tk_page_cache_early_sync();
     $GLOBALS['tk_page_cache_early_deactivated'] = true;
     tk_page_cache_early_remove(); tk_page_cache_early_sync();

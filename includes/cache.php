@@ -1082,6 +1082,7 @@ function tk_cache_render_status_rows() {
     $server_cache = tk_server_cache_status();
     $fragment_keys = tk_get_option('fragment_cache_keys', array());
     $fragment_count = is_array($fragment_keys) ? count($fragment_keys) : 0;
+    $hook_requirements = tk_page_cache_early_hook_requirements();
     ?>
     <table class="widefat striped tk-table">
         <thead><tr><th>Cache</th><th>Status</th><th>Detail</th></tr></thead>
@@ -1089,7 +1090,14 @@ function tk_cache_render_status_rows() {
             <tr>
                 <td>Page cache</td>
                 <td><?php echo tk_get_option('page_cache_enabled', 0) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?></td>
-                <td>File-based HTML cache for anonymous static GET requests. Dynamic URLs, sessions, carts, checkout, account pages, search, and private/no-cache responses are skipped. Current usage: <?php echo esc_html(tk_page_cache_summary_text($page_stats)); ?>.</td>
+                <td>
+                    File-based HTML cache for anonymous static GET requests. Dynamic URLs, sessions, carts, checkout, account pages, search, and private/no-cache responses are skipped. Current usage: <?php echo esc_html(tk_page_cache_summary_text($page_stats)); ?>.
+                    <?php if (tk_cache_page_enabled() && $hook_requirements) : ?>
+                        <br><strong>Mode: Normal page cache.</strong>
+                        WordPress site routing and security checks run before cached HTML is served.
+                        Active features: <?php echo esc_html(implode(', ', $hook_requirements)); ?>.
+                    <?php endif; ?>
+                </td>
             </tr>
             <tr>
                 <td>Object cache</td>

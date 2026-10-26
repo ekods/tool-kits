@@ -82,13 +82,23 @@ function tk_page_cache_early_remove(): void {
     }
 }
 
+/** Features that need WordPress to run before serving cached HTML. */
+function tk_page_cache_early_hook_requirements(): array {
+    $requirements = array();
+    if (function_exists('is_multisite') && is_multisite()) { $requirements[] = 'Multisite'; }
+    if (tk_get_option('hardening_httpauth_enabled', 0)) { $requirements[] = 'HTTP authentication'; }
+    if (tk_get_option('hardening_waf_enabled', 0)) { $requirements[] = 'PHP firewall'; }
+    return $requirements;
+}
+
 function tk_page_cache_early_sync(): void {
     $GLOBALS['tk_page_cache_early_notice'] = '';
     if (!empty($GLOBALS['tk_page_cache_early_deactivated']) || !tk_cache_page_enabled() || !tk_license_features_enabled()) { tk_page_cache_early_remove(); return; }
     // These protections require PHP hooks. A cache hit must not bypass them.
-    if ((function_exists('is_multisite') && is_multisite()) || tk_get_option('hardening_httpauth_enabled', 0) || tk_get_option('hardening_waf_enabled', 0)) {
+    if (tk_page_cache_early_hook_requirements()) {
         tk_page_cache_early_remove();
-        $GLOBALS['tk_page_cache_early_notice'] = 'Tool Kits uses the normal page cache because multisite, HTTP authentication or the PHP firewall requires WordPress request hooks.';
+        // This is an expected mode selection, shown on Cache Status. Keep any
+        // actionable cleanup error set by early_remove() instead of overwriting it.
         return;
     }
     $dropin = WP_CONTENT_DIR . '/advanced-cache.php';
