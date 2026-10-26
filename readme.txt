@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.45
+Stable tag: 2.7.46
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -71,6 +71,11 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.46 =
+- Keep the SEO Social Image preview in sync with the current image load state, including cached images and late events from previous requests.
+- Add Retry image and Open image controls when the preview fails, preserving the selected image and its original URL.
+- Load preview images eagerly without sending the editor page as a referrer.
+
 = 2.7.45 =
 * Add an explicit SEO Social Image label beside the existing Upload / choose image and Use thumbnail controls.
 * Recommend 1200 x 630 px (approximately 1.91:1), JPG or PNG, and an ideal file size below 1 MB. Keep important text and logos near the centre to allow for cropping.

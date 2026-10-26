@@ -150,6 +150,8 @@ function tk_seo_render_content_meta_box($post): void {
                 <div class="tk-seo-social-image-controls" role="group" aria-labelledby="tk-seo-social-image-label" aria-describedby="tk-seo-social-image-help">
                     <?php if (current_user_can('upload_files')) : ?><button type="button" class="button tk-seo-social-image-select" hidden>Upload / choose image</button><?php endif; ?>
                     <button type="button" class="button tk-seo-social-image-reset" hidden>Use thumbnail</button>
+                    <button type="button" class="button tk-seo-social-image-retry" hidden>Retry image</button>
+                    <a class="button tk-seo-social-image-open" target="_blank" rel="noopener noreferrer" hidden>Open image</a>
                 </div>
                 <p class="description" id="tk-seo-social-image-help">Recommended size: <strong>1200 &times; 630 px</strong> (approximately 1.91:1). Use JPG or PNG, ideally under 1 MB. Keep important text and logos near the centre to allow for cropping.</p>
                 <p class="description tk-seo-social-image-status" role="status" aria-live="polite"><?php echo $social_image_id > 0 ? 'Using a custom Open Graph image.' : 'Using the Featured Image (thumbnail), with the site image as a fallback.'; ?></p>
@@ -158,7 +160,7 @@ function tk_seo_render_content_meta_box($post): void {
                     <input class="tk-seo-device-choice tk-seo-social-choice" type="radio" id="tk-seo-social-linkedin" name="tk_seo_social_network" value="linkedin">
                     <div class="tk-seo-preview-heading"><strong>Open Graph preview</strong><div class="tk-seo-preview-controls"><label for="tk-seo-social-facebook">Facebook</label><label for="tk-seo-social-linkedin">LinkedIn</label></div></div>
                     <div class="tk-seo-social-card" data-network="facebook">
-                        <div class="tk-seo-social-visual"><img class="tk-seo-social-image" <?php if ($social_image !== '') : ?>src="<?php echo esc_url($social_image); ?>"<?php else : ?>hidden<?php endif; ?> alt=""><span class="tk-seo-social-image-empty" <?php if ($social_image !== '') : ?>hidden<?php endif; ?>>No social image</span></div>
+                        <div class="tk-seo-social-visual"><img class="tk-seo-social-image" loading="eager" decoding="async" referrerpolicy="no-referrer" <?php if ($social_image !== '') : ?>src="<?php echo esc_url($social_image); ?>"<?php else : ?>hidden<?php endif; ?> alt=""><span class="tk-seo-social-image-empty" <?php if ($social_image !== '') : ?>hidden<?php endif; ?>>No social image</span></div>
                         <div class="tk-seo-social-copy"><span class="tk-seo-social-domain"><?php echo esc_html($host); ?></span><strong class="tk-seo-social-title"><?php echo esc_html($preview_title ?: $default_title); ?></strong><p class="tk-seo-social-description"><?php echo esc_html($preview_description); ?></p><span class="tk-seo-social-url"><?php echo esc_html($url); ?></span></div>
                     </div>
                 </div>

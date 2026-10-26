@@ -9,7 +9,13 @@ const path = require('node:path');
     try {
         const page = await browser.newPage();
         await page.setRequestInterception(true);
-        page.on('request', request => request.respond({status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jQ1kAAAAASUVORK5CYII=', 'base64')}));
+        let unavailableSocialImage = true;
+        page.on('request', request => {
+            if (unavailableSocialImage && request.url().includes('/unavailable-social.jpg')) {
+                return request.respond({status: 404, headers: {'cache-control': 'no-store'}, body: ''});
+            }
+            return request.respond({status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jQ1kAAAAASUVORK5CYII=', 'base64')});
+        });
         const errors = [];
         page.on('pageerror', error => errors.push(error.message));
         for (const width of [1440, 390, 320]) {
@@ -102,6 +108,29 @@ const path = require('node:path');
         assert.equal(await page.$eval('#tk-seo-social-image-id', node => node.value), '0');
         assert.equal(await page.$eval('.tk-seo-social-image', node => node.src), 'https://brandkraft.id/new-thumbnail.jpg', 'Reset must use the latest thumbnail');
         assert.equal(await page.$eval('.tk-seo-social-image-reset', node => node.hidden), true);
+        await page.waitForFunction(() => document.querySelector('.tk-seo-social-image').naturalWidth > 0 && !document.querySelector('.tk-seo-social-image').hidden);
+        await page.$eval('.tk-seo-social-image', node => node.dispatchEvent(new Event('error')));
+        assert.equal(await page.$eval('.tk-seo-social-image', node => node.hidden), false, 'A stale error must not hide a successfully decoded current image');
+        assert.equal(await page.$eval('.tk-seo-social-image-retry', node => node.hidden), true);
+        await page.evaluate(() => { window.chosenSocialImage = {id: 91, type: 'image', url: 'https://brandkraft.id/unavailable-social.jpg'}; window.mediaCallbacks.select(); });
+        await page.waitForFunction(() => !document.querySelector('.tk-seo-social-image-retry').hidden);
+        assert.equal(await page.$eval('.tk-seo-social-image', node => node.hidden), true, 'A genuine failed image must use the error placeholder');
+        assert.equal(await page.$eval('.tk-seo-social-image-open', node => node.href), 'https://brandkraft.id/unavailable-social.jpg');
+        assert.equal(await page.$eval('#tk-seo-social-image-id', node => node.value), '91', 'A preview failure must preserve the saved image choice');
+        unavailableSocialImage = false;
+        await page.click('.tk-seo-social-image-retry');
+        await page.waitForFunction(() => !document.querySelector('.tk-seo-social-image').hidden && document.querySelector('.tk-seo-social-image').naturalWidth > 0);
+        assert.equal(await page.$eval('.tk-seo-social-image', node => node.src), 'https://brandkraft.id/unavailable-social.jpg', 'Retry must preserve the original image URL without a metadata/cache-busting rewrite');
+        assert.equal(await page.$eval('.tk-seo-social-image-retry', node => node.hidden), true);
+        assert.equal(await page.$eval('.tk-seo-social-image-open', node => node.hidden), true);
+        assert.equal(await page.$eval('#tk-seo-social-image-id', node => node.value), '91');
+        assert.equal(await page.evaluate(() => window.edited.featured_media), 11, 'Retry must not change the Featured Image');
+        await page.click('.tk-seo-social-image-reset');
+        await page.$eval('.tk-seo-post-editor', node => { node.dataset.socialDefaultImage = ''; });
+        await page.evaluate(() => window.wp.data.dispatch().editPost({featured_media: 0}));
+        await page.$eval('.tk-seo-social-image', node => node.dispatchEvent(new Event('error')));
+        assert.equal(await page.$eval('.tk-seo-social-image-empty', node => node.textContent), 'No social image', 'An old error after clearing the source must not replace the empty state');
+        assert.equal(await page.$eval('.tk-seo-social-image-retry', node => node.hidden), true);
         // Classic editor may have no core/editor store even when wp.data exists.
         const classic = '<script>window.wp = {data: {select() {throw new Error("Store unavailable");}}};</script>';
         await page.setContent(html.replace('<script>', '<div id="postimagediv"></div>' + classic + '<script>'));

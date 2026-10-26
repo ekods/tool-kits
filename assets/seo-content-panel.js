@@ -186,8 +186,11 @@
             var socialImageId = root.querySelector('#tk-seo-social-image-id');
             var socialImageSelect = root.querySelector('.tk-seo-social-image-select');
             var socialImageReset = root.querySelector('.tk-seo-social-image-reset');
+            var socialImageRetry = root.querySelector('.tk-seo-social-image-retry');
+            var socialImageOpen = root.querySelector('.tk-seo-social-image-open');
             var socialImageStatus = root.querySelector('.tk-seo-social-image-status');
             var fallbackImage = socialImageId.dataset.fallbackUrl || '', fallbackLoading = false;
+            var socialImageUrl = '';
             var mediaFrame;
             function updateLength(field, length) {
                 var feedback = root.querySelector('[data-length-feedback="' + field + '"]');
@@ -198,17 +201,32 @@
                 badge.textContent = {empty: 'Not set', short: 'Too short', ideal: 'Ideal', long: 'Too long'}[state];
                 feedback.querySelector('[data-' + field + '-length]').textContent = length + ' characters (suggested: ' + min + '–' + max + ').';
             }
+            function showSocialImageState(state) {
+                var loaded = state === 'loaded', failed = state === 'error';
+                socialImage.hidden = !loaded; socialImageEmpty.hidden = loaded;
+                socialImageEmpty.textContent = failed ? 'Image unavailable. Retry or open the original image.' : (state === 'loading' ? 'Loading social image…' : 'No social image');
+                socialImageRetry.hidden = !failed; socialImageOpen.hidden = !failed;
+                if (failed) socialImageOpen.href = socialImageUrl;
+                else socialImageOpen.removeAttribute('href');
+            }
+            function refreshSocialImageState() {
+                if (!socialImageUrl || socialImage.getAttribute('src') !== socialImageUrl) return;
+                // Events from a previous request must not hide a newer pending or decoded image.
+                if (!socialImage.complete) { showSocialImageState('loading'); return; }
+                showSocialImageState(socialImage.naturalWidth > 0 ? 'loaded' : 'error');
+            }
             function setSocialImage(value, loading) {
                 fallbackImage = value || ''; fallbackLoading = !!loading;
                 if (Number(socialImageId.value) > 0) { value = socialImageId.dataset.customUrl; loading = false; }
                 var url = '';
                 try { if (value) { var parsed = new URL(value, window.location.href); if (/^https?:$/.test(parsed.protocol)) url = parsed.href; } } catch (error) { /* Show the empty-image state for unusable URLs. */ }
+                socialImageUrl = url;
                 if (url) {
                     if (socialImage.getAttribute('src') !== url) socialImage.src = url;
-                    socialImage.hidden = false; socialImageEmpty.hidden = true;
+                    refreshSocialImageState();
                 } else {
-                    socialImage.removeAttribute('src'); socialImage.hidden = true; socialImageEmpty.hidden = false;
-                    socialImageEmpty.textContent = loading ? 'Loading social image…' : 'No social image';
+                    socialImage.removeAttribute('src');
+                    showSocialImageState(loading ? 'loading' : 'empty');
                 }
             }
             function updateSocialImageChoice() {
@@ -244,9 +262,21 @@
                 socialImageId.dispatchEvent(new Event('change', {bubbles: true}));
                 updateSocialImageChoice();
             });
+            socialImage.addEventListener('load', refreshSocialImageState);
+            socialImage.addEventListener('error', refreshSocialImageState);
+            socialImageRetry.addEventListener('click', function () {
+                if (!socialImageUrl) return;
+                var retryUrl = socialImageUrl;
+                socialImage.removeAttribute('src');
+                showSocialImageState('loading');
+                // Let the browser release the failed request before retrying the same original URL.
+                setTimeout(function () {
+                    if (socialImageUrl !== retryUrl || socialImage.hasAttribute('src')) return;
+                    socialImage.src = retryUrl;
+                    refreshSocialImageState();
+                }, 0);
+            });
             updateSocialImageChoice();
-            socialImage.addEventListener('load', function () { socialImage.hidden = false; socialImageEmpty.hidden = true; });
-            socialImage.addEventListener('error', function () { socialImage.hidden = true; socialImageEmpty.hidden = false; socialImageEmpty.textContent = 'Image unavailable'; });
             function expand(value) {
                 return value.replace(/%%[a-z_]+%%/g, function (token) { return Object.prototype.hasOwnProperty.call(variables, token) ? variables[token] : token; }).replace(/\s+/g, ' ').trim();
             }
