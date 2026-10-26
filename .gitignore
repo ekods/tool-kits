@@ -3,3 +3,4 @@ collector/
 __MACOSX/
 *.zip
 temp/
+/dist/

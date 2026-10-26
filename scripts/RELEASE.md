@@ -2,6 +2,20 @@
 
 Versioned historical notes are consolidated here. Current release history is maintained in `../readme.txt`.
 
+## Build output
+
+Metode build sama dengan CFF. Jalankan `bash scripts/build-release-zip.sh` dari root plugin.
+Di workspace NexaMonitor, output selalu `dist/tool-kits/tool-kits.zip`, disertai
+`SHA256SUMS`, `VERSION`, dan `RELEASE_NOTES.md`. Build berikutnya mengganti file
+tersebut setelah validasi berhasil; build gagal mempertahankan ZIP sebelumnya.
+Tidak membuat folder versi baru; arsip rilis tetap tersedia di GitHub Releases.
+Checkout mandiri memakai `dist/` di root plugin.
+
+`RELEASE_SKIP_SYNC=1` (alias lama: `TK_SKIP_SYNC=1`) melewati sinkronisasi source.
+`RELEASE_DIST_DIR=/path/output` mengganti folder default. Argumen path ZIP manual
+masih didukung untuk CI/test dan menghasilkan `<nama-zip>.sha256` di sebelah ZIP.
+Validasi output default dengan `bash scripts/validate-release-zip.sh`.
+
 ## Regression Tests
 
 Run `node scripts/regression-tests.cjs` from the plugin directory. Use `--list` to list cases, or pass a case name to run it individually. Image-codec and browser integration cases are opt-in because they require Imagick, GD-only PHP, or Playwright/Chrome. Set `TK_PHP_BINARY` to select a PHP binary and `TK_PLAYWRIGHT_MODULE` for a custom Playwright module path.

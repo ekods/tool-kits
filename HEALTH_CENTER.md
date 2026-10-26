@@ -26,9 +26,81 @@ Jika loopback, cURL, TLS, proteksi hosting, autentikasi, proxy, atau cache mengh
 * **SEO:** satu title yang terisi, meta description, canonical absolut, dan directive indeks pada HTML homepage. Sampel tidak menilai seluruh artikel atau robots.txt.
 * **Compatibility:** respons homepage serta syarat PHP/WordPress yang dideklarasikan plugin aktif dan tema. Kompatibilitas runtime keseluruhan dan metadata yang tidak dideklarasikan tidak dapat disimpulkan.
 
-Setiap pemeriksaan terukur bernilai **passed=100, warning=50, critical=0**. Skor kategori adalah rata-ratanya; skor overall adalah rata-rata kategori yang memiliki data. Unknown dikecualikan, dihitung terpisah dan diberi catatan hasil belum lengkap. Kategori tanpa data menampilkan N/A. Batas awal TTFB: warning ≥0,8 detik, critical ≥1,8 detik. Query: warning ≥150, critical ≥300. Ini indikator diagnosis awal, bukan benchmark universal atau jaminan keamanan.
+Setiap pemeriksaan terukur bernilai **passed=100, warning=50, critical=0**. Rekomendasi opsional (`info`) dikecualikan dari skor dan dihitung terpisah. Skor kategori adalah rata-ratanya; skor overall adalah rata-rata kategori yang memiliki data. Unknown dikecualikan, dihitung terpisah dan diberi catatan hasil belum lengkap. Kategori tanpa data menampilkan N/A. Batas awal TTFB: warning ≥0,8 detik, critical ≥1,8 detik. Query: warning ≥150, critical ≥300. Batas TTFB, query, dan memori dapat disesuaikan lewat **Warning thresholds**. Ini indikator diagnosis awal, bukan benchmark universal atau jaminan keamanan.
 
 Laporan disimpan pada option non-autoload `tk_health_center_report`. Job memakai transient 10 menit dan lock satu scan/step, terikat admin yang memulainya. Hasil sebelumnya tetap tersedia selama scan baru berlangsung atau gagal. Tab perlu tetap terbuka hingga selesai. Jika terputus, sesi akan kedaluwarsa dalam 10 menit sebelum scan baru dapat dimulai. Option/transient internal scan tidak menyebabkan purge page cache.
+
+## Bukti, Recheck, dan batas warning
+
+Setiap hasil baru menyimpan **Current**, **Expected**, **Source**, dan waktu pengukuran.
+Header/HTML publik ditampilkan sebagai teks yang di-escape dan dibatasi panjangnya;
+tidak menyimpan body HTML lengkap atau SQL. Laporan lama tetap dapat dibuka, dengan
+petunjuk melakukan Recheck untuk menangkap bukti yang belum tersedia.
+
+**Recheck** memperbarui satu baris melalui dua tahap AJAX yang memakai nonce,
+hak akses, lisensi, lock, dan sesi milik admin yang sama dengan scan lengkap.
+Pemeriksaan lokal hanya mengumpulkan nilai untuk baris tersebut. Pemeriksaan header/SEO
+memakai satu respons homepage publik untuk mengukur baris terpilih; pemeriksaan query/HTTP
+memakai satu profil homepage terverifikasi. Target hanya ID pemeriksaan yang dikenal
+dan sudah ada dalam laporan, tanpa menerima URL atau callback dari browser.
+
+Hasil dan metrik terkait diperbarui hanya setelah pengukuran selesai. Nilai yang gagal
+diverifikasi menjadi **Not measured**, bukan Passed atau nol. Baris lain, snapshot server,
+dan waktu **Last full scan** tetap; waktu Recheck dicatat terpisah. Karena hasil dapat
+berasal dari waktu berbeda, jalankan scan lengkap untuk snapshot menyeluruh yang baru.
+Laporan penuh yang stale tetap meminta scan lengkap setelah Recheck individual.
+
+**Warning thresholds** pada halaman lengkap mengatur:
+
+- TTFB: warning >= 0,8 detik, critical >= 1,8 detik secara default.
+- Query: warning >= 150, critical >= 300 secara default.
+- Memori PHP: warning di bawah 256 MB, critical di bawah 128 MB secara default.
+- Persistent object cache: opsional secara default. Inaktif ditampilkan sebagai
+  **Recommended** dan tidak mengurangi skor. Tandai wajib untuk menghasilkan warning
+  jika situs memang membutuhkannya.
+
+Kebijakan disimpan non-autoload di `tk_health_center_settings`. Input divalidasi beserta
+urutan batas warning/critical, dan perubahan ditolak saat scan sedang berjalan.
+Menyimpan tidak mengubah PHP, cache, keamanan, atau klasifikasi hasil tersimpan;
+perlu scan/Recheck untuk pengukuran baru. Setiap job memakai snapshot kebijakan sehingga
+batasnya konsisten sampai selesai. Perubahan kebijakan menandai laporan lengkap lama stale.
+Bukti tiap baris mempertahankan batas yang berlaku saat baris itu diukur.
+
+Tabel Check Details dapat di-scroll horizontal pada layar kecil serta difokuskan lewat keyboard.
+Scan dan Recheck tetap hanya berjalan atas tindakan pengguna; tidak menambahkan cron,
+request pada tampilan dashboard, atau pengukuran pada kunjungan frontend biasa.
+
+## Riwayat scan lengkap
+
+**Scan history** di halaman lengkap menyimpan maksimal **10 snapshot scan lengkap**
+dalam option non-autoload `tk_health_center_history`. Setiap snapshot berisi waktu,
+ID scan terpisah dari token sesi, status pemeriksaan (maksimal 100), kebijakan threshold,
+fingerprint konfigurasi, serta angka TTFB/query/HTTP lambat/cron/job gagal dan status cache.
+HTML, SQL, header respons lengkap, detail mentah, dan token probe tidak diarsipkan.
+Membuka dashboard tidak memuat riwayat; membuka halaman lengkap hanya membaca data tersimpan.
+
+Snapshot dibuat setelah scan lengkap selesai. Recheck individual dan perubahan kebijakan
+tidak mengubah snapshot lama. Saat riwayat pertama dibuat, laporan lama yang masih utuh
+bisa menjadi baseline; laporan yang sudah bercampur hasil Recheck tidak dimasukkan
+sebagai snapshot scan lengkap. Scan gagal tidak mengganti laporan atau menambah riwayat.
+
+Buka **Scan history**, pilih **Earlier scan** dan **Later scan**, lalu tekan **Compare scans**.
+Perbandingan hanya membaca snapshot yang dipilih, tanpa scan, HTTP probe, perubahan opsi,
+atau modifikasi konfigurasi website. Request memakai nonce, POST, lisensi aktif, dan hak
+akses pengelola. Pilihan yang sama/terbalik ditolak; snapshot yang sudah keluar dari retensi
+memerlukan refresh pilihan.
+
+- **Newly detected**: temuan warning/critical yang belum tercatat sebagai masalah sebelumnya.
+- **Resolved**: temuan warning/critical yang sekarang terukur Passed dengan kebijakan sama.
+- **Worsened / Improved, still open**: perubahan severity antara warning dan critical.
+- **Needs verification**: hasil menjadi Not measured atau pemeriksaannya tidak lagi disertakan.
+- **Changed**: perubahan lain, termasuk rekomendasi atau perubahan cakupan.
+
+Jika threshold berubah atau kebijakan lama tidak tercatat, perubahan status ditampilkan
+netral dan tidak dihitung sebagai perbaikan/penurunan terverifikasi. Perubahan fingerprint
+konfigurasi juga diberi catatan. Perbedaan angka adalah dua sampel, bukan kesimpulan kausal:
+TTFB menyertakan status cache, nilai yang tidak terukur tidak dianggap nol, dan jumlah
+job/cron yang dibatasi sampel tidak menghasilkan selisih numerik pasti.
 
 ## PHP2Shell, prioritas, dan batas beban
 
@@ -44,6 +116,7 @@ Heartbeat yang sudah ada membawa ringkasan hasil PHP tersimpan beserta sumber, w
 
 ```
 php scripts/health-center-regression.php
+php scripts/health-center-history-regression.php
 php scripts/php-runtime-security-regression.php
 node scripts/health-center-ui-regression.cjs
 python3 scripts/health-center-http-regression.py

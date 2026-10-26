@@ -58,6 +58,7 @@ fi
 # shellcheck disable=SC2086
 rsync -a --delete $DRY_FLAGS \
   --exclude '.git' \
+  --exclude '/dist' \
   --exclude '.DS_Store' \
   --exclude 'CLAUDE.md' \
   --exclude 'tool-kits.zip' \

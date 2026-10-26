@@ -5,3 +5,4 @@ README.md export-ignore
 ROADMAP.md export-ignore
 tool-kits.zip export-ignore
 /scripts export-ignore
+/dist export-ignore

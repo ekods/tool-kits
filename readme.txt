@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.49
+Stable tag: 2.7.52
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -71,6 +71,23 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.52 =
+- Retain compact summaries of the latest 10 completed Health Center full scans, including scores, coverage, check statuses, and measured performance metrics with cache context.
+- Compare any earlier/later retained scans to identify newly detected, resolved, worsening, improving, and unverified findings without starting another scan.
+- Preserve full-scan history during individual rechecks. Unknown/removed checks do not count as resolved; changed or unrecorded diagnostic policies produce neutral status comparisons.
+- Bound history storage, exclude raw HTML/SQL/headers and scan tokens, and keep history access authenticated and read-only with mobile table scrolling.
+
+= 2.7.51 =
+- Capture Current, Expected, Source, and measurement time for Health Center results. Legacy reports can capture this evidence with Recheck.
+- Recheck individual saved checks through bounded, authenticated scan stages. Preserve unrelated results and the last full-scan timestamp; unavailable measurements remain Not measured.
+- Configure website-specific warning/critical thresholds for TTFB, database queries, and PHP memory. Treat optional persistent object cache as a recommendation excluded from scores unless explicitly required.
+- Keep diagnostic policy separate from PHP, cache, and security configuration, and request fresh measurements after policy changes. Improve mobile table scrolling and keyboard access.
+
+= 2.7.50 =
+- Show colored Passed, Warning, Critical, and Not measured badges in Health Center Check Details.
+- Link warning and critical checks to relevant Tool Kits Hardening, Page Cache, Global SEO Content, Canonical, and Indexing settings. Links respect the current license and administrator access.
+- Keep hosting-only findings informational and leave saved scan results unchanged when opening settings.
+
 = 2.7.49 =
 - Show expected normal page-cache mode and its active Multisite, HTTP authentication or PHP firewall requirements in Cache Status instead of repeating a warning banner.
 - Preserve security-hook compatibility checks and actionable early-cache setup/cleanup warnings.

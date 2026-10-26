@@ -2642,7 +2642,7 @@ function tk_render_hardening_page() {
                         tk_render_switch('headers', 'Send security headers', 'Adds X-Frame-Options, X-XSS-Protection, X-Content-Type-Options, Referrer-Policy, HSTS, and Permissions-Policy.', $opts['hardening_security_headers']);
                         ?>
 
-                        <div style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px;">
+                        <div id="section-csp" style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px;">
                             <h3 style="margin:0 0 16px; font-size:16px;">Content Security Policy (CSP)</h3>
                             <div style="display:grid; grid-template-columns: 200px 1fr; gap:20px; align-items:center;">
                                 <label style="font-weight:600;">CSP Protection Level</label>

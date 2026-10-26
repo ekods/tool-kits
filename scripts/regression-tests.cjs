@@ -13,6 +13,7 @@ const cases = [
   { "name": "html-injection-scanner", "runtime": "php", "source": ["<?php", "require __DIR__ . '/html-injection-scanner-regression.php';"] },
   { "name": "html-injection-ui", "runtime": "node", "source": ["require(__dirname + '/html-injection-ui-regression.cjs');"] },
   { "name": "health-center", "runtime": "php", "source": ["<?php", "require __DIR__ . '/health-center-regression.php';"] },
+  { "name": "health-center-history", "runtime": "php", "source": ["<?php", "require __DIR__ . '/health-center-history-regression.php';"] },
   { "name": "health-center-ui", "runtime": "node", "source": ["require(__dirname + '/health-center-ui-regression.cjs');"] },
   { "name": "frontend-performance", "runtime": "php", "source": ["<?php", "require __DIR__ . '/frontend-performance-regression.php';"] },
   { "name": "request-options", "runtime": "php", "source": ["<?php", "require __DIR__ . '/request-options-regression.php';"] },

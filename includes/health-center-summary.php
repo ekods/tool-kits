@@ -21,7 +21,7 @@ function tk_health_center_environment(): string {
         defined('DISALLOW_FILE_EDIT') && DISALLOW_FILE_EDIT,
         defined('DISALLOW_FILE_MODS') && DISALLOW_FILE_MODS,
         defined('DISABLE_WP_CRON') && DISABLE_WP_CRON,
-        defined('WP_CACHE') && WP_CACHE, $settings,
+        defined('WP_CACHE') && WP_CACHE, $settings, tk_health_center_policy(),
         get_option('home', ''), get_option('stylesheet', ''), get_option('template', ''),
         $plugins, $network_plugins, get_option('tk_health_center_environment_revision', ''),
     )));
@@ -55,6 +55,36 @@ function tk_health_center_php_summary(): array {
     // A changed environment invalidates a previous pass, even if the last scan was recent.
     $summary['stale'] = tk_health_center_freshness($report)['stale'];
     return $summary;
+}
+
+/** Only link to an existing, relevant Tool Kits control; hosting-only checks have no link. */
+function tk_health_center_settings_link(array $check): array {
+    if (!in_array($check['status'] ?? '', array('warning', 'critical'), true) || !tk_health_center_allowed()) { return array(); }
+    $hardening = function_exists('tk_hardening_page_slug') ? tk_hardening_page_slug() : 'tool-kits-guard';
+    $targets = array(
+        'Dashboard file editor' => array($hardening, 'section-file_editor', 'File Editor settings', true),
+        'MIME sniffing protection' => array($hardening, 'section-headers', 'Security Headers settings', true),
+        'Referrer policy' => array($hardening, 'section-headers', 'Security Headers settings', true),
+        'Frame embedding protection' => array($hardening, 'section-headers', 'Security Headers settings', true),
+        'Content Security Policy' => array($hardening, 'section-csp', 'Content Security Policy settings', true),
+        'HTML browser cache lifetime' => array('tool-kits-cache', 'page', 'Page Cache settings', false),
+        'Homepage TTFB' => array('tool-kits-cache', 'page', 'Page Cache settings', false),
+        'Homepage title' => array('tool-kits-seo', 'global-content', 'Global SEO Content settings', true),
+        'Meta description' => array('tool-kits-seo', 'global-content', 'Global SEO Content settings', true),
+        'Canonical URL' => array('tool-kits-seo', 'settings', 'SEO settings', true),
+        'Search indexing' => array('tool-kits-seo', 'indexing', 'SEO Indexing settings', true),
+    );
+    $target = $targets[$check['label'] ?? ''] ?? null;
+    if (!$target) { return array(); }
+    $settings = get_option('tk_options', array());
+    if ($target[3] && is_array($settings) && ($settings['license_type'] ?? '') === 'local') { return array(); }
+    return array('url' => admin_url('admin.php?page=' . rawurlencode($target[0])) . '#' . $target[1], 'label' => $target[2]);
+}
+
+function tk_health_center_status_badge(string $status): string {
+    $labels = array('passed' => 'Passed', 'warning' => 'Warning', 'critical' => 'Critical', 'unknown' => 'Not measured', 'info' => 'Recommended');
+    if (!isset($labels[$status])) { $status = 'unknown'; }
+    return '<span class="tk-health-status tk-health-check-status tk-health-' . esc_attr($status) . '">' . esc_html($labels[$status]) . '</span>';
 }
 
 function tk_health_center_recommendation(array $check): string {

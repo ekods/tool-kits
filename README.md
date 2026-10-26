@@ -184,8 +184,12 @@ bash plugins/tool-kits/scripts/build-release-zip.sh
 The default output is created at:
 
 ```text
-plugins/tool-kits.zip
+dist/tool-kits/tool-kits.zip
 ```
+
+Build berikutnya mengganti ZIP tersebut setelah validasi berhasil. Folder yang sama juga menyimpan `SHA256SUMS`, `VERSION`, dan `RELEASE_NOTES.md`; tidak membuat folder versi baru. CFF memakai metode yang sama di `dist/custom-fields-framework-pro/`. Untuk checkout mandiri di luar workspace, output berada di `dist/` dalam repo plugin.
+
+Gunakan `RELEASE_SKIP_SYNC=1` untuk build tanpa sinkronisasi, atau `RELEASE_DIST_DIR=/path/output` untuk mengganti direktori output default.
 
 To choose a custom output path:
 

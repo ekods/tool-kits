@@ -35,7 +35,7 @@ function wp_using_ext_object_cache() { return false; }
 function _get_cron_array() { return $GLOBALS['cron']; }
 function did_action($name) { return $GLOBALS['as_initialized']; }
 function as_get_scheduled_actions($args, $format) { verify_health($args['status'] === 'failed' && $args['per_page'] === 1001 && $format === 'ids', 'Unbounded failure lookup'); return $GLOBALS['failed_actions']; }
-function get_plugins() { return $GLOBALS['plugins']; }
+function get_plugins() { $GLOBALS['plugin_reads'] = ($GLOBALS['plugin_reads'] ?? 0) + 1; if (!empty($GLOBALS['plugin_read_error'])) { throw new RuntimeException('Fixture plugin metadata failure'); } return $GLOBALS['plugins']; }
 function wp_get_theme() { return new class { public function get($key) { return $GLOBALS['theme_headers'][$key] ?? ''; } }; }
 function wp_safe_remote_get($url, $args) {
     verify_health($url === home_url('/') && $args['redirection'] === 0 && $args['sslverify'] && $args['cookies'] === array() && $args['headers']['Cookie'] === 'tk_health_center_session=1', 'Unsafe profile request');
@@ -96,6 +96,9 @@ verify_health(find_health($state['report'], 'Plugin/theme declared requirements'
 verify_health(health_request('step', array('token' => $token))->success, 'Public-stage unavailable handling failed');
 verify_health(health_request('step', array('token' => $token))->success && count($requests) === 1, 'Profile stage not manual or duplicated');
 $finish = health_request('step', array('token' => $token, 'full' => '1')); $saved = $options['tk_health_center_report'];
+verify_health(count(tk_health_center_history()) === 1 && tk_health_center_history()[0]['id'] === $saved['scan_id'], 'Completed full scan was not archived');
+verify_health(strpos(serialize(tk_health_center_history()), $token) === false, 'Scan probe/session token leaked into history');
+$full_scan_history = $options['tk_health_center_history'];
 verify_health($finish->success && $finish->data['done'] && $saved['performance']['queries'] === 187 && $saved['performance']['slow_http'] === 3 && $saved['performance']['ttfb'] === null, 'Profile numbers fabricated from AJAX or failed TTFB');
 verify_health(!isset($options['tk_health_center_lock'], $options['tk_health_center_step_lock']) && !$transients, 'Finished scan leaked lock/probe/job');
 verify_health(strpos($finish->data['html'], '<script>Bad') === false && strpos($finish->data['html'], '&lt;script&gt;Bad') !== false, 'Report metadata not escaped');
@@ -147,4 +150,128 @@ verify_health(strpos($priority_html, 'Critical two') < strpos($priority_html, 'W
 verify_health(strpos($priority_html, 'Scan again') !== false, 'Old report must show scan-again notice');
 verify_health(strpos($priority_html, '#tk-health-check-1') !== false, 'Priority action must link to saved check details');
 verify_health($options === $before_options && count($requests) === $before_requests, 'Priority/freshness rendering must be read-only without HTTP');
+$details_report = $saved;
+$details_report['checks'] = array(
+    array('category' => 'Security', 'label' => 'Dashboard file editor', 'status' => 'warning', 'detail' => 'Editor enabled'),
+    array('category' => 'Security', 'label' => 'Content Security Policy', 'status' => 'warning', 'detail' => 'Header missing'),
+    array('category' => 'Security', 'label' => 'MIME sniffing protection', 'status' => 'critical', 'detail' => 'Header invalid'),
+    array('category' => 'SEO', 'label' => 'Meta description', 'status' => 'warning', 'detail' => 'Description missing'),
+    array('category' => 'Performance', 'label' => 'HTML browser cache lifetime', 'status' => 'critical', 'detail' => 'Long cache'),
+    array('category' => 'SEO', 'label' => 'Canonical URL', 'status' => 'passed', 'detail' => 'Present'),
+    array('category' => 'Performance', 'label' => 'Homepage TTFB', 'status' => 'unknown', 'detail' => 'Unavailable'),
+    array('category' => 'Performance', 'label' => 'PHP memory limit', 'status' => 'warning', 'detail' => 'Change through hosting'),
+);
+$before_options = $options; $before_requests = count($requests);
+ob_start(); tk_health_center_report_html($details_report, true); $details_html = ob_get_clean();
+verify_health(substr_count($details_html, 'tk-health-check-status ') === count($details_report['checks']), 'Every Check Details row needs a badge');
+foreach (array('passed' => 'Passed', 'warning' => 'Warning', 'critical' => 'Critical', 'unknown' => 'Not measured') as $status => $label) {
+    verify_health(strpos($details_html, 'tk-health-check-status tk-health-' . $status . '">' . $label . '</span>') !== false, 'Status badge missing: ' . $status);
+}
+foreach (array('tool-kits-guard#section-file_editor', 'tool-kits-guard#section-csp', 'tool-kits-guard#section-headers', 'tool-kits-seo#global-content', 'tool-kits-cache#page') as $target) {
+    verify_health(strpos($details_html, $target) !== false, 'Missing settings target: ' . $target);
+}
+verify_health(substr_count($details_html, 'class="tk-health-setting"') === 5, 'Only actionable warning/critical checks get settings links');
+verify_health(tk_health_center_settings_link(array('label' => 'Persistent object cache', 'status' => 'warning')) === array(), 'Object-cache flush is not a setting to enable a backend');
+verify_health(tk_health_center_settings_link(array('label' => 'Search indexing', 'status' => 'warning'))['url'] === admin_url('admin.php?page=tool-kits-seo') . '#indexing', 'Indexing settings target incorrect');
+verify_health(strpos(tk_health_center_status_badge('bad"><script>'), '<script>') === false, 'Invalid badge status not normalized');
+$options['tk_options'] = array('license_type' => 'local');
+verify_health(tk_health_center_settings_link($details_report['checks'][0]) === array(), 'Local license must not link to unavailable Hardening');
+verify_health(tk_health_center_settings_link($details_report['checks'][3]) === array(), 'Local license must not link to unavailable SEO');
+verify_health(tk_health_center_settings_link($details_report['checks'][4]) !== array(), 'Local license still has Cache settings');
+$options = $before_options;
+$capable = false; verify_health(tk_health_center_settings_link($details_report['checks'][0]) === array(), 'Unauthorized settings link exposed'); $capable = true;
+verify_health($options === $before_options && count($requests) === $before_requests, 'Check Details rendering must not update options or make HTTP requests');
+// Contextual thresholds and optional recommendations must not fabricate a pass.
+$prior_transients = $transients;
+$optional = array('checks' => array(), 'performance' => array()); tk_health_center_local($optional, 'persistent-object-cache');
+verify_health(count($optional['checks']) === 1 && $optional['checks'][0]['status'] === 'info', 'Optional object cache must be informational');
+$optional_score = tk_health_scores($optional['checks']);
+verify_health($optional_score['overall'] === null && $optional_score['counts']['info'] === 1, 'Recommendation must not count as a measured pass');
+$required = array('policy' => array_merge(tk_health_center_policy_defaults(), array('object_cache_required' => true)), 'checks' => array(), 'performance' => array());
+tk_health_center_local($required, 'persistent-object-cache');
+verify_health($required['checks'][0]['status'] === 'warning', 'Required object cache must warn when inactive');
+foreach ($saved['checks'] as $check) {
+    verify_health(isset($check['evidence']['current'], $check['evidence']['expected'], $check['evidence']['source'], $check['checked_at'], $check['id']), 'Every new check must capture evidence and a measurement time');
+}
+$policy = tk_health_center_policy_defaults();
+foreach (array(array('ttfb_warning' => 2, 'ttfb_critical' => 1), array('queries_warning' => array()), array('memory_warning' => 64, 'memory_critical' => 128), array('ttfb_warning' => 'NaN'), array('object_cache_required' => 'unexpected')) as $invalid) {
+    try { tk_health_center_validate_policy(array_merge($policy, $invalid)); verify_health(false, 'Invalid policy accepted'); }
+    catch (InvalidArgumentException $error) { verify_health(true, 'Invalid policy rejected'); }
+}
+$new_policy = array_merge($policy, array('ttfb_warning' => 1.1, 'ttfb_critical' => 2.1, 'queries_warning' => 200, 'queries_critical' => 500));
+$options['tk_health_center_report'] = $saved;
+$before_report = $options['tk_health_center_report'];
+verify_health(health_request('settings', $new_policy + array('full' => '1'))->success, 'Valid thresholds did not save');
+verify_health($options['tk_health_center_report'] === $before_report && $options['tk_health_center_settings'] === $new_policy, 'Saving policy must not reclassify saved results');
+verify_health(tk_health_center_freshness($saved)['stale'], 'Changed policy must mark old full scan stale');
+$http_fixture = array('ttfb' => 1.2, 'status' => 200, 'headers' => array('content-type' => 'text/html', 'x-content-type-options' => '<script>header</script>'), 'body' => '<html><head><title>Measured</title><meta name="description" content="Actual description"><link rel="canonical" href="https://site.test/"></head></html>');
+$measured = array('checks' => array(), 'performance' => array()); tk_health_analyze_public($measured, $http_fixture);
+verify_health(find_health($measured, 'Homepage TTFB')['status'] === 'warning' && strpos(find_health($measured, 'Homepage TTFB')['evidence']['expected'], '1.1') !== false, 'Custom TTFB thresholds not used/captured');
+$with_headers = $saved; $with_headers['checks'] = $measured['checks'];
+ob_start(); tk_health_center_report_html($with_headers, true); $evidence_html = ob_get_clean();
+verify_health(strpos($evidence_html, '<script>header</script>') === false && strpos($evidence_html, '&lt;script&gt;header&lt;/script&gt;') !== false, 'Observed evidence must be escaped');
+
+// Legacy saved rows can be rechecked without marking the entire snapshot fresh.
+$baseline = $saved; $baseline['completed'] = time() - 3600;
+foreach ($baseline['checks'] as &$check) { unset($check['id'], $check['evidence'], $check['checked_at']); } unset($check);
+$options['tk_health_center_report'] = $baseline;
+$plugin_reads = $GLOBALS['plugin_reads']; $before_requests = count($requests);
+$recheck = health_request('start', array('check' => 'dashboard-file-editor')); $recheck_token = $recheck->data['token'];
+verify_health($recheck->success && $recheck->data['steps'] === 2, 'Individual recheck must use two bounded stages');
+verify_health(health_request('settings', $new_policy)->status === 409, 'Policy changed during an active scan');
+verify_health(health_request('step', array('token' => $recheck_token))->success && $options['tk_health_center_report'] === $baseline, 'Measuring replaced the report before completion');
+$local_state = $transients['tk_health_center_job_' . $recheck_token];
+verify_health(count($local_state['report']['checks']) === 1 && $GLOBALS['plugin_reads'] === $plugin_reads && count($requests) === $before_requests, 'Local recheck enumerated plugins or requested HTTP');
+$done = health_request('step', array('token' => $recheck_token, 'full' => '1'));
+$updated = $options['tk_health_center_report'];
+verify_health($done->success && $done->data['done'] && $updated['completed'] === $baseline['completed'] && !empty($updated['last_recheck']), 'Individual recheck incorrectly refreshed full-scan timestamp');
+foreach ($baseline['checks'] as $index => $check) {
+    if ($check['label'] === 'Dashboard file editor') { verify_health(!empty($updated['checks'][$index]['evidence']) && !empty($updated['checks'][$index]['checked_at']), 'Selected evidence was not replaced'); }
+    else { verify_health($check === $updated['checks'][$index], 'Individual recheck changed an unrelated row'); }
+}
+verify_health($updated['performance'] === $baseline['performance'] && $updated['server'] === $baseline['server'], 'Local recheck rewrote full-scan metric/server snapshots');
+verify_health(health_request('start', array('check' => 'https://external.test/'))->status === 400 && health_request('start', array('check' => array()))->status === 400, 'Client-controlled target accepted');
+
+// Profile rechecks use current thresholds and update only the selected metric.
+$before = $options['tk_health_center_report']; $before_requests = count($requests);
+$profile_reply = true;
+$recheck = health_request('start', array('check' => 'homepage-database-query-count')); $recheck_token = $recheck->data['token'];
+verify_health(health_request('step', array('token' => $recheck_token))->success && count($requests) === $before_requests + 1, 'Profile recheck must make exactly one verified profile request');
+verify_health(health_request('step', array('token' => $recheck_token))->data['done'], 'Profile recheck did not finish');
+$updated = $options['tk_health_center_report'];
+verify_health(find_health($updated, 'Homepage database query count')['status'] === 'passed' && strpos(find_health($updated, 'Homepage database query count')['evidence']['current'], '187') !== false, 'Query recheck ignored thresholds or actual measurement');
+verify_health($updated['completed'] === $before['completed'] && find_health($updated, 'Slow outbound HTTP requests') === find_health($before, 'Slow outbound HTTP requests'), 'Query recheck overwrote unrelated HTTP results');
+$profile_reply = false;
+$recheck = health_request('start', array('check' => 'homepage-database-query-count')); $recheck_token = $recheck->data['token'];
+health_request('step', array('token' => $recheck_token)); health_request('step', array('token' => $recheck_token));
+verify_health(find_health($options['tk_health_center_report'], 'Homepage database query count')['status'] === 'unknown' && $options['tk_health_center_report']['performance']['queries'] === null, 'Failed profile recheck invented success/zero');
+$before = $options['tk_health_center_report']; $before_requests = count($requests);
+$recheck = health_request('start', array('check' => 'meta-description')); $recheck_token = $recheck->data['token'];
+health_request('step', array('token' => $recheck_token)); health_request('step', array('token' => $recheck_token));
+$updated = $options['tk_health_center_report'];
+verify_health(find_health($updated, 'Meta description')['status'] === 'unknown' && find_health($updated, 'Homepage title') === find_health($before, 'Homepage title') && $updated['performance'] === $before['performance'], 'Unavailable public recheck overwrote unrelated evidence');
+verify_health(count($requests) === $before_requests && !isset($options['tk_health_center_lock'], $options['tk_health_center_step_lock']) && $transients === $prior_transients, 'Recheck leaked locks, probes or sessions');
+foreach (array('capable', 'manageable', 'licensed', 'nonce') as $flag) { $GLOBALS[$flag] = false; verify_health(health_request('settings', $new_policy)->status === 403, 'Unauthorized policy save accepted'); $GLOBALS[$flag] = true; }
+verify_health(health_request('settings', $new_policy, 'GET')->status === 405, 'GET changed policy');
+$required_policy = array_merge($new_policy, array('object_cache_required' => true));
+verify_health(health_request('settings', $required_policy)->success, 'Required object-cache policy did not save');
+$before = $options['tk_health_center_report'];
+$recheck = health_request('start', array('check' => 'persistent-object-cache')); $recheck_token = $recheck->data['token'];
+health_request('step', array('token' => $recheck_token)); health_request('step', array('token' => $recheck_token));
+$updated = $options['tk_health_center_report'];
+verify_health(find_health($updated, 'Persistent object cache')['status'] === 'warning' && find_health($updated, 'PHP memory limit') === find_health($before, 'PHP memory limit'), 'Object-cache requirement did not apply only to its rechecked row');
+health_request('settings', $new_policy);
+$recheck = health_request('start', array('check' => 'persistent-object-cache')); $recheck_token = $recheck->data['token'];
+health_request('step', array('token' => $recheck_token)); health_request('step', array('token' => $recheck_token));
+verify_health(find_health($options['tk_health_center_report'], 'Persistent object cache')['status'] === 'info', 'Optional object cache did not return to informational after recheck');
+$before_options = $options; $before_requests = count($requests);
+ob_start(); tk_health_center_render(true); ob_end_clean();
+verify_health($options === $before_options && count($requests) === $before_requests, 'Opening thresholds/report caused writes or scans');
+verify_health($options['tk_health_center_history'] === $full_scan_history, 'Rechecking rows or changing policy rewrote archived full scans');
+$before = $options['tk_health_center_report'];
+$plugin_read_error = true;
+$failed_start = health_request('start');
+verify_health(health_request('step', array('token' => $failed_start->data['token']))->status === 500, 'Failed full scan unexpectedly succeeded');
+$plugin_read_error = false;
+verify_health($options['tk_health_center_history'] === $full_scan_history && $options['tk_health_center_report'] === $before, 'Failed scan archived an incomplete result or replaced the report');
 echo 'PASS: Health Center (' . $checks . " checks)\n";

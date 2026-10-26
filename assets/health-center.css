@@ -33,6 +33,7 @@
 .tk-health-warning { color: #855900; }
 .tk-health-passed { color: #147038; }
 .tk-health-unknown { color: #646970; }
+.tk-health-info { color: #2271b1; }
 .tk-health-panels { display: grid; gap: 8px; }
 .tk-health-panel { min-width: 0; border: 1px solid var(--tk-health-border); border-radius: 6px; }
 .tk-health-panel > summary { display: flex; align-items: center; gap: 8px; padding: 12px; cursor: pointer; list-style: none; font-weight: 600; }
@@ -70,11 +71,51 @@
 .tk-health-empty > strong { display: block; font-size: 14px; }
 .tk-health-empty > p { margin: 6px 0 0; color: var(--tk-health-muted); }
 .tk-health-full .tk-health-overall, .tk-health-full .tk-health-categories { max-width: 550px; }
-.tk-health-full .tk-health-counts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tk-health-full .tk-health-counts { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .tk-health-full .tk-health-panels { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 16px; }
 .tk-health-table-wrap { overflow-x: auto; margin-top: 12px; }
+.tk-health-table-wrap table { min-width: 780px; }
+.tk-health-table-wrap:focus-visible { outline: 2px solid var(--tk-health-accent); outline-offset: 2px; }
+.tk-health-center .tk-health-table-hint { display: none; }
 .tk-health-table-wrap td { vertical-align: top; }
+.tk-health-table-wrap .tk-health-status-cell { width: 115px; }
+.tk-health-check-status { white-space: nowrap; font-size: 11px; padding: 3px 8px; }
+.tk-health-check-status.tk-health-critical { background: #fcf0f1; }
+.tk-health-check-status.tk-health-warning { background: #fff8e5; }
+.tk-health-check-status.tk-health-passed { background: #edfaef; }
+.tk-health-check-status.tk-health-unknown { background: #f0f0f1; }
+.tk-health-check-status.tk-health-info { background: #f0f6fc; }
+.tk-health-status-cell .tk-health-recheck { display: block; margin-top: 8px; }
+.tk-health-evidence { margin: 10px 0; font-size: 12px; }
+.tk-health-evidence > div { display: grid; grid-template-columns: 65px minmax(0, 1fr); gap: 8px; margin: 5px 0; }
+.tk-health-evidence dt { font-weight: 600; }
+.tk-health-evidence dd { margin: 0; overflow-wrap: anywhere; }
+.tk-health-measured { color: var(--tk-health-muted); font-size: 11px; }
+.tk-health-policy { padding: 12px; margin-bottom: 16px; border: 1px solid var(--tk-health-border); border-radius: 6px; }
+.tk-health-policy > summary { cursor: pointer; font-weight: 600; }
+.tk-health-policy-form fieldset { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.tk-health-policy-form legend { font-weight: 600; margin-bottom: 6px; }
+.tk-health-policy-form fieldset label { display: grid; gap: 4px; }
+.tk-health-policy-form input[type="number"] { width: 130px; max-width: 100%; }
+.tk-health-cache-policy { display: block; }
+.tk-health-history { margin: 18px 0; border: 1px solid var(--tk-health-border); border-radius: 6px; }
+.tk-health-history > summary { padding: 12px; cursor: pointer; font-weight: 600; }
+.tk-health-history > summary span { margin-left: 8px; color: var(--tk-health-muted); font-size: 12px; font-weight: 400; }
+.tk-health-history > summary:focus-visible { outline: 2px solid var(--tk-health-accent); outline-offset: 2px; }
+.tk-health-history-body { padding: 0 12px 12px; min-width: 0; }
+.tk-health-history table { min-width: 640px; }
+.tk-health-history small { display: block; margin-top: 3px; color: var(--tk-health-muted); font-size: 11px; }
+.tk-health-history-form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 18px 0; }
+.tk-health-history-form label { display: grid; gap: 5px; min-width: 0; flex: 1 1 240px; }
+.tk-health-history-form select { width: 100%; max-width: 100%; font: inherit; }
+.tk-health-history-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 12px 0; padding: 0; list-style: none; }
+.tk-health-history-counts li { margin: 0; padding: 8px; background: #f6f7f7; border-radius: 4px; font-size: 12px; }
+.tk-health-history-counts strong { display: block; font-size: 18px; }
+.tk-health-history-note { padding: 8px 10px; border-left: 3px solid #2271b1; background: #f0f6fc; font-size: 12px; }
+.tk-health-table-wrap .tk-health-setting { margin: 8px 0 0; font-size: 12px; }
+.tk-health-setting a:focus-visible { outline: 2px solid var(--tk-health-accent); outline-offset: 2px; }
 @media (max-width: 782px) {
+    .tk-health-center .tk-health-table-hint { display: block; color: var(--tk-health-muted); font-size: 12px; }
     .tk-health-full { padding: 16px; }
     .tk-health-full .tk-health-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .tk-health-full .tk-health-panels { grid-template-columns: minmax(0, 1fr); }

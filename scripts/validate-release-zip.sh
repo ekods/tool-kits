@@ -2,7 +2,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ZIP_PATH="${1:-$ROOT_DIR/tool-kits.zip}"
+if [[ -f "$ROOT_DIR/../../artisan" ]]; then
+  DEFAULT_DIST="$ROOT_DIR/../../dist/tool-kits"
+else
+  DEFAULT_DIST="$ROOT_DIR/dist"
+fi
+ZIP_PATH="${1:-${RELEASE_DIST_DIR:-$DEFAULT_DIST}/tool-kits.zip}"
 
 if ! command -v unzip >/dev/null 2>&1; then
   echo "unzip is required to validate the release archive." >&2
@@ -14,9 +19,10 @@ if [[ ! -f "$ZIP_PATH" ]]; then
   exit 1
 fi
 
+unzip -tq "$ZIP_PATH" >/dev/null
 LISTING="$(unzip -Z1 "$ZIP_PATH")"
 
-if grep -vq '^tool-kits/' <<<"$LISTING"; then
+if grep -vq '^tool-kits/' <<<"$LISTING" || grep -Eq '(^|/)\.\.(/|$)|\\' <<<"$LISTING"; then
   echo "Invalid archive root. Expected every entry to start with tool-kits/." >&2
   exit 1
 fi
@@ -60,6 +66,13 @@ if ! grep -qx 'tool-kits/includes/malware-scanner.php' <<<"$LISTING"; then
   echo "Missing required include: tool-kits/includes/malware-scanner.php" >&2
   exit 1
 fi
+
+for file in health-center.php health-center-engine.php health-center-view.php health-center-summary.php health-center-policy.php health-center-recheck.php health-center-history.php health-center-probe.php; do
+  if ! grep -Fqx "tool-kits/includes/$file" <<<"$LISTING"; then
+    echo "Missing required Health Center include: $file" >&2
+    exit 1
+  fi
+done
 
 if grep -q '^__MACOSX/' <<<"$LISTING"; then
   echo "Archive contains unexpected __MACOSX metadata." >&2
