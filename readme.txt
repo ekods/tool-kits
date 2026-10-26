@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.44
+Stable tag: 2.7.45
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,7 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.45 labels SEO Social Image beside the existing upload/media-library controls and recommends 1200 x 630 px (approximately 1.91:1), JPG/PNG and an ideal file size below 1 MB. These are recommendations, not new upload restrictions.
 - Version 2.7.44 adds the Tagline variable label and custom Open Graph image uploads to the inline SEO Content editor. Unset images continue to use the Featured Image (thumbnail), with the site's social image as a fallback. The signed license API and matching key introduced in 2.7.31 remain required; see LICENSE_SECURITY.md.
 - Version 2.7.34 is a GitHub pre-release patch for Collector recheck rate limiting. Fully authenticated heartbeat requests are excluded from public Form Guard checks; ordinary forms and unauthenticated requests retain their existing protection.
 - Version 2.7.33 is a GitHub pre-release and adds authenticated on-demand heartbeat replies for NexaMonitor's Check Ulang action. Deploy the matching NexaMonitor update and use the same collector token on both sides.
@@ -70,6 +71,11 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.45 =
+* Add an explicit SEO Social Image label beside the existing Upload / choose image and Use thumbnail controls.
+* Recommend 1200 x 630 px (approximately 1.91:1), JPG or PNG, and an ideal file size below 1 MB. Keep important text and logos near the centre to allow for cropping.
+* Associate the image controls with their label and guidance for assistive technology. Preserve uploads, image selection, thumbnail fallback and the native Save/Update workflow.
+
 = 2.7.44 =
 * Show the WordPress Tagline as Tagline in the SEO variable menu and chips, preserving the existing %%sitedesc%% token and saved templates.
 * Upload or choose a page-specific Open Graph image through the WordPress Media Library. Save it with the page's Save/Update button without changing the Featured Image.

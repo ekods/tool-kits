@@ -145,11 +145,13 @@ function tk_seo_render_content_meta_box($post): void {
             <summary>Social media preview</summary>
             <div class="tk-seo-editor-body">
                 <p class="description">Uses your SEO title and meta description. Upload or choose a custom Open Graph image, or leave it unset to use the Featured Image (thumbnail), with the site's social image as a fallback.</p>
+                <p id="tk-seo-social-image-label"><strong>SEO Social Image</strong></p>
                 <input type="hidden" id="tk-seo-social-image-id" name="tk_seo_social_image_id" value="<?php echo esc_attr((string) $social_image_id); ?>" data-custom-url="<?php echo esc_url($social_custom_image); ?>" data-fallback-url="<?php echo esc_url($social_fallback_image); ?>">
-                <div class="tk-seo-social-image-controls">
+                <div class="tk-seo-social-image-controls" role="group" aria-labelledby="tk-seo-social-image-label" aria-describedby="tk-seo-social-image-help">
                     <?php if (current_user_can('upload_files')) : ?><button type="button" class="button tk-seo-social-image-select" hidden>Upload / choose image</button><?php endif; ?>
                     <button type="button" class="button tk-seo-social-image-reset" hidden>Use thumbnail</button>
                 </div>
+                <p class="description" id="tk-seo-social-image-help">Recommended size: <strong>1200 &times; 630 px</strong> (approximately 1.91:1). Use JPG or PNG, ideally under 1 MB. Keep important text and logos near the centre to allow for cropping.</p>
                 <p class="description tk-seo-social-image-status" role="status" aria-live="polite"><?php echo $social_image_id > 0 ? 'Using a custom Open Graph image.' : 'Using the Featured Image (thumbnail), with the site image as a fallback.'; ?></p>
                 <div class="tk-seo-social-preview">
                     <input class="tk-seo-device-choice tk-seo-social-choice" type="radio" id="tk-seo-social-facebook" name="tk_seo_social_network" value="facebook" checked>
