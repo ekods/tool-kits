@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.7.52
+ * Version: 2.7.53
  * Requires PHP: 7.4
  * GitHub Plugin URI: https://github.com/ekods/tool-kits
  * Update URI: https://github.com/ekods/tool-kits
@@ -31,7 +31,7 @@ if (version_compare(PHP_VERSION, TK_MINIMUM_PHP, '<')) {
     return;
 }
 
-define('TK_VERSION', '2.7.52');
+define('TK_VERSION', '2.7.53');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
@@ -118,6 +118,7 @@ $tk_modules = array(
     'classic-widgets.php'       => 'tk_classic_widgets_init',
     'general.php'               => 'tk_general_init',
     'asset-optimization.php'    => 'tk_assets_opt_init',
+    'cf7-assets.php'            => 'tk_cf7_assets_init',
     'upload-limits.php'         => 'tk_upload_limits_init',
     'theme-checker.php'         => false,
     'security-alerts.php'       => 'tk_security_alerts_init',
@@ -210,6 +211,7 @@ add_action('admin_enqueue_scripts', function($hook) {
     if ($is_toolkits_area || $is_toolkits_menu) {
         wp_enqueue_style('tool-kits-overview', TK_URL . 'assets/overview.css', array('tool-kits-admin'), tk_asset_version('assets/overview.css'));
         wp_enqueue_style('tool-kits-admin-ui-v2', TK_URL . 'assets/tool-kits-admin-ui.css', array('tool-kits-overview'), tk_asset_version('assets/tool-kits-admin-ui.css'));
+        wp_enqueue_script('tool-kits-admin-layout', TK_URL . 'assets/admin-layout.js', array(), tk_asset_version('assets/admin-layout.js'), true);
         if ($hook === 'tool-kits_page_tool-kits-image-opt') {
             wp_enqueue_script('tool-kits-image-optimizer', TK_URL . 'assets/image-optimizer.js', array(), tk_asset_version('assets/image-optimizer.js'), true);
         }

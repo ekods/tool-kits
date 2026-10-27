@@ -1070,7 +1070,7 @@ function tk_render_security_events_page(): void {
         <?php if ($notice === 'maintenance') : ?><?php tk_notice(__('Security event maintenance completed.', 'tool-kits'), 'success'); ?><?php endif; ?>
 
         <div class="tk-card" style="margin-bottom:24px;">
-            <form method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" style="display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px; align-items:end;">
+            <form class="tk-responsive-grid" method="get" action="<?php echo esc_url(admin_url('admin.php')); ?>" style="display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px; align-items:end;">
                 <input type="hidden" name="page" value="tool-kits-security-events">
                 <label>
                     <strong><?php esc_html_e('Country', 'tool-kits'); ?></strong><br>

@@ -1207,6 +1207,8 @@ function tk_option_init_defaults() {
         'monitoring_healthcheck_key' => '',
         'license_ssl_verify' => 1,
         // Asset optimization
+        'cf7_assets_mode' => 'off',
+        'cf7_assets_always_load' => '',
         'assets_critical_css_enabled' => 0,
         'assets_critical_css' => '',
         'assets_defer_css_handles' => '',

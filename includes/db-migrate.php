@@ -924,7 +924,7 @@ function tk_render_db_tools_page() {
                         </div>
                     <?php endif; ?>
 
-                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:24px;">
+                    <div class="tk-responsive-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:24px;">
                         <div style="background:var(--tk-bg-soft); padding:20px; border-radius:16px;">
                             <h4 style="margin:0 0 16px;"><?php _e('Prefix Configuration', 'tool-kits'); ?></h4>
                             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">

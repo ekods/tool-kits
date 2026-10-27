@@ -402,7 +402,7 @@ function tk_render_page_speed_diagnostics_panel() {
             </div>
         </div>
 
-        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:30px;">
+        <div class="tk-responsive-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:30px;">
             <div style="background:var(--tk-bg-soft); padding:15px; border-radius:12px; border:1px solid var(--tk-border-soft);">
                 <div style="font-size:11px; color:var(--tk-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:5px;">Health Status</div>
                 <div style="font-size:18px; font-weight:700; color:<?php echo ($score >= 70 ? '#27ae60' : ($score >= 50 ? '#f39c12' : '#e74c3c')); ?>;"><?php echo esc_html($score_label); ?></div>
@@ -572,30 +572,11 @@ function tk_render_optimization_page($forced_tab = '') {
     ?>
     <div class="wrap tk-wrap">
         <?php tk_render_header_branding(); ?>
-        <div class="tk-hero">
-            <div class="tk-hero-bg-1"></div>
-            <div class="tk-hero-bg-2"></div>
-            
-            <div class="tk-hero-content" style="display: flex; align-items: center; justify-content: space-between;">
-                <div style="display: flex; align-items: center; gap: 20px;">
-                    <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 16px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2);">
-                        <span class="dashicons dashicons-admin-settings" style="color: #fff; font-size: 32px; width: 32px; height: 32px;"></span>
-                    </div>
-                    <div>
-                        <h1 class="tk-hero-title"><?php _e('Performance Diagnostics', 'tool-kits'); ?></h1>
-                        <p class="tk-hero-subtitle"><?php _e('Run PageSpeed checks and review focused recommendations before tuning cache, media, and assets.', 'tool-kits'); ?></p>
-                        <div style="margin-top: 15px; display: flex; gap: 10px;">
-                            <span class="tk-badge" style="background: rgba(255,255,255,0.1); color: #fff; border: none; padding: 4px 10px; font-size: 11px;"><?php echo $score_data['active_count']; ?> <?php _e('Features Active', 'tool-kits'); ?></span>
-                        </div>
-                    </div>
-                </div>
-                
-                <div style="text-align: center; background: rgba(255,255,255,0.05); padding: 20px 30px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px);">
-                    <div style="font-size: 32px; font-weight: 800; color: <?php echo $score_color; ?>;"><?php echo $score; ?>%</div>
-                    <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-top: 4px;"><?php _e('Perf Score', 'tool-kits'); ?></div>
-                </div>
-            </div>
-        </div>
+        <?php
+        $summary = '<div class="tk-heading-summary"><strong>' . esc_html((string) $score) . '%</strong><span>'
+            . esc_html(sprintf(__('%d features active', 'tool-kits'), $score_data['active_count'])) . '</span></div>';
+        tk_render_page_hero(__('Performance Diagnostics', 'tool-kits'), __('Run PageSpeed checks and review focused recommendations before tuning cache, media, and assets.', 'tool-kits'), 'dashicons-performance', $summary);
+        ?>
 
         <?php if ($saved === '1') : ?>
             <?php tk_notice('Settings saved.', 'success'); ?>

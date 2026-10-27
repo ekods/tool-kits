@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.52
+Stable tag: 2.7.53
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,7 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.53 adds conditional Contact Form 7 asset loading under Tool Kits > Assets. Start with manager-only Preview, add always-load pages for popup/widget/template forms, test submissions and captcha, then enable Live. Default loading is unchanged until configured. Purge external page/CDN caches after changing Live settings or resetting.
 - Version 2.7.45 labels SEO Social Image beside the existing upload/media-library controls and recommends 1200 x 630 px (approximately 1.91:1), JPG/PNG and an ideal file size below 1 MB. These are recommendations, not new upload restrictions.
 - Version 2.7.44 adds the Tagline variable label and custom Open Graph image uploads to the inline SEO Content editor. Unset images continue to use the Featured Image (thumbnail), with the site's social image as a fallback. The signed license API and matching key introduced in 2.7.31 remain required; see LICENSE_SECURITY.md.
 - Version 2.7.34 is a GitHub pre-release patch for Collector recheck rate limiting. Fully authenticated heartbeat requests are excluded from public Form Guard checks; ordinary forms and unauthenticated requests retain their existing protection.
@@ -71,6 +72,20 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.53 =
+Conditional Contact Form 7 asset loading and a consistent, responsive Tool Kits admin interface.
+
+- Add conditional Contact Form 7 CSS/JS loading with Default, manager-only Preview, and Live modes; detect shortcodes, native CF7 blocks and reusable blocks in queried content, and configure exact paths/page IDs that always load assets.
+- Preserve shared dependencies, CF7 initialization and assets required by other queued scripts/styles. Keep preview responses uncached and provide a reset to default loading without changing forms, submissions, anti-spam or SMTP settings.
+- Unify Tool Kits admin headers, cards, controls, tab navigation, tables and editor dialogs, including Overview, Diagnostics and Health Center.
+- Group Asset Optimization and CF7 settings, collapse legacy grids on mobile, and improve captcha choices and responsive layouts across security, SMTP, database, SEO/GEO and system screens.
+- Add named keyboard-accessible table scroll regions, including dynamically loaded reports, while preserving form values and existing controls. Scope layout enhancements to Tool Kits admin screens.
+- Validate conditional CF7 loading and 12 rendered admin views across five desktop/mobile widths with isolated WordPress/CF7 fixtures.
+
+Validation: 58/58 default regression cases and 62 CF7 checks pass on PHP 7.4 and PHP 8.4. Browser layout checks cover 12 admin views at 1440, 1024, 782, 390 and 320 pixels. ZIP structure and checksums are verified separately during release.
+
+After updating, open Tool Kits > Assets and start CF7 loading changes in Preview. Add always-load entries for popup, widget or template forms, test captcha and submission, then enable Live and clear external page/CDN caches. Existing installations retain default CF7 loading until configured.
+
 = 2.7.52 =
 - Retain compact summaries of the latest 10 completed Health Center full scans, including scores, coverage, check statuses, and measured performance metrics with cache context.
 - Compare any earlier/later retained scans to identify newly detected, resolved, worsening, improving, and unverified findings without starting another scan.

@@ -69,7 +69,7 @@ function tk_render_theme_checker_page() {
                         </div>
                     </div>
 
-                    <div style="display:grid; grid-template-columns: 200px 1fr; gap:24px; background:var(--tk-bg-soft); padding:24px; border-radius:16px; border:1px solid var(--tk-border-soft);">
+                    <div class="tk-responsive-grid" style="display:grid; grid-template-columns: 200px 1fr; gap:24px; background:var(--tk-bg-soft); padding:24px; border-radius:16px; border:1px solid var(--tk-border-soft);">
                         <div style="width:200px; height:150px; border-radius:12px; overflow:hidden; border:1px solid var(--tk-border-soft); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
                             <?php 
                             $screenshot = $theme->get_screenshot();
@@ -95,7 +95,7 @@ function tk_render_theme_checker_page() {
 
                     <?php if (!empty($warnings)) : ?>
                         <h2 style="margin-top:32px; display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-lightbulb" style="color:#f39c12;"></span> Recommendations</h2>
-                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; margin-top:16px;">
+                        <div class="tk-responsive-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; margin-top:16px;">
                             <?php foreach ($warnings as $warning) : ?>
                                 <div style="background:#fffbeb; border:1px solid #fef3c7; border-left:4px solid #f39c12; padding:12px 16px; border-radius:8px; display:flex; align-items:center; gap:12px;">
                                     <span class="dashicons dashicons-warning" style="color:#f39c12; font-size:18px; width:18px; height:18px;"></span>
@@ -370,7 +370,7 @@ function tk_theme_checker_render_asset_list($child_summary, $parent_summary, $ty
         if ($item['size'] > $max_size) $max_size = $item['size'];
     }
 
-    $out = '<div style="margin-top:15px; display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px;">';
+    $out = '<div class="tk-responsive-grid" style="margin-top:15px; display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:12px;">';
     foreach ($list as $item) {
         $p = $max_size > 0 ? round(($item['size'] / $max_size) * 100) : 0;
         $icon = ($type === 'css') ? 'dashicons-editor-code' : 'dashicons-media-spreadsheet';

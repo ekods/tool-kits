@@ -2408,7 +2408,7 @@ function tk_render_geo_panel(): void {
             </script>
             <div id="tk-geo-faq-rows" style="margin-top:16px;">
                 <?php foreach ($faq_items as $index => $item) : ?>
-                    <div class="tk-geo-faq-row" style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) auto; gap:12px; margin-bottom:12px; align-items:start;">
+                    <div class="tk-responsive-grid tk-geo-faq-row" style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) auto; gap:12px; margin-bottom:12px; align-items:start;">
                         <div>
                             <input type="text" name="geo_faq_language[]" value="<?php echo esc_attr($item['language'] ?? ''); ?>" placeholder="Language: id, en, en-sg" aria-label="FAQ language" style="width:100%;margin-bottom:8px;">
                             <input type="text" name="geo_faq_question[]" value="<?php echo esc_attr((string) $item['question']); ?>" placeholder="Question" style="width:100%;">
@@ -2498,7 +2498,7 @@ function tk_render_geo_panel(): void {
             <p class="description">Add structured sections to the auto-generated llms.txt draft. These sections are included before curated content and FAQ.</p>
             <div id="tk-geo-llms-section-rows" style="margin-top:12px;">
                 <?php foreach ($llms_sections as $section) : ?>
-                    <div class="tk-geo-llms-section-row" style="display:grid; grid-template-columns:minmax(180px,0.5fr) minmax(0,1.5fr) auto; gap:12px; margin-bottom:12px; align-items:start;">
+                    <div class="tk-responsive-grid tk-geo-llms-section-row" style="display:grid; grid-template-columns:minmax(180px,0.5fr) minmax(0,1.5fr) auto; gap:12px; margin-bottom:12px; align-items:start;">
                         <input type="text" name="geo_llms_section_title[]" value="<?php echo esc_attr((string) $section['title']); ?>" placeholder="Section title">
                         <textarea name="geo_llms_section_content[]" rows="3" placeholder="Section content"><?php echo esc_textarea((string) $section['content']); ?></textarea>
                         <button type="button" class="button tk-geo-llms-section-remove">Remove</button>

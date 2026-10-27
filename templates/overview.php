@@ -10,7 +10,7 @@ $geo_score_data = isset($geo_score_data) && is_array($geo_score_data) ? $geo_sco
 $seo_score = (int) ($seo_score_data['score'] ?? 0);
 $geo_score = (int) ($geo_score_data['score'] ?? 0);
 ?>
-<div class="wrap tk-wrap">
+<div class="wrap tk-wrap tk-overview-wrap">
     <?php tk_render_header_branding(); ?>
     <div class="tk-overview-external-notices is-empty" data-tk-overview-external-notices></div>
 

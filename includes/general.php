@@ -1197,7 +1197,7 @@ function tk_render_general_page(): void {
                                 </h4>
                                 <p class="description" style="margin-bottom:20px;">Select which standard WordPress menus to hide from the dashboard sidebar.</p>
                                 
-                                <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:12px;">
+                                <div class="tk-responsive-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:12px;">
                                     <?php 
                                     $core_items = function_exists('tk_admin_menu_get_core_items') ? tk_admin_menu_get_core_items() : array();
                                     $hidden_menus = tk_get_option('tk_hidden_admin_menus', array());

@@ -3,6 +3,7 @@ if (!defined('ABSPATH')) { exit; }
 
 function tk_admin_menu_init() {
     add_action('admin_menu', 'tk_register_admin_menus');
+    add_filter('admin_body_class', 'tk_admin_screen_class');
     add_action('admin_enqueue_scripts', 'tk_monitoring_maybe_enqueue_assets');
 
     add_action('admin_post_tk_toolkits_access_save', 'tk_toolkits_access_save');
@@ -19,6 +20,12 @@ function tk_admin_menu_init() {
     add_action('tk_monitoring_cron', 'tk_monitoring_cron_run');
     add_action('tk_monitoring_deferred_checks', 'tk_monitoring_cron_run');
     add_action('init', 'tk_monitoring_schedule_cron');
+}
+
+function tk_admin_screen_class($classes) {
+    $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+    return $screen && strpos((string) $screen->id, 'tool-kits') !== false
+        ? $classes . ' tk-admin-screen' : $classes;
 }
 
 function tk_monitoring_maybe_enqueue_assets($hook_suffix) {
@@ -450,6 +457,7 @@ function tk_render_assets_page() {
             <?php tk_notice('Settings saved.', 'success'); ?>
         <?php endif; ?>
         <?php tk_render_assets_panel(); ?>
+        <?php tk_cf7_assets_render_panel(); ?>
     </div>
     <?php
 }
@@ -1332,7 +1340,7 @@ function tk_render_toolkits_access_page() {
                         <h2 style="margin:0; font-size:24px;"><?php echo tk_license_features_enabled() ? 'License Active' : 'Activation Required'; ?></h2>
                         <p style="color:var(--tk-muted); margin-top:8px;">Current Status: <strong style="color:<?php echo $status_color; ?>; text-transform:uppercase;"><?php echo esc_html($license_status); ?></strong></p>
                         
-                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:16px; margin-top:32px;">
+                        <div class="tk-responsive-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:16px; margin-top:32px;">
                             <div class="tk-card" style="padding:15px; background:#fff;">
                                 <div style="font-size:10px; text-transform:uppercase; color:var(--tk-muted);">Type</div>
                                 <div style="font-size:16px; font-weight:700; margin-top:4px;"><?php echo ucfirst(esc_html($license_type ?: 'Unknown')); ?></div>
@@ -1395,7 +1403,7 @@ function tk_render_toolkits_access_page() {
                             <p class="description">Main endpoint for health data collection.</p>
                         </div>
 
-                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:20px;">
+                        <div class="tk-responsive-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:20px;">
                             <div>
                                 <label style="display:block; font-weight:600; margin-bottom:8px;">Collector Token</label>
                                 <?php 

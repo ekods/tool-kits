@@ -917,7 +917,7 @@ function tk_render_captcha_panel() {
             <div style="background:var(--tk-bg-soft); padding:24px; border-radius:16px; border:1px solid var(--tk-border-soft); margin-bottom:24px;">
                 <label style="display:block; font-weight:700; margin-bottom:16px; font-size:14px; color:var(--tk-primary);">Verification Method</label>
                 <?php $captcha_type = tk_get_option('captcha_type', 'text'); ?>
-                <div style="display:flex; gap:20px;">
+                <div class="tk-choice-grid">
                     <label class="tk-radio-card" style="flex:1; cursor:pointer; padding:16px; background:#fff; border:1px solid <?php echo $captcha_type === 'text' ? 'var(--tk-primary)' : 'var(--tk-border-soft)'; ?>; border-radius:12px;">
                         <input type="radio" name="captcha_type" value="text" <?php checked('text', $captcha_type); ?> style="margin-right:8px;">
                         <strong>Classic Text</strong>
@@ -931,7 +931,7 @@ function tk_render_captcha_panel() {
                 </div>
 
                 <div id="tk-captcha-text-settings" style="<?php echo $captcha_type === 'checkbox' ? 'display:none;' : ''; ?> margin-top:24px; padding-top:24px; border-top:1px solid var(--tk-border-soft);">
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+                    <div class="tk-responsive-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
                         <div>
                             <label style="display:block; font-weight:600; margin-bottom:8px;">Code Length</label>
                             <input class="widefat" type="number" min="3" max="10" name="length" value="<?php echo esc_attr($length); ?>" style="border-radius:8px;">

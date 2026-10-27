@@ -7,13 +7,27 @@ define('TK_VERSION', $version[1]);
 define('TK_URL', 'file://' . dirname(__DIR__) . '/');
 function get_option($key, $default = null) {
     if ($key !== 'tk_options') return $default;
-    return array('image_opt_enabled' => 1, 'image_opt_frontend_optimize' => 1, 'image_opt_quality' => 95, 'heartbeat_last_success' => 1);
+    return array('image_opt_enabled' => 1, 'image_opt_frontend_optimize' => 1, 'image_opt_quality' => 95, 'heartbeat_last_success' => 1,
+        'cf7_assets_mode' => 'preview', 'cf7_assets_always_load' => "/contact/\n/products/\n123",
+        'otp_login_audit_log' => array(array('time' => time(), 'event' => 'verified', 'user_id' => 1, 'ip' => '192.0.2.123', 'message' => 'Email verification completed.')));
 }
 function add_filter(...$args) {}
 function add_action(...$args) {}
 function esc_html($value) { return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'); }
 function esc_attr($value) { return esc_html($value); }
 function esc_url($value) { return esc_html($value); }
+function esc_textarea($value) { return esc_html($value); }
+function selected($a, $b, $echo = true) { $out = (string) $a === (string) $b ? 'selected' : ''; if ($echo) echo $out; return $out; }
+function is_admin() { return true; }
+function is_user_logged_in() { return true; }
+function current_user_can($capability) { return true; }
+function wp_get_current_user() { return (object) array('ID' => 1, 'roles' => array('administrator')); }
+function get_editable_roles() { return array('administrator' => array('name' => 'Administrator'), 'editor' => array('name' => 'Editor'), 'author' => array('name' => 'Author')); }
+function translate_user_role($name) { return $name; }
+function home_url($path = '/') { return 'https://toolkits-ui.test' . $path; }
+function wp_parse_url($url, $component = -1) { return parse_url($url, $component); }
+function wpcf7() { return true; }
+function get_current_screen() { return (object) array('id' => 'toplevel_page_tool-kits'); }
 function sanitize_key($value) { return preg_replace('/[^a-z0-9_-]/', '', strtolower($value)); }
 function checked($a, $b = true, $echo = true) { $out = (string) $a === (string) $b ? 'checked' : ''; if ($echo) echo $out; return $out; }
 function disabled($a, $b) { if ($a === $b) echo 'disabled'; }
@@ -30,18 +44,28 @@ function esc_html__($value) { return esc_html($value); }
 function esc_attr_e($value) { echo esc_attr($value); }
 function date_i18n($format, $timestamp) { return date($format, $timestamp); }
 function size_format($value) { return round($value / 1048576, 1) . ' MB'; }
-function tk_render_security_table() {
-    echo '<div class="tk-module-grid">';
-    foreach (array('Login Protection', 'Firewall', 'Security Monitoring', 'Content Protection') as $title) {
-        echo '<div class="tk-module-card"><div class="tk-module-header"><h2 class="tk-module-title">' . esc_html($title) . '</h2></div><div class="tk-module-body"><span class="tk-badge tk-on">Active</span></div><div class="tk-module-footer"><a class="button" href="#">Configure</a></div></div>';
-    }
-    echo '</div>';
-}
 require dirname(__DIR__) . '/includes/helpers.php';
 require dirname(__DIR__) . '/includes/image-optimizer.php';
+require dirname(__DIR__) . '/includes/analytics.php';
+require dirname(__DIR__) . '/includes/admin-menu.php';
+require dirname(__DIR__) . '/includes/asset-optimization.php';
+require dirname(__DIR__) . '/includes/cf7-assets.php';
+require dirname(__DIR__) . '/includes/security-otp.php';
+require dirname(__DIR__) . '/includes/upload-limits.php';
+require dirname(__DIR__) . '/includes/antispam-contact.php';
+require dirname(__DIR__) . '/includes/lazy-load.php';
+require dirname(__DIR__) . '/includes/minify.php';
+require dirname(__DIR__) . '/includes/security-captcha.php';
+require dirname(__DIR__) . '/includes/smtp.php';
+require dirname(__DIR__) . '/includes/geo-schema-modal.php';
 $empty = in_array('--empty', $argv, true);
 $overview = in_array('--overview', $argv, true);
 $monitoring = in_array('--monitoring', $argv, true);
+$view = 'image';
+foreach (array('overview', 'monitoring', 'assets', 'otp', 'uploads', 'antispam', 'lazy-load', 'minify', 'captcha', 'smtp-dns', 'schema-editor') as $candidate) {
+    if (in_array('--' . $candidate, $argv, true)) { $view = $candidate; }
+}
+$opts = tk_get_options();
 $checks = $server_rules = $noncore_root = $log_values = array();
 $server = 'nginx';
 $server_snippet = '';
@@ -82,11 +106,29 @@ ob_start();
 <link rel="stylesheet" href="file://<?php echo esc_attr(dirname($wp) . '/wp-includes/css/dashicons.css'); ?>">
 <link rel="stylesheet" href="file://<?php echo esc_attr($wp . 'css/common.css'); ?>">
 <link rel="stylesheet" href="file://<?php echo esc_attr($wp . 'css/forms.css'); ?>">
-<?php foreach (array('admin.css', 'overview.css', 'tool-kits-admin-ui.css') as $css) : ?><link rel="stylesheet" href="<?php echo TK_URL . 'assets/' . $css; ?>"><?php endforeach; ?>
+<link rel="stylesheet" href="file://<?php echo esc_attr($wp . 'css/buttons.css'); ?>">
+<?php foreach (array('admin.css', 'overview.css', 'tool-kits-admin-ui.css', 'analytics-editor.css', 'editor-modals.css') as $css) : ?><link rel="stylesheet" href="<?php echo TK_URL . 'assets/' . $css; ?>"><?php endforeach; ?>
 <style>body{margin:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px}.preview-bar{height:32px;background:#20242b;color:white;padding:0 20px;display:flex;align-items:center;font-size:12px}.preview-nav{width:160px;position:absolute;top:32px;bottom:0;background:#252a32;color:#cdd2dc;padding:22px 0}.preview-nav span{display:block;padding:10px 16px}.preview-nav .selected{background:#2457e6;color:white}main{margin-left:160px;padding:28px 32px}.tk-wrap{margin:0 auto}a{text-decoration:none}.screen-reader-text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}@media(max-width:782px){.preview-nav{display:none}main{margin:0;padding:18px 12px}.preview-bar{height:40px}}</style>
-</head><body><div class="preview-bar">WordPress / Tool Kits</div><aside class="preview-nav" aria-label="WordPress admin"><span>Dashboard</span><span>Media</span><span>Pages</span><span class="selected">Tool Kits</span><span>Overview</span><span>Image Optimizer</span><span>GEO</span><span>Monitoring</span></aside><main><div class="wrap tk-wrap">
-<?php if ($monitoring) { require dirname(__DIR__) . '/templates/monitoring.php'; } elseif ($overview) { require dirname(__DIR__) . '/templates/overview.php'; } else { tk_render_header_branding(); tk_render_page_hero('Image Optimizer', 'Image quality, optimized delivery, and media library maintenance.', 'dashicons-format-image'); require dirname(__DIR__) . '/templates/image-optimizer.php'; } ?>
-</div></main><script>window.ajaxurl='https://toolkits-ui.test/wp-admin/admin-ajax.php';window.tkMonitoringData={nonce:'preview',ajaxurl:window.ajaxurl};</script><?php if ($monitoring) : ?><script src="<?php echo TK_URL; ?>assets/vendor/chart.js/chart.umd.min.js"></script><script src="<?php echo TK_URL; ?>assets/health-monitor-chart.js"></script><?php else : ?><script src="<?php echo TK_URL; ?>assets/image-optimizer.js"></script><?php endif; ?></body></html><?php
+</head><body class="tk-admin-screen"><div class="preview-bar">WordPress / Tool Kits</div><aside class="preview-nav" aria-label="WordPress admin"><span>Dashboard</span><span>Media</span><span>Pages</span><span class="selected">Tool Kits</span><span>Overview</span><span>Image Optimizer</span><span>GEO</span><span>Monitoring</span></aside><main>
+<?php
+if ($monitoring) { require dirname(__DIR__) . '/templates/monitoring.php'; }
+elseif ($overview) { require dirname(__DIR__) . '/templates/overview.php'; }
+elseif ($view === 'assets') { tk_render_assets_page(); }
+elseif ($view === 'otp') { tk_render_otp_page(); }
+else {
+    echo '<div class="wrap tk-wrap">';
+    tk_render_header_branding();
+    $titles = array('image' => 'Image Optimizer', 'uploads' => 'Upload Limits', 'antispam' => 'Contact Form 7 Protection', 'lazy-load' => 'Lazy Load', 'minify' => 'Minify', 'captcha' => 'Captcha', 'smtp-dns' => 'SMTP Delivery', 'schema-editor' => 'Schema Editor');
+    tk_render_page_hero($titles[$view], 'Review and manage your website settings.', 'dashicons-admin-tools');
+    $panels = array('uploads' => 'tk_render_upload_limits_panel', 'antispam' => 'tk_render_antispam_contact_panel', 'lazy-load' => 'tk_render_lazy_load_panel', 'minify' => 'tk_render_minify_panel', 'captcha' => 'tk_render_captcha_panel');
+    if (isset($panels[$view])) { call_user_func($panels[$view]); }
+    elseif ($view === 'smtp-dns') { echo '<div class="tk-tabs">'; tk_smtp_render_dns_panel(array('domain' => 'example.test', 'selector' => 'google', 'score' => 75, 'checks' => array(array('label' => 'SPF', 'ok' => true, 'detail' => 'v=spf1 include:_spf.example.test ~all')))); echo '</div>'; }
+    elseif ($view === 'schema-editor') { tk_geo_schema_editor_modal(); }
+    else { require dirname(__DIR__) . '/templates/image-optimizer.php'; }
+    echo '</div>';
+}
+?>
+</main><script src="<?php echo TK_URL; ?>assets/admin-layout.js"></script><script>window.ajaxurl='https://toolkits-ui.test/wp-admin/admin-ajax.php';window.tkMonitoringData={nonce:'preview',ajaxurl:window.ajaxurl};</script><?php if ($monitoring) : ?><script src="<?php echo TK_URL; ?>assets/vendor/chart.js/chart.umd.min.js"></script><script src="<?php echo TK_URL; ?>assets/health-monitor-chart.js"></script><?php elseif ($view === 'image') : ?><script src="<?php echo TK_URL; ?>assets/image-optimizer.js"></script><?php endif; ?></body></html><?php
 $output = $argv[1] ?? '/tmp/toolkits-image-preview.html';
 file_put_contents($output, ob_get_clean());
 echo $output, PHP_EOL;

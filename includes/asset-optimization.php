@@ -1026,7 +1026,9 @@ function tk_render_assets_panel() {
             <?php tk_nonce_field('tk_assets_opt_save'); ?>
             <input type="hidden" name="action" value="tk_assets_opt_save">
             <input type="hidden" name="tk_tab" value="assets">
-
+            <div class="tk-settings-grid">
+            <fieldset class="tk-settings-group">
+                <legend>Critical CSS</legend>
             <p>
                 <label>
                     <input type="checkbox" name="assets_critical_css_enabled" value="1" <?php checked(1, $critical_enabled); ?>>
@@ -1034,24 +1036,30 @@ function tk_render_assets_panel() {
                 </label>
             </p>
             <p>
-                <label>Critical CSS (inline)</label><br>
-                <textarea name="assets_critical_css" rows="6" class="large-text" placeholder="/* above-the-fold CSS */"><?php echo esc_textarea($critical_css); ?></textarea>
+                <label for="tk-assets-critical-css">Critical CSS (inline)</label>
+                <textarea id="tk-assets-critical-css" name="assets_critical_css" rows="6" class="large-text" placeholder="/* above-the-fold CSS */"><?php echo esc_textarea($critical_css); ?></textarea>
             </p>
             <p>
                 <button class="button" form="tk-assets-critical-form" type="submit">Generate Critical CSS (Homepage)</button>
                 <small>Collects inline CSS from head and the newest loaded theme stylesheet (limit 25KB).</small>
             </p>
+            </fieldset>
+            <fieldset class="tk-settings-group">
+                <legend>Stylesheet delivery</legend>
             <p>
-                <label>Defer CSS handles (comma/space separated)</label><br>
-                <input type="text" name="assets_defer_css_handles" value="<?php echo esc_attr($defer_css); ?>" class="large-text" placeholder="e.g. theme-main-css, theme-aos-css">
+                <label for="tk-assets-defer-css">Defer CSS handles (comma/space separated)</label>
+                <input id="tk-assets-defer-css" type="text" name="assets_defer_css_handles" value="<?php echo esc_attr($defer_css); ?>" class="large-text" placeholder="e.g. theme-main-css, theme-aos-css">
             </p>
             <p>
-                <label>Preload CSS handles (keep stylesheet)</label><br>
-                <input type="text" name="assets_preload_css_handles" value="<?php echo esc_attr($preload_css); ?>" class="large-text" placeholder="e.g. theme-style-css">
+                <label for="tk-assets-preload-css">Preload CSS handles (keep stylesheet)</label>
+                <input id="tk-assets-preload-css" type="text" name="assets_preload_css_handles" value="<?php echo esc_attr($preload_css); ?>" class="large-text" placeholder="e.g. theme-style-css">
             </p>
+            </fieldset>
+            <fieldset class="tk-settings-group">
+                <legend>Font loading</legend>
             <p>
-                <label>Preload font URLs (one per line)</label><br>
-                <textarea name="assets_preload_fonts" rows="4" class="large-text" placeholder="https://example.com/fonts/font.woff2"><?php echo esc_textarea($preload_fonts); ?></textarea>
+                <label for="tk-assets-preload-fonts">Preload font URLs (one per line)</label>
+                <textarea id="tk-assets-preload-fonts" name="assets_preload_fonts" rows="4" class="large-text" placeholder="https://example.com/fonts/font.woff2"><?php echo esc_textarea($preload_fonts); ?></textarea>
             </p>
             <p>
                 <button class="button" form="tk-assets-scan-form" type="submit">Scan Fonts from Theme</button>
@@ -1070,6 +1078,9 @@ function tk_render_assets_panel() {
                 </label>
                 <br><small class="description">Use only when your theme has local/system font fallback configured.</small>
             </p>
+            </fieldset>
+            <fieldset class="tk-settings-group">
+                <legend>Images &amp; connections</legend>
             <p>
                 <label>
                     <input type="checkbox" name="assets_dimensions_enabled" value="1" <?php checked(1, $dimensions); ?>>
@@ -1100,8 +1111,9 @@ function tk_render_assets_panel() {
                     Auto preconnect external script/style hosts
                 </label>
             </p>
-            <hr style="margin:16px 0;">
-            <p><strong>Bloat Removal & Instant Page</strong></p>
+            </fieldset>
+            <fieldset class="tk-settings-group">
+                <legend>Bloat removal &amp; navigation</legend>
             <p>
                 <label>
                     <input type="checkbox" name="assets_disable_emojis" value="1" <?php checked(1, (int) tk_get_option('assets_disable_emojis', 0)); ?>>
@@ -1126,8 +1138,10 @@ function tk_render_assets_panel() {
                     Enable Instant Page (Preload links when they enter viewport)
                 </label>
             </p>
-            <p class="description">Auto mode: CLS Guard and LCP Boost are always enabled on frontend output.</p>
-            <p><button class="button button-primary">Save Settings</button></p>
+            </fieldset>
+            </div>
+            <p class="description">Preview important pages after changing asset settings, including navigation and forms.</p>
+            <p class="tk-action-row"><button class="button button-primary">Save Settings</button></p>
         </form>
         <form id="tk-assets-scan-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
             <?php tk_nonce_field('tk_assets_opt_scan_fonts'); ?>

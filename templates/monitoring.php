@@ -22,11 +22,11 @@ if (!defined('ABSPATH')) { exit; }
     <?php tk_render_header_branding(); ?>
     <?php 
     $heartbeat_action = '
-    <div style="background:rgba(255,255,255,0.1); padding:8px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.2); backdrop-filter: blur(10px);">
+    <div class="tk-heading-actions">
         <form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="margin:0;">
             ' . wp_nonce_field('tk_heartbeat_manual', '_tk_nonce', true, false) . '
             <input type="hidden" name="action" value="tk_heartbeat_manual">
-            <button class="button" style="background:#fff; color:var(--tk-primary); border:none; padding:6px 16px; font-weight:600; border-radius:6px; cursor:pointer;">' . __('Send Heartbeat Now', 'tool-kits') . '</button>
+            <button class="button">' . __('Send Heartbeat Now', 'tool-kits') . '</button>
         </form>
     </div>';
     tk_render_page_hero(__('System Monitoring', 'tool-kits'), __('Real-time health tracking and security audits for your WordPress site.', 'tool-kits'), 'dashicons-visibility', $heartbeat_action); 
@@ -344,7 +344,7 @@ if (!defined('ABSPATH')) { exit; }
                     </div>
                 </div>
 
-                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:20px;">
+                <div class="tk-responsive-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:20px;">
                     <div class="tk-card">
                         <h3 style="display:flex; align-items:center; gap:8px;"><span class="dashicons dashicons-media-archive"></span> <?php _e('Largest Files in Root', 'tool-kits'); ?></h3>
                         <?php if (empty($largest_files)) : ?>

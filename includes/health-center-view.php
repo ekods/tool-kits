@@ -3,7 +3,9 @@ if (!defined('ABSPATH')) { exit; }
 
 function tk_health_center_page(): void {
     if (!tk_health_center_allowed()) { wp_die(esc_html__('Access denied.', 'tool-kits')); }
-    echo '<div class="wrap"><h1>WordPress Health Center</h1>';
+    echo '<div class="wrap tk-wrap">';
+    tk_render_header_branding();
+    tk_render_page_hero('WordPress Health Center', 'Review saved health checks, performance measurements, and recommended actions.', 'dashicons-heart');
     tk_health_center_render(true);
     echo '</div>';
 }

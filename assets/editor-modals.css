@@ -1,4 +1,4 @@
-.tk-editor-modal { box-sizing: border-box; width: 760px; max-width: calc(100vw - 40px); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); padding: 0; overflow: hidden; border: 1px solid #dcdcde; border-radius: 12px; background: #fff; color: #1d2327; box-shadow: 0 24px 80px rgba(0,0,0,.2); }
+.tk-editor-modal { --tk-primary: #2457e6; --tk-border: #d7dee8; box-sizing: border-box; width: 760px; max-width: calc(100vw - 40px); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); padding: 0; overflow: hidden; border: 1px solid var(--tk-border); border-radius: 12px; background: #fff; color: #1d2939; box-shadow: 0 24px 80px rgba(0,0,0,.2); }
 .tk-editor-modal[open] { display: flex; flex-direction: column; }
 .tk-editor-modal-wide { width: 1080px; }
 .tk-editor-modal-wide[open] { height: min(840px, calc(100vh - 64px)); height: min(840px, calc(100dvh - 64px)); }
@@ -10,12 +10,15 @@
 .tk-editor-modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 24px 28px; }
 .tk-editor-modal-cross { flex-shrink: 0; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 6px; background: #f6f7f7; color: #50575e; font-size: 26px; cursor: pointer; }
 .tk-editor-modal-cross:hover { background: #e8eaed; color: #1d2327; }
-.tk-editor-modal-cross:focus-visible { outline: 2px solid #2271b1; outline-offset: 2px; }
+.tk-editor-modal-cross:focus-visible { outline: 2px solid var(--tk-primary); outline-offset: 2px; }
 .tk-editor-modal-cross:disabled { opacity: .5; cursor: wait; }
 .tk-editor-modal-footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 16px 28px; background: #f9fafb; border-top: 1px solid #e5e7eb; }
 .tk-editor-modal-footer .tk-schema-retry { margin-right: auto; }
-.tk-editor-modal .button { white-space: normal; min-height: 34px; padding: 2px 12px; border-radius: 5px; }
-.tk-editor-modal textarea, .tk-editor-modal input, .tk-editor-modal select { box-sizing: border-box; max-width: 100%; width: 100%; margin-top: 7px; padding: 8px 10px; border-color: #c3c4c7; border-radius: 6px; font-size: 13px; font-weight: 400; line-height: 1.5; }
+.tk-editor-modal .button { display: inline-flex; justify-content: center; align-items: center; gap: 7px; white-space: normal; min-height: 38px; padding: 7px 14px; border-radius: 8px; line-height: 1.5; }
+.tk-editor-modal .button.button-primary { background: var(--tk-primary); border-color: var(--tk-primary); }
+.tk-editor-modal .button.button-primary:hover { background: #183fae; border-color: #183fae; }
+.tk-editor-modal :is(button, input, textarea, select):focus-visible { outline: 2px solid var(--tk-primary); outline-offset: 2px; }
+.tk-editor-modal textarea, .tk-editor-modal input, .tk-editor-modal select { box-sizing: border-box; max-width: 100%; width: 100%; margin-top: 7px; padding: 8px 10px; border-color: var(--tk-border); border-radius: 8px; font-size: 13px; font-weight: 400; line-height: 1.5; }
 .tk-editor-modal textarea { resize: vertical; }
 .tk-editor-modal label { display: block; font-weight: 600; font-size: 13px; }
 .tk-editor-modal p { margin: 0 0 16px; overflow-wrap: anywhere; }

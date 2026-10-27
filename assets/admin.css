@@ -75,7 +75,7 @@
     line-height: 1.55 !important;
 }
 
-#wpfooter {
+.tk-admin-screen #wpfooter {
     position: relative !important;
 }
 

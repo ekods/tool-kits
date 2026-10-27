@@ -2549,7 +2549,7 @@ function tk_render_hardening_page() {
                         <div class="tk-score-tabs-content">
                             <?php if (!empty($active_items)) : ?>
                             <div class="tk-score-tab-panel is-active" data-score-panel="active" style="animation: tk-fade-in 0.3s ease;">
-                                <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:12px;">
+                                <div class="tk-responsive-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:12px;">
                                     <?php foreach ($active_items as $item) : 
                                         $link = $item['link'];
                                         if (strpos($link, '#') !== false) {
@@ -2569,7 +2569,7 @@ function tk_render_hardening_page() {
 
                             <?php if (!empty($recommendations)) : ?>
                             <div class="tk-score-tab-panel <?php echo empty($active_items) ? 'is-active' : ''; ?>" data-score-panel="recommendations" style="display:<?php echo !empty($active_items) ? 'none' : 'block'; ?>; animation: tk-fade-in 0.3s ease;">
-                                <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:12px;">
+                                <div class="tk-responsive-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:12px;">
                                     <?php foreach ($recommendations as $rec) : 
                                         $link = $rec['link'];
                                         if (strpos($link, '#') !== false) {
@@ -2644,7 +2644,7 @@ function tk_render_hardening_page() {
 
                         <div id="section-csp" style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px;">
                             <h3 style="margin:0 0 16px; font-size:16px;">Content Security Policy (CSP)</h3>
-                            <div style="display:grid; grid-template-columns: 200px 1fr; gap:20px; align-items:center;">
+                            <div class="tk-responsive-grid" style="display:grid; grid-template-columns: 200px 1fr; gap:20px; align-items:center;">
                                 <label style="font-weight:600;">CSP Protection Level</label>
                                 <select name="csp_mode" style="width:100%; max-width:300px;">
                                     <option value="off" <?php selected('off', $csp_mode); ?>>Off</option>
@@ -2686,7 +2686,7 @@ function tk_render_hardening_page() {
                             <label style="display:block; font-weight:600; margin-bottom:8px;">Blocked XML-RPC methods (one per line)</label>
                             <textarea class="large-text" rows="3" name="xmlrpc_blocked_methods" placeholder="system.multicall" style="width:100%; border-radius:8px;"><?php echo esc_textarea((string)$opts['hardening_xmlrpc_blocked_methods']); ?></textarea>
                             
-                            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:16px; margin-top:20px;">
+                            <div class="tk-responsive-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:16px; margin-top:20px;">
                                 <div>
                                     <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Window (minutes)</label>
                                     <input type="number" name="xmlrpc_rate_limit_window" value="<?php echo esc_attr((string)$opts['hardening_xmlrpc_rate_limit_window_minutes']); ?>" style="width:100%; border-radius:8px;">
@@ -2727,7 +2727,7 @@ function tk_render_hardening_page() {
                             ?>
                         </div>
 
-                        <div style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px; display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                        <div class="tk-responsive-grid" style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px; display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
                             <div>
                                 <label style="display:block; font-weight:600; margin-bottom:8px;">Allowlisted Paths</label>
                                 <textarea class="large-text" rows="4" name="waf_allow_paths" placeholder="/wp-json/
@@ -2768,7 +2768,7 @@ function tk_render_hardening_page() {
                             ?>
                         </div>
 
-                        <div style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px; display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                        <div class="tk-responsive-grid" style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px; display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
                             <div>
                                 <label style="display:block; font-weight:600; margin-bottom:8px;">Username</label>
                                 <input type="text" class="regular-text" name="httpauth_user" value="<?php echo esc_attr((string)$opts['hardening_httpauth_user']); ?>" style="width:100%; border-radius:8px;" autocomplete="username">
@@ -2820,7 +2820,7 @@ function tk_render_hardening_page() {
                             ?>
                         </div>
 
-                        <div style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px; display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                        <div class="tk-responsive-grid" style="margin-top:24px; padding:20px; background:var(--tk-bg-soft); border-radius:12px; display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
                             <div style="grid-column:1 / -1;">
                                 <label style="display:block; font-weight:600; margin-bottom:8px;">Allowed Origins</label>
                                 <textarea class="large-text" rows="4" name="cors_allowed_origins" placeholder="https://app.example.com

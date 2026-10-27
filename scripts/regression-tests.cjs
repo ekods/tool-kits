@@ -23,6 +23,16 @@ const cases = [
     "source": ["<?php", "require __DIR__ . '/performance-regression.php';"]
   },
   {
+    "name": "cf7-assets",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/cf7-assets-regression.php';"]
+  },
+  {
+    "name": "admin-layout-ui",
+    "runtime": "node",
+    "source": ["require(__dirname + '/admin-layout-ui-regression.cjs');"]
+  },
+  {
     "name": "geo-ai-catalog",
     "runtime": "php",
     "source": ["<?php", "require __DIR__ . '/ai-catalog-regression.php';"]
@@ -1575,7 +1585,7 @@ if (requested === '--list') {
     cases.forEach(test => console.log(test.name));
     process.exit(0);
 }
-const optional = new Set(['request-options', 'performance-core', 'image-optimizer', 'image-optimizer-no-imagick', 'monitoring-ui']);
+const optional = new Set(['request-options', 'performance-core', 'cf7-assets', 'admin-layout-ui', 'image-optimizer', 'image-optimizer-no-imagick', 'monitoring-ui']);
 const selected = requested ? cases.filter(test => test.name === requested) : cases.filter(test => !optional.has(test.name));
 if (!selected.length) { console.error('Unknown test: ' + requested); process.exit(1); }
 let failures = 0;

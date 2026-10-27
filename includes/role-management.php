@@ -1164,7 +1164,7 @@ function tk_role_management_render_page(): void {
                         <h3 style="margin-bottom:4px;"><?php esc_html_e('Capabilities', 'tool-kits'); ?></h3>
                         <p class="description"><?php esc_html_e('Capabilities enforce access. Create, edit, publish, and delete permissions can be configured independently where WordPress supports them.', 'tool-kits'); ?></p>
                     </div>
-                <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; margin-bottom:28px;">
+                <div class="tk-responsive-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; margin-bottom:28px;">
                     <?php foreach ($capability_groups as $group_key => $group) : ?>
                         <fieldset class="tk-capability-group" data-capability-group="<?php echo esc_attr($group_key); ?>" style="margin:0; border:1px solid var(--tk-border-soft); border-radius:14px; padding:16px; background:var(--tk-bg-soft); min-width:0;">
                             <legend style="padding:0 8px; font-weight:700; color:var(--tk-primary);">
@@ -1196,7 +1196,7 @@ function tk_role_management_render_page(): void {
 
                 <div class="tk-role-tab-panel" data-role-tab-panel="menus" hidden>
                 <h3><?php esc_html_e('Visible Dashboard Menus', 'tool-kits'); ?></h3>
-                <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin:16px 0 24px;">
+                <div class="tk-responsive-grid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin:16px 0 24px;">
                     <?php foreach ($available_menus as $menu_slug => $menu_label) : ?>
                         <?php if (isset($menu_parents[$menu_slug])) { continue; } ?>
                         <?php $is_dashboard = $menu_slug === 'index.php'; ?>

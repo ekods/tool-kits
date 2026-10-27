@@ -202,7 +202,7 @@ function tk_render_upload_limits_panel() {
                     Enable upload size limits
                 </label>
             </p>
-            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; margin:20px 0;">
+            <div class="tk-responsive-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; margin:20px 0;">
                 <div style="padding:18px; border:1px solid var(--tk-border-soft); border-radius:14px; background:var(--tk-bg-soft);">
                     <h3 style="margin-top:0;">Images</h3>
                     <p><label>Default image limit (MB)</label><br><input type="number" name="upload_images_default_mb" min="1" max="10240" value="<?php echo esc_attr((string) $default_mb); ?>"></p>

@@ -195,7 +195,7 @@ function tk_smtp_render_dns_panel(array $report): void {
     <div class="tk-card tk-tab-panel" data-panel-id="deliverability">
         <h2>Email Deliverability</h2>
         <p class="description">Run an on-demand DNS review for the sender domain. No DNS checks run during mail delivery or frontend requests.</p>
-        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:grid;grid-template-columns:minmax(180px,1fr) minmax(160px,0.6fr) auto;gap:12px;align-items:end;max-width:820px;margin:18px 0;">
+        <form class="tk-responsive-grid" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:grid;grid-template-columns:minmax(180px,1fr) minmax(160px,0.6fr) auto;gap:12px;align-items:end;max-width:820px;margin:18px 0;">
             <?php tk_nonce_field('tk_smtp_dns_scan'); ?><input type="hidden" name="action" value="tk_smtp_dns_scan">
             <label><strong>Sender domain</strong><input class="regular-text" style="display:block;width:100%;margin-top:6px;" name="smtp_dns_domain" value="<?php echo esc_attr($domain); ?>" required></label>
             <label><strong>DKIM selector</strong><input class="regular-text" style="display:block;width:100%;margin-top:6px;" name="smtp_dkim_selector" value="<?php echo esc_attr($selector); ?>" placeholder="google or selector1"></label>
@@ -759,7 +759,7 @@ function tk_render_smtp_page() {
                         <div class="tk-form-section" style="margin-bottom:30px; background:var(--tk-bg-soft); padding:20px; border-radius:12px; border:1px solid var(--tk-border-soft);">
                             <h3 style="font-size:14px; margin-bottom:16px; color:var(--tk-primary); margin-top:0;">2. Provider Details</h3>
                             
-                            <div class="tk-form-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                            <div class="tk-responsive-grid tk-form-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
                                 <div class="tk-form-group">
                                     <label class="tk-form-label"><strong>SMTP Provider</strong></label>
                                     <select name="smtp_provider" id="tk-smtp-provider" class="tk-input regular-text" style="width: 100%;">
@@ -795,7 +795,7 @@ function tk_render_smtp_page() {
                         <div class="tk-form-section" style="margin-bottom:30px;">
                             <h3 style="font-size:14px; margin-bottom:16px; color:var(--tk-primary);">3. Authentication</h3>
                             <div id="tk-smtp-gmail-auth" style="<?php echo $opts['smtp_provider'] === 'gmail' ? '' : 'display:none;'; ?> background:var(--tk-bg-soft); padding:20px; border-radius:12px; border:1px solid var(--tk-border-soft);">
-                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+                                <div class="tk-responsive-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
                                     <div class="tk-form-group">
                                         <label class="tk-form-label">Google Client ID</label>
                                         <input type="text" name="smtp_gmail_client_id" class="tk-input" style="width:100%;" value="<?php echo esc_attr($opts['smtp_gmail_client_id']); ?>" autocomplete="off" placeholder="000000000000-xxxx.apps.googleusercontent.com">
@@ -827,7 +827,7 @@ function tk_render_smtp_page() {
                                 </div>
                             </div>
                             <div id="tk-smtp-microsoft-auth" style="<?php echo $opts['smtp_provider'] === 'office365' ? '' : 'display:none;'; ?> background:var(--tk-bg-soft); padding:20px; border-radius:12px; border:1px solid var(--tk-border-soft);">
-                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+                                <div class="tk-responsive-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
                                     <div class="tk-form-group">
                                         <label class="tk-form-label">Microsoft Application (Client) ID</label>
                                         <input type="text" name="smtp_microsoft_client_id" class="tk-input" style="width:100%;" value="<?php echo esc_attr($opts['smtp_microsoft_client_id']); ?>" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000">
@@ -866,7 +866,7 @@ function tk_render_smtp_page() {
                                     <?php endif; ?>
                                 </div>
                             </div>
-                            <div id="tk-smtp-password-auth" style="display:<?php echo $opts['smtp_provider'] === 'custom' ? 'grid' : 'none'; ?>; grid-template-columns:1fr 1fr; gap:20px;">
+                            <div class="tk-responsive-grid" id="tk-smtp-password-auth" style="display:<?php echo $opts['smtp_provider'] === 'custom' ? 'grid' : 'none'; ?>; grid-template-columns:1fr 1fr; gap:20px;">
                                 <div class="tk-form-group">
                                     <label class="tk-form-label">Username</label>
                                     <input type="text" id="tk-smtp-username" name="smtp_username" class="tk-input" style="width:100%;" value="<?php echo esc_attr($opts['smtp_username']); ?>" placeholder="user@example.com">
@@ -882,7 +882,7 @@ function tk_render_smtp_page() {
 
                         <div class="tk-form-section" style="margin-bottom:30px;">
                             <h3 style="font-size:14px; margin-bottom:16px; color:var(--tk-primary);">4. Sender Identity</h3>
-                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:16px;">
+                            <div class="tk-responsive-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:16px;">
                                 <div class="tk-form-group">
                                     <label class="tk-form-label">From Email</label>
                                     <input type="email" id="tk-smtp-from-email" name="smtp_from_email" class="tk-input" style="width:100%;" value="<?php echo esc_attr($opts['smtp_from_email']); ?>" placeholder="admin@example.com">

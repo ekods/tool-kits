@@ -1001,7 +1001,7 @@ function tk_render_antispam_contact_panel() {
                 </div>
             </div>
 
-            <div style="margin-top:24px; display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+            <div class="tk-responsive-grid" style="margin-top:24px; display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
                 <div style="padding:20px; background:var(--tk-bg-soft); border-radius:12px; border:1px solid var(--tk-border-soft);">
                     <label style="display:block; font-weight:600; margin-bottom:8px;">Blocked Keywords</label>
                     <textarea class="large-text" rows="5" name="block_keywords" style="width:100%; border-radius:8px;"><?php echo esc_textarea($block_keywords); ?></textarea>

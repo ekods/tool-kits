@@ -23,6 +23,7 @@ Tool Kits helps WordPress administrators manage five main areas:
 - Hide Login, Minify, Auto WebP, Lazy Load, Asset Optimization.
 - Upload limits and User ID changer.
 - Captcha and anti-spam Contact Form 7.
+- Conditional Contact Form 7 asset loading in **Tool Kits > Assets**, with manager-only preview, automatic shortcode/block detection, always-load pages, dependency preservation, and reset to default loading.
 - IP-based login rate limiting with an unblock panel.
 - Login log for successful and failed attempts with retention.
 - Hardening (XML-RPC, headers, WAF basic, HTTP Auth, CORS).
