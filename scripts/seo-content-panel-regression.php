@@ -28,13 +28,15 @@ foreach (array(0 => 'empty', 29 => 'short', 30 => 'ideal', 60 => 'ideal', 61 => 
 $featured = array(42 => 'https://brandkraft.id/page-image.jpg', 43 => 'https://brandkraft.id/other-image.jpg');
 $options['seo_global_enabled'] = 1;
 $options['seo_global_content'] = array('image' => 'https://brandkraft.id/default-social.jpg');
-verify_panel(tk_seo_social_preview_image(42) === $featured[42] && tk_seo_og_image_url(43) === $featured[43], 'Social image must use the explicit edited post');
+verify_panel(tk_seo_social_preview_image(42) === $options['seo_global_content']['image'] && tk_seo_og_image_url(43) === $options['seo_global_content']['image'], 'Configured global override must take priority over Featured Images');
 verify_panel(tk_seo_social_preview_image(0) === $options['seo_global_content']['image'], 'Missing featured images must use the configured social default');
 ob_start(); tk_seo_render_content_meta_box($post); $social_panel = ob_get_clean();
-verify_panel(strpos($social_panel, 'src="https://brandkraft.id/page-image.jpg"') !== false, 'Social card must render the existing featured image');
+verify_panel(strpos($social_panel, 'src="https://brandkraft.id/default-social.jpg"') !== false, 'Social card must render the configured global override');
 $state['theme'] = true;
 $theme_social = array(42 => array('url' => 'https://brandkraft.id/theme-social.jpg'));
-verify_panel(tk_seo_social_preview_image(42) === $theme_social[42]['url'], 'Theme-managed social image must be respected');
+verify_panel(tk_seo_social_preview_image(42) === $options['seo_global_content']['image'], 'Global override must match the preview on managed themes');
+$options['seo_global_enabled'] = 0;
+verify_panel(tk_seo_social_preview_image(42) === $theme_social[42]['url'], 'Disabling global override must restore the theme image');
 $state['theme'] = false; $theme_social = array(); $featured = array();
 unset($options['seo_global_enabled'], $options['seo_global_content']);
 ob_start(); tk_seo_render_variable_tokens('%%title%% %%page%% %%sep%% %%sitename%%'); $tokens = ob_get_clean();

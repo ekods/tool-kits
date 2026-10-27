@@ -22,6 +22,7 @@ function render_output_fixture(string $html, bool $global_title = false): string
 }
 tk_seo_opt_init();
 verify_output(in_array(array('template_redirect', 'tk_seo_content_output_start', 2), $hooks, true), 'The page override must wrap later metadata buffers inside page caching');
+verify_output(in_array(array('template_redirect', 'tk_seo_global_start', 3), $hooks, true), 'Global metadata must wrap late theme/plugin buffers after explicit page overrides');
 $title_hooks = array_values(array_filter($hooks, function ($hook) { return $hook[0] === 'pre_get_document_title'; }));
 verify_output(end($title_hooks) === array('pre_get_document_title', 'tk_seo_content_title_filter', PHP_INT_MAX), 'Saved page titles must run after the global title formula');
 

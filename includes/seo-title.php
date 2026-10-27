@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) { exit; }
 function tk_seo_title_init(): void {
     add_filter('pre_get_document_title', 'tk_seo_title_filter', PHP_INT_MAX);
     add_filter('wp_title', 'tk_seo_title_filter', PHP_INT_MAX);
-    // Inside the page-cache buffer, outside Global SEO/GEO completion buffers.
+    // Inside the page-cache/Global SEO buffers, outside GEO completion buffers.
     add_action('template_redirect', 'tk_seo_title_start', 980);
 }
 
@@ -124,7 +124,7 @@ function tk_seo_title_render_settings(): void {
         <legend><strong>Meta Title Override</strong></legend>
         <input type="hidden" name="tk_seo_title_settings_present" value="1">
         <p><label><input type="checkbox" role="switch" name="seo_title_override_enabled" value="1" <?php checked((int) tk_get_option('seo_title_override_enabled', 0), 1); ?>> Override theme and plugin titles</label></p>
-        <p class="description">Requires Enable SEO Toolkit. Applies to all frontend pages independently of global metadata fallbacks. Replaces theme/plugin titles and keeps a single &lt;title&gt; tag. This format takes priority over the Homepage SEO title below. Saved page SEO titles take priority over this format.</p>
+        <p class="description">Requires Enable SEO Toolkit. Applies to all frontend pages independently of global metadata override. Replaces theme/plugin titles and keeps a single &lt;title&gt; tag. This format takes priority over the Homepage SEO title below. Saved page SEO titles take priority over this format.</p>
         <p><label for="tk-title-separator"><strong>Title separator</strong></label><br>
             <input id="tk-title-separator" name="seo_title_separator" type="text" maxlength="10" value="<?php echo esc_attr($separator); ?>" class="small-text">
             <span class="description">Examples: - | &ndash; &mdash; &bull; / (blank uses -)</span></p>

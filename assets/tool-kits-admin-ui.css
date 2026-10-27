@@ -23,6 +23,10 @@
     font-size: 13px;
     line-height: 1.6;
 }
+.tk-wrap {
+    margin: 0 auto;
+    padding: 32px 0 32px;
+}
 :is(.tk-wrap, .tk-overview-wrap)::before { display: none; }
 :is(.tk-wrap, .tk-overview-wrap) *,
 :is(.tk-wrap, .tk-overview-wrap) *::before,

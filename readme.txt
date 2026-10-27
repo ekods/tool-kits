@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.54
+Stable tag: 2.7.55
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,7 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.55 changes the Global SEO Content checkbox to Enable global metadata override. When checked, Tool Kits replaces existing theme/plugin head metadata with the displayed values, including matching Open Graph/Twitter descriptions and social images, and removes duplicate tags. Saved page SEO titles, descriptions and social images retain priority. Uncheck to restore theme/plugin metadata; save changes and clear external page/CDN caches after updating.
 - Version 2.7.54 completes SEO image output for Twitter Cards, Image Source (image_src) and Schema.org image metadata. These use the same selected image as Open Graph. Global metadata fallbacks fill missing or empty tags while preserving nonempty theme tags; page-specific image overrides replace stale head image tags. Enable social output under SEO Settings and configure a default image under Global SEO Content or a page-specific SEO Social Image, then clear external page/CDN caches.
 - Version 2.7.53 adds conditional Contact Form 7 asset loading under Tool Kits > Assets. Start with manager-only Preview, add always-load pages for popup/widget/template forms, test submissions and captcha, then enable Live. Default loading is unchanged until configured. Purge external page/CDN caches after changing Live settings or resetting.
 - Version 2.7.45 labels SEO Social Image beside the existing upload/media-library controls and recommends 1200 x 630 px (approximately 1.91:1), JPG/PNG and an ideal file size below 1 MB. These are recommendations, not new upload restrictions.
@@ -73,6 +74,15 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.55 =
+- Make the checked Global SEO Content option replace existing metadata instead of only filling empty tags. Rename it Enable global metadata override and update help and SEO-plugin notices to match.
+- Apply configured descriptions, authors, keywords and social images ahead of automatic excerpts, post authors and Featured Images. Keep saved page SEO title/description/image overrides first and limit the global title to the homepage; preserve the separate Meta Title Override format when enabled.
+- Replace matching Open Graph, Twitter, Image Source and Schema.org image tags, remove duplicates, and wrap late theme/plugin HTML buffers. Preserve visible content, canonical/robots tags and JSON-LD.
+- Keep editor previews aligned with public output and restore theme/plugin output when global override is unchecked. Retain license, post opt-out, request, content-type and HTTP-status guards.
+- Center .tk-wrap with margin: 0 auto and apply padding: 32px 0 32px.
+
+Validation: 59/59 default regression cases pass on PHP 7.4 and PHP 8.4, including 98 Global SEO checks reproducing the reported Rafida description mismatch and 67 image checks. Separate saved-content/public-output (56 checks), editor panel and title regressions pass on both runtimes.
+
 = 2.7.54 =
 - Output Twitter Cards (summary_large_image and twitter:image), Image Source (link rel=image_src), and Schema.org image metadata (meta itemprop=image) alongside the Open Graph image.
 - Share the selected per-page SEO image, Featured Image, global default or site logo across image formats. Native Twitter output includes the page title and description.

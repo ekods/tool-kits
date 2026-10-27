@@ -56,7 +56,7 @@ function tk_seo_content_head_tag(string $key, string $value): string {
     return '<meta ' . $attribute . '="' . esc_attr($key) . '" content="' . esc_attr($value) . '">';
 }
 
-/** Apply head metadata by offset; global fallbacks preserve nonempty theme tags. */
+/** Apply head metadata by offset, leaving unrelated markup untouched. */
 function tk_seo_content_replace_html(string $html, array $values, bool $add_social = true, bool $fill_missing = false): string {
     $targets = array(); $required = array();
     foreach (array('title', 'description') as $field) {
@@ -64,6 +64,10 @@ function tk_seo_content_replace_html(string $html, array $values, bool $add_soci
         $targets[$field] = $values[$field]; $required[$field] = true;
         $targets['og:' . $field] = $targets['twitter:' . $field] = $values[$field];
         if ($add_social) { $required['og:' . $field] = $required['twitter:' . $field] = true; }
+    }
+    foreach (array('author', 'publisher', 'keywords') as $field) {
+        if (trim((string) ($values[$field] ?? '')) === '') { continue; }
+        $targets[$field] = $values[$field]; $required[$field] = true;
     }
     if ($add_social && !empty($values['image'])) {
         foreach (tk_seo_image_metadata_values($values['image']) as $key => $value) {

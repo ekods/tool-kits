@@ -85,17 +85,17 @@ image_check(strpos($fixed, $schema . $examples) !== false && substr($fixed, -str
     && strpos($fixed, '<title>Keep title</title>') !== false && strpos($fixed, 'rel="canonical"') !== false, 'Unrelated markup changed');
 image_check(buffered_image_output($fixed, 'tk_seo_content_output_start') === $fixed, 'Explicit image output is not idempotent');
 
-// Global fallbacks must work without a custom title/description or existing OG tag.
+// Global overrides must work without a custom title/description or existing OG tag.
 unset($meta['_tk_seo_social_image_id']); $options['seo_global_content'] = array('image' => $image);
 expect_image(buffered_image_output($empty, 'tk_seo_global_start'), $image);
 $valid = '<html><head><meta property="og:image" content="theme-og.jpg"><meta name="twitter:image" content="theme-twitter.jpg">'
     . '<meta name="twitter:card" content="summary"><link rel="image_src" href="theme-source.jpg"><meta itemprop="image" content="theme-schema.jpg"></head>' . $body;
-image_check(tk_seo_global_fill_html($valid, array('image' => $image)) === $valid, 'Global fallback replaced nonempty theme image metadata');
+expect_image(tk_seo_global_fill_html($valid, array('image' => $image)), $image);
 $missing = '<html><head><meta property="og:image" content="theme-og.jpg"><meta name="twitter:image" content="">'
     . '<link rel="image_src" href=""><meta itemprop="image" content=""></head>' . $body;
 $filled = tk_seo_global_fill_html($missing, array('image' => $image));
 $values = image_values($filled);
-image_check($values['og:image'] === array('theme-og.jpg'), 'Existing OG image replaced');
+image_check($values['og:image'] === array($image), 'Existing OG image was not replaced');
 foreach (array('twitter:image', 'image_src', 'schema:image') as $key) { image_check($values[$key] === array($image), 'Empty image tag not repaired: ' . $key); }
 image_check(tk_seo_global_fill_html($filled, array('image' => $image)) === $filled, 'Global image output is not idempotent');
 

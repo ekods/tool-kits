@@ -16,7 +16,8 @@ function tk_seo_opt_init() {
     tk_seo_indexability_init();
     add_action('admin_post_tk_seo_opt_save', 'tk_seo_opt_save');
     add_action('admin_post_tk_seo_global_save', 'tk_seo_global_save');
-    add_action('template_redirect', 'tk_seo_global_start', 990);
+    // Inside page caching and explicit page edits, outside late theme buffers.
+    add_action('template_redirect', 'tk_seo_global_start', 3);
     add_action('template_redirect', 'tk_seo_content_output_start', 2);
     add_filter('pre_get_document_title', 'tk_seo_global_document_title', 20);
     add_action('admin_post_tk_seo_redirect_add', 'tk_seo_redirect_add');
@@ -233,12 +234,12 @@ function tk_seo_meta_identity(): array {
         }
     }
     $author = $publisher;
-    if (tk_seo_global_enabled()) {
-        $global = tk_seo_global_content();
+    $global = tk_seo_global_enabled() ? tk_seo_global_content() : array();
+    if ($global) {
         $publisher = $global['publisher']['value'] ?: $publisher;
         $author = $global['author']['value'] ?: $publisher;
     }
-    if (is_singular()) {
+    if (is_singular() && empty($global['author']['value'])) {
         $post = get_post();
         $author_id = is_object($post) ? (int) ($post->post_author ?? 0) : 0;
         $post_author = $author_id > 0 ? trim((string) get_the_author_meta('display_name', $author_id)) : '';
@@ -254,8 +255,10 @@ function tk_seo_generate_description() {
     if (is_singular()) {
         $description = tk_seo_expand_variables((string) get_post_meta(get_queried_object_id(), '_tk_seo_meta_description', true), (int) get_queried_object_id());
         if ($description !== '') { return trim((string) preg_replace('/\s+/', ' ', wp_strip_all_tags($description))); }
+    }
+    if (!empty($global['description']['value'])) { return $global['description']['value']; }
+    if (is_singular()) {
         $description = trim(wp_strip_all_tags(strip_shortcodes(get_the_excerpt())));
-        if ($description === '' && $global && is_front_page()) { $description = (string) $default; }
         if ($description === '') {
             $post = get_post();
             if (is_object($post) && !empty($post->post_content)) {
@@ -282,14 +285,14 @@ function tk_seo_og_image_url(?int $post_id = null, bool $use_custom = true) {
     if ($post_id > 0) {
         $custom = $use_custom ? tk_seo_custom_social_image_url($post_id) : '';
         if ($custom !== '') { return $custom; }
-        $thumb = get_the_post_thumbnail_url($post_id, 'full');
-        if (is_string($thumb) && $thumb !== '') {
-            return $thumb;
-        }
     }
     if (tk_seo_global_enabled()) {
         $global = tk_seo_global_content();
         if ($global['image']['value'] !== '') { return $global['image']['value']; }
+    }
+    if ($post_id > 0) {
+        $thumb = get_the_post_thumbnail_url($post_id, 'full');
+        if (is_string($thumb) && $thumb !== '') { return $thumb; }
     }
     $custom_logo_id = get_theme_mod('custom_logo');
     if ($custom_logo_id) {
@@ -2448,10 +2451,10 @@ function tk_render_seo_opt_panel() {
     }
     if (!empty($_GET['tk_global_saved'])) { tk_notice('Global SEO content saved. Theme-managed values remain linked to their source.', 'success'); }
     if ($has_third_party) {
-        tk_notice('Third-party SEO plugin detected. Automatic metadata fallbacks are disabled. Meta Title Override can still replace titles when enabled. JSON-LD Schema is managed from GEO.', 'warning');
+        tk_notice('Third-party SEO plugin detected. Enable Global Metadata Override to replace its head metadata with Tool Kits values, or Meta Title Override for titles only. JSON-LD Schema is managed from GEO.', 'warning');
     }
     if ($has_theme_managed) {
-        tk_notice('Active theme manages SEO head output. Global SEO Content reuses theme settings and can fill missing metadata when enabled. Canonical tags remain managed by the theme.', 'warning');
+        tk_notice('Active theme manages SEO head output. Global Metadata Override replaces its head metadata with the values in Global SEO Content when enabled. Canonical tags remain managed by the theme.', 'warning');
     }
     ?>
     <div class="tk-tabs tk-seo-tabs">

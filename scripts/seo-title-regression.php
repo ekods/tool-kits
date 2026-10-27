@@ -138,7 +138,7 @@ try { tk_seo_global_save(); } catch (TitleRedirect $e) {}
 check($options['seo_title_override_enabled'] === 0 && $options['seo_title_separator'] === '-', 'Legacy global form unexpectedly changed title settings');
 ob_start(); tk_seo_global_render_panel(); $panel = ob_get_clean();
 check(strpos($panel, 'name="seo_title_override_enabled"') !== false && strpos($panel, 'name="seo_title_separator"') !== false, 'Title controls missing');
-check(strpos($panel, 'Meta Title Override below can take control') !== false, 'Plugin conflict message hides override availability');
+check(strpos($panel, 'Global Metadata Override or Meta Title Override') !== false, 'Plugin conflict message hides override availability');
 define('REST_REQUEST', true);
 tk_seo_title_start(); check(ob_get_level() === $level && tk_seo_title_filter('API title') === 'API title', 'REST response modified');
 echo "PASS: front/static/blog/page/archive/search/404 titles, separators, theme/plugin override, duplicate removal, escaping, unchanged metadata/body, request guards, secure save and cache purge\n";

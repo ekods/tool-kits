@@ -101,12 +101,12 @@ function tk_seo_global_render_panel(): void {
         <h3>Global SEO Content</h3>
         <p>Review site-wide SEO defaults and their sources. Values supplied by your theme stay linked to Theme Settings and update here automatically.</p>
         <p><a class="button" href="<?php echo esc_url(admin_url(function_exists('myprefix_get_theme_option') ? 'admin.php?page=theme-settings' : 'customize.php')); ?>">Edit Theme Settings</a> <a class="button" href="<?php echo esc_url(admin_url('options-general.php')); ?>">Edit Site Title &amp; Tagline</a></p>
-        <?php if (tk_seo_has_third_party_plugin()): ?><p class="description">Your SEO plugin manages frontend metadata. Global metadata fallbacks are disabled; Meta Title Override below can take control of titles when enabled.</p><?php endif; ?>
+        <?php if (tk_seo_has_third_party_plugin()): ?><p class="description">Your SEO plugin manages frontend metadata unless Global Metadata Override or Meta Title Override is enabled here.</p><?php endif; ?>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
             <?php tk_nonce_field('tk_seo_global_save'); ?>
             <input type="hidden" name="action" value="tk_seo_global_save">
             <?php tk_seo_title_render_settings(); ?>
-            <p><label><input type="checkbox" name="seo_global_enabled" value="1" <?php checked((int) tk_get_option('seo_global_enabled', 0), 1); ?>> Enable global metadata fallbacks</label><br><span class="description">Requires Enable SEO Toolkit. Fill missing metadata while preserving tags provided by the theme or page. Page-specific excerpts, authors and featured images take priority. The SEO title applies to the homepage; keywords do not replace page focus keywords.</span></p>
+            <p><label><input type="checkbox" name="seo_global_enabled" value="1" <?php checked((int) tk_get_option('seo_global_enabled', 0), 1); ?>> Enable global metadata override</label><br><span class="description">Requires Enable SEO Toolkit. Replace existing theme/plugin metadata with the values shown below and remove duplicate tags. Saved page SEO titles, meta descriptions and social images take priority. The SEO title applies to the homepage; keywords do not replace page focus keywords. Uncheck to restore theme/plugin metadata.</span></p>
             <div class="tk-grid tk-grid-2" style="gap:20px;">
             <?php foreach (tk_seo_global_fields() as $field => $definition): $item = $resolved[$field]; ?>
                 <div>
@@ -118,12 +118,12 @@ function tk_seo_global_render_panel(): void {
                         <input id="tk-global-<?php echo esc_attr($field); ?>" class="large-text" type="<?php echo !empty($definition['url']) ? 'url' : 'text'; ?>" value="<?php echo esc_attr($value); ?>" placeholder="<?php echo esc_attr($item['value']); ?>"<?php echo $attributes; ?>>
                     <?php endif; ?>
                     <p class="description">Source: <?php echo esc_html($item['source']); ?><?php if ($item['inherited']): ?>. Edit this value at its source.<?php elseif ($item['local'] === '' && $item['value'] !== ''): ?>. Leave blank to keep this default.<?php endif; ?></p>
-                    <?php if ($field === 'image'): ?><p class="description">Used for Open Graph, Twitter Cards, Image Source and Schema.org image metadata when social output is enabled. Page-specific social images and Featured Images take priority.</p><?php endif; ?>
-                    <?php if ($field === 'title' && $item['inherited'] && $item['source'] === 'WordPress Site Title'): ?><p class="description">The active theme formats the homepage title using this site name.</p><?php endif; ?>
+                    <?php if ($field === 'image'): ?><p class="description">Used for Open Graph, Twitter Cards, Image Source and Schema.org image metadata when social output is enabled. A saved page SEO Social Image takes priority; Featured Images are used when no social image is configured.</p><?php endif; ?>
+                    <?php if ($field === 'title' && $item['inherited'] && $item['source'] === 'WordPress Site Title'): ?><p class="description">This value follows the WordPress site name.</p><?php endif; ?>
                 </div>
             <?php endforeach; ?>
             </div>
-            <p class="description">Service name and description are shared with Tool Kits GEO organization/service schema. Global descriptions are fallbacks and do not replace each page's content.</p>
+            <p class="description">Service name and description are shared with Tool Kits GEO organization/service schema. Metadata overrides do not change visible page content.</p>
             <p><button class="button button-primary">Save Global SEO Content</button></p>
         </form>
     </div>
@@ -131,16 +131,22 @@ function tk_seo_global_render_panel(): void {
 }
 
 function tk_seo_global_document_title($title) {
-    if (!tk_seo_global_enabled() || is_admin() || !is_front_page() || !tk_seo_post_feature_enabled('seo')
-        || tk_seo_has_third_party_plugin() || tk_seo_has_theme_managed_seo()) { return $title; }
+    if (!tk_seo_global_enabled() || is_admin() || wp_doing_ajax() || is_feed() || is_preview()
+        || (defined('REST_REQUEST') && REST_REQUEST)
+        || !is_front_page() || !tk_seo_post_feature_enabled('seo')) { return $title; }
+    if (is_singular()) {
+        $custom = tk_seo_expand_variables((string) get_post_meta(get_queried_object_id(), '_tk_seo_title', true), (int) get_queried_object_id());
+        if ($custom !== '') { return esc_html($custom); }
+    }
     $content = tk_seo_global_content();
-    return $content['title']['local'] !== '' ? $content['title']['value'] : $title;
+    return $content['title']['value'] !== '' ? esc_html($content['title']['value']) : $title;
 }
 
 function tk_seo_global_start(): void {
     if (is_admin() || wp_doing_ajax() || is_feed() || is_preview() || is_search() || is_404()
+        || (defined('REST_REQUEST') && REST_REQUEST)
         || !in_array($_SERVER['REQUEST_METHOD'] ?? 'GET', array('GET', 'HEAD'), true)
-        || !tk_seo_global_enabled() || tk_seo_has_third_party_plugin() || !tk_seo_post_feature_enabled('seo')) { return; }
+        || !tk_seo_global_enabled() || !tk_seo_post_feature_enabled('seo')) { return; }
     if (is_singular() && (post_password_required() || get_post_status() !== 'publish')) { return; }
     $content = tk_seo_global_content();
     $values = array_map(function($item) { return $item['value']; }, $content);
@@ -151,8 +157,10 @@ function tk_seo_global_start(): void {
     if ((int) tk_get_option('seo_meta_desc_enabled', 1) !== 1) { unset($values['description']); }
     if ((int) tk_get_option('seo_og_enabled', 1) !== 1) { unset($values['image']); }
     if (!is_front_page()) { unset($values['title']); }
+    elseif ((int) tk_get_option('seo_title_override_enabled', 0) === 1) { $values['title'] = tk_seo_title_value(); }
     ob_start(function($html) use ($values) {
-        if (http_response_code() >= 300) { return $html; }
+        $status = http_response_code();
+        if ($status && $status !== 200) { return $html; }
         foreach (headers_list() as $header) {
             if (stripos($header, 'Content-Type:') === 0 && stripos($header, 'text/html') === false) { return $html; }
         }
@@ -161,32 +169,6 @@ function tk_seo_global_start(): void {
 }
 
 function tk_seo_global_fill_html(string $html, array $values): string {
-    // Inspect only the real head and preserve all existing nonempty tags,
-    // including tags emitted after wp_head by a theme.
-    $attributes = '(?:"[^"]*"|\'[^\']*\'|[^\'">])*';
-    $tokens = '~<!--.*?-->|<(script|style|textarea|title)\b' . $attributes . '>.*?</\1\s*>|<head\b' . $attributes . '>|</head\s*>~is';
-    preg_match_all($tokens, $html, $matches, PREG_OFFSET_CAPTURE);
-    $start = null; $length = -1;
-    foreach ($matches[0] as $match) {
-        if ($start === null && preg_match('/^<head\b/i', $match[0])) { $start = $match[1] + strlen($match[0]); }
-        if ($start !== null && preg_match('/^<\/head\s*>/i', $match[0])) { $length = $match[1] - $start; break; }
-    }
-    if ($length < 0) { return $html; }
-    $head = substr($html, $start, $length);
-    $metadata = tk_geo_crawler_metadata($head);
-    $tags = array(); $edits = array();
-    foreach (array('title', 'description', 'author', 'publisher', 'keywords') as $field) {
-        $value = trim((string) ($values[$field] ?? ''));
-        if ($value === '') { continue; }
-        if (!empty($metadata[$field])) { continue; }
-        if ($field === 'title') { $tags[] = '<title>' . esc_html($value) . '</title>'; }
-        else { $tags[] = '<meta name="' . esc_attr($field) . '" content="' . esc_attr($value) . '">'; }
-        foreach (($metadata['empty'][$field] ?? array()) as $empty) { $edits[] = $empty; }
-    }
-    if ($tags) {
-        usort($edits, function($a, $b) { return $b[0] <=> $a[0]; });
-        foreach ($edits as $edit) { $head = substr_replace($head, '', $edit[0], $edit[1]); }
-        $html = substr_replace($html, $head . "\n" . implode("\n", $tags) . "\n", $start, $length);
-    }
-    return tk_seo_content_replace_html($html, array('image' => $values['image'] ?? ''), true, true);
+    // Keep the function name for existing callers; checked now means override.
+    return tk_seo_content_replace_html($html, $values, (int) tk_get_option('seo_og_enabled', 1) === 1);
 }
