@@ -42,27 +42,40 @@ function tk_seo_content_output_start(): void {
     });
 }
 
-/** Replace owned head tags by offset, preserving body, schema and unrelated tags. */
-function tk_seo_content_replace_html(string $html, array $values, bool $add_social = true): string {
+function tk_seo_image_metadata_values(string $image): array {
+    if (trim($image) === '') { return array(); }
+    return array('og:image' => $image, 'twitter:card' => 'summary_large_image', 'twitter:image' => $image,
+        'image_src' => $image, 'schema:image' => $image);
+}
+
+function tk_seo_content_head_tag(string $key, string $value): string {
+    if ($key === 'title') { return '<title>' . esc_html($value) . '</title>'; }
+    if ($key === 'image_src') { return '<link rel="image_src" href="' . esc_url($value) . '">'; }
+    if ($key === 'schema:image') { return '<meta itemprop="image" content="' . esc_url($value) . '">'; }
+    $attribute = strpos($key, 'og:') === 0 ? 'property' : 'name';
+    return '<meta ' . $attribute . '="' . esc_attr($key) . '" content="' . esc_attr($value) . '">';
+}
+
+/** Apply head metadata by offset; global fallbacks preserve nonempty theme tags. */
+function tk_seo_content_replace_html(string $html, array $values, bool $add_social = true, bool $fill_missing = false): string {
     $targets = array(); $required = array();
     foreach (array('title', 'description') as $field) {
         if (trim((string) ($values[$field] ?? '')) === '') { continue; }
         $targets[$field] = $values[$field]; $required[$field] = true;
         $targets['og:' . $field] = $targets['twitter:' . $field] = $values[$field];
-        if ($add_social) { $required['og:' . $field] = true; }
+        if ($add_social) { $required['og:' . $field] = $required['twitter:' . $field] = true; }
     }
     if ($add_social && !empty($values['image'])) {
-        $targets['og:image'] = $targets['twitter:image'] = $values['image'];
-        $required['og:image'] = true;
+        foreach (tk_seo_image_metadata_values($values['image']) as $key => $value) {
+            $targets[$key] = $value; $required[$key] = true;
+        }
     }
     if (!$targets) { return $html; }
     $tag_for = function (string $key) use ($targets): string {
-        if ($key === 'title') { return '<title>' . esc_html($targets[$key]) . '</title>'; }
-        $attribute = strpos($key, 'og:') === 0 ? 'property' : 'name';
-        return '<meta ' . $attribute . '="' . esc_attr($key) . '" content="' . esc_attr($targets[$key]) . '">';
+        return tk_seo_content_head_tag($key, $targets[$key]);
     };
     $attributes = '(?:"[^"]*"|\'[^\']*\'|[^\'">])*';
-    $pattern = '~<!--.*?-->|<(script|style|textarea|template|noscript|svg|math|title)(?=[\s>])' . $attributes . '>.*?</\1\s*>|<(?:html|head|meta)(?=[\s/>])' . $attributes . '>|</head\s*>~is';
+    $pattern = '~<!--.*?-->|<(script|style|textarea|template|noscript|svg|math|title)(?=[\s>])' . $attributes . '>.*?</\1\s*>|<(?:html|head|meta|link)(?=[\s/>])' . $attributes . '>|</head\s*>~is';
     preg_match_all($pattern, $html, $tokens, PREG_OFFSET_CAPTURE);
     $in_html = false; $in_head = false; $closed = false; $seen = array(); $edits = array();
     foreach ($tokens[0] as $token) {
@@ -76,19 +89,29 @@ function tk_seo_content_replace_html(string $html, array $values, bool $add_soci
             $closed = true; break;
         }
         if (!$in_head) { continue; }
-        $key = '';
+        $key = ''; $attrs = array();
         if (preg_match('/^<title(?=[\s>])/i', $tag)) { $key = 'title'; }
-        elseif (preg_match('~^<meta(?=[\s/>])~i', $tag)) {
+        elseif (preg_match('~^<(meta|link)(?=[\s/>])~i', $tag, $element)) {
             preg_match_all('/\s+([a-z_:][a-z0-9_:.-]*)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>]+))/i', $tag, $matches, PREG_SET_ORDER);
-            $attrs = array();
             foreach ($matches as $match) {
                 $name = strtolower($match[1]);
                 if (!isset($attrs[$name])) { $attrs[$name] = html_entity_decode($match[2] !== '' ? $match[2] : (($match[3] ?? '') !== '' ? $match[3] : ($match[4] ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8'); }
             }
-            $property = strtolower(trim($attrs['property'] ?? ''));
-            $key = $property !== '' ? $property : strtolower(trim($attrs['name'] ?? ''));
+            if (strtolower($element[1]) === 'link') {
+                if (in_array('image_src', preg_split('/\s+/', strtolower(trim($attrs['rel'] ?? ''))), true)) { $key = 'image_src'; }
+            } else {
+                $property = strtolower(trim($attrs['property'] ?? ''));
+                $key = $property !== '' ? $property : strtolower(trim($attrs['name'] ?? ''));
+                if ($key === '' && trim($attrs['itemprop'] ?? '') === 'image') { $key = 'schema:image'; }
+            }
         }
         if (!isset($targets[$key])) { continue; }
+        if ($fill_missing) {
+            $current = $key === 'title' ? wp_strip_all_tags($tag) : ($attrs[$key === 'image_src' ? 'href' : 'content'] ?? '');
+            if (trim((string) $current) !== '') { $seen[$key] = true; }
+            else { $edits[] = array($token[1], strlen($tag), ''); }
+            continue;
+        }
         $edits[] = array($token[1], strlen($tag), isset($seen[$key]) ? '' : $tag_for($key));
         $seen[$key] = true;
     }

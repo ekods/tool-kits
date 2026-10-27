@@ -213,8 +213,12 @@ function tk_seo_render_head_tags() {
             echo '<meta property="og:url" content="' . esc_url($url) . '">' . "\n";
         }
         echo '<meta property="og:site_name" content="' . esc_attr(get_bloginfo('name')) . '">' . "\n";
-        if ($image !== '') {
-            echo '<meta property="og:image" content="' . esc_url($image) . '">' . "\n";
+        echo '<meta name="twitter:title" content="' . esc_attr($title) . '">' . "\n";
+        if ($description !== '') {
+            echo '<meta name="twitter:description" content="' . esc_attr($description) . '">' . "\n";
+        }
+        foreach (tk_seo_image_metadata_values($image) as $key => $value) {
+            echo tk_seo_content_head_tag($key, $value) . "\n";
         }
     }
 
@@ -2503,7 +2507,7 @@ function tk_render_seo_opt_panel() {
                         <?php 
                         tk_render_switch('seo_meta_desc_enabled', 'Auto Meta Description', 'Generate meta tags from content excerpts.', $meta_desc);
                         tk_render_switch('seo_canonical_enabled', 'Canonical Tags', 'Prevent duplicate content issues.', $canonical);
-                        tk_render_switch('seo_og_enabled', 'Open Graph (Social)', 'Enable rich previews for Facebook/Twitter.', $og);
+                        tk_render_switch('seo_og_enabled', 'Open Graph & Social Images', 'Output Open Graph, Twitter Cards, Image Source and Schema.org image metadata using the SEO social image.', $og);
                         ?>
                         <p class="description" style="margin:0;">JSON-LD Schema settings have moved to <a href="<?php echo esc_url(tk_admin_url('tool-kits-geo') . '#overview'); ?>">GEO Output</a>.</p>
                     </div>

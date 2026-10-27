@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.53
+Stable tag: 2.7.54
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,7 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.54 completes SEO image output for Twitter Cards, Image Source (image_src) and Schema.org image metadata. These use the same selected image as Open Graph. Global metadata fallbacks fill missing or empty tags while preserving nonempty theme tags; page-specific image overrides replace stale head image tags. Enable social output under SEO Settings and configure a default image under Global SEO Content or a page-specific SEO Social Image, then clear external page/CDN caches.
 - Version 2.7.53 adds conditional Contact Form 7 asset loading under Tool Kits > Assets. Start with manager-only Preview, add always-load pages for popup/widget/template forms, test submissions and captcha, then enable Live. Default loading is unchanged until configured. Purge external page/CDN caches after changing Live settings or resetting.
 - Version 2.7.45 labels SEO Social Image beside the existing upload/media-library controls and recommends 1200 x 630 px (approximately 1.91:1), JPG/PNG and an ideal file size below 1 MB. These are recommendations, not new upload restrictions.
 - Version 2.7.44 adds the Tagline variable label and custom Open Graph image uploads to the inline SEO Content editor. Unset images continue to use the Featured Image (thumbnail), with the site's social image as a fallback. The signed license API and matching key introduced in 2.7.31 remain required; see LICENSE_SECURITY.md.
@@ -72,6 +73,14 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.54 =
+- Output Twitter Cards (summary_large_image and twitter:image), Image Source (link rel=image_src), and Schema.org image metadata (meta itemprop=image) alongside the Open Graph image.
+- Share the selected per-page SEO image, Featured Image, global default or site logo across image formats. Native Twitter output includes the page title and description.
+- Complete missing/empty image tags in Global SEO Content fallback mode, preserving nonempty theme metadata. Explicit page overrides replace stale image tags and remove duplicates without changing page content or JSON-LD.
+- Clarify the social-output setting and default-image help text. Respect the existing social-output switch and public-output guards.
+
+Validation: 59/59 default regression cases pass on PHP 7.4 and PHP 8.4, including 63 image metadata checks. The separate saved-content/public-output regression passes 55 checks on both runtimes.
+
 = 2.7.53 =
 Conditional Contact Form 7 asset loading and a consistent, responsive Tool Kits admin interface.
 

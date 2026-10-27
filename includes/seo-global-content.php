@@ -118,6 +118,7 @@ function tk_seo_global_render_panel(): void {
                         <input id="tk-global-<?php echo esc_attr($field); ?>" class="large-text" type="<?php echo !empty($definition['url']) ? 'url' : 'text'; ?>" value="<?php echo esc_attr($value); ?>" placeholder="<?php echo esc_attr($item['value']); ?>"<?php echo $attributes; ?>>
                     <?php endif; ?>
                     <p class="description">Source: <?php echo esc_html($item['source']); ?><?php if ($item['inherited']): ?>. Edit this value at its source.<?php elseif ($item['local'] === '' && $item['value'] !== ''): ?>. Leave blank to keep this default.<?php endif; ?></p>
+                    <?php if ($field === 'image'): ?><p class="description">Used for Open Graph, Twitter Cards, Image Source and Schema.org image metadata when social output is enabled. Page-specific social images and Featured Images take priority.</p><?php endif; ?>
                     <?php if ($field === 'title' && $item['inherited'] && $item['source'] === 'WordPress Site Title'): ?><p class="description">The active theme formats the homepage title using this site name.</p><?php endif; ?>
                 </div>
             <?php endforeach; ?>
@@ -174,17 +175,18 @@ function tk_seo_global_fill_html(string $html, array $values): string {
     $head = substr($html, $start, $length);
     $metadata = tk_geo_crawler_metadata($head);
     $tags = array(); $edits = array();
-    foreach (array('title', 'description', 'author', 'publisher', 'keywords', 'image') as $field) {
+    foreach (array('title', 'description', 'author', 'publisher', 'keywords') as $field) {
         $value = trim((string) ($values[$field] ?? ''));
         if ($value === '') { continue; }
         if (!empty($metadata[$field])) { continue; }
         if ($field === 'title') { $tags[] = '<title>' . esc_html($value) . '</title>'; }
-        elseif ($field === 'image') { $tags[] = '<meta property="og:image" content="' . esc_url($value) . '">'; }
         else { $tags[] = '<meta name="' . esc_attr($field) . '" content="' . esc_attr($value) . '">'; }
         foreach (($metadata['empty'][$field] ?? array()) as $empty) { $edits[] = $empty; }
     }
-    if (!$tags) { return $html; }
-    usort($edits, function($a, $b) { return $b[0] <=> $a[0]; });
-    foreach ($edits as $edit) { $head = substr_replace($head, '', $edit[0], $edit[1]); }
-    return substr_replace($html, $head . "\n" . implode("\n", $tags) . "\n", $start, $length);
+    if ($tags) {
+        usort($edits, function($a, $b) { return $b[0] <=> $a[0]; });
+        foreach ($edits as $edit) { $head = substr_replace($head, '', $edit[0], $edit[1]); }
+        $html = substr_replace($html, $head . "\n" . implode("\n", $tags) . "\n", $start, $length);
+    }
+    return tk_seo_content_replace_html($html, array('image' => $values['image'] ?? ''), true, true);
 }

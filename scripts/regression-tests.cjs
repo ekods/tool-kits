@@ -53,6 +53,11 @@ const cases = [
     "source": ["<?php", "require __DIR__ . '/global-seo-content-regression.php';"]
   },
   {
+    "name": "seo-image-metadata",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/seo-image-metadata-regression.php';"]
+  },
+  {
     "name": "admin-asset-cache-busting",
     "runtime": "php",
     "source": ["<?php", "require __DIR__ . '/admin-asset-version-regression.php';"]
