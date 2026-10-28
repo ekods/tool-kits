@@ -1,0 +1,10 @@
+.fixed .column-tk_seo_score { width: 84px; }
+.tk-seo-score { display: inline-block; min-width: 28px; margin: 0 4px 2px 0; padding: 2px 6px; border-radius: 10px; font-size: 12px; font-weight: 600; line-height: 18px; text-align: center; background: #f0f0f1; color: #50575e; }
+.tk-seo-score-good { background: #e5f4e9; color: #00632a; }
+.tk-seo-score-fair { background: #fcf3dc; color: #7a5a00; }
+.tk-seo-score-poor { background: #fbe2e2; color: #a00; }
+.tk-seo-score-public { border: 1px dashed currentColor; background: transparent; }
+.tk-seo-geo-switches { display: flex; flex-wrap: wrap; gap: 16px; margin: 4px 0 12px; }
+.tk-seo-geo-switches label { display: inline-flex; align-items: center; gap: 6px; }
+.tk-seo-geo-score { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 6px; background: #f9fafb; }
+.tk-seo-geo-score .tk-seo-score { margin: 0; }

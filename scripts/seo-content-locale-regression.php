@@ -85,11 +85,14 @@ verify_locale(count($boxes) === 1 && $boxes[0][0] === 'tk-seo-content', 'Only SE
 tk_seo_content_panel_enqueue(); tk_seo_enqueue_faq_editor();
 verify_locale(in_array('tk-seo-content-panel', $assets, true) && !in_array('tk-post-faq', $assets, true), 'Skip hidden GEO assets');
 verify_locale(in_array('media-editor', $assets, true), 'Load the WordPress media picker for Open Graph uploads');
-tk_seo_save_panel_visibility(array('tk_seo_panels_present' => '1', 'seo_geo_panel_enabled' => '1'));
+tk_seo_save_panel_visibility(array('tk_seo_panels_present' => '1', 'seo_geo_panel_enabled' => '1', 'seo_faq_panel_enabled' => '1'));
 $boxes = array(); $assets = array(); tk_seo_add_geo_meta_boxes();
-verify_locale(count($boxes) === 1 && $boxes[0][0] === 'tk-seo-geo-sidebar', 'Only GEO must be registered when Content panel is hidden');
+verify_locale(count($boxes) === 2 && $boxes[0][0] === 'tk-seo-geo-sidebar' && $boxes[1][0] === 'tk-seo-faq', 'Only GEO and FAQ must be registered when Content panel is hidden');
 tk_seo_content_panel_enqueue(); tk_seo_enqueue_faq_editor();
 verify_locale(!in_array('tk-seo-content-panel', $assets, true) && in_array('tk-post-faq', $assets, true), 'Skip hidden Content assets');
+tk_seo_save_panel_visibility(array('tk_seo_panels_present' => '1', 'seo_geo_panel_enabled' => '1'));
+$boxes = array(); $assets = array(); tk_seo_add_geo_meta_boxes(); tk_seo_enqueue_faq_editor();
+verify_locale(count($boxes) === 1 && $boxes[0][0] === 'tk-seo-geo-sidebar' && !in_array('tk-post-faq', $assets, true), 'FAQ GEO panel and assets hide independently of SEO / GEO');
 verify_locale(tk_seo_post_feature_enabled('seo', 42) && tk_seo_post_feature_enabled('geo', 42), 'Panel visibility must not disable public per-page features');
 $before = $options; tk_seo_save_panel_visibility(array());
 verify_locale($before === $options, 'Legacy settings submissions without the presence marker preserve visibility');

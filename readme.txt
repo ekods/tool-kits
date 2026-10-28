@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.55
+Stable tag: 2.7.56
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,7 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.56 moves the FAQ GEO popup into its own Tool Kits FAQ GEO editor panel and adds an optional SEO score column to content lists (wp-admin/edit.php). Both are enabled by default and can be hidden under SEO Settings > Editor Panels. Saved FAQs, metadata and public SEO/GEO output are unchanged.
 - Version 2.7.55 changes the Global SEO Content checkbox to Enable global metadata override. When checked, Tool Kits replaces existing theme/plugin head metadata with the displayed values, including matching Open Graph/Twitter descriptions and social images, and removes duplicate tags. Saved page SEO titles, descriptions and social images retain priority. Uncheck to restore theme/plugin metadata; save changes and clear external page/CDN caches after updating.
 - Version 2.7.54 completes SEO image output for Twitter Cards, Image Source (image_src) and Schema.org image metadata. These use the same selected image as Open Graph. Global metadata fallbacks fill missing or empty tags while preserving nonempty theme tags; page-specific image overrides replace stale head image tags. Enable social output under SEO Settings and configure a default image under Global SEO Content or a page-specific SEO Social Image, then clear external page/CDN caches.
 - Version 2.7.53 adds conditional Contact Form 7 asset loading under Tool Kits > Assets. Start with manager-only Preview, add always-load pages for popup/widget/template forms, test submissions and captcha, then enable Live. Default loading is unchanged until configured. Purge external page/CDN caches after changing Live settings or resetting.
@@ -74,6 +75,15 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.56 =
+- Move the FAQ GEO popup out of the Tool Kits SEO / GEO sidebar into a separate Tool Kits FAQ GEO panel with its own nonce and save handler. Untouched FAQs are still never rewritten; a note explains when GEO is off for the content.
+- Streamline the Tool Kits SEO / GEO panel: inline SEO and GEO switches, a colour-coded content score, and the existing public page audit.
+- Add an SEO score column before Date in content lists for the selected SEO / GEO content types, with a dashed badge for the latest public page audit and an Off state when SEO is disabled for the content.
+- Cache content scores per post, refresh them on save or content/keyword changes, limit uncached calculations to 25 per list load, and exclude the cache from page-cache purges.
+- Add SEO Settings checkboxes for Show Tool Kits FAQ GEO and Show SEO score column in content lists. Both are enabled by default.
+
+Validation: 59/59 default regression cases pass, plus SEO panel, locale/panel-visibility, auto-signal, content-modal, output, global SEO, title, indexability and schema-modal regressions. Browser E2E on WordPress 7.0 (classic editor, PHP 8.2) covers both panels, the FAQ popup save/reload, list column placement and styling, the column toggle and the settings checkboxes.
+
 = 2.7.55 =
 - Make the checked Global SEO Content option replace existing metadata instead of only filling empty tags. Rename it Enable global metadata override and update help and SEO-plugin notices to match.
 - Apply configured descriptions, authors, keywords and social images ahead of automatic excerpts, post authors and Featured Images. Keep saved page SEO title/description/image overrides first and limit the global title to the homepage; preserve the separate Meta Title Override format when enabled.

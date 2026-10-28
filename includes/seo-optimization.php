@@ -10,6 +10,8 @@ require_once __DIR__ . '/seo-content-output.php';
 require_once __DIR__ . '/seo-global-content.php';
 require_once __DIR__ . '/seo-title.php';
 require_once __DIR__ . '/seo-indexability.php';
+require_once __DIR__ . '/seo-post-faq.php';
+require_once __DIR__ . '/seo-list-score.php';
 
 function tk_seo_opt_init() {
     tk_seo_title_init();
@@ -42,11 +44,13 @@ function tk_seo_opt_init() {
     add_action('add_meta_boxes', 'tk_seo_add_geo_meta_boxes');
     add_action('save_post', 'tk_seo_save_geo_meta_box', 10, 2);
     add_action('save_post', 'tk_seo_save_content_meta_box', 10, 2);
+    add_action('save_post', 'tk_seo_save_faq_meta_box', 10, 2);
     add_filter('wp_insert_post_data', 'tk_seo_content_slug_filter', 10, 2);
     add_filter('pre_get_document_title', 'tk_seo_content_title_filter', PHP_INT_MAX);
     add_filter('wp_title', 'tk_seo_content_title_filter', PHP_INT_MAX);
     add_action('admin_enqueue_scripts', 'tk_seo_enqueue_faq_editor');
     add_action('admin_post_tk_seo_post_rendered_audit', 'tk_seo_post_rendered_audit');
+    tk_seo_list_score_init();
 
     add_action('wp_head', 'tk_seo_render_head_tags', 2);
     add_filter('wp_robots', 'tk_seo_filter_robots');
@@ -71,16 +75,17 @@ function tk_seo_selected_post_types(): array {
 
 /** Editor visibility is independent of public SEO/GEO output and saved metadata. */
 function tk_seo_editor_panel_visible(string $panel): bool {
-    return in_array($panel, array('content', 'geo'), true)
+    return in_array($panel, array('content', 'geo', 'faq'), true)
         && (int) tk_get_option('seo_' . $panel . '_panel_enabled', 1) === 1;
 }
 
 function tk_seo_save_panel_visibility(array $input): void {
     if (!isset($input['tk_seo_panels_present'])) { return; }
-    foreach (array('content', 'geo') as $panel) {
+    foreach (array('content', 'geo', 'faq') as $panel) {
         $key = 'seo_' . $panel . '_panel_enabled';
         tk_update_option($key, isset($input[$key]) && $input[$key] === '1' ? 1 : 0);
     }
+    tk_update_option('seo_list_score_enabled', isset($input['seo_list_score_enabled']) && $input['seo_list_score_enabled'] === '1' ? 1 : 0);
 }
 
 function tk_seo_post_feature_enabled(string $feature, int $post_id = 0): bool {
@@ -312,16 +317,6 @@ function tk_seo_current_url() {
     return home_url($uri);
 }
 
-function tk_seo_enqueue_faq_editor(): void {
-    $screen = get_current_screen();
-    if (!tk_seo_editor_panel_visible('geo') || !$screen || $screen->base !== 'post' || !tk_is_admin_user()
-        || !in_array($screen->post_type, tk_seo_selected_post_types(), true)) {
-        return;
-    }
-    wp_enqueue_style('tk-post-faq', TK_URL . 'assets/post-faq.css', array(), tk_asset_version('assets/post-faq.css'));
-    wp_enqueue_script('tk-post-faq', TK_URL . 'assets/post-faq.js', array(), tk_asset_version('assets/post-faq.js'), true);
-}
-
 function tk_seo_add_geo_meta_boxes(): void {
     if (!tk_is_admin_user()) {
         return;
@@ -349,6 +344,16 @@ function tk_seo_add_geo_meta_boxes(): void {
             'low'
         );
         }
+        if (tk_seo_editor_panel_visible('faq')) {
+        add_meta_box(
+            'tk-seo-faq',
+            'Tool Kits FAQ GEO',
+            'tk_seo_render_faq_meta_box',
+            $post_type,
+            'side',
+            'default'
+        );
+        }
     }
 }
 
@@ -357,33 +362,20 @@ function tk_seo_render_geo_meta_box($post): void {
 
     wp_nonce_field('tk_seo_geo_meta_box', 'tk_seo_geo_meta_nonce');
     ?>
-    <?php tk_seo_render_public_audit_panel($post); ?>
-    <?php foreach (array('seo' => 'SEO', 'geo' => 'GEO') as $feature => $label) : ?>
-        <p>
-            <input type="hidden" name="tk_<?php echo esc_attr($feature); ?>_enabled" value="0">
-            <label>
-                <input type="checkbox" role="switch" name="tk_<?php echo esc_attr($feature); ?>_enabled" value="1" <?php checked(tk_seo_post_feature_enabled($feature, $post_id)); ?>>
-                <strong><?php echo esc_html($label); ?></strong>
-            </label>
-        </p>
-    <?php endforeach; ?>
-    <?php $faq_items = tk_geo_normalize_faq_items(get_post_meta($post_id, '_tk_geo_faq_items', true)); ?>
-    <?php $faq_default_language = function_exists('tk_geo_normalize_language_tag') ? tk_geo_normalize_language_tag((string) get_bloginfo('language'), 'id') : 'id'; ?>
-    <?php $faq_language_order = function_exists('tk_geo_bilingual_language_order') ? tk_geo_bilingual_language_order() : array(); ?>
-    <div class="tk-post-faq" data-default-language="<?php echo esc_attr($faq_default_language ?: 'id'); ?>" data-language-order="<?php echo esc_attr(wp_json_encode($faq_language_order)); ?>">
-        <input type="hidden" name="tk_geo_post_faq" value="<?php echo esc_attr(wp_json_encode($faq_items)); ?>" disabled>
-        <p><button type="button" class="button tk-faq-open"><span class="dashicons dashicons-editor-help" aria-hidden="true"></span> FAQ GEO <span class="tk-faq-count"><?php echo esc_html((string) count($faq_items)); ?></span></button></p>
-        <dialog class="tk-faq-dialog" aria-labelledby="tk-faq-title">
-            <div class="tk-faq-header"><h2 id="tk-faq-title">FAQ GEO</h2><button type="button" class="button tk-faq-cancel" aria-label="Close" title="Close"><span class="dashicons dashicons-no-alt" aria-hidden="true"></span></button></div>
-            <div class="tk-faq-body"><div class="tk-faq-rows"></div>
-            <p class="tk-faq-error" role="alert" hidden></p>
-            </div>
-            <div class="tk-faq-footer">
-                <button type="button" class="button tk-faq-add"><span class="dashicons dashicons-plus-alt2" aria-hidden="true"></span> Add FAQ</button>
-                <button type="button" class="button tk-faq-cancel">Cancel</button>
-                <button type="button" class="button button-primary tk-faq-apply">Apply</button>
-            </div>
-        </dialog>
+    <div class="tk-seo-geo-box">
+        <div class="tk-seo-geo-switches" role="group" aria-label="SEO and GEO output for this content">
+            <?php foreach (array('seo' => 'SEO', 'geo' => 'GEO') as $feature => $label) : ?>
+                <input type="hidden" name="tk_<?php echo esc_attr($feature); ?>_enabled" value="0">
+                <label>
+                    <input type="checkbox" role="switch" name="tk_<?php echo esc_attr($feature); ?>_enabled" value="1" <?php checked(tk_seo_post_feature_enabled($feature, $post_id)); ?>>
+                    <strong><?php echo esc_html($label); ?></strong>
+                </label>
+            <?php endforeach; ?>
+        </div>
+        <?php if (is_object($post) && $post->post_status !== 'auto-draft') : ?>
+            <div class="tk-seo-geo-score"><span>Content score</span><?php tk_seo_list_score_badges($post, false); ?></div>
+        <?php endif; ?>
+        <?php tk_seo_render_public_audit_panel($post); ?>
     </div>
     <?php
 }
@@ -409,13 +401,6 @@ function tk_seo_save_geo_meta_box($post_id, $post): void {
             if (in_array($value, array('0', '1'), true)) {
                 update_post_meta((int) $post_id, '_tk_' . $feature . '_enabled', $value);
             }
-        }
-    }
-
-    if (isset($_POST['tk_geo_post_faq']) && is_string($_POST['tk_geo_post_faq'])) {
-        $faq = json_decode(wp_unslash($_POST['tk_geo_post_faq']), true);
-        if (is_array($faq)) {
-            update_post_meta((int) $post_id, '_tk_geo_faq_items', tk_geo_normalize_faq_items($faq));
         }
     }
 
@@ -2487,7 +2472,9 @@ function tk_render_seo_opt_panel() {
                 <input type="hidden" name="tk_seo_panels_present" value="1">
                 <p><label><input type="checkbox" name="seo_content_panel_enabled" value="1" <?php checked(tk_seo_editor_panel_visible('content')); ?>> Show Tool Kits SEO Content</label></p>
                 <p><label><input type="checkbox" name="seo_geo_panel_enabled" value="1" <?php checked(tk_seo_editor_panel_visible('geo')); ?>> Show Tool Kits SEO / GEO</label></p>
-                <p class="description">Choose which panels appear in the content editor. Hiding a panel preserves saved metadata and public SEO/GEO output.</p>
+                <p><label><input type="checkbox" name="seo_faq_panel_enabled" value="1" <?php checked(tk_seo_editor_panel_visible('faq')); ?>> Show Tool Kits FAQ GEO</label></p>
+                <p><label><input type="checkbox" name="seo_list_score_enabled" value="1" <?php checked(tk_seo_list_score_enabled()); ?>> Show SEO score column in content lists</label></p>
+                <p class="description">Choose which panels appear in the content editor and whether content lists (wp-admin/edit.php) show the SEO score indicator. Hiding a panel or column preserves saved metadata and public SEO/GEO output.</p>
             </fieldset>
 
             <fieldset style="margin-bottom:24px;">

@@ -129,5 +129,10 @@ $html = ob_get_clean();
 foreach (array('tk_schema_type', 'tk_geo_reference_urls', 'tk_geo_related_posts', 'Schema Type', 'References / Sources', 'Related Content') as $removed) {
     verify_auto(strpos($html, $removed) === false, 'Removed field still rendered: ' . $removed);
 }
-verify_auto(strpos($html, 'tk_seo_focus_keyword') === false && strpos($html, 'tk-seo-content-open') === false && strpos($html, 'FAQ GEO') !== false, 'Sidebar must keep FAQ and separate content editing');
+verify_auto(strpos($html, 'tk_seo_focus_keyword') === false && strpos($html, 'tk-seo-content-open') === false && strpos($html, 'tk-faq-dialog') === false, 'Sidebar must leave FAQ and content editing to separate panels');
+verify_auto($boxes[2][0] === 'tk-seo-faq' && $boxes[2][4] === 'side' && $boxes[2][1] === 'Tool Kits FAQ GEO', 'FAQ GEO must have its own sidebar panel');
+ob_start();
+tk_seo_render_faq_meta_box($posts[1]);
+$html = ob_get_clean();
+verify_auto(strpos($html, 'tk-faq-dialog') !== false && strpos($html, 'name="tk_geo_post_faq"') !== false, 'FAQ panel must render its popup');
 echo 'PASS: ' . $checks . " automatic SEO/GEO signal checks\n";
