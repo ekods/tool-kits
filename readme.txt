@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.63
+Stable tag: 2.7.64
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,13 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.64 =
+- GEO Setup > Custom JSON-LD: new schema check in the style of validator.schema.org. It checks the setting draft as you type, or every JSON-LD block of a live URL, against a bundled schema.org vocabulary snapshot. Results are grouped by type with error, warning and item counts and per-property messages. Tool Kits tips (recommended properties, repeated @id, references without a definition) are counted separately so the counts stay comparable with validator.schema.org.
+- GEO ItemList output no longer adds inLanguage to ItemList and ListItem. schema.org does not define that property for these types, and validator.schema.org reported one warning per item.
+- SMTP: an expired or revoked Google/Microsoft OAuth token now shows "Reconnect required". Failed sends explain the cause and give provider-specific advice instead of a bare "Could not authenticate". Disconnecting Google also clears its stale username, and a blank password field keeps the saved password ("Remove saved password" clears it).
+- Email Deliverability: DKIM is detected from the selectors your mail host actually uses (Hostinger, Google, Microsoft, Zoho, SendGrid, Brevo), and selectors without a public key no longer count as found. The DNS panel layout is tidied.
+- SMTP test log is now a searchable, sortable and paginated table that scrolls horizontally, with compact technical details. Tool Kits admin pages are now left-aligned like core WordPress screens.
+
 = 2.7.63 =
 - I'm not a robot now requires a browser proof-of-work (SHA-256) before the server issues a proof. Normal visitors still only tick the box; the default difficulty finishes in well under a second.
 - Adaptive difficulty: automation user agents, missing browser headers, scripted (untrusted) clicks, navigator.webdriver and repeated failures raise the work up to 64x, without ever showing an image. New settings: Proof-of-Work Difficulty and Adaptive Difficulty.

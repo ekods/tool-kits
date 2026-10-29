@@ -9,6 +9,7 @@ require_once __DIR__ . '/geo-ai-catalog.php';
 function tk_geo_init() {
     add_action('wp_ajax_tk_geo_schema_editor', 'tk_geo_schema_editor_ajax');
     add_action('wp_ajax_tk_geo_schema_editor_live', 'tk_geo_schema_editor_live_ajax');
+    add_action('wp_ajax_tk_geo_schema_check_url', 'tk_geo_schema_check_url_ajax');
     add_action('admin_enqueue_scripts', 'tk_geo_schema_editor_assets');
     add_action('wp_ajax_tk_geo_batch_start', 'tk_geo_batch_start');
     add_action('wp_ajax_tk_geo_batch_step', 'tk_geo_batch_step');
@@ -577,7 +578,6 @@ function tk_geo_build_itemlist_schema(): array {
     }
 
     $items = array();
-    $languages = array();
     $position = 1;
     foreach ($posts as $post) {
         if (!is_object($post)) {
@@ -587,19 +587,13 @@ function tk_geo_build_itemlist_schema(): array {
         if (!is_string($url) || $url === '') {
             continue;
         }
-        $language = tk_geo_post_language((int) $post->ID);
-        if ($language !== '') {
-            $languages[] = $language;
-        }
+        // ItemList and ListItem are Intangible; schema.org defines inLanguage only for CreativeWork, Event and a few others.
         $item = array(
             '@type' => 'ListItem',
             'position' => $position,
             'url' => $url,
             'name' => get_the_title($post) ?: ('#' . (int) $post->ID),
         );
-        if ($language !== '') {
-            $item['inLanguage'] = $language;
-        }
         $items[] = $item;
         $position++;
     }
@@ -621,10 +615,6 @@ function tk_geo_build_itemlist_schema(): array {
     );
     if ($description !== '') {
         $schema['description'] = $description;
-    }
-    $languages = array_values(array_unique(array_filter($languages)));
-    if (!empty($languages)) {
-        $schema['inLanguage'] = count($languages) === 1 ? $languages[0] : $languages;
     }
     return $schema;
 }
@@ -2299,10 +2289,28 @@ function tk_render_geo_panel(): void {
         <div class="tk-card tk-tab-panel" data-panel-id="custom-jsonld">
             <h3>Custom JSON-LD</h3>
             <p class="description">Paste a complete JSON-LD object or graph. It must be valid JSON.</p>
-            <textarea name="geo_custom_jsonld" rows="12" style="width:100%; max-width:100%; font-family:monospace;" placeholder='{"@context":"https://schema.org","@type":"Organization","name":"Example"}'><?php echo esc_textarea($custom_json); ?></textarea>
-            <p>
-                <button type="submit" class="button" name="geo_custom_jsonld_generate" value="1">Generate JSON-LD Draft</button>
-            </p>
+            <div class="tk-schema-edit-layout tk-geo-schema-check" data-nonce="<?php echo esc_attr(wp_create_nonce('tk_geo_schema_editor')); ?>" data-vocabulary="<?php echo esc_url(TK_URL . 'assets/schema/schemaorg-vocabulary.json?ver=' . rawurlencode((string) tk_asset_version('assets/schema/schemaorg-vocabulary.json'))); ?>">
+                <div>
+                    <textarea name="geo_custom_jsonld" rows="12" style="width:100%; max-width:100%; font-family:monospace;" placeholder='{"@context":"https://schema.org","@type":"Organization","name":"Example"}'><?php echo esc_textarea($custom_json); ?></textarea>
+                    <p class="tk-inline">
+                        <button type="button" class="button tk-geo-schema-validate">Validate Schema Nodes</button>
+                        <button type="submit" class="button" name="geo_custom_jsonld_generate" value="1">Generate JSON-LD Draft</button>
+                    </p>
+                    <div class="tk-geo-schema-url">
+                        <label for="tk-geo-schema-url">Test a live URL</label>
+                        <div class="tk-inline">
+                            <input type="url" id="tk-geo-schema-url" class="regular-text" value="<?php echo esc_attr(home_url('/')); ?>" placeholder="https://example.com/page/">
+                            <button type="button" class="button tk-geo-schema-fetch">Run Test</button>
+                        </div>
+                        <p class="description">Checks every JSON-LD block on the page against the schema.org vocabulary, like validator.schema.org. Microdata and RDFa are not checked.</p>
+                    </div>
+                </div>
+                <div>
+                    <div class="tk-geo-schema-source"></div>
+                    <p class="tk-geo-schema-summary" role="status" aria-live="polite"></p>
+                    <div class="tk-sv-report"></div>
+                </div>
+            </div>
         </div>
 
         <div class="tk-card tk-tab-panel" data-panel-id="faqpage">

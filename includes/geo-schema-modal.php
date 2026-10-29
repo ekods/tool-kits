@@ -2,9 +2,10 @@
 if (!defined('ABSPATH')) { exit; }
 
 function tk_geo_schema_editor_assets(): void {
-    if (!tk_toolkits_can_manage() || ($_GET['page'] ?? '') !== 'tool-kits-geo-audit') return;
+    if (!tk_toolkits_can_manage() || !in_array($_GET['page'] ?? '', array('tool-kits-geo', 'tool-kits-geo-audit'), true)) return;
     wp_enqueue_style('tk-editor-modals', TK_URL . 'assets/editor-modals.css', array(), tk_asset_version('assets/editor-modals.css'));
     wp_enqueue_script('tk-schema-editor-tools', TK_URL . 'assets/schema-editor-tools.js', array(), tk_asset_version('assets/schema-editor-tools.js'), true);
+    wp_enqueue_script('tk-geo-custom-jsonld', TK_URL . 'assets/geo-custom-jsonld.js', array('tk-schema-editor-tools'), tk_asset_version('assets/geo-custom-jsonld.js'), true);
     wp_enqueue_script('tk-geo-schema-editor-v2', TK_URL . 'assets/geo-schema-editor.js', array('tk-schema-editor-tools'), tk_asset_version('assets/geo-schema-editor.js'), true);
 }
 
@@ -147,6 +148,29 @@ function tk_geo_schema_live_documents(string $url): array {
         if (is_array($decoded)) $combined[] = $decoded;
     }
     return array('documents' => $documents, 'combined' => $combined ? tk_geo_schema_validate_json(wp_json_encode($combined)) : array('messages' => array('No JSON-LD found.')));
+}
+
+// GEO Setup → Custom JSON-LD → Fetch URL: returns the raw JSON-LD blocks of any public page for the browser validator.
+function tk_geo_schema_check_url_ajax(): void {
+    if (!tk_toolkits_can_manage()) wp_send_json_error(array('message' => 'Forbidden'), 403);
+    check_ajax_referer('tk_geo_schema_editor', 'nonce');
+    $url = isset($_POST['url']) && is_string($_POST['url']) ? esc_url_raw(trim(wp_unslash($_POST['url']))) : '';
+    $parts = wp_parse_url($url);
+    if (!is_array($parts) || !in_array($parts['scheme'] ?? '', array('http', 'https'), true) || empty($parts['host']) || isset($parts['user']) || isset($parts['pass'])) {
+        wp_send_json_error(array('message' => 'Enter a full http(s) URL.'), 400);
+    }
+    // wp_safe_remote_get() refuses private and loopback addresses unless the host is this site.
+    $response = wp_safe_remote_get($url, array('timeout' => 15, 'redirection' => 3, 'limit_response_size' => 3 * MB_IN_BYTES, 'headers' => array('Cache-Control' => 'no-cache')));
+    if (is_wp_error($response)) wp_send_json_error(array('message' => 'Could not fetch the URL: ' . $response->get_error_message()), 502);
+    $code = (int) wp_remote_retrieve_response_code($response);
+    if ($code !== 200 || stripos((string) wp_remote_retrieve_header($response, 'content-type'), 'html') === false) {
+        wp_send_json_error(array('message' => 'Expected an HTTP 200 HTML page, got HTTP ' . $code . '.'), 502);
+    }
+    $blocks = array();
+    if (preg_match_all('/<script\b[^>]*type=("|\')application\/ld\+json\1[^>]*>(.*?)<\/script>/is', (string) wp_remote_retrieve_body($response), $matches)) {
+        foreach ($matches[2] as $raw) $blocks[] = trim($raw);
+    }
+    wp_send_json_success(array('url' => $url, 'blocks' => $blocks));
 }
 
 function tk_geo_schema_editor_live_ajax(): void {

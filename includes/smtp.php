@@ -140,6 +140,44 @@ function tk_smtp_dns_txt_values(string $name): array {
     return array_values(array_unique($values));
 }
 
+/**
+ * DKIM selectors to try, best guess first: selectors of the mail host named in the SPF/MX records
+ * (e.g. Hostinger signs with hostingermail-a, not google), then common generic selectors.
+ */
+function tk_smtp_dkim_selector_candidates(string $dns_text): array {
+    $hosts = array(
+        'hostinger' => array('hostingermail-a', 'hostingermail-b', 'hostingermail-c'),
+        'google' => array('google'),
+        'outlook' => array('selector1', 'selector2'),
+        'zoho' => array('zmail', 'zoho'),
+        'sendgrid' => array('s1', 's2'),
+        'sendinblue' => array('mail'),
+        'brevo' => array('mail'),
+    );
+    $candidates = array();
+    foreach ($hosts as $needle => $selectors) {
+        if (stripos($dns_text, $needle) !== false) {
+            $candidates = array_merge($candidates, $selectors);
+        }
+    }
+    $generic = array('default', 'dkim', 'mail', 'k1', 'selector1', 'selector2', 'google', 'hostingermail-a');
+    return array_values(array_unique(array_merge($candidates, $generic)));
+}
+
+function tk_smtp_dkim_lookup(string $selector, string $domain): array {
+    $name = $selector . '._domainkey.' . $domain;
+    // An empty "p=" means the key was revoked, so only a published public key counts.
+    $txt = array_values(array_filter(tk_smtp_dns_txt_values($name), function($value) {
+        return (bool) preg_match('/(^|;)\s*p=[A-Za-z0-9+\/=\s]{20,}/', (string) $value);
+    }));
+    $cname = array();
+    if (function_exists('dns_get_record')) {
+        $cname = @dns_get_record($name, defined('DNS_CNAME') ? DNS_CNAME : 16);
+        $cname = is_array($cname) ? $cname : array();
+    }
+    return array('txt' => $txt, 'cname' => !empty($cname) ? (string) ($cname[0]['target'] ?? '') : '');
+}
+
 function tk_smtp_dns_scan(string $domain, string $selector = ''): array {
     $domain = strtolower(trim($domain, ". \t\n\r\0\x0B"));
     $selector = sanitize_key($selector);
@@ -148,17 +186,40 @@ function tk_smtp_dns_scan(string $domain, string $selector = ''): array {
     }
     $root_txt = tk_smtp_dns_txt_values($domain);
     $dmarc_txt = tk_smtp_dns_txt_values('_dmarc.' . $domain);
-    $dkim_txt = $selector !== '' ? tk_smtp_dns_txt_values($selector . '._domainkey.' . $domain) : array();
-    $dkim_cname = array();
-    if ($selector !== '' && function_exists('dns_get_record')) {
-        $dkim_cname = @dns_get_record($selector . '._domainkey.' . $domain, defined('DNS_CNAME') ? DNS_CNAME : 16);
-        $dkim_cname = is_array($dkim_cname) ? $dkim_cname : array();
-    }
     $spf = array_values(array_filter($root_txt, function($value) { return stripos((string) $value, 'v=spf1') === 0; }));
     $dmarc = array_values(array_filter($dmarc_txt, function($value) { return stripos((string) $value, 'v=DMARC1') === 0; }));
-    $dkim = array_values(array_filter($dkim_txt, function($value) { return stripos((string) $value, 'v=DKIM1') !== false || stripos((string) $value, 'p=') !== false; }));
     $mx = function_exists('checkdnsrr') ? @checkdnsrr($domain, 'MX') : false;
-    $dkim_ok = !empty($dkim) || !empty($dkim_cname);
+    $mx_hosts = array();
+    if ($mx && function_exists('dns_get_record')) {
+        $mx_records = @dns_get_record($domain, defined('DNS_MX') ? DNS_MX : 16384);
+        foreach (is_array($mx_records) ? $mx_records : array() as $record) {
+            $mx_hosts[] = (string) ($record['target'] ?? '');
+        }
+    }
+
+    // Try the requested selector first, then the mail host's own selectors, so a wrong guess is not reported as "no DKIM".
+    $candidates = tk_smtp_dkim_selector_candidates(implode(' ', array_merge($spf, $mx_hosts)));
+    $tried = $selector !== '' ? array_values(array_unique(array_merge(array($selector), $candidates))) : $candidates;
+    $found_selector = '';
+    $dkim = array('txt' => array(), 'cname' => '');
+    foreach ($tried as $candidate) {
+        $dkim = tk_smtp_dkim_lookup($candidate, $domain);
+        if (!empty($dkim['txt']) || $dkim['cname'] !== '') {
+            $found_selector = $candidate;
+            break;
+        }
+    }
+    $dkim_ok = $found_selector !== '';
+    if ($dkim_ok) {
+        // The public key itself is noise in the report; its prefix is enough to recognise it.
+        $dkim_detail = !empty($dkim['txt']) ? preg_replace('/(p=[A-Za-z0-9+\/]{24})[A-Za-z0-9+\/=\s]+/', '$1… (public key published)', (string) reset($dkim['txt'])) : 'Selector ' . $found_selector . ' delegates through CNAME to ' . rtrim($dkim['cname'], '.') . '.';
+        if ($selector !== '' && $found_selector !== $selector) {
+            $dkim_detail = 'Found under selector ' . $found_selector . ' (selector ' . $selector . ' has no key). ' . $dkim_detail;
+        }
+    } else {
+        $dkim_detail = 'No DKIM key found for selectors: ' . implode(', ', $tried) . '. Copy the DKIM record from your email host into DNS, or enter its selector.';
+    }
+    $selector = $found_selector !== '' ? $found_selector : $selector;
     $score = ($mx ? 25 : 0) + (!empty($spf) ? 25 : 0) + (!empty($dmarc) ? 25 : 0) + ($dkim_ok ? 25 : 0);
     return array(
         'scanned_at' => time(),
@@ -169,7 +230,7 @@ function tk_smtp_dns_scan(string $domain, string $selector = ''): array {
             array('label' => 'MX', 'ok' => (bool) $mx, 'detail' => $mx ? 'Mail exchange record found.' : 'No MX record found.'),
             array('label' => 'SPF', 'ok' => !empty($spf), 'detail' => !empty($spf) ? reset($spf) : 'No v=spf1 TXT record found.'),
             array('label' => 'DMARC', 'ok' => !empty($dmarc), 'detail' => !empty($dmarc) ? reset($dmarc) : 'No v=DMARC1 TXT record found.'),
-            array('label' => 'DKIM', 'ok' => $dkim_ok, 'detail' => $selector === '' ? 'Enter the selector supplied by your email provider.' : (!empty($dkim) ? reset($dkim) : (!empty($dkim_cname) ? 'DKIM selector delegates through CNAME.' : 'No DKIM key found for selector ' . $selector . '.'))),
+            array('label' => 'DKIM', 'ok' => $dkim_ok, 'detail' => $dkim_detail),
         ),
     );
 }
@@ -195,21 +256,74 @@ function tk_smtp_render_dns_panel(array $report): void {
     <div class="tk-card tk-tab-panel" data-panel-id="deliverability">
         <h2>Email Deliverability</h2>
         <p class="description">Run an on-demand DNS review for the sender domain. No DNS checks run during mail delivery or frontend requests.</p>
-        <form class="tk-responsive-grid" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:grid;grid-template-columns:minmax(180px,1fr) minmax(160px,0.6fr) auto;gap:12px;align-items:end;max-width:820px;margin:18px 0;">
+        <form class="tk-dns-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
             <?php tk_nonce_field('tk_smtp_dns_scan'); ?><input type="hidden" name="action" value="tk_smtp_dns_scan">
-            <label><strong>Sender domain</strong><input class="regular-text" style="display:block;width:100%;margin-top:6px;" name="smtp_dns_domain" value="<?php echo esc_attr($domain); ?>" required></label>
-            <label><strong>DKIM selector</strong><input class="regular-text" style="display:block;width:100%;margin-top:6px;" name="smtp_dkim_selector" value="<?php echo esc_attr($selector); ?>" placeholder="google or selector1"></label>
-            <button class="button button-primary">Run DNS Check</button>
+            <label for="tk-smtp-dns-domain"><span>Sender domain</span>
+                <input type="text" id="tk-smtp-dns-domain" class="tk-input" name="smtp_dns_domain" value="<?php echo esc_attr($domain); ?>" required autocomplete="off" spellcheck="false">
+            </label>
+            <label for="tk-smtp-dkim-selector"><span>DKIM selector <span class="description" style="font-weight:400;">(optional)</span></span>
+                <input type="text" id="tk-smtp-dkim-selector" class="tk-input" name="smtp_dkim_selector" value="<?php echo esc_attr($selector); ?>" placeholder="auto-detect" autocomplete="off" spellcheck="false">
+            </label>
+            <button type="submit" class="button button-primary">Run DNS Check</button>
         </form>
         <?php if (!empty($report['error'])) : ?><?php tk_notice((string) $report['error'], 'error'); ?><?php elseif (!empty($report)) : ?>
-            <p><strong>Delivery readiness:</strong> <span class="tk-badge <?php echo (int) ($report['score'] ?? 0) >= 75 ? 'tk-on' : 'tk-warn'; ?>"><?php echo esc_html((string) ((int) ($report['score'] ?? 0))); ?>%</span></p>
-            <table class="widefat striped"><thead><tr><th>Check</th><th>Status</th><th>DNS result</th></tr></thead><tbody>
-            <?php foreach (($report['checks'] ?? array()) as $check) : ?><tr><td><?php echo esc_html((string) ($check['label'] ?? '')); ?></td><td><span class="tk-badge <?php echo !empty($check['ok']) ? 'tk-on' : 'tk-warn'; ?>"><?php echo !empty($check['ok']) ? 'Found' : 'Review'; ?></span></td><td style="overflow-wrap:anywhere;"><?php echo esc_html((string) ($check['detail'] ?? '')); ?></td></tr><?php endforeach; ?>
-            </tbody></table>
-            <p class="description">DNS presence does not guarantee inbox placement. Review alignment and provider-specific policies when delivery still fails.</p>
+            <?php $score = (int) ($report['score'] ?? 0); ?>
+            <div class="tk-dns-summary">
+                <strong>Delivery readiness:</strong>
+                <span class="tk-badge <?php echo $score >= 100 ? 'tk-on' : 'tk-warn'; ?>"><?php echo esc_html((string) $score); ?>%</span>
+                <span class="description"><?php echo esc_html((string) ($report['domain'] ?? '')); ?><?php if (!empty($report['selector'])) : ?> · DKIM selector <code><?php echo esc_html((string) $report['selector']); ?></code><?php endif; ?><?php if (!empty($report['scanned_at'])) : ?> · <?php echo esc_html(date_i18n('M d, Y H:i', (int) $report['scanned_at'])); ?><?php endif; ?></span>
+            </div>
+            <div class="tk-table-scroll">
+                <table class="widefat striped tk-table tk-dns-table"><thead><tr><th>Check</th><th>Status</th><th>DNS result</th></tr></thead><tbody>
+                <?php foreach (($report['checks'] ?? array()) as $check) : ?><tr><td><?php echo esc_html((string) ($check['label'] ?? '')); ?></td><td><span class="tk-badge <?php echo !empty($check['ok']) ? 'tk-on' : 'tk-warn'; ?>"><?php echo !empty($check['ok']) ? 'Found' : 'Review'; ?></span></td><td><?php echo esc_html((string) ($check['detail'] ?? '')); ?></td></tr><?php endforeach; ?>
+                </tbody></table>
+            </div>
+            <p class="description" style="margin-top:10px;">DNS presence does not guarantee inbox placement. Review alignment and provider-specific policies when delivery still fails.</p>
         <?php else : ?><p class="description">No DNS report yet.</p><?php endif; ?>
     </div>
     <?php
+}
+
+/**
+ * Last OAuth refresh failure for 'gmail' or 'microsoft'. A stored refresh token alone does not prove
+ * the connection still works: it can be revoked, or expire after 7 days for a Google app in Testing.
+ */
+function tk_smtp_oauth_error(string $provider): string {
+    return (string) tk_get_option('smtp_' . $provider . '_auth_error', '');
+}
+
+function tk_smtp_set_oauth_error(string $provider, string $message): void {
+    tk_update_option('smtp_' . $provider . '_auth_error', $message);
+}
+
+/** Per-request note explaining why the current send cannot authenticate, merged into the wp_mail error. */
+function tk_smtp_auth_note(?string $value = null): string {
+    static $note = '';
+    if (func_num_args() > 0) {
+        $note = (string) $value;
+    }
+    return $note;
+}
+
+/** Actionable advice for PHPMailer's generic "Could not authenticate", based on the saved provider. */
+function tk_smtp_auth_hint(array $config): string {
+    $host = strtolower((string) $config['host']);
+    if ($config['provider'] === 'gmail') {
+        return __('Reconnect Google in Tool Kits → SMTP. If the Google Cloud OAuth app is in Testing status, its refresh tokens expire after 7 days: set Publishing status to In production (or Internal for Workspace) and reconnect.', 'tool-kits');
+    }
+    if ($config['provider'] === 'office365') {
+        return __('Reconnect Microsoft in Tool Kits → SMTP, and make sure the tenant granted SMTP.Send and Authenticated SMTP is enabled for this mailbox.', 'tool-kits');
+    }
+    if ($config['password'] === '') {
+        return __('No SMTP password is saved. Enter the password and save the settings.', 'tool-kits');
+    }
+    if (preg_match('/(^|\.)(gmail|googlemail)\.com$/', $host)) {
+        return __('Google does not accept the normal account password over SMTP. Use a 16-character App Password (requires 2-Step Verification) or switch to the Gmail OAuth provider.', 'tool-kits');
+    }
+    if (preg_match('/(^|\.)(office365|outlook)\.com$/', $host)) {
+        return __('Microsoft disables password SMTP AUTH on most tenants. Switch to the Microsoft 365 OAuth provider or ask the admin to enable Authenticated SMTP for this mailbox.', 'tool-kits');
+    }
+    return __('Check that the username is the full mailbox address, re-type the password (it may have changed), and pair port 587 with TLS or port 465 with SSL.', 'tool-kits');
 }
 
 function tk_smtp_google_redirect_uri(): string {
@@ -280,6 +394,7 @@ function tk_smtp_google_store_tokens(array $tokens): void {
     }
     $expires_in = isset($tokens['expires_in']) ? max(60, (int) $tokens['expires_in']) : 3600;
     tk_update_option('smtp_gmail_token_expires_at', time() + $expires_in - 60);
+    tk_smtp_set_oauth_error('gmail', '');
 }
 
 function tk_smtp_google_fetch_email(string $access_token): string {
@@ -345,6 +460,11 @@ function tk_smtp_google_callback(): void {
 
 function tk_smtp_google_disconnect(): void {
     tk_require_admin_post('tk_smtp_google_disconnect');
+    $email = (string) tk_get_option('smtp_gmail_email', '');
+    if ($email !== '' && (string) tk_get_option('smtp_username', '') === $email) {
+        tk_update_option('smtp_username', '');
+    }
+    tk_smtp_set_oauth_error('gmail', '');
     tk_update_option('smtp_gmail_access_token', '');
     tk_update_option('smtp_gmail_refresh_token', '');
     tk_update_option('smtp_gmail_token_expires_at', 0);
@@ -373,6 +493,7 @@ function tk_smtp_google_access_token() {
         'grant_type' => 'refresh_token',
     ));
     if (is_wp_error($tokens)) {
+        tk_smtp_set_oauth_error('gmail', $tokens->get_error_message());
         return $tokens;
     }
     tk_smtp_google_store_tokens($tokens);
@@ -476,6 +597,7 @@ function tk_smtp_microsoft_store_tokens(array $tokens): void {
     }
     $expires_in = isset($tokens['expires_in']) ? max(60, (int) $tokens['expires_in']) : 3600;
     tk_update_option('smtp_microsoft_token_expires_at', time() + $expires_in - 60);
+    tk_smtp_set_oauth_error('microsoft', '');
 }
 
 function tk_smtp_microsoft_admin_redirect(string $status): void {
@@ -528,6 +650,7 @@ function tk_smtp_microsoft_callback(): void {
 
 function tk_smtp_microsoft_disconnect(): void {
     tk_require_admin_post('tk_smtp_microsoft_disconnect');
+    tk_smtp_set_oauth_error('microsoft', '');
     tk_update_option('smtp_microsoft_access_token', '');
     tk_update_option('smtp_microsoft_refresh_token', '');
     tk_update_option('smtp_microsoft_token_expires_at', 0);
@@ -555,6 +678,7 @@ function tk_smtp_microsoft_access_token() {
         'scope' => 'openid email offline_access https://outlook.office.com/SMTP.Send',
     ));
     if (is_wp_error($tokens)) {
+        tk_smtp_set_oauth_error('microsoft', $tokens->get_error_message());
         return $tokens;
     }
     tk_smtp_microsoft_store_tokens($tokens);
@@ -606,25 +730,29 @@ function tk_smtp_phpmailer_init($phpmailer = null) {
     }
 
     $phpmailer->SMTPAutoTLS = true;
-    $phpmailer->SMTPAuth = $config['username'] !== '';
+    $oauth = in_array($config['provider'], array('gmail', 'office365'), true);
+    // Gmail and Microsoft 365 always require authentication, even after the OAuth connection was removed.
+    $phpmailer->SMTPAuth = $oauth || $config['username'] !== '';
+    tk_smtp_auth_note('');
 
     if ($phpmailer->SMTPAuth) {
         $phpmailer->Username = $config['username'];
-        if (in_array($config['provider'], array('gmail', 'office365'), true)) {
-            $access_token = $config['provider'] === 'gmail'
-                ? tk_smtp_google_access_token()
-                : tk_smtp_microsoft_access_token();
+        if ($oauth) {
+            $label = $config['provider'] === 'gmail' ? 'Google' : 'Microsoft';
+            $phpmailer->AuthType = 'XOAUTH2';
+            $access_token = $config['username'] === ''
+                ? new WP_Error('tk_smtp_oauth_not_connected', sprintf(__('%s OAuth is not connected.', 'tool-kits'), $label))
+                : ($config['provider'] === 'gmail' ? tk_smtp_google_access_token() : tk_smtp_microsoft_access_token());
             if (is_wp_error($access_token)) {
-                tk_log(ucfirst($config['provider']) . ' OAuth token error: ' . $access_token->get_error_message());
-                $phpmailer->AuthType = 'XOAUTH2';
+                tk_log($label . ' OAuth token error: ' . $access_token->get_error_message());
+                tk_smtp_auth_note(sprintf(__('%1$s OAuth token unavailable: %2$s', 'tool-kits'), $label, $access_token->get_error_message()));
             } else {
                 $oauth_provider = tk_smtp_oauth_provider($config['username'], $access_token);
                 if ($oauth_provider !== null && method_exists($phpmailer, 'setOAuth')) {
-                    $phpmailer->AuthType = 'XOAUTH2';
                     $phpmailer->setOAuth($oauth_provider);
                 } else {
                     tk_log('SMTP OAuth requires PHPMailer OAuthTokenProvider support.');
-                    $phpmailer->AuthType = 'XOAUTH2';
+                    tk_smtp_auth_note(__('This WordPress version\'s PHPMailer has no OAuth support (OAuthTokenProvider). Update WordPress to 6.x or use password SMTP.', 'tool-kits'));
                 }
             }
         } elseif ($config['password'] !== '') {
@@ -814,7 +942,15 @@ function tk_render_smtp_page() {
                                     <p class="tk-input-help">Add this exact URL to Google Cloud Console → OAuth client → Authorized redirect URIs.</p>
                                 </div>
                                 <div style="margin-top:18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-                                    <?php if (tk_smtp_google_is_connected()) : ?>
+                                    <?php if (tk_smtp_google_is_connected() && tk_smtp_oauth_error('gmail') !== '') : ?>
+                                        <span class="tk-badge tk-warn">Reconnect required</span>
+                                        <span><?php echo esc_html((string) $opts['smtp_gmail_email']); ?></span>
+                                        <?php if ($google_auth_url !== '') : ?>
+                                            <a class="button button-primary" href="<?php echo esc_url($google_auth_url); ?>">Reconnect Google</a>
+                                        <?php endif; ?>
+                                        <a class="button" href="<?php echo esc_url(add_query_arg(array('action' => 'tk_smtp_google_disconnect', '_tk_nonce' => wp_create_nonce('tk_smtp_google_disconnect')), admin_url('admin-post.php'))); ?>">Remove OAuth Connection</a>
+                                        <p class="tk-input-help" style="flex-basis:100%; margin:0;">Google rejected the saved token: <?php echo esc_html(tk_smtp_oauth_error('gmail')); ?>. Emails cannot be sent until you reconnect. If the OAuth app is in Testing status, set it to In production first, because Testing tokens expire after 7 days.</p>
+                                    <?php elseif (tk_smtp_google_is_connected()) : ?>
                                         <span class="tk-badge tk-on">Connected</span>
                                         <span><?php echo esc_html((string) $opts['smtp_gmail_email']); ?></span>
                                         <a class="button" href="<?php echo esc_url(add_query_arg(array('action' => 'tk_smtp_google_disconnect', '_tk_nonce' => wp_create_nonce('tk_smtp_google_disconnect')), admin_url('admin-post.php'))); ?>">Remove OAuth Connection</a>
@@ -854,7 +990,15 @@ function tk_render_smtp_page() {
                                     <p class="tk-input-help">Add this exact URL in Microsoft Entra ID → App registrations → Authentication → Web redirect URI.</p>
                                 </div>
                                 <div style="margin-top:18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-                                    <?php if (tk_smtp_microsoft_is_connected()) : ?>
+                                    <?php if (tk_smtp_microsoft_is_connected() && tk_smtp_oauth_error('microsoft') !== '') : ?>
+                                        <span class="tk-badge tk-warn">Reconnect required</span>
+                                        <span><?php echo esc_html((string) $opts['smtp_microsoft_email']); ?></span>
+                                        <?php if ($microsoft_auth_url !== '') : ?>
+                                            <a class="button button-primary" href="<?php echo esc_url($microsoft_auth_url); ?>">Reconnect Microsoft</a>
+                                        <?php endif; ?>
+                                        <a class="button" href="<?php echo esc_url(add_query_arg(array('action' => 'tk_smtp_microsoft_disconnect', '_tk_nonce' => wp_create_nonce('tk_smtp_microsoft_disconnect')), admin_url('admin-post.php'))); ?>">Remove OAuth Connection</a>
+                                        <p class="tk-input-help" style="flex-basis:100%; margin:0;">Microsoft rejected the saved token: <?php echo esc_html(tk_smtp_oauth_error('microsoft')); ?>. Emails cannot be sent until you reconnect.</p>
+                                    <?php elseif (tk_smtp_microsoft_is_connected()) : ?>
                                         <span class="tk-badge tk-on">Connected</span>
                                         <span><?php echo esc_html((string) $opts['smtp_microsoft_email']); ?></span>
                                         <a class="button" href="<?php echo esc_url(add_query_arg(array('action' => 'tk_smtp_microsoft_disconnect', '_tk_nonce' => wp_create_nonce('tk_smtp_microsoft_disconnect')), admin_url('admin-post.php'))); ?>">Remove OAuth Connection</a>
@@ -874,8 +1018,12 @@ function tk_render_smtp_page() {
                                 </div>
                                 <div class="tk-form-group">
                                     <label class="tk-form-label">Password / App Password</label>
-                                    <input type="password" id="tk-smtp-password" name="smtp_password" class="tk-input" style="width:100%;" autocomplete="new-password" placeholder="••••••••••••••••">
-                                    <p class="tk-input-help">Use the credentials supplied by your mail provider.</p>
+                                    <?php $tk_smtp_password_saved = (string) tk_get_option('smtp_password', '') !== ''; ?>
+                                    <input type="password" id="tk-smtp-password" name="smtp_password" class="tk-input" style="width:100%;" autocomplete="new-password" placeholder="<?php echo esc_attr($tk_smtp_password_saved ? 'Saved — leave blank to keep' : 'Enter password'); ?>">
+                                    <p class="tk-input-help">Use the credentials supplied by your mail provider. For Gmail use a 16-character App Password.</p>
+                                    <?php if ($tk_smtp_password_saved) : ?>
+                                        <label style="display:flex; gap:6px; align-items:center; font-size:12px;"><input type="checkbox" name="smtp_password_clear" value="1"> Remove saved password</label>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         </div>
@@ -949,16 +1097,16 @@ Mail Service</textarea>
                     <p><small>Recent test attempts (successes/failures) are recorded here.</small></p>
                     <p><small><strong>Success</strong> means the SMTP server accepted the message. Gmail, Outlook, or another provider can still spam-filter, defer, or reject the message later.</small></p>
                     <?php if (!empty($smtp_test_log)) : ?>
-                        <div class="tk-table-scroll">
-                        <table class="widefat striped tk-table">
+                        <div class="tk-table-scroll tk-dt-scroll">
+                        <table class="widefat striped tk-table" data-tk-datatable data-tk-page-size="10" style="min-width:1180px;">
                             <thead>
                                 <tr>
-                                    <th>Time</th>
-                                    <th>Sender & Recipient</th>
-                                    <th>Status</th>
-                                    <th>Reason / Message</th>
-                                    <th>Technical Details</th>
-                                    <th>Action</th>
+                                    <th data-tk-sort style="width:120px;">Time</th>
+                                    <th data-tk-sort style="width:230px;">Sender &amp; Recipient</th>
+                                    <th data-tk-sort style="width:100px;">Status</th>
+                                    <th data-tk-sort style="min-width:320px;">Reason / Message</th>
+                                    <th style="min-width:300px;">Technical Details</th>
+                                    <th style="width:90px;">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -974,7 +1122,7 @@ Mail Service</textarea>
                                     $status_label = ucfirst($entry_status);
                                 ?>
                                     <tr>
-                                        <td>
+                                        <td data-tk-sort-value="<?php echo esc_attr((string) $entry_time); ?>" style="white-space:nowrap;">
                                             <div style="font-weight:500; font-size:13px;"><?php echo esc_html(date_i18n('M d, Y', $entry_time)); ?></div>
                                             <div style="font-size:11px; color:var(--tk-muted);"><?php echo esc_html(date_i18n('H:i:s', $entry_time)); ?></div>
                                         </td>
@@ -990,21 +1138,28 @@ Mail Service</textarea>
                                             <div style="font-size:11px; color:var(--tk-muted); font-style:italic;"><?php echo esc_html(wp_trim_words($entry_message, 15, '...')); ?></div>
                                         </td>
                                         <td>
-                                            <div class="tk-log-details">
-                                                <table class="tk-mini-table" style="width:100%; border-collapse:collapse; font-size:10px;">
-                                                    <?php 
-                                                    $details_formatted = tk_smtp_test_log_get_details_array($entry_details);
-                                                    if (!empty($details_formatted)) : 
-                                                        foreach ($details_formatted as $label => $val) : ?>
-                                                        <tr>
-                                                            <td style="font-weight:700; width:90px; padding:3px 0; color:#1e293b;"><?php echo esc_html($label); ?>:</td>
-                                                            <td style="padding:3px 0; color:#64748b;"><?php echo esc_html($val); ?></td>
-                                                        </tr>
-                                                    <?php endforeach; else : ?>
-                                                        <tr><td style="color:#94a3b8;">&mdash;</td></tr>
-                                                    <?php endif; ?>
-                                                </table>
-                                            </div>
+                                            <?php
+                                            $details_formatted = tk_smtp_test_log_get_details_array($entry_details);
+                                            $details_summary = trim(implode(' · ', array_filter(array(
+                                                trim((string) ($entry_details['smtp_host'] ?? '') . (!empty($entry_details['smtp_port']) ? ':' . $entry_details['smtp_port'] : ''), ':'),
+                                                strtoupper((string) ($entry_details['smtp_secure'] ?? '')),
+                                                (string) ($entry_details['smtp_auth_method'] ?? ''),
+                                                !empty($entry_details['smtp_user']) ? (string) $entry_details['smtp_user'] : ((($entry_details['smtp_auth'] ?? '') === 'on') ? 'no user' : ''),
+                                            ))));
+                                            ?>
+                                            <?php if (!empty($details_formatted)) : ?>
+                                                <div class="tk-smtp-log-summary"><?php echo esc_html($details_summary !== '' ? $details_summary : '—'); ?></div>
+                                                <details class="tk-smtp-log-details">
+                                                    <summary>All details</summary>
+                                                    <dl>
+                                                        <?php foreach ($details_formatted as $label => $val) : ?>
+                                                            <dt><?php echo esc_html($label); ?></dt><dd><?php echo esc_html($val !== '' ? (string) $val : '—'); ?></dd>
+                                                        <?php endforeach; ?>
+                                                    </dl>
+                                                </details>
+                                            <?php else : ?>
+                                                <span style="color:#94a3b8;">&mdash;</span>
+                                            <?php endif; ?>
                                         </td>
                                         <td>
                                             <?php if ($entry_recipient !== '') : ?>
@@ -1178,6 +1333,7 @@ function tk_smtp_save() {
         tk_update_option('smtp_gmail_client_secret', $posted_client_secret);
     }
     if ($oauth_credentials_changed) {
+        tk_smtp_set_oauth_error('gmail', '');
         tk_update_option('smtp_gmail_access_token', '');
         tk_update_option('smtp_gmail_refresh_token', '');
         tk_update_option('smtp_gmail_token_expires_at', 0);
@@ -1204,6 +1360,7 @@ function tk_smtp_save() {
         tk_update_option('smtp_microsoft_client_secret', $posted_ms_secret);
     }
     if ($ms_credentials_changed) {
+        tk_smtp_set_oauth_error('microsoft', '');
         tk_update_option('smtp_microsoft_access_token', '');
         tk_update_option('smtp_microsoft_refresh_token', '');
         tk_update_option('smtp_microsoft_token_expires_at', 0);
@@ -1218,8 +1375,11 @@ function tk_smtp_save() {
     }
     tk_update_option('smtp_username', $username);
 
+    // A blank field keeps the saved password; only the explicit checkbox removes it.
     $password = isset($_POST['smtp_password']) ? wp_unslash($_POST['smtp_password']) : '';
-    if (is_string($password) && $password !== '') {
+    if (!empty($_POST['smtp_password_clear'])) {
+        tk_update_option('smtp_password', '');
+    } elseif (is_string($password) && $password !== '') {
         tk_update_option('smtp_password', $password);
     }
 
@@ -1286,7 +1446,7 @@ function tk_smtp_test_send() {
         'smtp_port' => $config['port'],
         'smtp_secure' => $config['secure'],
         'smtp_autotls' => 'on',
-        'smtp_auth' => $config['username'] !== '' ? 'on' : 'off',
+        'smtp_auth' => ($config['username'] !== '' || in_array($config['provider'], array('gmail', 'office365'), true)) ? 'on' : 'off',
         'smtp_auth_method' => in_array($config['provider'], array('gmail', 'office365'), true) ? 'XOAUTH2' : 'password',
         'smtp_user' => $config['username'],
         'force_from' => $config['force_from'] ? 'on' : 'off',
@@ -1380,6 +1540,13 @@ function tk_smtp_test_log_capture_wp_mail_error(WP_Error $wp_error): void {
         return;
     }
     $message = trim($wp_error->get_error_message());
+    $note = tk_smtp_auth_note();
+    if ($note !== '') {
+        $message = $note . ($message !== '' ? ' (' . $message . ')' : '');
+    }
+    if (stripos($message, 'Could not authenticate') !== false || $note !== '') {
+        $message .= ' ' . tk_smtp_auth_hint(tk_smtp_get_config());
+    }
     tk_smtp_test_log_error_helper($message);
 }
 
@@ -1432,8 +1599,7 @@ function tk_smtp_dns_txt_contains(string $host, string $needle): bool {
 }
 
 function tk_smtp_dkim_exists(string $domain): bool {
-    $selectors = array('selector1', 'selector2', 'default', 'google', 'k1', 'dkim');
-    foreach ($selectors as $selector) {
+    foreach (tk_smtp_dkim_selector_candidates(implode(' ', tk_smtp_dns_txt_values($domain))) as $selector) {
         $host = $selector . '._domainkey.' . $domain;
         if (tk_smtp_dns_txt_contains($host, 'v=dkim1') || tk_smtp_dns_txt_contains($host, ' p=')) {
             return true;

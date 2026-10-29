@@ -24,7 +24,8 @@
     line-height: 1.6;
 }
 .tk-wrap {
-    margin: 0 auto;
+    /* Left-aligned like core .wrap, so wide screens do not center the page. */
+    margin: 0 20px 0 2px;
     padding: 32px 0 32px;
 }
 :is(.tk-wrap, .tk-overview-wrap)::before { display: none; }
@@ -446,4 +447,46 @@
 }
 @media (prefers-reduced-motion: reduce) {
     :is(.tk-wrap, .tk-overview-wrap) *, :is(.tk-wrap, .tk-overview-wrap) *::before { animation: none !important; transition: none !important; }
+}
+
+/* Data tables (opt-in with data-tk-datatable): search, sort, paging and horizontal scroll. */
+.tk-dt-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; }
+.tk-dt-toolbar label { display: inline-flex; align-items: center; gap: 6px; color: var(--tk-muted); }
+.tk-dt-toolbar input[type="search"] { min-width: 220px; min-height: 32px; padding: 0 10px; border: 1px solid var(--tk-border); border-radius: var(--tk-radius-md); }
+.tk-dt-toolbar select { min-width: 72px; min-height: 32px; border-color: var(--tk-border); border-radius: var(--tk-radius-md); }
+.tk-dt-scroll { overflow-x: auto; border: 1px solid var(--tk-border-soft); border-radius: var(--tk-radius-lg); }
+.tk-dt-scroll > table { margin: 0; border: 0; }
+table[data-tk-datatable] th[data-tk-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
+table[data-tk-datatable] th[data-tk-sort]::after { content: "\2195"; margin-left: 6px; color: #98a2b3; font-size: 11px; }
+table[data-tk-datatable] th[aria-sort="ascending"]::after { content: "\2191"; color: var(--tk-primary); }
+table[data-tk-datatable] th[aria-sort="descending"]::after { content: "\2193"; color: var(--tk-primary); }
+.tk-dt-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--tk-muted); }
+.tk-dt-pages { display: flex; flex-wrap: wrap; gap: 4px; }
+.tk-dt-pages .button[aria-current="page"] { background: var(--tk-primary); border-color: var(--tk-primary); color: #fff; }
+.tk-dt-empty td { text-align: center; color: var(--tk-muted); padding: 20px !important; }
+
+/* A wide data table scrolls inside its card instead of stretching the card past the page. */
+.tk-wrap :is(.tk-tabs, .tk-tabs-content, .tk-tab-panel, .tk-card) { min-width: 0; max-width: 100%; }
+
+/* SMTP test log technical details: one summary line, full list on demand. */
+.tk-smtp-log-summary { font-family: Menlo, Consolas, monospace; font-size: 11px; color: #344054; overflow-wrap: anywhere; }
+.tk-smtp-log-details { margin-top: 4px; font-size: 11px; }
+.tk-smtp-log-details summary { cursor: pointer; color: var(--tk-primary); }
+.tk-smtp-log-details dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 6px 0 0; padding: 8px 10px; background: var(--tk-bg-soft); border: 1px solid var(--tk-border-soft); border-radius: var(--tk-radius-md); }
+.tk-smtp-log-details dt { font-weight: 600; color: #1e293b; }
+.tk-smtp-log-details dd { margin: 0; color: #64748b; overflow-wrap: anywhere; }
+
+/* SMTP deliverability scan. */
+.tk-dns-form { display: grid; grid-template-columns: minmax(200px, 1.4fr) minmax(160px, 1fr) auto; gap: 12px; align-items: end; max-width: 860px; margin: 18px 0; }
+.tk-dns-form label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; }
+.tk-dns-form .tk-input { width: 100%; min-height: 38px; }
+.tk-dns-form .button { min-height: 38px; }
+.tk-dns-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 0 0 12px; }
+.tk-dns-table td:nth-child(3) { overflow-wrap: anywhere; word-break: break-word; }
+.tk-dns-table td:first-child { width: 110px; font-weight: 600; }
+.tk-dns-table td:nth-child(2) { width: 110px; }
+@media (max-width: 782px) {
+    .tk-wrap { margin-right: 10px; }
+    .tk-dns-form { grid-template-columns: 1fr; }
+    .tk-dt-toolbar input[type="search"] { min-width: 0; width: 100%; }
 }
