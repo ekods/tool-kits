@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.61
+Stable tag: 2.7.62
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,7 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.62 makes I'm not a robot a single checkbox without a code input. Clicking automatically checks the browser-bound token, minimum time, honeypot and request limits on the server before returning a one-use proof. Classic Text continues to use an image code. Checkbox checks validate the request/session; they are not a guarantee of human identity. Clear page/CDN caches after updating.
 - Version 2.7.61 strengthens CAPTCHA enforcement. Protected CF7 forms reject missing CAPTCHA fields, and checkbox mode opens an image-code challenge rather than approving a click alone. Codes have at least 6 characters, expire after 5 minutes and use visitor-bound, one-use tokens. Adjust minimum solve time and attempt limits under Spam Protection > Captcha. Clear page/CDN caches after installing; old cached CAPTCHA markup and click proofs are no longer valid.
 - Version 2.7.60 adds a live Contact Form 7 cooldown timer and Submission Cooldown settings under Spam Protection > Timing & Velocity. Adjust email minutes, IP seconds and the duplicate window; use 0 to disable an individual rule or turn off Submission Cooldown to disable all three. IP Rate Limiting remains a separate setting.
 - Version 2.7.58 adds Meta AI (WhatsApp, Instagram, Facebook, Messenger) to GEO crawler access, Crawler Preview, AI Radar and the AI Catalog, and warns when Tool Kits firewall user-agent rules block recommended AI crawlers. A fragment such as facebook blocks every Meta crawler. Run AI Access Review again after updating to add the Meta rows to saved results.
@@ -79,6 +80,11 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.62 =
+- Remove the image puzzle and code input from I'm not a robot mode. A single click or keyboard activation starts automatic server verification and checks the widget only after receiving a valid opaque proof.
+- Preserve browser binding, server timing, honeypot, rate limits, expiry, atomic token consumption and missing-CAPTCHA rejection in CF7. Unchecked, expired, repeated and cross-browser verification requests remain rejected.
+- Keep Classic Text image verification and its code settings separate from checkbox mode. Prevent repeated clicks from overlapping requests and allow a click during initial loading to continue after the challenge is ready.
+
 = 2.7.61 =
 - Fix CF7 CAPTCHA rejection: invalidate a real named form tag instead of null, require CAPTCHA based on the server-side form configuration, and block mail even on unnamed CAPTCHA-only forms.
 - Render verification codes as images instead of readable HTML characters. Checkbox verification requires the real image answer and returns an opaque, short-lived proof; the previous constant click marker is rejected.

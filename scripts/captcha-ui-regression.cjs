@@ -16,7 +16,7 @@ function field(type, owner) {
     const current = { owner, dataset: {}, isConnected: true, attributes: { 'data-type': type },
         output: { textContent: '' }, token: { value: 'token-' + (++serial) }, answer: { value: '' },
         input: { value: '', focused: false }, button: { disabled: false },
-        box: { classList: classes(), setAttribute(key, value) { this[key] = value; } },
+        box: { classList: classes(), setAttribute(key, value) { this[key] = value; }, removeAttribute(key) { delete this[key]; } },
         puzzle: { hidden: true },
         getAttribute(key) { return this.attributes[key]; },
         setAttribute(key, value) { this.attributes[key] = value; },
@@ -55,7 +55,7 @@ const classicForm = form('text');
 const context = vm.createContext({
     Date: { now: () => now }, URLSearchParams,
     window: { tkCaptcha: { refreshUrl: '/refresh', verifyUrl: '/verify', refreshNonce: 'refresh-nonce', verifyNonce: 'verify-nonce',
-        minSeconds: 1, loading: 'Loading', required: 'Required', incorrect: 'Incorrect', refreshFailed: 'Refresh failed', tooFast: 'Wait', rateLimited: 'Rate limited' },
+        minSeconds: 1, loading: 'Loading', required: 'Required', incorrect: 'Incorrect', verifyFailed: 'Check the box again', refreshFailed: 'Refresh failed', tooFast: 'Wait', rateLimited: 'Rate limited' },
         setTimeout(resolve, ms) { now += ms; resolve(); },
     },
     document: { readyState: 'loading', body: {},
@@ -103,19 +103,19 @@ function submit(owner) {
 
     click(checkbox.box);
     await flush();
-    assert.equal(checkbox.puzzle.hidden, false);
-    assert.equal(checkbox.input.focused, true);
-    assert.equal(requests.length, 2, 'A bare click must not request verification');
+    assert.equal(checkbox.puzzle.hidden, true, 'Checkbox revealed a code input');
+    assert.equal(checkbox.input.focused, false, 'Checkbox requested keyboard input');
+    assert.equal(requests.length, 3, 'One click must automatically request verification');
     assert.equal(checkbox.answer.value, '');
-    assert.equal(submit(checkboxForm).stopped, true, 'Checkbox bypassed its actual puzzle');
-    checkbox.input.value = 'ABC234';
-    click(checkbox.button);
+    assert.equal(submit(checkboxForm).stopped, true, 'Checkbox bypassed pending server verification');
+    click(checkbox.box);
     await flush();
-    assert.equal(requests.length, 3);
+    assert.equal(requests.length, 3, 'Repeated clicks started overlapping verification requests');
     assert.equal(requests[2].url, '/verify');
-    assert.equal(requests[2].options.body.get('answer'), 'ABC234');
+    assert.equal(requests[2].options.body.get('checked'), '1');
+    assert.equal(requests[2].options.body.get('answer'), null, 'Checkbox still submits a human-entered answer');
     assert.equal(requests[2].options.body.get('interact'), null, 'Client interaction counters must not be a security credential');
-    assert.equal(checkbox.button.disabled, true);
+    assert.equal(checkbox.box.classList.contains('is-loading'), true);
     requests[2].resolve({ ok: true, json: async () => ({ success: true, data: { answer: 'a'.repeat(64) } }) });
     await flush();
     assert.equal(checkbox.answer.value, 'a'.repeat(64));
@@ -136,14 +136,14 @@ function submit(owner) {
     assert.equal(classicForm.fields[0], classic, 'CF7 feedback refreshed unrelated forms');
 
     // The old constant answer can never check the widget. It requests a new challenge instead.
-    nextCheckbox.input.value = 'ABC234'; click(nextCheckbox.button); await flush();
+    click(nextCheckbox.box); await flush();
     requests[4].resolve({ ok: true, json: async () => ({ success: true, data: { answer: 'VERIFIED_CLICK' } }) });
     await flush();
     assert.equal(nextCheckbox.box.classList.contains('is-checked'), false);
     assert.equal(nextCheckbox.answer.value, '');
     const retry = await refreshed(5, 'checkbox');
-    assert.equal(retry.output.textContent, 'Incorrect');
-    assert.equal(retry.puzzle.hidden, false);
+    assert.equal(retry.output.textContent, 'Check the box again');
+    assert.equal(retry.puzzle.hidden, true);
 
     now += 300001;
     assert.equal(submit(classicForm).prevented, true, 'Expired client challenge was submitted');
@@ -151,5 +151,18 @@ function submit(owner) {
     await refreshed(6, 'text');
     assert.equal(classicForm.fields[0].answer.value, '');
     assert.equal(submit(classicForm).prevented, true);
-    console.log('PASS: cache-safe serialized issuance, real checkbox puzzle, opaque proof, no bare-click success, form isolation, expiry and retry refresh');
+    // A click during initial loading continues once the fresh token arrives, without another click.
+    const loadingForm = form('checkbox');
+    const loadingField = loadingForm.fields[0];
+    listeners.wpcf7submit({ target: loadingForm }); await flush();
+    click(loadingField.box); click(loadingField.box); await flush();
+    assert.equal(requests.length, 8, 'Clicks during loading started extra challenge requests');
+    const loaded = await refreshed(7, 'checkbox');
+    assert.equal(requests.length, 9);
+    assert.equal(requests[8].url, '/verify');
+    requests[8].resolve({ ok: true, json: async () => ({ success: true, data: { answer: 'b'.repeat(64) } }) });
+    await flush();
+    assert.equal(loaded.box.classList.contains('is-checked'), true);
+    assert.equal(submit(loadingForm).prevented, false);
+    console.log('PASS: one-click checkbox, no code input, automatic server verification, opaque proof, duplicate-click guard, loading recovery, form isolation, expiry and retry refresh');
 })().catch(error => { console.error(error); process.exitCode = 1; });

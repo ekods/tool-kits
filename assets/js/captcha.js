@@ -23,12 +23,7 @@
         return result.data;
     }
 
-    function expand(field) {
-        const puzzle = field.querySelector('.tk-captcha-puzzle');
-        if (puzzle) { puzzle.hidden = false; puzzle.querySelector('input')?.focus(); }
-    }
-
-    function refresh(field, message, opened) {
+    function refresh(field, message) {
         if (pending.has(field)) return pending.get(field);
         field.dataset.tkCaptchaReady = '0';
         field.setAttribute('aria-busy', 'true');
@@ -48,8 +43,8 @@
             next.dataset.tkCaptchaExpires = String(Date.now() + 300000);
             if (!field.isConnected) return;
             field.replaceWith(next);
-            if (opened) expand(next);
             status(next, message);
+            return next;
         }).catch(function (error) {
             field.removeAttribute('aria-busy');
             status(field, error.code === 'rate_limited' ? config.rateLimited : config.refreshFailed);
@@ -61,32 +56,32 @@
 
     async function verify(field) {
         if (field.dataset.tkCaptchaReady !== '1' || field.dataset.tkCaptchaVerifying === '1') return;
-        const answer = field.querySelector('.tk-captcha-puzzle-input')?.value.trim();
-        if (!answer) { status(field, config.required); expand(field); return; }
-        const button = field.querySelector('.tk-captcha-verify');
+        const box = field.querySelector('.tk-captcha-checkbox-box');
+        if (!box || box.classList.contains('is-checked')) return;
         field.dataset.tkCaptchaVerifying = '1';
-        if (button) button.disabled = true;
+        box.classList.add('is-loading');
+        box.setAttribute('aria-busy', 'true');
         status(field, config.loading);
         try {
             const delay = Math.max(0, Number(field.dataset.tkCaptchaNotBefore || 0) - Date.now());
             if (delay) await new Promise(function (resolve) { window.setTimeout(resolve, delay); });
             const data = await request(config.verifyUrl, { nonce: config.verifyNonce,
-                token: field.querySelector('[name="tk_captcha_token"]').value, answer: answer });
+                token: field.querySelector('[name="tk_captcha_token"]').value, checked: '1',
+                tk_robot_honeypot: field.querySelector('[name="tk_robot_honeypot"]')?.value || '' });
             if (!/^[a-f0-9]{64}$/.test(data.answer || '')) throw new Error('invalid_proof');
             if (!field.isConnected) return;
             field.querySelector('.tk-captcha-answer-field').value = data.answer;
-            const box = field.querySelector('.tk-captcha-checkbox-box');
             box.classList.add('is-checked');
             box.setAttribute('aria-checked', 'true');
-            field.querySelector('.tk-captcha-puzzle').hidden = true;
             status(field, '');
         } catch (error) {
             if (error.code === 'too_fast') status(field, config.tooFast);
             else if (error.code === 'rate_limited') status(field, config.rateLimited);
-            else await refresh(field, config.incorrect, true);
+            else await refresh(field, config.verifyFailed);
         } finally {
             field.dataset.tkCaptchaVerifying = '0';
-            if (button) button.disabled = false;
+            box.classList.remove('is-loading');
+            box.removeAttribute('aria-busy');
         }
     }
 
@@ -97,20 +92,18 @@
         if (event.target.closest('.tk-captcha-refresh')) {
             event.preventDefault(); refresh(field); return;
         }
-        if (event.target.closest('.tk-captcha-verify')) { event.preventDefault(); verify(field); return; }
         if (event.target.closest('.tk-captcha-checkbox-left')) {
             event.preventDefault();
             if (field.querySelector('.is-checked')) return;
-            if (field.dataset.tkCaptchaReady !== '1') refresh(field, '', true);
-            else expand(field);
+            if (field.dataset.tkCaptchaReady !== '1') {
+                refresh(field).then(function (next) { if (next) verify(next); });
+            } else verify(field);
         }
     }
     document.addEventListener('click', handleClick);
     document.addEventListener('keydown', function (event) {
         const target = event.target;
-        if (target.matches?.('.tk-captcha-puzzle-input') && event.key === 'Enter') {
-            event.preventDefault(); verify(target.closest('.tk-captcha-field'));
-        } else if (target.matches?.('.tk-captcha-checkbox-box') && (event.key === 'Enter' || event.key === ' ')) {
+        if (target.matches?.('.tk-captcha-checkbox-box') && (event.key === 'Enter' || event.key === ' ')) {
             handleClick(event);
         }
     });
@@ -122,7 +115,7 @@
             if (field.dataset.tkCaptchaReady !== '1' || !answer || expired) {
                 event.preventDefault(); event.stopImmediatePropagation();
                 if (expired && field.dataset.tkCaptchaReady === '1') refresh(field, config.required);
-                else { status(field, config.required); if (field.getAttribute('data-type') === 'checkbox') expand(field); }
+                else status(field, config.required);
                 return;
             }
         }
