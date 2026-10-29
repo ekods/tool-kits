@@ -1,4 +1,6 @@
-.fixed .column-tk_seo_score { width: 84px; }
+.fixed .column-tk_seo_score, .fixed .column-tk_geo_score { width: 84px; }
+a.tk-seo-score { text-decoration: none; }
+a.tk-seo-score:focus { box-shadow: 0 0 0 2px #2271b1; outline: none; }
 .tk-seo-score { display: inline-block; min-width: 28px; margin: 0 4px 2px 0; padding: 2px 6px; border-radius: 10px; font-size: 12px; font-weight: 600; line-height: 18px; text-align: center; background: #f0f0f1; color: #50575e; }
 .tk-seo-score-good { background: #e5f4e9; color: #00632a; }
 .tk-seo-score-fair { background: #fcf3dc; color: #7a5a00; }

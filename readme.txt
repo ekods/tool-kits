@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.56
+Stable tag: 2.7.57
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,7 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.57 adds a GEO indicator column beside the SEO score in content lists (wp-admin/edit.php). It reads the latest saved GEO Audit & Fixes results and never audits pages while the list loads; run GEO Audit to refresh scores. Hide it under SEO Settings > Editor Panels.
 - Version 2.7.56 moves the FAQ GEO popup into its own Tool Kits FAQ GEO editor panel and adds an optional SEO score column to content lists (wp-admin/edit.php). Both are enabled by default and can be hidden under SEO Settings > Editor Panels. Saved FAQs, metadata and public SEO/GEO output are unchanged.
 - Version 2.7.55 changes the Global SEO Content checkbox to Enable global metadata override. When checked, Tool Kits replaces existing theme/plugin head metadata with the displayed values, including matching Open Graph/Twitter descriptions and social images, and removes duplicate tags. Saved page SEO titles, descriptions and social images retain priority. Uncheck to restore theme/plugin metadata; save changes and clear external page/CDN caches after updating.
 - Version 2.7.54 completes SEO image output for Twitter Cards, Image Source (image_src) and Schema.org image metadata. These use the same selected image as Open Graph. Global metadata fallbacks fill missing or empty tags while preserving nonempty theme tags; page-specific image overrides replace stale head image tags. Enable social output under SEO Settings and configure a default image under Global SEO Content or a page-specific SEO Social Image, then clear external page/CDN caches.
@@ -75,6 +76,14 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.57 =
+- Add a GEO indicator column after the SEO score in content lists for the selected SEO / GEO content types. It shows the saved GEO Audit & Fixes score with grade and issue count, a ! flag when the audit could not verify the URL, a link to run GEO Audit for unaudited URLs, a not-applicable marker for drafts and password-protected content, and Off when GEO is disabled for the content.
+- Read GEO results from the stored audit report only; list views never fetch public pages.
+- Add the Show GEO indicator column in content lists checkbox to SEO Settings > Editor Panels, enabled by default. The SEO and GEO columns hide independently.
+- Add a content-list regression covering both columns, the per-request SEO calculation limit, escaping and the GEO not-applicable states.
+
+Validation: 60/60 default regression cases pass on PHP 7.4 and PHP 8.4, including 21 new content-list checks. Browser E2E on WordPress 7.0 (PHP 8.2) covers column order, a saved GEO audit score with link, tooltip and styling, draft indicators, independent column toggles and saving the settings form.
+
 = 2.7.56 =
 - Move the FAQ GEO popup out of the Tool Kits SEO / GEO sidebar into a separate Tool Kits FAQ GEO panel with its own nonce and save handler. Untouched FAQs are still never rewritten; a note explains when GEO is off for the content.
 - Streamline the Tool Kits SEO / GEO panel: inline SEO and GEO switches, a colour-coded content score, and the existing public page audit.

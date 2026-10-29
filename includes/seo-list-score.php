@@ -1,7 +1,7 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
 
-/** Cached per-post content score for the editor sidebar and wp-admin/edit.php lists. */
+/** Cached per-post content score for the editor sidebar, plus SEO and GEO columns for wp-admin/edit.php lists. */
 const TK_SEO_SCORE_META = '_tk_seo_content_score';
 // Scoring runs a content audit, so a long uncached list fills over a few loads.
 const TK_SEO_SCORE_LIST_LIMIT = 25;
@@ -17,9 +17,13 @@ function tk_seo_list_score_enabled(): bool {
     return (int) tk_get_option('seo_list_score_enabled', 1) === 1;
 }
 
+function tk_seo_list_geo_enabled(): bool {
+    return (int) tk_get_option('seo_list_geo_enabled', 1) === 1;
+}
+
 function tk_seo_list_score_screen_ok($screen): bool {
-    return is_object($screen) && $screen->base === 'edit' && tk_seo_list_score_enabled() && tk_is_admin_user()
-        && in_array($screen->post_type, tk_seo_selected_post_types(), true);
+    return is_object($screen) && $screen->base === 'edit' && (tk_seo_list_score_enabled() || tk_seo_list_geo_enabled())
+        && tk_is_admin_user() && in_array($screen->post_type, tk_seo_selected_post_types(), true);
 }
 
 function tk_seo_list_score_register($screen): void {
@@ -37,16 +41,60 @@ function tk_seo_list_score_enqueue(): void {
 }
 
 function tk_seo_list_score_column(array $columns): array {
-    $column = array('tk_seo_score' => '<span title="Tool Kits SEO score">SEO</span>');
+    $column = array();
+    if (tk_seo_list_score_enabled()) { $column['tk_seo_score'] = '<span title="Tool Kits SEO score">SEO</span>'; }
+    if (tk_seo_list_geo_enabled()) { $column['tk_geo_score'] = '<span title="Tool Kits GEO audit score">GEO</span>'; }
     $position = array_search('date', array_keys($columns), true);
     if ($position === false) { return $columns + $column; }
     return array_slice($columns, 0, $position, true) + $column + array_slice($columns, $position, null, true);
 }
 
 function tk_seo_list_score_cell(string $column, int $post_id): void {
-    if ($column !== 'tk_seo_score') { return; }
+    if (!in_array($column, array('tk_seo_score', 'tk_geo_score'), true)) { return; }
     $post = get_post($post_id);
-    if ($post) { tk_seo_list_score_badges($post); }
+    if (!$post) { return; }
+    if ($column === 'tk_seo_score') {
+        tk_seo_list_score_badges($post);
+    } else {
+        tk_seo_list_geo_badge($post);
+    }
+}
+
+/** GEO results come from the saved GEO Audit report; list views never fetch public pages. */
+function tk_seo_list_geo_items(): array {
+    static $items = null;
+    if ($items !== null) { return $items; }
+    $items = array();
+    $report = (array) tk_get_option('seo_geo_audit_report', array());
+    foreach ((array) ($report['items'] ?? array()) as $item) {
+        if (is_array($item) && is_string($item['url'] ?? null)) { $items[$item['url']] = $item; }
+    }
+    return $items;
+}
+
+function tk_seo_list_geo_badge($post): void {
+    if (!tk_seo_post_feature_enabled('geo', (int) $post->ID)) {
+        echo '<span class="tk-seo-score tk-seo-score-off" title="GEO is off for this content">Off</span>';
+        return;
+    }
+    if ($post->post_status !== 'publish' || $post->post_password !== '' || !is_post_type_viewable($post->post_type)) {
+        echo '<span class="tk-seo-score tk-seo-score-pending" title="GEO Audit checks published public content only">—</span>';
+        return;
+    }
+    $item = tk_seo_list_geo_items()[(string) get_permalink($post)] ?? null;
+    $audit = esc_url(tk_admin_url('tool-kits-geo-audit'));
+    if (!is_array($item)) {
+        printf('<a class="tk-seo-score tk-seo-score-pending" href="%s" title="Not audited yet. Run GEO Audit &amp; Fixes to score this URL.">—</a>', $audit);
+        return;
+    }
+    $issues = count((array) ($item['issues'] ?? array()));
+    if (!isset($item['score']) || !is_numeric($item['score'])) {
+        printf('<a class="tk-seo-score tk-seo-score-poor" href="%s" title="%s">!</a>', $audit, esc_attr('GEO Audit could not verify this URL: ' . (string) (((array) ($item['issues'] ?? array()))[0] ?? 'request failed')));
+        return;
+    }
+    $score = (int) $item['score'];
+    $title = 'GEO audit score: ' . $score . '/100' . (!empty($item['grade']) && $item['grade'] !== '-' ? ' (grade ' . $item['grade'] . ')' : '') . ', ' . $issues . ' ' . ($issues === 1 ? 'issue' : 'issues');
+    printf('<a class="tk-seo-score tk-seo-score-%1$s" href="%2$s" title="%3$s">%4$d</a>', esc_attr(tk_seo_score_level($score)), $audit, esc_attr($title), $score);
 }
 
 function tk_seo_score_ignore_cache_meta(array $keys): array {

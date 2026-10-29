@@ -85,7 +85,9 @@ function tk_seo_save_panel_visibility(array $input): void {
         $key = 'seo_' . $panel . '_panel_enabled';
         tk_update_option($key, isset($input[$key]) && $input[$key] === '1' ? 1 : 0);
     }
-    tk_update_option('seo_list_score_enabled', isset($input['seo_list_score_enabled']) && $input['seo_list_score_enabled'] === '1' ? 1 : 0);
+    foreach (array('seo_list_score_enabled', 'seo_list_geo_enabled') as $key) {
+        tk_update_option($key, isset($input[$key]) && $input[$key] === '1' ? 1 : 0);
+    }
 }
 
 function tk_seo_post_feature_enabled(string $feature, int $post_id = 0): bool {
@@ -2474,7 +2476,8 @@ function tk_render_seo_opt_panel() {
                 <p><label><input type="checkbox" name="seo_geo_panel_enabled" value="1" <?php checked(tk_seo_editor_panel_visible('geo')); ?>> Show Tool Kits SEO / GEO</label></p>
                 <p><label><input type="checkbox" name="seo_faq_panel_enabled" value="1" <?php checked(tk_seo_editor_panel_visible('faq')); ?>> Show Tool Kits FAQ GEO</label></p>
                 <p><label><input type="checkbox" name="seo_list_score_enabled" value="1" <?php checked(tk_seo_list_score_enabled()); ?>> Show SEO score column in content lists</label></p>
-                <p class="description">Choose which panels appear in the content editor and whether content lists (wp-admin/edit.php) show the SEO score indicator. Hiding a panel or column preserves saved metadata and public SEO/GEO output.</p>
+                <p><label><input type="checkbox" name="seo_list_geo_enabled" value="1" <?php checked(tk_seo_list_geo_enabled()); ?>> Show GEO indicator column in content lists</label></p>
+                <p class="description">Choose which panels appear in the content editor and whether content lists (wp-admin/edit.php) show the SEO score and GEO indicators. GEO uses the latest GEO Audit &amp; Fixes results. Hiding a panel or column preserves saved metadata and public SEO/GEO output.</p>
             </fieldset>
 
             <fieldset style="margin-bottom:24px;">
