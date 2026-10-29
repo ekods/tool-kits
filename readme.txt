@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.67
+Stable tag: 2.7.68
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,9 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.68 =
+- Tool Kits SEO Content: the accordion sections become tabs (Search appearance, Social media, SEO analysis). Focus keyphrase moves to the top of Search appearance. The last tab is remembered per browser, tabs follow the arrow/Home/End keys, and they fit narrow boxes such as phones or the editor sidebar. Without JavaScript all sections still show stacked with their headings.
+
 = 2.7.67 =
 - Performance, public pages: admin-only modules (DB tools, malware/HTML/vulnerability scanners, Health Center, incident response, theme checker, file integrity, dashboard widgets, role management, user ID change, PageSpeed diagnostics) are no longer loaded on public page views, about 500 KB less PHP per request. wp-admin, admin-ajax, admin-post, cron, REST, XML-RPC and WP-CLI still load everything; the tk_load_admin_modules filter can force it.
 - Performance, GEO ItemList: the posts queries behind the ItemList JSON-LD are cached (per language) and refreshed when posts, terms, permalinks or ItemList settings change, instead of running on every page.

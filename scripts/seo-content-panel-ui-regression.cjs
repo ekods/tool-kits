@@ -11,6 +11,9 @@ const path = require('node:path');
         await page.setRequestInterception(true);
         let unavailableSocialImage = true;
         page.on('request', request => {
+            if (request.url() === 'https://editor.test/') {
+                return request.respond({status: 200, contentType: 'text/html', body: html});
+            }
             if (unavailableSocialImage && request.url().includes('/unavailable-social.jpg')) {
                 return request.respond({status: 404, headers: {'cache-control': 'no-store'}, body: ''});
             }
@@ -29,7 +32,10 @@ const path = require('node:path');
             assert.equal(await page.$eval('#tk-seo-title-editor', node => node.textContent.includes('%%')), false);
             assert.equal(await page.$eval('#tk-seo-title', node => node.placeholder), 'Enter an SEO title');
             assert.equal(await page.$eval('#tk-seo-description', node => node.value), 'Original page content');
-            assert.equal(await page.$$eval('.tk-seo-editor-section', nodes => nodes.map(node => node.open).join(',')), 'true,true,true,false');
+            assert.equal(await page.$$eval('.tk-seo-editor-tabs [role="tab"]', nodes => nodes.map(node => node.textContent + ':' + node.getAttribute('aria-selected')).join(',')), 'Search appearance:true,Social media:false,SEO analysis:false');
+            assert.equal(await page.$$eval('.tk-seo-editor-section', nodes => nodes.map(node => node.hidden).join(',')), 'false,true,true');
+            assert.equal(await page.$eval('#tk-seo-keyword', node => node.closest('.tk-seo-editor-section').id), 'tk-seo-panel-search', 'Focus keyphrase belongs to Search appearance');
+            assert.ok(await page.$eval('#tk-seo-keyword', node => node.compareDocumentPosition(document.querySelector('.tk-seo-search-preview')) & Node.DOCUMENT_POSITION_FOLLOWING), 'Focus keyphrase comes first');
             assert.equal(await page.$eval('[data-length-feedback="title"] .tk-seo-length-status', node => node.textContent), 'Too short');
             await page.$eval('#tk-seo-title', node => { node.value = 'Creative brand design'; node.dispatchEvent(new Event('input', {bubbles: true})); });
             await page.$eval('#tk-seo-description', node => { node.value = '<script>Visible text 🧭</script>'; node.dispatchEvent(new Event('input', {bubbles: true})); });
@@ -38,10 +44,16 @@ const path = require('node:path');
             assert.equal(await page.$eval('.tk-seo-social-title', node => node.textContent), 'Creative brand design');
             assert.equal(await page.$eval('.tk-seo-social-description', node => node.textContent), '<script>Visible text 🧭</script>');
             assert.equal(await page.$('.tk-seo-social-description script'), null);
+            await page.click('#tk-seo-tab-social');
+            assert.equal(await page.$eval('#tk-seo-panel-search', node => node.hidden), true);
             await page.click('[for="tk-seo-social-linkedin"]');
             assert.equal(await page.$eval('.tk-seo-social-card', node => node.dataset.network), 'linkedin');
             assert.equal(await page.$eval('.tk-seo-search-preview', node => node.dataset.device), 'mobile', 'Social controls must not change Google device mode');
             assert.equal(await page.$('.tk-seo-preview-description script'), null, 'Input must be treated as text');
+            await page.focus('#tk-seo-tab-social');
+            await page.keyboard.press('ArrowLeft');
+            assert.equal(await page.evaluate(() => document.activeElement.id), 'tk-seo-tab-search');
+            assert.equal(await page.$eval('#tk-seo-panel-search', node => node.hidden), false);
             const counts = await page.$eval('[data-description-length]', node => node.textContent);
             assert.ok(counts.startsWith(Array.from('<script>Visible text 🧭</script>').length + ' characters'));
             const mobileWidth = await page.$eval('.tk-seo-search-preview', node => node.getBoundingClientRect().width);
@@ -58,8 +70,20 @@ const path = require('node:path');
             assert.equal(await page.$eval('.tk-seo-preview-url', node => node.textContent), 'https://brandkraft.id/new-company/');
             assert.equal(await page.$eval('.tk-seo-social-url', node => node.textContent), 'https://brandkraft.id/new-company/');
             assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Overflow at ' + width);
-            await page.click('.tk-seo-editor-section:last-child > summary');
-            assert.match(await page.$eval('.tk-seo-editor-section:last-child', node => node.innerText), /Save a draft/);
+            await page.click('#tk-seo-tab-analysis');
+            assert.match(await page.$eval('#tk-seo-panel-analysis', node => node.innerText), /Save a draft/);
+            if (width === 1440) {
+                // The last tab is remembered where storage exists (a real origin); setContent pages have none.
+                await page.goto('https://editor.test/');
+                await page.click('#tk-seo-tab-analysis');
+                await page.reload();
+                assert.equal(await page.$eval('#tk-seo-tab-analysis', node => node.getAttribute('aria-selected')), 'true', 'The last tab is remembered');
+                assert.equal(await page.$eval('#tk-seo-panel-search', node => node.hidden), true);
+                await page.evaluate(() => localStorage.removeItem('tkSeoEditorTab'));
+                await page.goto('about:blank');
+                await page.setContent(html);
+                await page.click('#tk-seo-tab-analysis');
+            }
             if (width === 1440) await page.screenshot({path: '/tmp/toolkits-seo-content-desktop.png', fullPage: true});
             if (width === 390) await page.screenshot({path: '/tmp/toolkits-seo-content-mobile.png', fullPage: true});
         }
@@ -92,6 +116,7 @@ const path = require('node:path');
         await page.$eval('.tk-seo-post-editor', node => { node.dataset.socialDefaultImage = 'https://brandkraft.id/default-social.jpg'; });
         await page.evaluate(() => window.wp.data.dispatch().editPost({featured_media: 0}));
         assert.equal(await page.$eval('.tk-seo-social-image', node => node.src), 'https://brandkraft.id/default-social.jpg');
+        await page.click('#tk-seo-tab-social');
         await page.click('.tk-seo-social-image-select');
         assert.equal(await page.$eval('#tk-seo-social-image-id', node => node.value), '0', 'Opening or cancelling the picker must preserve the default');
         assert.deepEqual(await page.evaluate(() => window.mediaPickerOptions.library), {type: 'image'});
@@ -247,6 +272,8 @@ const path = require('node:path');
         await page.setJavaScriptEnabled(false);
         await page.setContent(html);
         assert.notEqual(await page.$eval('#tk-seo-title', node => getComputedStyle(node).display), 'none', 'No-JS users must retain an editable plain-text fallback');
+        assert.equal(await page.$eval('.tk-seo-editor-tabs', node => getComputedStyle(node).display), 'none', 'Tabs need JavaScript');
+        assert.equal(await page.$$eval('.tk-seo-editor-section', nodes => nodes.filter(node => getComputedStyle(node).display !== 'none' && getComputedStyle(node.querySelector('.tk-seo-editor-heading')).position !== 'absolute').length), 3, 'Without JavaScript every section shows with its heading');
         await page.click('[data-preview-device="desktop"]');
         assert.equal(await page.$eval('#tk-seo-preview-desktop', node => node.checked), true);
         assert.notEqual(await page.$eval('.tk-seo-preview-url', node => getComputedStyle(node).display), 'none');

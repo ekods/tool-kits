@@ -97,17 +97,19 @@ function tk_seo_render_content_meta_box($post): void {
     ?>
     <div class="tk-seo-post-editor" data-site-name="<?php echo esc_attr($site_name); ?>" data-page-title="<?php echo esc_attr($page_title); ?>" data-separator="<?php echo esc_attr($separator); ?>" data-variables="<?php echo esc_attr(wp_json_encode($variables)); ?>" data-default-title="<?php echo esc_attr($default_title); ?>" data-default-description="<?php echo esc_attr($defaults['description']); ?>" data-social-default-image="<?php echo esc_url($social_default_image); ?>" data-homepage="<?php echo (int) get_option('page_on_front') === $post_id ? '1' : '0'; ?>" data-url="<?php echo esc_url($url); ?>" data-slug="<?php echo esc_attr((string) $post->post_name); ?>">
         <?php tk_seo_render_locale_copy($post_id); ?>
-        <details class="tk-seo-editor-section" open>
-            <summary>Focus keyphrase</summary>
+        <?php // Tabs without JavaScript fall back to all panels stacked, each with its own heading. ?>
+        <div class="tk-seo-editor-tabs" role="tablist" aria-label="SEO Content" hidden>
+            <button type="button" role="tab" id="tk-seo-tab-search" aria-controls="tk-seo-panel-search" aria-selected="true">Search appearance</button>
+            <button type="button" role="tab" id="tk-seo-tab-social" aria-controls="tk-seo-panel-social" aria-selected="false" tabindex="-1">Social media</button>
+            <button type="button" role="tab" id="tk-seo-tab-analysis" aria-controls="tk-seo-panel-analysis" aria-selected="false" tabindex="-1">SEO analysis</button>
+        </div>
+        <section class="tk-seo-editor-section" id="tk-seo-panel-search" role="tabpanel" aria-labelledby="tk-seo-tab-search" data-seo-tab="search">
+            <h3 class="tk-seo-editor-heading">Search appearance</h3>
             <div class="tk-seo-editor-body">
                 <label for="tk-seo-keyword">Focus keyphrase</label>
                 <input id="tk-seo-keyword" name="tk_seo_focus_keyword" type="text" value="<?php echo esc_attr((string) get_post_meta($post_id, '_tk_seo_focus_keyword', true)); ?>" placeholder="Enter a focus keyphrase" aria-describedby="tk-seo-keyword-help">
                 <p id="tk-seo-keyword-help" class="description">Use the main word or phrase you want your content found for across search and AI.</p>
-            </div>
-        </details>
-        <details class="tk-seo-editor-section" open>
-            <summary>Search appearance</summary>
-            <div class="tk-seo-editor-body">
+                <hr class="tk-seo-editor-divider">
                 <p class="description">Determine how your page should look in search results.</p>
                 <?php if (!tk_seo_tools_enabled() || !tk_seo_post_feature_enabled('seo', $post_id)) : ?>
                     <p class="description">Enable SEO in Tool Kits settings and for this content to use the saved search settings.</p>
@@ -145,9 +147,9 @@ function tk_seo_render_content_meta_box($post): void {
                 <p id="tk-seo-description-help" class="description">Leave blank to generate a description from existing content. Length statuses are guidance; the full text is saved.</p>
                 <p class="description">Save these settings with the page’s Save or Update button.</p>
             </div>
-        </details>
-        <details class="tk-seo-editor-section" open>
-            <summary>Social media preview</summary>
+        </section>
+        <section class="tk-seo-editor-section" id="tk-seo-panel-social" role="tabpanel" aria-labelledby="tk-seo-tab-social" data-seo-tab="social">
+            <h3 class="tk-seo-editor-heading">Social media preview</h3>
             <div class="tk-seo-editor-body">
                 <p class="description">Uses your SEO title and meta description. Upload or choose a custom Open Graph image, or leave it unset to use the Featured Image (thumbnail), with the site's social image as a fallback.</p>
                 <p id="tk-seo-social-image-label"><strong>SEO Social Image</strong></p>
@@ -171,9 +173,9 @@ function tk_seo_render_content_meta_box($post): void {
                 </div>
                 <p class="description">Illustrative preview. Social platforms may display the shared link differently.</p>
             </div>
-        </details>
-        <details class="tk-seo-editor-section">
-            <summary>SEO analysis</summary>
+        </section>
+        <section class="tk-seo-editor-section" id="tk-seo-panel-analysis" role="tabpanel" aria-labelledby="tk-seo-tab-analysis" data-seo-tab="analysis">
+            <h3 class="tk-seo-editor-heading">SEO analysis</h3>
             <div class="tk-seo-editor-body">
                 <?php
                 $report = $post->post_status !== 'auto-draft' ? tk_seo_run_content_audit($post_id) : array();
@@ -188,7 +190,7 @@ function tk_seo_render_content_meta_box($post): void {
                     <p class="description">Save a draft to calculate the score.</p>
                 <?php endif; ?>
             </div>
-        </details>
+        </section>
     </div>
     <?php
 }

@@ -165,11 +165,43 @@
         toggle();
     }
 
+    // Search appearance / Social media / SEO analysis tabs. The last tab is remembered per browser.
+    function editorTabs(root) {
+        var list = root.querySelector('.tk-seo-editor-tabs');
+        if (!list) return;
+        var tabs = Array.from(list.querySelectorAll('[role="tab"]'));
+        function select(tab, focus) {
+            tabs.forEach(function (item) {
+                var selected = item === tab;
+                item.setAttribute('aria-selected', String(selected));
+                item.tabIndex = selected ? 0 : -1;
+                root.querySelector('#' + item.getAttribute('aria-controls')).hidden = !selected;
+            });
+            if (focus) tab.focus();
+            try { window.localStorage.setItem('tkSeoEditorTab', tab.id); } catch (error) { /* storage unavailable */ }
+        }
+        tabs.forEach(function (tab, index) {
+            tab.addEventListener('click', function () { select(tab, false); });
+            tab.addEventListener('keydown', function (event) {
+                var next = {ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: tabs.length - 1}[event.key];
+                if (next === undefined) return;
+                event.preventDefault();
+                select(tabs[(next + tabs.length) % tabs.length], true);
+            });
+        });
+        root.classList.add('has-tabs');
+        list.hidden = false;
+        var saved = null;
+        try { saved = document.getElementById(window.localStorage.getItem('tkSeoEditorTab') || ''); } catch (error) { saved = null; }
+        select(tabs.indexOf(saved) !== -1 ? saved : tabs[0], false);
+    }
+
     function init() {
         document.querySelectorAll('.tk-seo-post-editor').forEach(function (root) {
             if (root.dataset.initialized) return;
             root.dataset.initialized = '1';
             localeCopy(root);
+            editorTabs(root);
             var title = root.querySelector('#tk-seo-title');
             var description = root.querySelector('#tk-seo-description');
             var slug = root.querySelector('#tk-seo-slug');
