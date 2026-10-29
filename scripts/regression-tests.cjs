@@ -8,6 +8,7 @@ const cases = [
   { "name": "seo-auto-signals", "runtime": "php", "source": ["<?php", "require __DIR__ . '/seo-auto-signals-regression.php';"] },
   { "name": "seo-content-locale", "runtime": "php", "source": ["<?php", "require __DIR__ . '/seo-content-locale-regression.php';"] },
   { "name": "seo-list-score", "runtime": "php", "source": ["<?php", "require __DIR__ . '/seo-list-score-regression.php';"] },
+  { "name": "seo-language-canonical", "runtime": "php", "source": ["<?php", "require __DIR__ . '/language-canonical-regression.php';"] },
   { "name": "license-security", "runtime": "php", "source": ["<?php", "require __DIR__ . '/license-security-regression.php';"] },
   { "name": "html-injection-engine", "runtime": "php", "source": ["<?php", "require __DIR__ . '/html-injection-engine-regression.php';"] },
   { "name": "html-injection-context", "runtime": "php", "source": ["<?php", "require __DIR__ . '/html-injection-context-regression.php';"] },

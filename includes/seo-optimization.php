@@ -10,6 +10,7 @@ require_once __DIR__ . '/seo-content-output.php';
 require_once __DIR__ . '/seo-global-content.php';
 require_once __DIR__ . '/seo-title.php';
 require_once __DIR__ . '/seo-indexability.php';
+require_once __DIR__ . '/seo-language-canonical.php';
 require_once __DIR__ . '/seo-post-faq.php';
 require_once __DIR__ . '/seo-list-score.php';
 
@@ -21,6 +22,8 @@ function tk_seo_opt_init() {
     // Inside page caching and explicit page edits, outside late theme buffers.
     add_action('template_redirect', 'tk_seo_global_start', 3);
     add_action('template_redirect', 'tk_seo_content_output_start', 2);
+    // Inside the edits above so an explicit Indexability canonical still wins.
+    add_action('template_redirect', 'tk_seo_language_canonical_start', 4);
     add_filter('pre_get_document_title', 'tk_seo_global_document_title', 20);
     add_action('admin_post_tk_seo_redirect_add', 'tk_seo_redirect_add');
     add_action('admin_post_tk_seo_redirect_delete', 'tk_seo_redirect_delete');

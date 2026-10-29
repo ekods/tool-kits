@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.58
+Stable tag: 2.7.59
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -77,6 +77,13 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.59 =
+- Restore the Polylang language on self-referencing canonical and og:url tags. Themes that normalize URLs with home_url('/') and then home_url($path) drop the language because Polylang only filters the bare home URL, so /id/kontak/ declared /kontak/ (which redirects to the default language) and translated pages could be treated as duplicates.
+- Add the language back with Polylang's own links model, covering directory URLs with or without the /language/ base, subdomains, multiple domains and ?lang= plain permalinks, for bilingual and multilingual sites with the default language hidden or prefixed.
+- Rewrite a tag only when the corrected URL is the current request, including every query argument it carries. Deliberate cross-language canonicals, foreign hosts, the hidden default language, content-language mode, and tags in scripts, comments or the body are left unchanged. An explicit Indexability canonical still takes precedence, and the corrected HTML is what the page cache stores.
+
+Validation: 61/61 default regression cases pass on PHP 7.4 and PHP 8.4, including the new seo-language-canonical case, which mirrors Polylang 3.8 URL modes for bilingual and multilingual setups. It was not exercised on a live WordPress install.
+
 = 2.7.58 =
 - Add Meta crawlers to AI Crawler Access using Meta's documented tokens: Meta-WebIndexer (Meta AI search and citations, allow), Meta-ExternalFetcher (user-requested fetches, allow), facebookexternalhit (WhatsApp and Facebook link previews, allow) and Meta-ExternalAgent (training, policy). They are included in robots.txt, AI Visibility and Crawler Preview checks.
 - Send each crawler's documented user agent in Crawler Preview where one is defined.
