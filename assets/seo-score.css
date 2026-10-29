@@ -10,3 +10,6 @@ a.tk-seo-score:focus { box-shadow: 0 0 0 2px #2271b1; outline: none; }
 .tk-seo-geo-switches label { display: inline-flex; align-items: center; gap: 6px; }
 .tk-seo-geo-score { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 6px; background: #f9fafb; }
 .tk-seo-geo-score .tk-seo-score { margin: 0; }
+.tk-seo-geo-score { flex-wrap: wrap; }
+.tk-seo-geo-score [data-tk-seo-score-status] { flex-basis: 100%; color: #646970; font-size: 12px; }
+[data-tk-seo-score-status][hidden] { display: none !important; }

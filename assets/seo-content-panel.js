@@ -314,14 +314,15 @@
             }
             function render() {
                 var text = expand(title.value) || automaticTitle;
-                var descriptionValue = expand(description.value) || root.dataset.defaultDescription || '';
+                var fieldDescription = expand(description.value);
+                var descriptionValue = fieldDescription || root.dataset.defaultDescription || '';
                 var descriptionText = descriptionValue || 'Add a meta description below. Search engines may also use relevant text from your page.';
                 root.querySelector('.tk-seo-preview-title').textContent = text;
                 root.querySelector('.tk-seo-preview-description').textContent = descriptionText;
                 var titleLength = Array.from(text).length;
                 root.querySelector('.tk-seo-social-title').textContent = text;
                 root.querySelector('.tk-seo-social-description').textContent = descriptionValue;
-                var descriptionLength = Array.from(descriptionValue).length;
+                var descriptionLength = Array.from(fieldDescription).length;
                 meters[0].value = titleLength;
                 meters[1].value = descriptionLength;
                 updateLength('title', titleLength); updateLength('description', descriptionLength);

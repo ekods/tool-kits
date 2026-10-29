@@ -23,6 +23,8 @@ function wp_is_post_revision($id) { return $GLOBALS['state']['revision']; }
 function wp_is_post_autosave($id) { return $GLOBALS['state']['autosave']; }
 function wp_verify_nonce($nonce, $action) { return $GLOBALS['state']['nonce'] && $nonce === 'fixture' && $action === 'tk_seo_content_meta_box'; }
 function wp_nonce_field($action, $field) { echo '<input type="hidden" name="' . $field . '" value="fixture">'; }
+function wp_create_nonce($action) { return 'fixture'; }
+function admin_url($path) { return 'https://brandkraft.id/wp-admin/' . $path; }
 function current_user_can($cap, $id = null) { return $cap === 'upload_files' ? ($GLOBALS['state']['can_upload'] ?? true) : $GLOBALS['state']['can_edit']; }
 function wp_unslash($text) { return stripslashes($text); }
 function sanitize_text_field($text) { return trim(strip_tags($text)); }

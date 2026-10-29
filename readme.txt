@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.68
+Stable tag: 2.7.69
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,11 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.69 =
+- Move Copy to locale below all SEO Content tabs.
+- Refresh the sidebar Content score and SEO analysis after successful Gutenberg saves, waiting for metabox fields to finish saving and invalidating cached scores after REST metadata is persisted.
+- Show Not set and zero characters when the meta description field is cleared, while retaining the automatic description in previews.
+
 = 2.7.68 =
 - Tool Kits SEO Content: the accordion sections become tabs (Search appearance, Social media, SEO analysis). Focus keyphrase moves to the top of Search appearance. The last tab is remembered per browser, tabs follow the arrow/Home/End keys, and they fit narrow boxes such as phones or the editor sidebar. Without JavaScript all sections still show stacked with their headings.
 

@@ -6,7 +6,7 @@ if (in_array('--preview', $argv, true)) {
     echo file_get_contents(dirname(__DIR__) . '/assets/seo-content-panel.css');
     echo '</style><div id="tk-seo-content"><h1>Tool Kits SEO Content</h1><div class="inside">';
     tk_seo_render_content_meta_box($post);
-    echo '</div></div><script>' . file_get_contents(dirname(__DIR__) . '/assets/seo-content-panel.js') . '</script></html>';
+    echo '</div></div><script>' . file_get_contents(dirname(__DIR__) . '/assets/seo-content-panel.js') . '</script><script>' . file_get_contents(dirname(__DIR__) . '/assets/seo-score.js') . '</script></html>';
     exit;
 }
 $defaults = tk_seo_content_defaults($post);

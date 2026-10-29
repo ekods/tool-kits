@@ -96,7 +96,6 @@ function tk_seo_render_content_meta_box($post): void {
     wp_nonce_field('tk_seo_content_meta_box', 'tk_seo_content_meta_nonce');
     ?>
     <div class="tk-seo-post-editor" data-site-name="<?php echo esc_attr($site_name); ?>" data-page-title="<?php echo esc_attr($page_title); ?>" data-separator="<?php echo esc_attr($separator); ?>" data-variables="<?php echo esc_attr(wp_json_encode($variables)); ?>" data-default-title="<?php echo esc_attr($default_title); ?>" data-default-description="<?php echo esc_attr($defaults['description']); ?>" data-social-default-image="<?php echo esc_url($social_default_image); ?>" data-homepage="<?php echo (int) get_option('page_on_front') === $post_id ? '1' : '0'; ?>" data-url="<?php echo esc_url($url); ?>" data-slug="<?php echo esc_attr((string) $post->post_name); ?>">
-        <?php tk_seo_render_locale_copy($post_id); ?>
         <?php // Tabs without JavaScript fall back to all panels stacked, each with its own heading. ?>
         <div class="tk-seo-editor-tabs" role="tablist" aria-label="SEO Content" hidden>
             <button type="button" role="tab" id="tk-seo-tab-search" aria-controls="tk-seo-panel-search" aria-selected="true">Search appearance</button>
@@ -176,22 +175,31 @@ function tk_seo_render_content_meta_box($post): void {
         </section>
         <section class="tk-seo-editor-section" id="tk-seo-panel-analysis" role="tabpanel" aria-labelledby="tk-seo-tab-analysis" data-seo-tab="analysis">
             <h3 class="tk-seo-editor-heading">SEO analysis</h3>
-            <div class="tk-seo-editor-body">
-                <?php
-                $report = $post->post_status !== 'auto-draft' ? tk_seo_run_content_audit($post_id) : array();
-                $item = $report['items'][0] ?? null;
-                if (is_array($item)) : ?>
-                    <p><strong>SEO Score: <?php echo esc_html((string) $item['score']); ?>/100</strong> · <?php echo esc_html(ucfirst($item['priority'])); ?> priority</p>
-                    <meter min="0" max="100" low="50" high="85" optimum="100" value="<?php echo esc_attr((string) $item['score']); ?>" aria-label="SEO content score" class="tk-seo-length"></meter>
-                    <p class="description">Analysis uses saved content. Save your changes to refresh the score. Page-builder content and rendered schema require separate review.</p>
-                    <ul class="tk-seo-analysis-issues"><?php foreach ($item['issues'] as $issue) : ?><li><?php echo esc_html($issue); ?></li><?php endforeach; ?></ul>
-                    <?php tk_seo_content_checks_render($item); ?>
-                <?php else : ?>
-                    <p class="description">Save a draft to calculate the score.</p>
-                <?php endif; ?>
+            <div class="tk-seo-editor-body" <?php tk_seo_score_refresh_attributes($post_id); ?>>
+                <div data-tk-seo-analysis-body><?php tk_seo_render_content_analysis($post); ?></div>
+                <p class="description" data-tk-seo-score-status role="status" hidden></p>
             </div>
         </section>
+        <?php tk_seo_render_locale_copy($post_id); ?>
     </div>
+    <?php
+}
+
+function tk_seo_render_content_analysis($post, ?array $item = null): void {
+    if ($item === null && $post->post_status !== 'auto-draft') {
+        $report = tk_seo_run_content_audit((int) $post->ID);
+        $item = $report['items'][0] ?? null;
+    }
+    if (!is_array($item)) {
+        echo '<p class="description">Save a draft to calculate the score.</p>';
+        return;
+    }
+    ?>
+    <p><strong>SEO Score: <?php echo esc_html((string) $item['score']); ?>/100</strong> · <?php echo esc_html(ucfirst($item['priority'])); ?> priority</p>
+    <meter min="0" max="100" low="50" high="85" optimum="100" value="<?php echo esc_attr((string) $item['score']); ?>" aria-label="SEO content score" class="tk-seo-length"></meter>
+    <p class="description">Analysis uses saved content. Save your changes to refresh the score. Page-builder content and rendered schema require separate review.</p>
+    <ul class="tk-seo-analysis-issues"><?php foreach ($item['issues'] as $issue) : ?><li><?php echo esc_html($issue); ?></li><?php endforeach; ?></ul>
+    <?php tk_seo_content_checks_render($item); ?>
     <?php
 }
 

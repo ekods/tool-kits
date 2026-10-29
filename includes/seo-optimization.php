@@ -380,8 +380,15 @@ function tk_seo_render_geo_meta_box($post): void {
                 </label>
             <?php endforeach; ?>
         </div>
-        <?php if (is_object($post) && $post->post_status !== 'auto-draft') : ?>
-            <div class="tk-seo-geo-score"><span>Content score</span><?php tk_seo_list_score_badges($post, false); ?></div>
+        <?php if (is_object($post)) : ?>
+            <div class="tk-seo-geo-score" <?php tk_seo_score_refresh_attributes($post_id); ?>>
+                <span>Content score</span><span data-tk-seo-score-badge><?php
+                    if ($post->post_status === 'auto-draft') {
+                        echo '<span class="tk-seo-score tk-seo-score-pending" title="Save a draft to calculate the score">—</span>';
+                    } else { tk_seo_list_score_badges($post, false); }
+                ?></span>
+                <span data-tk-seo-score-status role="status" hidden></span>
+            </div>
         <?php endif; ?>
         <?php tk_seo_render_public_audit_panel($post); ?>
     </div>

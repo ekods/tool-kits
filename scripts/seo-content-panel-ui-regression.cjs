@@ -174,6 +174,20 @@ const path = require('node:path');
             assert.equal(await page.$eval('[data-length-feedback="description"] .tk-seo-length-status', node => node.textContent), expected);
             assert.equal(await page.$eval('#tk-seo-description', node => Array.from(node.value).length), length, 'Guidance must not trim text');
         }
+        for (const text of ['', '   ']) {
+            await page.$eval('#tk-seo-description', (node, value) => { node.value = value; node.dispatchEvent(new Event('input', {bubbles: true})); }, text);
+            assert.equal(await page.$eval('[data-length-feedback="description"] .tk-seo-length-status', node => node.textContent), 'Not set', 'Empty description must not inherit the fallback length');
+            assert.equal(await page.$eval('meter[aria-label="Meta description length"]', node => node.value), 0);
+            assert.ok((await page.$eval('[data-description-length]', node => node.textContent)).startsWith('0 characters'));
+            assert.equal(await page.$eval('.tk-seo-preview-description', node => node.textContent), 'Original page content', 'The search preview retains its automatic fallback');
+        }
+        await page.$eval('#tk-seo-description-editor', node => {
+            node.focus(); const range = document.createRange(); range.selectNodeContents(node);
+            const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+        });
+        await page.keyboard.press('Backspace');
+        assert.equal(await page.$eval('#tk-seo-description', node => node.value.trim()), '');
+        assert.equal(await page.$eval('[data-length-feedback="description"] .tk-seo-length-status', node => node.dataset.state), 'empty');
         // Rich variable insertion, typed % completion, removal and live preview.
         const longDescription = 'Deskripsi lengkap dengan kata utuh. '.repeat(12) + 'KALIMAT TERAKHIR 🧭';
         await page.$eval('#tk-seo-description', (node, text) => { node.value = text; node.dispatchEvent(new Event('input', {bubbles: true})); }, longDescription);
@@ -222,9 +236,11 @@ const path = require('node:path');
         await page.screenshot({path: '/tmp/toolkits-seo-variables-desktop.png', fullPage: true});
         // Polylang copy uses current raw field values and explicit replacement opt-in.
         const localeHtml = execFileSync('php', [path.join(__dirname, 'seo-content-locale-regression.php'), '--preview'], {encoding: 'utf8'});
+        const footer = html.lastIndexOf('</section>') + '</section>'.length;
         for (const width of [1440, 390, 320]) {
             await page.setViewport({width, height: 1000});
-            await page.setContent(html.replace(/<div class="tk-seo-post-editor"[^>]*>/, match => match + localeHtml));
+            await page.setContent(html.slice(0, footer) + localeHtml + html.slice(footer));
+            assert.equal(await page.$eval('.tk-seo-post-editor', node => node.lastElementChild.classList.contains('tk-seo-locale-copy')), true, 'Locale copy stays below all tab panels');
             assert.equal(await page.$eval('.tk-seo-copy-locale-button', node => node.disabled), true);
             await page.select('#tk-seo-copy-locale', 'en');
             assert.equal(await page.$eval('.tk-seo-copy-locale-button', node => node.disabled), false);

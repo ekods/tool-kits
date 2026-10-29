@@ -9,7 +9,9 @@ const TK_SEO_SCORE_LIST_LIMIT = 25;
 function tk_seo_list_score_init(): void {
     add_action('current_screen', 'tk_seo_list_score_register');
     add_action('admin_enqueue_scripts', 'tk_seo_list_score_enqueue');
-    add_action('save_post', 'tk_seo_refresh_content_score', 20, 2);
+    // REST saves finish terms and additional metadata after save_post fires.
+    add_action('wp_after_insert_post', 'tk_seo_refresh_content_score', 20, 2);
+    add_action('wp_ajax_tk_seo_content_score', 'tk_seo_content_score_ajax');
     add_filter('tk_page_cache_ignored_post_meta_keys', 'tk_seo_score_ignore_cache_meta');
 }
 
@@ -34,10 +36,48 @@ function tk_seo_list_score_register($screen): void {
 
 function tk_seo_list_score_enqueue(): void {
     $screen = get_current_screen();
-    $editor = is_object($screen) && $screen->base === 'post' && tk_seo_editor_panel_visible('geo') && tk_is_admin_user()
+    $editor = is_object($screen) && $screen->base === 'post'
+        && (tk_seo_editor_panel_visible('geo') || tk_seo_editor_panel_visible('content')) && tk_is_admin_user()
         && in_array($screen->post_type, tk_seo_selected_post_types(), true);
     if (!$editor && !tk_seo_list_score_screen_ok($screen)) { return; }
     wp_enqueue_style('tk-seo-score', TK_URL . 'assets/seo-score.css', array(), tk_asset_version('assets/seo-score.css'));
+    if ($editor) {
+        wp_enqueue_script('tk-seo-score-refresh', TK_URL . 'assets/seo-score.js', array(), tk_asset_version('assets/seo-score.js'), true);
+    }
+}
+
+function tk_seo_score_refresh_attributes(int $post_id): void {
+    printf('data-tk-seo-score-post="%s" data-tk-seo-score-url="%s" data-tk-seo-score-nonce="%s"',
+        esc_attr((string) $post_id), esc_url(admin_url('admin-ajax.php')), esc_attr(wp_create_nonce('tk_seo_content_score_' . $post_id)));
+}
+
+/** Read saved content only; an editor refresh must never save unsaved form fields. */
+function tk_seo_content_score_ajax(): void {
+    if (!tk_toolkits_can_manage()) { wp_send_json_error(array('message' => 'Forbidden'), 403); }
+    $raw_id = $_POST['post_id'] ?? '';
+    if (!is_scalar($raw_id) || !ctype_digit((string) $raw_id) || (int) $raw_id <= 0) {
+        wp_send_json_error(array('message' => 'Invalid post.'), 400);
+    }
+    $post_id = (int) $raw_id;
+    check_ajax_referer('tk_seo_content_score_' . $post_id, 'nonce');
+    $post = get_post($post_id);
+    if (!$post || !current_user_can('edit_post', $post_id) || wp_is_post_revision($post_id) || wp_is_post_autosave($post_id)
+        || !in_array($post->post_type, tk_seo_selected_post_types(), true)) {
+        wp_send_json_error(array('message' => 'You cannot review this content.'), 403);
+    }
+    if (in_array($post->post_status, array('auto-draft', 'trash'), true)) {
+        wp_send_json_error(array('message' => 'Save a draft before refreshing the score.'), 400);
+    }
+    $report = tk_seo_run_content_audit($post_id);
+    $item = $report['items'][0] ?? null;
+    if (!is_array($item) || !isset($item['score'])) {
+        wp_send_json_error(array('message' => 'The content score is unavailable.'), 500);
+    }
+    $score = max(0, min(100, (int) $item['score']));
+    update_post_meta($post_id, TK_SEO_SCORE_META, array('score' => $score, 'version' => tk_seo_content_editor_version($post), 'scanned_at' => time()));
+    ob_start(); tk_seo_render_content_analysis($post, $item); $analysis = ob_get_clean();
+    ob_start(); tk_seo_list_score_badges($post, false); $badge = ob_get_clean();
+    wp_send_json_success(array('post_id' => $post_id, 'score' => $score, 'analysis_html' => $analysis, 'badge_html' => $badge));
 }
 
 function tk_seo_list_score_column(array $columns): array {
