@@ -34,6 +34,28 @@ function tk_firewall_parse_lines($value): array {
     return array_values(array_unique(array_filter(array_map('trim', $lines))));
 }
 
+/** AI crawlers recommended for visibility whose real user agent matches a blocked fragment. */
+function tk_firewall_blocked_ai_crawlers(?string $blocked_agents = null): array {
+    if (!function_exists('tk_geo_ai_crawler_agents')) {
+        return array();
+    }
+    $fragments = tk_firewall_parse_lines($blocked_agents ?? (string) tk_get_option('firewall_blocked_user_agents', ''));
+    $blocked = array();
+    foreach (tk_geo_ai_crawler_agents() as $agent => $info) {
+        if (($info['recommended'] ?? '') !== 'allow') {
+            continue;
+        }
+        $user_agent = strtolower((string) ($info['user_agent'] ?? $agent));
+        foreach ($fragments as $fragment) {
+            if (strpos($user_agent, strtolower($fragment)) !== false) {
+                $blocked[(string) $agent] = array('label' => (string) ($info['label'] ?? $agent), 'fragment' => $fragment);
+                break;
+            }
+        }
+    }
+    return $blocked;
+}
+
 function tk_firewall_request_ip(): string {
     $ip = isset($_SERVER['REMOTE_ADDR']) ? trim((string) $_SERVER['REMOTE_ADDR']) : '';
     $ip = (string) apply_filters('tk_firewall_request_ip', $ip);
@@ -219,6 +241,21 @@ function tk_firewall_render_page(): void {
         <?php tk_render_header_branding(); ?>
         <?php tk_render_page_hero(__('Firewall', 'tool-kits'), __('Block malicious payloads, IP ranges, and unwanted user agents before WordPress renders a page.', 'tool-kits'), 'dashicons-shield-alt'); ?>
         <?php if (isset($_GET['tk_saved'])) : ?><?php tk_notice(__('Firewall settings saved.', 'tool-kits'), 'success'); ?><?php endif; ?>
+        <?php $blocked_ai = tk_firewall_blocked_ai_crawlers(); ?>
+        <?php if ($blocked_ai) : ?>
+            <?php
+            $matches = array();
+            foreach ($blocked_ai as $agent => $match) {
+                $matches[] = '<strong>' . esc_html($match['label']) . '</strong> (<code>' . esc_html($agent) . '</code>, matches <code>' . esc_html($match['fragment']) . '</code>)';
+            }
+            tk_notice(sprintf(
+                /* translators: %1$s: list of crawlers, %2$s: firewall state */
+                __('Blocked user-agent rules match AI crawlers recommended for search visibility: %1$s. %2$s Remove or narrow these fragments to keep AI answers such as Meta AI in WhatsApp able to read and cite the site.', 'tool-kits'),
+                implode(', ', $matches),
+                (int) tk_get_option('hardening_waf_enabled', 0) ? __('The firewall is enabled, so these crawlers receive 403 responses.', 'tool-kits') : __('The firewall is currently disabled, so these rules apply once it is enabled.', 'tool-kits')
+            ), 'warning');
+            ?>
+        <?php endif; ?>
         <?php if (isset($_GET['tk_log_cleared'])) : ?><?php tk_notice(__('Firewall event log cleared.', 'tool-kits'), 'success'); ?><?php endif; ?>
         <?php if (isset($_GET['tk_firewall_error']) && $_GET['tk_firewall_error'] === 'self_block') : ?><?php tk_notice(__('Settings were not saved because the blocklist matches your current IP. Add your IP to the allowlist first.', 'tool-kits'), 'error'); ?><?php endif; ?>
         <?php if (isset($_GET['tk_firewall_error']) && $_GET['tk_firewall_error'] === 'self_agent') : ?><?php tk_notice(__('Settings were not saved because a blocked user-agent rule matches your current browser.', 'tool-kits'), 'error'); ?><?php endif; ?>

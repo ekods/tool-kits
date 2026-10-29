@@ -68,6 +68,8 @@ function tk_geo_ai_radar_platforms(): array {
             'category' => 'AI Assistant', 'description' => 'Claude user-requested retrieval', 'agents' => array('Claude-User')),
         'perplexity' => array('name' => 'Perplexity', 'provider' => 'Perplexity', 'website' => 'https://www.perplexity.ai/',
             'category' => 'AI Search', 'description' => 'Perplexity search and user-requested retrieval', 'agents' => array('PerplexityBot', 'Perplexity-User')),
+        'meta-ai' => array('name' => 'Meta AI', 'provider' => 'Meta', 'website' => 'https://www.meta.ai/',
+            'category' => 'AI Assistant', 'description' => 'Meta AI search, citations and user-requested retrieval in WhatsApp, Instagram, Facebook and Messenger', 'agents' => array('Meta-WebIndexer', 'Meta-ExternalFetcher')),
         'common-crawl' => array('name' => 'Common Crawl', 'provider' => 'Common Crawl', 'website' => 'https://commoncrawl.org/',
             'category' => 'Web Crawler', 'description' => 'Common Crawl public web crawling', 'agents' => array('CCBot')),
     );

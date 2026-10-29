@@ -260,4 +260,31 @@ check($fetches === count(tk_geo_ai_crawler_agents()), 'Explicit Preview button d
 $posted['crawler_preview_refresh'] = 1;
 run_action('tk_geo_crawler_preview_handler');
 check($fetches === 2 * count(tk_geo_ai_crawler_agents()) && $options['geo_crawler_preview']['title'] === 'Fresh', 'Explicit rescan reused stale results');
-echo "PASS: crawler and AI visibility fixes, idempotence, escaping, authorization, URL scope, fresh scan buttons, save/remove verification and genuine missing responses\n";
+// Meta AI crawlers, real user agents in Preview, and firewall rules that block recommended AI crawlers.
+require_once dirname(__DIR__) . '/includes/security-firewall.php';
+if (!function_exists('get_queried_object_id')) { function get_queried_object_id() { return 0; } }
+if (!function_exists('has_filter')) { function has_filter($a = null, $b = null, $c = null) { return false; } }
+if (!function_exists('get_option')) { function get_option($a = null, $b = null, $c = null) { return $b ?? false; } }
+if (!function_exists('metadata_exists')) { function metadata_exists($type, $id, $key) { return false; } }
+$agents = tk_geo_ai_crawler_agents();
+check(($agents['Meta-WebIndexer']['recommended'] ?? '') === 'allow' && ($agents['Meta-ExternalFetcher']['recommended'] ?? '') === 'allow'
+    && ($agents['facebookexternalhit']['recommended'] ?? '') === 'allow' && ($agents['Meta-ExternalAgent']['recommended'] ?? '') === 'policy', 'Meta crawler policy defaults missing');
+$preview_agents = array_column(array_column(array_filter($fetch_log, function ($entry) { return isset($entry['args']['headers']['User-Agent']); }), 'args'), 'headers');
+check(in_array($agents['Meta-WebIndexer']['user_agent'], array_column($preview_agents, 'User-Agent'), true), 'Crawler Preview did not use the documented Meta user agent');
+check(tk_firewall_blocked_ai_crawlers("sqlmap\nmasscan") === array(), 'Unrelated firewall fragments flagged AI crawlers');
+$blocked = tk_firewall_blocked_ai_crawlers("Facebook");
+check(isset($blocked['Meta-WebIndexer'], $blocked['Meta-ExternalFetcher'], $blocked['facebookexternalhit']) && !isset($blocked['Meta-ExternalAgent']), 'A facebook fragment must flag every allowed Meta crawler but not policy crawlers');
+check(array_keys(tk_firewall_blocked_ai_crawlers("meta-external")) === array('Meta-ExternalFetcher') && tk_firewall_blocked_ai_crawlers("meta-external")['Meta-ExternalFetcher']['fragment'] === 'meta-external', 'Partial fragment match incorrect');
+check(isset(tk_firewall_blocked_ai_crawlers("gptbot\nOAI-SearchBot")['OAI-SearchBot']), 'Non-Meta allowed crawlers must also be flagged');
+$options['geo_ai_access_report'] = array(); $options['hardening_waf_enabled'] = 0; $options['firewall_blocked_user_agents'] = "meta-webindexer";
+$review = tk_geo_run_ai_access_review();
+$firewall_check = array_values(array_filter($review['checks'], function ($check) { return $check['name'] === 'Tool Kits firewall'; }));
+check($firewall_check && $firewall_check[0]['status'] === 'ok', 'Disabled firewall must not fail the AI access review');
+$options['geo_ai_access_report'] = array(); $options['hardening_waf_enabled'] = 1;
+$review = tk_geo_run_ai_access_review();
+$firewall_check = array_values(array_filter($review['checks'], function ($check) { return $check['name'] === 'Tool Kits firewall'; }));
+$rows = array_column($review['crawler_fetch_results'], null, 'agent');
+check($firewall_check[0]['status'] === 'fail' && strpos($firewall_check[0]['detail'], 'Meta-WebIndexer') !== false, 'Enabled firewall block missing from AI access review');
+check($rows['Meta-WebIndexer']['eligibility'] === 'blocked' && $rows['Meta-ExternalFetcher']['eligibility'] === 'eligible', 'Firewall-blocked crawler must be reported as blocked for AI Radar');
+check(in_array('Meta-WebIndexer is blocked by the Tool Kits firewall rule "meta-webindexer".', $review['issues'], true), 'Firewall issue not listed');
+echo "PASS: crawler and AI visibility fixes, idempotence, escaping, authorization, URL scope, fresh scan buttons, save/remove verification, genuine missing responses, Meta AI crawlers and firewall-blocked AI crawlers\n";

@@ -153,9 +153,15 @@ const cases = [
       "$visibility = array('url' => 'https://example.test/', 'snapshot' => array('title' => 'Example', 'description' => 'Description', 'author' => 'Ada', 'publisher' => 'Example Inc', 'canonical' => 'https://example.test/', 'h1s' => array('Example'), 'text_sample' => str_repeat('content ', 50)), 'schema' => array('documents' => 1, 'invalid' => 0, 'types' => array('Organization' => 1, 'WebPage' => 1)), 'checks' => array(array('name' => 'Fetchable URL', 'status' => 'ok'), array('name' => 'Meta robots', 'status' => 'ok'), array('name' => 'X-Robots-Tag', 'status' => 'ok')), 'agents' => array(array('agent' => 'Googlebot')));",
       "$search = tk_geo_build_search_radar($visibility);",
       "if ($search['score'] !== 100) throw new RuntimeException('Complete search signals should score 100');",
-      "$rows = array(); foreach (array('Googlebot','OAI-SearchBot','ChatGPT-User','Claude-User','PerplexityBot','Perplexity-User','CCBot') as $agent) $rows[] = array('agent' => $agent, 'ok' => true, 'eligibility' => 'eligible');",
+      "$rows = array(); foreach (array('Googlebot','OAI-SearchBot','ChatGPT-User','Claude-User','PerplexityBot','Perplexity-User','Meta-WebIndexer','Meta-ExternalFetcher','CCBot') as $agent) $rows[] = array('agent' => $agent, 'ok' => true, 'eligibility' => 'eligible');",
       "$radar = tk_geo_build_ai_radar($search, array('score' => 100, 'crawler_fetch_results' => $rows));",
-      "if ($radar['score'] !== 100 || count($radar['engines']) !== 5) throw new RuntimeException('Eligible platform radar should score 100');",
+      "if ($radar['score'] !== 100 || count($radar['engines']) !== 6) throw new RuntimeException('Eligible platform radar should score 100');",
+      "$meta = array_values(array_filter($radar['engines'], function ($engine) { return $engine['name'] === 'Meta AI'; }));",
+      "if (count($meta) !== 1 || $meta[0]['status'] !== 'eligible' || strpos($meta[0]['agents'], 'Meta-WebIndexer: eligible') === false) throw new RuntimeException('Meta AI must aggregate Meta-WebIndexer and Meta-ExternalFetcher');",
+      "$rows[6]['ok'] = false; $rows[6]['eligibility'] = 'blocked';",
+      "$radar = tk_geo_build_ai_radar($search, array('score' => 100, 'crawler_fetch_results' => $rows));",
+      "$meta = array_values(array_filter($radar['engines'], function ($engine) { return $engine['name'] === 'Meta AI'; }));",
+      "if ($meta[0]['status'] !== 'partial') throw new RuntimeException('Blocked Meta-WebIndexer must mark Meta AI as partial');",
       "echo \"PASS: AI Search Radar scoring and AI Radar platform aggregation are consistent\\n\";"
     ]
   },

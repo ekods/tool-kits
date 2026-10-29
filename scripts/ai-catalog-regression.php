@@ -143,14 +143,16 @@ $home_path = '/wordpress';
 check_catalog(strpos(tk_geo_ai_catalog_discovery_headers(array())['Link'], '/wordpress/.well-known/ard.json') !== false, 'Subfolder discovery URL missing');
 $home_path = '';
 
+// Catalog order: website profile, one entry per AI Radar platform, then public content.
+$first_post = 1 + count(tk_geo_ai_radar_platforms());
 $catalog = tk_geo_build_ai_catalog();
 check_catalog(array_keys($catalog) === array('version', 'last_updated', 'catalog') && $catalog['version'] === '1.0.0' && $catalog['last_updated'] === '2026-10-16', 'Requested catalog document shape missing');
-check_catalog(count($catalog['catalog']) === 211 && count($queries) === 2, 'Pagination omitted website profile, Radar platforms or public content');
-check_catalog($catalog['catalog'][210]['category'] === 'product', 'Public custom post type omitted');
-check_catalog($catalog['catalog'][6]['description'] === 'Résumé excerpt', 'Manual excerpt not preferred');
-check_catalog($catalog['catalog'][7]['description'] === 'Public summary', 'Shortcode or script content leaked');
+check_catalog(count($catalog['catalog']) === $first_post + 205 && count($queries) === 2, 'Pagination omitted website profile, Radar platforms or public content');
+check_catalog($catalog['catalog'][$first_post + 204]['category'] === 'product', 'Public custom post type omitted');
+check_catalog($catalog['catalog'][$first_post]['description'] === 'Résumé excerpt', 'Manual excerpt not preferred');
+check_catalog($catalog['catalog'][$first_post + 1]['description'] === 'Public summary', 'Shortcode or script content leaked');
 check_catalog(array_keys($catalog['catalog'][0]) === array('id', 'name', 'provider', 'category', 'description', 'website', 'features', 'pricing', 'tags', 'status'), 'Requested entry fields missing');
-check_catalog($catalog['catalog'][6]['id'] === 'post-1' && $catalog['catalog'][6]['provider'] === 'Café Site' && $catalog['catalog'][6]['features'] === array() && $catalog['catalog'][6]['status'] === 'active', 'Automatic entry mapping failed');
+check_catalog($catalog['catalog'][$first_post]['id'] === 'post-1' && $catalog['catalog'][$first_post]['provider'] === 'Café Site' && $catalog['catalog'][$first_post]['features'] === array() && $catalog['catalog'][7]['status'] === 'active', 'Automatic entry mapping failed');
 check_catalog($catalog['catalog'][0]['id'] === 'site-home' && $catalog['catalog'][0]['name'] === 'Café Site' && $catalog['catalog'][0]['website'] === home_url('/') && $catalog['catalog'][0]['description'] === 'A public catalog', 'Current website profile not generated');
 $platforms = tk_geo_ai_radar_platforms();
 $platform_entries = array_slice($catalog['catalog'], 1, count($platforms));
@@ -165,13 +167,13 @@ check_catalog(array_column($radar['engines'], 'name') === array_column($platform
 $json = tk_geo_build_ai_catalog_json();
 check_catalog(json_decode($json, true) === $catalog && strpos($json, 'Café') !== false && strpos($json, 'DO NOT EXPORT') === false, 'JSON encoding or content visibility failed');
 $types = array();
-check_catalog(count(tk_geo_build_ai_catalog()['catalog']) === 6, 'Sites without published posts lost their profile or Radar platforms');
+check_catalog(count(tk_geo_build_ai_catalog()['catalog']) === $first_post, 'Sites without published posts lost their profile or Radar platforms');
 $options['geo_ai_radar_report'] = array('url' => home_url('/'), 'scanned_at' => strtotime('2026-10-17T00:00:00Z'), 'engines' => array(
     array('name' => 'Google AI', 'status' => 'eligible'), array('name' => 'ChatGPT Search', 'status' => 'blocked'),
     array('name' => 'Claude', 'status' => 'partial'), array('name' => 'Perplexity', 'status' => 'invalid-value'), 'bad-row',
 ));
 $with_radar = tk_geo_build_ai_catalog();
-check_catalog(array_column(array_slice($with_radar['catalog'], 1), 'status') === array('eligible', 'blocked', 'partial', 'unknown', 'unknown'), 'Saved Radar access status not mapped safely');
+check_catalog(array_column(array_slice($with_radar['catalog'], 1), 'status') === array('eligible', 'blocked', 'partial', 'unknown', 'unknown', 'unknown'), 'Saved Radar access status not mapped safely');
 check_catalog($with_radar['last_updated'] === '2026-10-17', 'New Radar scan did not advance catalog date');
 $options['geo_ai_radar_report']['url'] = 'https://previous-site.test/';
 $migrated = tk_geo_build_ai_catalog();
@@ -184,7 +186,7 @@ $options['geo_ai_radar_report'] = array();
 $types = array('post' => 'post', 'page' => 'page', 'product' => 'product', 'attachment' => 'attachment');
 $permalinks = array(1 => home_url('/'));
 $deduplicated = tk_geo_build_ai_catalog();
-check_catalog(count($deduplicated['catalog']) === 210 && count(array_filter($deduplicated['catalog'], static fn($entry) => $entry['website'] === home_url('/'))) === 1, 'Static homepage was exported twice');
+check_catalog(count($deduplicated['catalog']) === $first_post + 204 && count(array_filter($deduplicated['catalog'], static fn($entry) => $entry['website'] === home_url('/'))) === 1, 'Static homepage was exported twice');
 $permalinks = array();
 
 $example = tk_geo_ai_catalog_example_entries();
@@ -226,7 +228,7 @@ $auto_settings = tk_geo_ai_catalog_posted_settings();
 check_catalog($auto_settings === array('mode' => 'manual', 'entries' => $generated), 'Generation did not replace stale editor contents with a fresh editable website/Radar snapshot');
 check_catalog($before_generate === $options, 'Generation wrote settings before the authorized shared save handler');
 tk_geo_ai_catalog_save_settings($auto_settings);
-check_catalog(count($options['geo_ai_catalog_entries']) === 211 && $options['geo_ai_catalog_entries'] === $generated, 'Generated results were not saved to the Custom catalog entries editor');
+check_catalog(count($options['geo_ai_catalog_entries']) === $first_post + 205 && $options['geo_ai_catalog_entries'] === $generated, 'Generated results were not saved to the Custom catalog entries editor');
 check_catalog(tk_geo_build_ai_catalog()['catalog'] === $generated, 'Published catalog differs from generated editor contents');
 $generated[0]['description'] = 'Edited "website" description C:\\catalog';
 $_POST = array('geo_ai_catalog_settings_present' => '1', 'geo_ai_catalog_mode' => 'manual', 'geo_ai_catalog_entries' => addslashes(wp_json_encode($generated)));
@@ -241,7 +243,7 @@ check_catalog($regenerated['entries'][0]['name'] === 'Updated Site' && $regenera
 $site_name = '';
 $posts[0]->post_title = '';
 $untitled = tk_geo_ai_catalog_posted_settings();
-check_catalog(!is_wp_error($untitled) && $untitled['entries'][0]['name'] === 'example.test' && $untitled['entries'][6]['name'] === 'Untitled post #1', 'Untitled public content prevents generating an editable catalog');
+check_catalog(!is_wp_error($untitled) && $untitled['entries'][0]['name'] === 'example.test' && $untitled['entries'][$first_post]['name'] === 'Untitled post #1', 'Untitled public content prevents generating an editable catalog');
 $site_name = 'Café <b>Site</b>';
 $posts[0]->post_title = 'Café "1"';
 
@@ -257,9 +259,9 @@ foreach (array('enabled', 'manual', 'subfolder', 'ard', 'ard-legacy', 'ard-subfo
         check_catalog(json_decode($output, true) === $manifest, 'ARD endpoint returned HTML, a redirect, or the custom catalog schema: ' . $mode);
     } elseif ($mode === 'enabled' || $mode === 'subfolder' || $mode === 'manual') {
         $response = json_decode($output, true);
-        check_catalog(is_array($response) && count($response['catalog']) === ($mode === 'manual' ? 2 : 211), 'Invalid endpoint JSON: ' . $mode);
+        check_catalog(is_array($response) && count($response['catalog']) === ($mode === 'manual' ? 2 : $first_post + 205), 'Invalid endpoint JSON: ' . $mode);
         if ($mode === 'manual') check_catalog($response === $document, 'Manual endpoint differs from requested example');
-        if ($mode === 'subfolder') check_catalog($response['catalog'][0]['website'] === 'https://example.test/wordpress/' && $response['catalog'][6]['website'] === 'https://example.test/wordpress/content-1/', 'Subfolder URL lost');
+        if ($mode === 'subfolder') check_catalog($response['catalog'][0]['website'] === 'https://example.test/wordpress/' && $response['catalog'][$first_post]['website'] === 'https://example.test/wordpress/content-1/', 'Subfolder URL lost');
     } else {
         check_catalog($output === 'FALLTHROUGH', 'Endpoint ignores gate or path: ' . $mode);
     }

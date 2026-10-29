@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.57
+Stable tag: 2.7.58
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,7 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.58 adds Meta AI (WhatsApp, Instagram, Facebook, Messenger) to GEO crawler access, Crawler Preview, AI Radar and the AI Catalog, and warns when Tool Kits firewall user-agent rules block recommended AI crawlers. A fragment such as facebook blocks every Meta crawler. Run AI Access Review again after updating to add the Meta rows to saved results.
 - Version 2.7.57 adds a GEO indicator column beside the SEO score in content lists (wp-admin/edit.php). It reads the latest saved GEO Audit & Fixes results and never audits pages while the list loads; run GEO Audit to refresh scores. Hide it under SEO Settings > Editor Panels.
 - Version 2.7.56 moves the FAQ GEO popup into its own Tool Kits FAQ GEO editor panel and adds an optional SEO score column to content lists (wp-admin/edit.php). Both are enabled by default and can be hidden under SEO Settings > Editor Panels. Saved FAQs, metadata and public SEO/GEO output are unchanged.
 - Version 2.7.55 changes the Global SEO Content checkbox to Enable global metadata override. When checked, Tool Kits replaces existing theme/plugin head metadata with the displayed values, including matching Open Graph/Twitter descriptions and social images, and removes duplicate tags. Saved page SEO titles, descriptions and social images retain priority. Uncheck to restore theme/plugin metadata; save changes and clear external page/CDN caches after updating.
@@ -76,6 +77,16 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.58 =
+- Add Meta crawlers to AI Crawler Access using Meta's documented tokens: Meta-WebIndexer (Meta AI search and citations, allow), Meta-ExternalFetcher (user-requested fetches, allow), facebookexternalhit (WhatsApp and Facebook link previews, allow) and Meta-ExternalAgent (training, policy). They are included in robots.txt, AI Visibility and Crawler Preview checks.
+- Send each crawler's documented user agent in Crawler Preview where one is defined.
+- Add Meta AI to AI Radar and the AI Catalog, aggregated from Meta-WebIndexer and Meta-ExternalFetcher.
+- Warn on the Firewall page when blocked user-agent fragments match AI crawlers recommended for search visibility, including fragments that only match the crawler URL such as facebook.
+- Add a Tool Kits firewall check to AI Access Review. When the firewall is enabled, matching crawlers are reported as blocked and AI Radar reflects that status.
+- Derive AI Catalog regression positions from the platform registry instead of fixed counts.
+
+Validation: 60/60 default regression cases pass on PHP 7.4 and PHP 8.4, including new Meta crawler and firewall checks in the crawler fixes regression and updated AI Radar and AI Catalog coverage. A live AI Access Review on WordPress 7.0 confirmed the firewall check, blocked eligibility, Meta AI partial status in AI Radar, and Firewall page warnings.
+
 = 2.7.57 =
 - Add a GEO indicator column after the SEO score in content lists for the selected SEO / GEO content types. It shows the saved GEO Audit & Fixes score with grade and issue count, a ! flag when the audit could not verify the URL, a link to run GEO Audit for unaudited URLs, a not-applicable marker for drafts and password-protected content, and Off when GEO is disabled for the content.
 - Read GEO results from the stored audit report only; list views never fetch public pages.

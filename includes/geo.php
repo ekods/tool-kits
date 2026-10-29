@@ -861,6 +861,35 @@ function tk_geo_ai_crawler_agents(): array {
             'purpose' => 'Common Crawl dataset indexing',
             'recommended' => 'policy',
         ),
+        // Meta tokens and user agents: https://developers.facebook.com/docs/sharing/webmasters/web-crawlers/
+        'Meta-WebIndexer' => array(
+            'label' => 'Meta AI Search',
+            'purpose' => 'Meta AI search results and citations in WhatsApp, Instagram, Facebook and Messenger',
+            'recommended' => 'allow',
+            'user_agent' => 'meta-webindexer/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)',
+            'note' => 'Meta states that allowing this crawler helps it cite and link to your content in Meta AI responses. Meta AI web answers have also been reported to use Bing and Google results, so keep the site indexed there.',
+        ),
+        'Meta-ExternalFetcher' => array(
+            'label' => 'Meta AI User Fetch',
+            'purpose' => 'User-requested link retrieval for Meta AI',
+            'recommended' => 'allow',
+            'user_agent' => 'meta-externalfetcher/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)',
+            'note' => 'Meta states this crawler may bypass robots.txt because each fetch is requested by a user. Firewall or CDN rules can still block it.',
+        ),
+        'facebookexternalhit' => array(
+            'label' => 'Meta Link Preview',
+            'purpose' => 'Link previews in WhatsApp, Facebook, Messenger and Instagram',
+            'recommended' => 'allow',
+            'user_agent' => 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+            'note' => 'Builds the title, description and image preview from Open Graph tags when a link is shared.',
+        ),
+        'Meta-ExternalAgent' => array(
+            'label' => 'Meta AI Training',
+            'purpose' => 'Meta foundation model training and direct product indexing',
+            'recommended' => 'policy',
+            'user_agent' => 'meta-externalagent/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)',
+            'note' => 'Blocking Meta-ExternalAgent does not block Meta-WebIndexer, which Meta uses for Meta AI search citations.',
+        ),
     );
 }
 
@@ -1174,6 +1203,19 @@ function tk_geo_run_ai_access_review(): array {
         $issues[] = 'robots.txt could not be reviewed.';
     }
 
+    $firewall_blocked = function_exists('tk_firewall_blocked_ai_crawlers') && (int) tk_get_option('hardening_waf_enabled', 0)
+        ? tk_firewall_blocked_ai_crawlers() : array();
+    $checks[] = array(
+        'name' => 'Tool Kits firewall',
+        'status' => $firewall_blocked ? 'fail' : 'ok',
+        'detail' => $firewall_blocked
+            ? 'Blocked user-agent rules return 403 to: ' . implode(', ', array_keys($firewall_blocked)) . '.'
+            : 'No Tool Kits firewall user-agent rule blocks recommended AI crawlers.',
+    );
+    foreach ($firewall_blocked as $agent => $match) {
+        $issues[] = $agent . ' is blocked by the Tool Kits firewall rule "' . $match['fragment'] . '".';
+    }
+
     $robots_results = array();
     $crawler_fetch_results = array();
     if ($robots_ok) {
@@ -1204,7 +1246,7 @@ function tk_geo_run_ai_access_review(): array {
             if (($candidate['agent'] ?? '') === $agent) { $robots_result = $candidate; break; }
         }
         $allowed = is_array($robots_result) ? !empty($robots_result['allowed']) : null;
-        $eligibility = !$home_ok ? 'unavailable' : ($allowed === null ? 'unknown' : ($allowed ? 'eligible' : 'blocked'));
+        $eligibility = !$home_ok ? 'unavailable' : (isset($firewall_blocked[$agent]) ? 'blocked' : ($allowed === null ? 'unknown' : ($allowed ? 'eligible' : 'blocked')));
         $crawler_fetch_results[] = array(
             'agent' => (string) $agent,
             'label' => (string) ($info['label'] ?? $agent),
@@ -1847,7 +1889,7 @@ function tk_geo_run_crawler_preview(string $url): array {
     $results = array();
     $first_visible = array();
     foreach ($agents as $agent => $info) {
-        $response = tk_geo_fetch_url($url, (string) $agent, 8, true);
+        $response = tk_geo_fetch_url($url, (string) ($info['user_agent'] ?? $agent), 8, true);
         $status = is_wp_error($response) ? 0 : (int) wp_remote_retrieve_response_code($response);
         $html = is_wp_error($response) ? '' : (string) wp_remote_retrieve_body($response);
         $schema = tk_geo_extract_jsonld_report($html, true);
