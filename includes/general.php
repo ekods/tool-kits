@@ -8,7 +8,8 @@ function tk_general_init(): void {
     add_action('admin_post_tk_general_settings_export', 'tk_general_settings_export');
     add_action('admin_post_tk_general_settings_import', 'tk_general_settings_import');
     add_action('admin_post_tk_general_preset_apply', 'tk_general_preset_apply');
-    add_action('admin_post_tk_general_diagnostics_export', 'tk_general_diagnostics_export');
+    add_action('admin_post_tk_general_uninstall_save', 'tk_general_uninstall_save');
+add_action('admin_post_tk_general_diagnostics_export', 'tk_general_diagnostics_export');
     add_action('admin_enqueue_scripts', 'tk_general_maybe_enqueue_assets');
     add_action('login_enqueue_scripts', 'tk_general_login_branding_styles');
     add_filter('login_headerurl', 'tk_general_login_header_url');
@@ -453,7 +454,7 @@ function tk_general_clean_import_options(array $incoming): array {
         if (!is_string($key) || !preg_match('/^[a-z0-9_]+$/', $key)) {
             continue;
         }
-        if ($key === 'toolkits_audit_log') {
+        if (tk_is_report_option($key)) {
             continue;
         }
         if (in_array($key, array('google_tag_manager_head', 'google_tag_manager_body'), true)
@@ -510,6 +511,19 @@ function tk_general_settings_import(): void {
     ));
 
     wp_safe_redirect(admin_url('admin.php?page=tool-kits-general&tk_imported=ok&tk_import_msg=' . rawurlencode(count($clean) . ' settings imported.') . '#maintenance'));
+    exit;
+}
+
+// Kept outside tk_options so a settings import or preset can never turn on data deletion.
+function tk_general_uninstall_save(): void {
+    if (!tk_toolkits_can_manage() || !current_user_can('delete_plugins')) {
+        wp_die('Forbidden');
+    }
+    tk_check_nonce('tk_general_uninstall_save');
+    $enabled = !empty($_POST['uninstall_delete_data']) ? 1 : 0;
+    update_option('tk_uninstall_delete_data', $enabled, false);
+    tk_toolkits_audit_log('uninstall_delete_data', array('enabled' => $enabled, 'user' => wp_get_current_user()->user_login));
+    wp_safe_redirect(admin_url('admin.php?page=tool-kits-general&tk_uninstall_saved=1#maintenance'));
     exit;
 }
 
@@ -1378,6 +1392,30 @@ function tk_render_general_page(): void {
                                 <button class="button button-secondary">Export Diagnostics</button>
                             </form>
                         </div>
+
+                        <?php if (current_user_can('delete_plugins')) : ?>
+                        <div class="tk-maintenance-panel">
+                            <div class="tk-maintenance-panel-head">
+                                <span class="dashicons dashicons-trash"></span>
+                                <div>
+                                    <h3>Uninstall Data</h3>
+                                    <p class="description">When Tool Kits is deleted from Plugins, also remove its settings, reports, logs, login/security event tables, page cache files and per-post SEO/GEO fields (titles, descriptions, focus keywords, FAQ items). Off by default: deleting the plugin keeps everything so a reinstall picks up where it left off. .htaccess hardening rules and optimized image copies stay.</p>
+                                </div>
+                            </div>
+                            <?php if (!empty($_GET['tk_uninstall_saved'])) : ?>
+                                <?php tk_notice('Uninstall preference saved.', 'success'); ?>
+                            <?php endif; ?>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                <?php tk_nonce_field('tk_general_uninstall_save'); ?>
+                                <input type="hidden" name="action" value="tk_general_uninstall_save">
+                                <label class="tk-checkbox-line">
+                                    <input type="checkbox" name="uninstall_delete_data" value="1" <?php checked(1, (int) get_option('tk_uninstall_delete_data', 0)); ?>>
+                                    Delete all Tool Kits data when the plugin is deleted
+                                </label>
+                                <button class="button button-secondary">Save</button>
+                            </form>
+                        </div>
+                        <?php endif; ?>
                     </div>
 
                     <div class="tk-maintenance-presets">

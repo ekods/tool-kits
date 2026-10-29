@@ -244,7 +244,38 @@ function tk_render_header_branding() {
 /**
  * Option helpers
  */
+
+// Scan reports and admin logs live in their own non-autoloaded options (tk_report_<key>): saving a report no
+// longer rewrites every setting, settings reads no longer unserialize every report, and the kill-switch
+// snapshot of tk_options stays small. tk_get_option()/tk_update_option() route these keys transparently.
+function tk_report_option_keys(): array {
+    return array(
+        'seo_geo_audit_report', 'seo_content_audit_report', 'seo_canonical_audit_report', 'seo_broken_links_report',
+        'seo_index_monitor', 'seo_indexability_report', 'authority_reports',
+        'geo_visibility_report', 'geo_prompt_preview_report', 'geo_schema_duplicate_report', 'geo_schema_duplicate_fix_report',
+        'geo_crawler_preview', 'geo_ai_access_report', 'geo_ai_radar_report', 'geo_fix_history',
+        'operations_health_report', 'smtp_dns_report', 'image_opt_compression_report', 'image_opt_cleanup_report', 'image_opt_queue',
+        'malware_scan_report', 'tk_fim_last_scan_result', 'toolkits_audit_log', 'antispam_log', 'otp_login_audit_log',
+    );
+}
+
+function tk_is_report_option($key): bool {
+    static $keys = null;
+    if ($keys === null) {
+        $keys = array_flip(tk_report_option_keys());
+    }
+    return is_string($key) && isset($keys[$key]);
+}
+
+function tk_report_option_name(string $key): string {
+    return 'tk_report_' . $key;
+}
+
 function tk_get_option($key, $default = null) {
+    if (tk_is_report_option($key)) {
+        $value = get_option(tk_report_option_name($key), null);
+        return $value === null ? $default : $value;
+    }
     $opts = tk_get_options();
     return array_key_exists($key, $opts) ? $opts[$key] : $default;
 }
@@ -285,6 +316,12 @@ add_action('updated_option', 'tk_clear_request_options_cache', -PHP_INT_MAX);
 add_action('deleted_option', 'tk_clear_request_options_cache', -PHP_INT_MAX);
 
 function tk_update_option($key, $value) {
+    if (tk_is_report_option($key)) {
+        $old = tk_get_option($key);
+        update_option(tk_report_option_name($key), $value, false);
+        tk_toolkits_audit_log_option_change($key, $old, $value);
+        return;
+    }
     $opts = tk_get_options();
     $old = array_key_exists($key, $opts) ? $opts[$key] : null;
     $opts[$key] = $value;
@@ -299,6 +336,12 @@ function tk_update_option($key, $value) {
 
 // Write several keys with one tk_options UPDATE instead of one full rewrite per key.
 function tk_update_options(array $values): void {
+    foreach ($values as $key => $value) {
+        if (tk_is_report_option($key)) {
+            tk_update_option($key, $value);
+            unset($values[$key]);
+        }
+    }
     if (!$values) {
         return;
     }
@@ -1305,7 +1348,7 @@ function tk_option_init_defaults() {
 
     $opts = tk_get_options();
     if (!is_array($opts)) { $opts = array(); }
-    $merged = array_merge($defaults, $opts);
+    $merged = array_merge(array_diff_key($defaults, array_flip(tk_report_option_keys())), $opts);
     update_option('tk_options', $merged, false);
 }
 
@@ -1334,6 +1377,9 @@ function tk_run_versioned_upgrades(): void {
     }
     if ($stored_version !== '' && version_compare($stored_version, '2.7.66', '<')) {
         tk_upgrade_to_2766_split_runtime_logs();
+    }
+    if ($stored_version !== '' && version_compare($stored_version, '2.7.67', '<')) {
+        tk_upgrade_to_2767_split_reports();
     }
     update_option('tk_version', $current_version, false);
 }
@@ -1444,6 +1490,29 @@ function tk_upgrade_to_2766_split_runtime_logs(): void {
             unset($opts[$key]);
             $changed = true;
         }
+    }
+    if ($changed) {
+        update_option('tk_options', $opts, false);
+        tk_options_cache_invalidate();
+    }
+}
+
+// 2.7.67: reports and admin logs move from tk_options into tk_report_<key> options (see tk_report_option_keys()).
+function tk_upgrade_to_2767_split_reports(): void {
+    $opts = get_option('tk_options', array());
+    if (!is_array($opts)) {
+        return;
+    }
+    $changed = false;
+    foreach (tk_report_option_keys() as $key) {
+        if (!array_key_exists($key, $opts)) {
+            continue;
+        }
+        if (!empty($opts[$key]) && get_option(tk_report_option_name($key), null) === null) {
+            add_option(tk_report_option_name($key), $opts[$key], '', false);
+        }
+        unset($opts[$key]);
+        $changed = true;
     }
     if ($changed) {
         update_option('tk_options', $opts, false);
@@ -2616,11 +2685,8 @@ function tk_toolkits_audit_log_option_change($key, $old, $new): void {
 }
 
 function tk_toolkits_audit_log(string $action, array $detail = array()): void {
-    $opts = tk_get_options();
-    if (!is_array($opts)) {
-        $opts = array();
-    }
-    $log = array_key_exists('toolkits_audit_log', $opts) && is_array($opts['toolkits_audit_log']) ? $opts['toolkits_audit_log'] : array();
+    $log = tk_get_option('toolkits_audit_log', array());
+    $log = is_array($log) ? $log : array();
     $user = wp_get_current_user();
     $entry = array(
         'time' => time(),
@@ -2633,8 +2699,7 @@ function tk_toolkits_audit_log(string $action, array $detail = array()): void {
     if (count($log) > 200) {
         $log = array_slice($log, -200);
     }
-    $opts['toolkits_audit_log'] = $log;
-    update_option('tk_options', $opts, false);
+    update_option(tk_report_option_name('toolkits_audit_log'), $log, false);
 }
 
 function tk_toolkits_guard(): void {

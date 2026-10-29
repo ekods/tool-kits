@@ -266,6 +266,7 @@ if (!function_exists('get_queried_object_id')) { function get_queried_object_id(
 if (!function_exists('has_filter')) { function has_filter($a = null, $b = null, $c = null) { return false; } }
 if (!function_exists('get_option')) { function get_option($a = null, $b = null, $c = null) { return $b ?? false; } }
 if (!function_exists('metadata_exists')) { function metadata_exists($type, $id, $key) { return false; } }
+if (!function_exists('get_post_meta')) { function get_post_meta($id, $key = '', $single = false) { return ''; } }
 $agents = tk_geo_ai_crawler_agents();
 check(($agents['Meta-WebIndexer']['recommended'] ?? '') === 'allow' && ($agents['Meta-ExternalFetcher']['recommended'] ?? '') === 'allow'
     && ($agents['facebookexternalhit']['recommended'] ?? '') === 'allow' && ($agents['Meta-ExternalAgent']['recommended'] ?? '') === 'policy', 'Meta crawler policy defaults missing');

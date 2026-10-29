@@ -14,13 +14,69 @@ function tk_monitoring_404_health_init() {
 
 // The 404 log lives in its own small, non-autoloaded option. Writing it inside tk_options rewrote every
 // setting and report on each 404, which bots turn into hundreds of large writes per minute.
+// The saved log plus hits still waiting in the buffer, so admin screens always show current counts.
 function tk_monitoring_404_log(): array {
+    return tk_monitoring_404_merge(tk_monitoring_404_saved_log(), tk_monitoring_404_pending());
+}
+
+function tk_monitoring_404_saved_log(): array {
     $log = get_option('tk_monitoring_404_log', array());
     return is_array($log) ? $log : array();
 }
 
 function tk_monitoring_404_log_save(array $log): void {
     update_option('tk_monitoring_404_log', $log, false);
+    tk_monitoring_404_pending_save(array());
+}
+
+// 404 bursts (scanners) buffer hits in a small record and merge them into the 200-entry log once a minute or
+// every 20 paths. With a persistent object cache the buffer never touches the database.
+function tk_monitoring_404_pending(): array {
+    $pending = wp_using_ext_object_cache() ? wp_cache_get('pending', 'tk_monitoring_404') : get_option('tk_monitoring_404_pending', array());
+    return is_array($pending) ? $pending : array();
+}
+
+function tk_monitoring_404_pending_save(array $pending): void {
+    if (wp_using_ext_object_cache()) {
+        if ($pending) {
+            wp_cache_set('pending', $pending, 'tk_monitoring_404', HOUR_IN_SECONDS);
+        } else {
+            wp_cache_delete('pending', 'tk_monitoring_404');
+        }
+        return;
+    }
+    if ($pending) {
+        update_option('tk_monitoring_404_pending', $pending, false);
+    } elseif (get_option('tk_monitoring_404_pending', null) !== null) {
+        delete_option('tk_monitoring_404_pending');
+    }
+}
+
+function tk_monitoring_404_merge(array $log, array $pending): array {
+    unset($pending['_since']);
+    foreach ($pending as $key => $hit) {
+        if (!is_array($hit)) {
+            continue;
+        }
+        if (isset($log[$key]) && is_array($log[$key])) {
+            $hit['count'] = (int) ($log[$key]['count'] ?? 0) + (int) $hit['count'];
+        }
+        $log[$key] = $hit;
+    }
+    if (count($log) > 200) {
+        uasort($log, function($a, $b) {
+            $a_count = isset($a['count']) ? (int) $a['count'] : 0;
+            $b_count = isset($b['count']) ? (int) $b['count'] : 0;
+            if ($a_count === $b_count) {
+                $a_last = isset($a['last']) ? (int) $a['last'] : 0;
+                $b_last = isset($b['last']) ? (int) $b['last'] : 0;
+                return $b_last <=> $a_last;
+            }
+            return $b_count <=> $a_count;
+        });
+        $log = array_slice($log, 0, 200, true);
+    }
+    return $log;
 }
 
 function tk_monitoring_log_404() {
@@ -41,35 +97,21 @@ function tk_monitoring_log_404() {
     // Group by path only: random query strings from scanners must not create new entries.
     $path = substr((string) strtok($path, '?#'), 0, 500);
     $key = md5($path);
-    $log = tk_monitoring_404_log();
-    $entry = isset($log[$key]) && is_array($log[$key]) ? $log[$key] : array(
+    $pending = tk_monitoring_404_pending();
+    $now = time();
+    $pending['_since'] = (int) ($pending['_since'] ?? $now);
+    $pending[$key] = array(
         'path' => $path,
-        'count' => 0,
-        'last' => 0,
-        'ref' => '',
-        'ua' => '',
+        'count' => (int) ($pending[$key]['count'] ?? 0) + 1,
+        'last' => $now,
+        'ref' => isset($_SERVER['HTTP_REFERER']) ? substr((string) $_SERVER['HTTP_REFERER'], 0, 200) : '',
+        'ua' => tk_user_agent(),
     );
-    $entry['count'] = (int) $entry['count'] + 1;
-    $entry['last'] = time();
-    $entry['ref'] = isset($_SERVER['HTTP_REFERER']) ? substr((string) $_SERVER['HTTP_REFERER'], 0, 200) : '';
-    $entry['ua'] = tk_user_agent();
-    $log[$key] = $entry;
-
-    if (count($log) > 200) {
-        uasort($log, function($a, $b) {
-            $a_count = isset($a['count']) ? (int) $a['count'] : 0;
-            $b_count = isset($b['count']) ? (int) $b['count'] : 0;
-            if ($a_count === $b_count) {
-                $a_last = isset($a['last']) ? (int) $a['last'] : 0;
-                $b_last = isset($b['last']) ? (int) $b['last'] : 0;
-                return $b_last <=> $a_last;
-            }
-            return $b_count <=> $a_count;
-        });
-        $log = array_slice($log, 0, 200, true);
+    if (count($pending) - 1 >= 20 || $now - $pending['_since'] >= MINUTE_IN_SECONDS) {
+        tk_monitoring_404_log_save(tk_monitoring_404_merge(tk_monitoring_404_saved_log(), $pending));
+        return;
     }
-
-    tk_monitoring_404_log_save($log);
+    tk_monitoring_404_pending_save($pending);
 }
 
 function tk_monitoring_404_scanner_paths(): array {

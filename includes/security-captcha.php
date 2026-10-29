@@ -281,6 +281,15 @@ function tk_captcha_cleanup_claims(): void {
     if (get_transient('tk_captcha_claim_cleanup')) { return; }
     global $wpdb;
     $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->options} WHERE option_name LIKE %s AND option_value < %d LIMIT 1000", $wpdb->esc_like('_tk_captcha_used_') . '%', time()));
+    // Every rendered form stores a 5-minute challenge. WordPress removes expired transients only once a day,
+    // so bots reloading the login page would pile up rows; drop expired captcha transients every 5 minutes.
+    // Same query shape as core delete_expired_transients(); with an external object cache nothing matches.
+    $wpdb->query($wpdb->prepare(
+        "DELETE a, b FROM {$wpdb->options} a, {$wpdb->options} b
+        WHERE a.option_name LIKE %s AND a.option_name NOT LIKE %s
+        AND b.option_name = CONCAT('_transient_timeout_', SUBSTRING(a.option_name, 12)) AND b.option_value < %d",
+        $wpdb->esc_like('_transient_tk_captcha_') . '%', $wpdb->esc_like('_transient_timeout_') . '%', time()
+    ));
     set_transient('tk_captcha_claim_cleanup', 1, 300);
 }
 
@@ -356,6 +365,7 @@ function tk_captcha_create_challenge(string $type = ''): array {
     $token = bin2hex(random_bytes(24));
     $hash = $type === 'text' ? tk_captcha_answer_hash($code, $token) : '';
     $pow = $type === 'checkbox' ? array('salt' => bin2hex(random_bytes(16)), 'bits' => tk_captcha_required_bits()) : array();
+    tk_captcha_cleanup_claims();
     set_transient(
         'tk_captcha_' . $token,
         array(

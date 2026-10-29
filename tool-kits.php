@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.7.66
+ * Version: 2.7.67
  * Requires PHP: 7.4
  * GitHub Plugin URI: https://github.com/ekods/tool-kits
  * Update URI: https://github.com/ekods/tool-kits
@@ -31,7 +31,7 @@ if (version_compare(PHP_VERSION, TK_MINIMUM_PHP, '<')) {
     return;
 }
 
-define('TK_VERSION', '2.7.66');
+define('TK_VERSION', '2.7.67');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
@@ -133,8 +133,38 @@ $tk_modules = array(
     'plugin-shield.php'         => 'tk_plugin_shield_init',
 );
 
-// Require all modules dynamically
+/**
+ * Modules that only register admin pages, admin-post/AJAX handlers or cron jobs. Public page views skip them;
+ * nothing outside these files calls into them (scripts/runtime-load-regression.php guards that).
+ */
+$tk_admin_only_modules = array(
+    'health-center.php', 'db-migrate.php', 'malware-scanner.php', 'html-injection-scanner.php',
+    'vulnerability-scanner.php', 'incident-response.php', 'theme-checker.php', 'security-fim.php',
+    'dashboard-widget.php', 'role-management.php', 'user-id-change.php', 'optimization.php',
+);
+
+/**
+ * Whether this request may need admin-only modules: wp-admin (including admin-ajax/admin-post), cron, WP-CLI or REST.
+ */
+function tk_request_needs_admin_modules(): bool {
+    $uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+    $rest_prefix = function_exists('rest_get_url_prefix') ? rest_get_url_prefix() : 'wp-json';
+    $needs = is_admin()
+        || (function_exists('wp_doing_cron') && wp_doing_cron())
+        || isset($_GET['doing_wp_cron']) // ALTERNATE_WP_CRON runs events inside a front-end request.
+        || (defined('WP_CLI') && WP_CLI)
+        || (defined('XMLRPC_REQUEST') && XMLRPC_REQUEST)
+        || isset($_GET['rest_route'])
+        || ($uri !== '' && strpos($uri, '/' . trim($rest_prefix, '/') . '/') !== false);
+    return (bool) apply_filters('tk_load_admin_modules', $needs);
+}
+
+$tk_load_admin_modules = tk_request_needs_admin_modules();
 foreach ($tk_modules as $file => $init_func) {
+    if (!$tk_load_admin_modules && in_array($file, $tk_admin_only_modules, true)) {
+        unset($tk_modules[$file]);
+        continue;
+    }
     require_once TK_PATH . 'includes/' . $file;
 }
 
@@ -182,6 +212,8 @@ register_deactivation_hook(__FILE__, 'tk_deactivate');
  * Uninstall cleanup
  */
 function tk_uninstall() {
+    require_once TK_PATH . 'includes/uninstall.php';
+    tk_uninstall_run();
 }
 register_uninstall_hook(__FILE__, 'tk_uninstall');
 
@@ -210,7 +242,12 @@ add_action('admin_enqueue_scripts', function($hook) {
     $is_toolkits_area = strpos($hook, 'tool-kits') !== false;
     $is_toolkits_menu = $screen && isset($screen->id) && strpos((string) $screen->id, 'tool-kits') !== false;
     if (function_exists('tk_toolkits_can_manage') && tk_toolkits_can_manage()) {
-        wp_enqueue_style('tool-kits-admin', TK_URL . 'assets/admin.css', array(), tk_asset_version('assets/admin.css'));
+        // The nested Tool Kits menu appears on every screen; the full stylesheet only where Tool Kits renders
+        // its own UI: its pages, the dashboard widgets and the post editor meta boxes.
+        wp_enqueue_style('tool-kits-admin-menu', TK_URL . 'assets/admin-menu.css', array(), tk_asset_version('assets/admin-menu.css'));
+        if ($is_toolkits_area || $is_toolkits_menu || in_array($hook, array('index.php', 'post.php', 'post-new.php'), true)) {
+            wp_enqueue_style('tool-kits-admin', TK_URL . 'assets/admin.css', array(), tk_asset_version('assets/admin.css'));
+        }
     }
     if ($is_toolkits_area || $is_toolkits_menu) {
         wp_enqueue_style('tool-kits-overview', TK_URL . 'assets/overview.css', array('tool-kits-admin'), tk_asset_version('assets/overview.css'));

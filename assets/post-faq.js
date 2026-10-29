@@ -1,5 +1,7 @@
 (function () {
     'use strict';
+    var Picker = window.ToolKitsLanguagePicker;
+    if (!Picker) { return; }
     document.querySelectorAll('.tk-post-faq').forEach(function (root) {
         var value = root.querySelector('input[type="hidden"]');
         var dialog = root.querySelector('dialog');
@@ -8,112 +10,50 @@
         var opener = root.querySelector('.tk-faq-open');
         var add = root.querySelector('.tk-faq-add');
         var sequence = 0;
-        var defaultLanguage = (root.dataset.defaultLanguage || 'id').trim().toLowerCase().replace(/_/g, '-');
-        if (!/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(defaultLanguage)) {
-            defaultLanguage = 'id';
-        }
         var preferredLanguages;
         try { preferredLanguages = JSON.parse(root.dataset.languageOrder || '[]'); } catch (e) { preferredLanguages = []; }
-        preferredLanguages = (Array.isArray(preferredLanguages) ? preferredLanguages : []).map(function (tag) {
-            return String(tag || '').trim().toLowerCase().replace(/_/g, '-');
-        }).filter(function (tag, index, items) {
-            return /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(tag) && items.indexOf(tag) === index;
+        preferredLanguages = (Array.isArray(preferredLanguages) ? preferredLanguages : []).map(Picker.normalize).filter(function (tag, index, items) {
+            return Picker.pattern.test(tag) && items.indexOf(tag) === index;
         });
-        var activeLanguage = defaultLanguage;
-        var languages = [];
-        var tabs = document.createElement('div');
-        tabs.className = 'tk-faq-language-tabs';
-        tabs.setAttribute('role', 'tablist');
-        tabs.setAttribute('aria-label', 'FAQ language');
-        var languageTools = document.createElement('div');
-        languageTools.className = 'tk-faq-language-tools';
-        var languageInput = document.createElement('input');
-        languageInput.type = 'text';
-        languageInput.placeholder = 'Language code';
-        languageInput.setAttribute('aria-label', 'Additional language code');
-        var languageAdd = document.createElement('button');
-        languageAdd.type = 'button';
-        languageAdd.className = 'button';
-        languageAdd.textContent = 'Add language';
-        var languageRemove = document.createElement('button');
-        languageRemove.type = 'button';
-        languageRemove.className = 'button';
-        languageRemove.textContent = 'Remove language';
-        function updateLanguageTools() {
-            languageRemove.disabled = activeLanguage === defaultLanguage || languages.length <= 1;
-            languageRemove.title = languageRemove.disabled ? 'The default language cannot be removed' : 'Remove the active language and all of its FAQ items';
+        function rowLanguage(row) { return row.querySelector('.tk-faq-language').value; }
+        function showError(message) {
+            error.textContent = message;
+            error.hidden = !message;
         }
-        languageTools.append(languageInput, languageAdd, languageRemove);
-        rows.before(tabs, languageTools);
-        function activateLanguage(tag) {
-            activeLanguage = tag;
-            tabs.querySelectorAll('button').forEach(function (button) {
-                var selected = button.dataset.language === tag;
-                button.setAttribute('aria-selected', String(selected));
-                button.tabIndex = selected ? 0 : -1;
-            });
-            rows.querySelectorAll('.tk-faq-row').forEach(function (row) {
-                row.hidden = row.querySelector('.tk-faq-language').value !== tag;
-            });
-            var hasRows = Array.prototype.some.call(rows.querySelectorAll('.tk-faq-row'), function (row) {
-                return row.querySelector('.tk-faq-language').value === tag;
-            });
-            if (!hasRows && rows.children.length < 50) { addRow({ language: tag }); }
-            updateLanguageTools();
-        }
-        function addLanguage(tag) {
-            if (languages.indexOf(tag) !== -1) { return; }
-            languages.push(tag);
-            var button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'button';
-            button.setAttribute('role', 'tab');
-            button.dataset.language = tag;
-            button.textContent = tag ? tag.toUpperCase() : defaultLanguage.toUpperCase();
-            button.addEventListener('click', function () { activateLanguage(tag); });
-            button.addEventListener('keydown', function (event) {
-                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') { return; }
-                event.preventDefault();
-                var index = languages.indexOf(tag);
-                var next = (index + (event.key === 'ArrowRight' ? 1 : -1) + languages.length) % languages.length;
-                activateLanguage(languages[next]);
-                tabs.children[next].focus();
-            });
-            tabs.appendChild(button);
-            updateLanguageTools();
-        }
-        languageAdd.addEventListener('click', function () {
-            var tag = languageInput.value.trim().toLowerCase().replace(/_/g, '-');
-            if (!/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(tag)) {
-                error.textContent = 'Use a language code such as id, en, or en-sg.';
-                error.hidden = false;
-                languageInput.focus();
-                return;
+        var picker = Picker.create({
+            defaultLanguage: root.dataset.defaultLanguage || 'id',
+            preferred: preferredLanguages,
+            label: 'FAQ language',
+            className: 'tk-faq-languages',
+            onError: showError,
+            onActivate: function (tag) {
+                rows.querySelectorAll('.tk-faq-row').forEach(function (row) { row.hidden = rowLanguage(row) !== tag; });
+                var hasRows = Array.prototype.some.call(rows.querySelectorAll('.tk-faq-row'), function (row) { return rowLanguage(row) === tag; });
+                if (!hasRows && rows.children.length < 50) { addRow({ language: tag }); }
+                numberRows();
+            },
+            onRemove: function (tag) {
+                var languageRows = Array.prototype.filter.call(rows.querySelectorAll('.tk-faq-row'), function (row) { return rowLanguage(row) === tag; });
+                var filled = languageRows.filter(function (row) {
+                    return row.querySelector('.tk-faq-question').value.trim() || row.querySelector('.tk-faq-answer').value.trim();
+                }).length;
+                if (filled && !window.confirm('Remove language ' + tag.toUpperCase() + ' and ' + filled + ' FAQ items?')) { return false; }
+                languageRows.forEach(function (row) { row.remove(); });
+                updateLimit();
+                return true;
             }
-            error.hidden = true;
-            addLanguage(tag);
-            activateLanguage(tag);
-            languageInput.value = '';
         });
-        languageRemove.addEventListener('click', function () {
-            if (activeLanguage === defaultLanguage || languages.length <= 1) { return; }
-            var tag = activeLanguage;
-            var rowCount = 0;
+        var defaultLanguage = picker.defaultLanguage;
+        rows.parentNode.prepend(picker.element);
+
+        function numberRows() {
+            var position = 0;
             rows.querySelectorAll('.tk-faq-row').forEach(function (row) {
-                if (row.querySelector('.tk-faq-language').value === tag) { rowCount++; }
+                if (rowLanguage(row) === picker.active()) {
+                    row.querySelector('.tk-faq-number').textContent = 'FAQ ' + (++position);
+                }
             });
-            if (!window.confirm('Remove language ' + tag.toUpperCase() + ' and ' + rowCount + ' FAQ items?')) { return; }
-            rows.querySelectorAll('.tk-faq-row').forEach(function (row) {
-                if (row.querySelector('.tk-faq-language').value === tag) { row.remove(); }
-            });
-            var index = languages.indexOf(tag);
-            if (index !== -1) {
-                languages.splice(index, 1);
-                tabs.children[index].remove();
-            }
-            activateLanguage(languages.indexOf(defaultLanguage) !== -1 ? defaultLanguage : languages[0]);
-            updateLimit();
-        });
+        }
         function updateLimit() { add.disabled = rows.children.length >= 50; }
         function addRow(item) {
             if (rows.children.length >= 50) { return; }
@@ -124,7 +64,7 @@
             language.type = 'hidden';
             language.className = 'tk-faq-language';
             language.value = item.language || '';
-            addLanguage(language.value);
+            picker.add(language.value);
             var questionLabel = document.createElement('label');
             questionLabel.textContent = 'Question';
             questionLabel.htmlFor = id + '-question';
@@ -153,29 +93,32 @@
             remove.addEventListener('click', function () {
                 row.remove();
                 updateLimit();
+                numberRows();
                 add.focus();
             });
-            row.append(language, questionLabel, question, answerLabel, answer, remove);
+            var head = document.createElement('div');
+            head.className = 'tk-faq-row-head';
+            var number = document.createElement('span');
+            number.className = 'tk-faq-number';
+            head.append(number, remove);
+            row.append(language, head, questionLabel, question, answerLabel, answer);
             rows.appendChild(row);
             updateLimit();
-            row.hidden = language.value !== activeLanguage;
+            row.hidden = language.value !== picker.active();
+            numberRows();
             return question;
         }
         opener.addEventListener('click', function () {
             var items;
             try { items = JSON.parse(value.value); } catch (e) { items = []; }
             rows.replaceChildren();
-            tabs.replaceChildren();
-            languages = [];
-            activeLanguage = defaultLanguage;
-            languageInput.value = '';
-            error.hidden = true;
+            picker.reset();
+            showError('');
             items = Array.isArray(items) ? items : [];
-            var itemLanguages = items.map(function (item) {
-                return String(item && item.language ? item.language : defaultLanguage).trim().toLowerCase().replace(/_/g, '-');
-            });
-            var knownLanguages = [defaultLanguage].concat(itemLanguages).filter(function (tag, index, all) {
-                return /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(tag) && all.indexOf(tag) === index;
+            var knownLanguages = [defaultLanguage].concat(items.map(function (item) {
+                return Picker.normalize(item && item.language ? item.language : defaultLanguage);
+            })).filter(function (tag, index, all) {
+                return Picker.pattern.test(tag) && all.indexOf(tag) === index;
             });
             function preferredRank(tag) {
                 var exact = preferredLanguages.indexOf(tag);
@@ -186,17 +129,15 @@
                 }
                 return preferredLanguages.length + 100;
             }
-            knownLanguages.sort(function (left, right) {
-                return preferredRank(left) - preferredRank(right);
-            });
-            knownLanguages.forEach(addLanguage);
+            knownLanguages.sort(function (left, right) { return preferredRank(left) - preferredRank(right); });
+            knownLanguages.forEach(picker.add);
             items.forEach(addRow);
-            activateLanguage(activeLanguage);
+            picker.activate(defaultLanguage);
             updateLimit();
             dialog.showModal();
         });
         add.addEventListener('click', function () {
-            var question = addRow({ language: activeLanguage });
+            var question = addRow({ language: picker.active() });
             if (question) { question.focus(); }
         });
         root.querySelectorAll('.tk-faq-cancel').forEach(function (button) {
@@ -212,19 +153,16 @@
             rows.querySelectorAll('.tk-faq-row').forEach(function (row) {
                 var question = row.querySelector('.tk-faq-question');
                 var answer = row.querySelector('.tk-faq-answer');
-                var language = row.querySelector('.tk-faq-language');
-                var tag = language.value.trim().toLowerCase().replace(/_/g, '-');
+                var tag = Picker.normalize(rowLanguage(row));
                 if (!question.value.trim() && !answer.value.trim()) { return; }
-                if (tag && !/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(tag)) { invalid = invalid || language; }
                 if (!question.value.trim() || !answer.value.trim()) {
                     invalid = invalid || (!question.value.trim() ? question : answer);
                 }
                 items.push({ question: question.value.trim(), answer: answer.value.trim(), language: tag });
             });
             if (invalid) {
-                error.textContent = 'Enter a question and answer; use a language code such as id or en.';
-                error.hidden = false;
-                activateLanguage(invalid.closest('.tk-faq-row').querySelector('.tk-faq-language').value);
+                showError('Enter both a question and an answer.');
+                picker.activate(rowLanguage(invalid.closest('.tk-faq-row')));
                 invalid.focus();
                 return;
             }

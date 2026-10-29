@@ -1,0 +1,94 @@
+/* Compact 3-level flyout inside the native WordPress .wp-submenu. */
+#adminmenu #toplevel_page_tool-kits.tk-nested-menu-ready .wp-submenu {
+    overflow: visible;
+}
+
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-group {
+    position: relative;
+}
+
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-group > a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 0;
+    margin: 0;
+    padding: 5px 12px !important;
+    border-radius: 0;
+    font-weight: 700;
+    transition: background .16s ease, color .16s ease;
+}
+
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-group:hover > a,
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-group.is-open > a,
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-group.tk-submenu-current > a {
+    background: rgba(59, 130, 246, 0.18);
+    color: #fff;
+}
+
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-group.has-tk-submenu > a::after {
+    content: '\203A';
+    margin-left: auto;
+    color: #93c5fd;
+    font-size: 18px;
+    line-height: 1;
+}
+
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-group.has-tk-submenu::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: -12px;
+    width: 12px;
+    height: 100%;
+}
+
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-flyout {
+    position: absolute;
+    top: -8px;
+    left: calc(100% + 8px);
+    display: none;
+    width: 232px;
+    min-width: 232px;
+    margin: 0;
+    padding: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 10px;
+    background: #0f172a;
+    box-shadow: 12px 20px 42px rgba(0, 0, 0, 0.32);
+}
+
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-group:hover > .tk-submenu-flyout,
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-group.is-open > .tk-submenu-flyout,
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-group:focus-within > .tk-submenu-flyout {
+    display: block;
+}
+
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-flyout li {
+    display: block;
+    margin: 0;
+}
+
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-flyout a {
+    margin: 0;
+    padding: 9px 12px !important;
+    border-radius: 7px;
+    white-space: normal;
+    line-height: 1.3;
+}
+
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-flyout a::before {
+    content: none !important;
+}
+
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-flyout .current a,
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-flyout a:hover,
+#adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-flyout a:focus {
+    border-radius: 6px;
+    background: rgba(59, 130, 246, 0.2);
+    color: #fff;
+}
+
+body.folded #adminmenu #toplevel_page_tool-kits .wp-submenu .tk-submenu-flyout {
+    left: calc(100% + 6px);
+}

@@ -7,8 +7,10 @@ function tk_seo_enqueue_faq_editor(): void {
         || !in_array($screen->post_type, tk_seo_selected_post_types(), true)) {
         return;
     }
-    wp_enqueue_style('tk-post-faq', TK_URL . 'assets/post-faq.css', array(), tk_asset_version('assets/post-faq.css'));
-    wp_enqueue_script('tk-post-faq', TK_URL . 'assets/post-faq.js', array(), tk_asset_version('assets/post-faq.js'), true);
+    wp_enqueue_style('tk-language-picker', TK_URL . 'assets/language-picker.css', array(), tk_asset_version('assets/language-picker.css'));
+    wp_enqueue_style('tk-post-faq', TK_URL . 'assets/post-faq.css', array('tk-language-picker'), tk_asset_version('assets/post-faq.css'));
+    wp_enqueue_script('tk-language-picker', TK_URL . 'assets/language-picker.js', array(), tk_asset_version('assets/language-picker.js'), true);
+    wp_enqueue_script('tk-post-faq', TK_URL . 'assets/post-faq.js', array('tk-language-picker'), tk_asset_version('assets/post-faq.js'), true);
 }
 
 function tk_seo_render_faq_meta_box($post): void {
@@ -27,8 +29,9 @@ function tk_seo_render_faq_meta_box($post): void {
         <?php endif; ?>
         <dialog class="tk-faq-dialog" aria-labelledby="tk-faq-title">
             <div class="tk-faq-header"><h2 id="tk-faq-title">FAQ GEO</h2><button type="button" class="button tk-faq-cancel" aria-label="Close" title="Close"><span class="dashicons dashicons-no-alt" aria-hidden="true"></span></button></div>
-            <div class="tk-faq-body"><div class="tk-faq-rows"></div>
-            <p class="tk-faq-error" role="alert" hidden></p>
+            <div class="tk-faq-body">
+                <p class="tk-faq-error" role="alert" hidden></p>
+                <div class="tk-faq-rows"></div>
             </div>
             <div class="tk-faq-footer">
                 <button type="button" class="button tk-faq-add"><span class="dashicons dashicons-plus-alt2" aria-hidden="true"></span> Add FAQ</button>

@@ -1,5 +1,7 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
+// The heartbeat loads this file on its own; health-center.php is skipped on public page views.
+require_once __DIR__ . '/health-center-policy.php';
 
 /** Small cached-option reads only; never enumerate plugins, scan files or make requests. */
 function tk_health_center_environment(): string {

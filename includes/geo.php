@@ -9,6 +9,7 @@ require_once __DIR__ . '/geo-ai-catalog.php';
 function tk_geo_init() {
     add_action('wp_ajax_tk_geo_schema_check_url', 'tk_geo_schema_check_url_ajax');
     add_action('admin_enqueue_scripts', 'tk_geo_schema_check_assets');
+    add_action('admin_enqueue_scripts', 'tk_geo_faq_editor_assets');
     add_action('wp_ajax_tk_geo_batch_start', 'tk_geo_batch_start');
     add_action('wp_ajax_tk_geo_batch_step', 'tk_geo_batch_step');
     add_action('wp_ajax_tk_geo_fix_batch_start', 'tk_geo_fix_batch_start');
@@ -40,12 +41,25 @@ function tk_geo_init() {
     add_filter('wp_headers', 'tk_geo_ai_catalog_discovery_headers');
     add_action('wp_head', 'tk_geo_ai_catalog_discovery_head', 2);
     add_action('wp_head', 'tk_geo_render_head_jsonld', 3);
+    // Same content-change hooks as the sitemap cache; WordPress registers the shared callback once.
+    foreach (array('save_post', 'deleted_post', 'trashed_post', 'update_option_permalink_structure') as $hook) {
+        add_action($hook, 'tk_seo_sitemap_flush_cache');
+    }
     add_shortcode('tool_kits_geo_faq', 'tk_geo_faq_shortcode');
 }
 
 // Loaded by the FAQ shortcode only, not on every page.
 function tk_geo_enqueue_faq_styles(): void {
     wp_enqueue_style('tk-geo-faq', TK_URL . 'assets/geo-faq.css', array(), tk_asset_version('assets/geo-faq.css'));
+}
+
+// The FAQPage editor's inline script runs while the page renders, so the picker loads in the head.
+function tk_geo_faq_editor_assets(): void {
+    if (($_GET['page'] ?? '') !== 'tool-kits-geo' || !tk_toolkits_can_manage()) {
+        return;
+    }
+    wp_enqueue_style('tk-language-picker', TK_URL . 'assets/language-picker.css', array(), tk_asset_version('assets/language-picker.css'));
+    wp_enqueue_script('tk-language-picker', TK_URL . 'assets/language-picker.js', array(), tk_asset_version('assets/language-picker.js'), false);
 }
 
 function tk_geo_enabled(): bool {
@@ -444,14 +458,12 @@ function tk_geo_current_url(): string {
     return home_url($uri);
 }
 
+// A page's own Tool Kits FAQ GEO replaces the global FAQ; an emptied one falls back to the global FAQ.
 function tk_geo_current_faq_items(): array {
     if (!is_admin() && is_singular()) {
-        $post_id = (int) get_queried_object_id();
-        if (metadata_exists('post', $post_id, '_tk_geo_faq_items')) {
-            if (!tk_geo_enabled()) {
-                return array();
-            }
-            return tk_geo_normalize_faq_items(get_post_meta($post_id, '_tk_geo_faq_items', true));
+        $post_items = tk_geo_normalize_faq_items(get_post_meta((int) get_queried_object_id(), '_tk_geo_faq_items', true));
+        if ($post_items) {
+            return tk_geo_enabled() ? $post_items : array();
         }
     }
     if ((int) tk_get_option('geo_faq_enabled', 0) !== 1) {
@@ -507,15 +519,17 @@ function tk_geo_faq_shortcode($atts = array()): string {
         return '';
     }
     tk_geo_enqueue_faq_styles();
+    // The head already prints this FAQ as FAQPage JSON-LD; microdata here would be a second FAQPage.
+    $microdata = !tk_geo_enabled();
 
     ob_start();
     ?>
-    <section class="tk-geo-faq" itemscope itemtype="https://schema.org/FAQPage">
+    <section class="tk-geo-faq"<?php echo $microdata ? ' itemscope itemtype="https://schema.org/FAQPage"' : ''; ?>>
         <?php foreach ($items as $item) : ?>
-            <details class="tk-geo-faq-item" itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">
-                <summary><span itemprop="name"><?php echo esc_html((string) $item['question']); ?></span></summary>
-                <div class="tk-geo-faq-answer" itemscope itemprop="acceptedAnswer" itemtype="https://schema.org/Answer">
-                    <div itemprop="text"><?php echo wpautop(esc_html((string) $item['answer'])); ?></div>
+            <details class="tk-geo-faq-item"<?php echo $microdata ? ' itemscope itemprop="mainEntity" itemtype="https://schema.org/Question"' : ''; ?>>
+                <summary><span<?php echo $microdata ? ' itemprop="name"' : ''; ?>><?php echo esc_html((string) $item['question']); ?></span></summary>
+                <div class="tk-geo-faq-answer"<?php echo $microdata ? ' itemscope itemprop="acceptedAnswer" itemtype="https://schema.org/Answer"' : ''; ?>>
+                    <div<?php echo $microdata ? ' itemprop="text"' : ''; ?>><?php echo wpautop(esc_html((string) $item['answer'])); ?></div>
                 </div>
             </details>
         <?php endforeach; ?>
@@ -524,10 +538,28 @@ function tk_geo_faq_shortcode($atts = array()): string {
     return (string) ob_get_clean();
 }
 
+// Every public page prints the ItemList, so keep the posts queries out of page views. The key follows the
+// settings, the request language (Polylang/WPML filter the queries) and the content generation that
+// tk_seo_sitemap_flush_cache() bumps on post/term changes.
 function tk_geo_build_itemlist_schema(): array {
     if ((int) tk_get_option('geo_itemlist_enabled', 0) !== 1) {
         return array();
     }
+    $settings = array();
+    foreach (array('geo_itemlist_post_type', 'geo_itemlist_post_ids', 'geo_itemlist_limit', 'geo_itemlist_language_mode', 'geo_itemlist_name', 'geo_itemlist_description') as $key) {
+        $settings[$key] = tk_get_option($key, '');
+    }
+    $cache_key = 'tk_geo_itemlist_' . md5((string) wp_json_encode(array($settings, home_url('/'), determine_locale(), (int) get_option('tk_seo_sitemap_generation', 0))));
+    $cached = get_transient($cache_key);
+    if (is_array($cached)) {
+        return $cached;
+    }
+    $schema = tk_geo_build_itemlist_schema_uncached();
+    set_transient($cache_key, $schema, 12 * HOUR_IN_SECONDS);
+    return $schema;
+}
+
+function tk_geo_build_itemlist_schema_uncached(): array {
 
     $post_type = sanitize_key((string) tk_get_option('geo_itemlist_post_type', 'post'));
     $post_types = tk_geo_public_post_types();
@@ -666,6 +698,53 @@ function tk_geo_schema_node_belongs_here(array $node, string $current_url): bool
 
 // Merge Custom JSON-LD into the generated SEO graph so each @id is defined once. Custom values win because
 // they are the administrator's explicit data; generated properties the custom node lacks are kept.
+// Name and description a page sets in Tool Kits SEO Content. They win over the site-wide Custom JSON-LD.
+function tk_geo_page_node_overrides(): array {
+    if (is_admin() || !is_singular() || !function_exists('tk_seo_expand_variables')) {
+        return array();
+    }
+    $post_id = (int) get_queried_object_id();
+    $overrides = array();
+    foreach (array('name' => '_tk_seo_title', 'description' => '_tk_seo_meta_description') as $property => $key) {
+        $value = trim((string) preg_replace('/\s+/', ' ', wp_strip_all_tags(tk_seo_expand_variables((string) get_post_meta($post_id, $key, true), $post_id))));
+        if ($value !== '') {
+            $overrides[$property] = $value;
+        }
+    }
+    return $overrides;
+}
+
+function tk_geo_schema_has_type(array $node, string $type): bool {
+    return in_array($type, (array) ($node['@type'] ?? array()), true);
+}
+
+// Drop Custom JSON-LD nodes that Tool Kits generates for this page (its FAQ), and apply page overrides to the
+// custom page node. Returns the custom document unchanged when nothing applies.
+function tk_geo_custom_for_page(array $custom, bool $has_faq, array $overrides, string $current_url): array {
+    $nodes = tk_geo_schema_top_nodes($custom);
+    $changed = false;
+    $kept = array();
+    foreach ($nodes as $node) {
+        if ($has_faq && tk_geo_schema_has_type($node, 'FAQPage')) {
+            $changed = true;
+            continue;
+        }
+        if ($overrides && tk_geo_schema_is_page_node($node) && tk_geo_schema_node_belongs_here($node, $current_url)) {
+            foreach ($overrides as $property => $value) {
+                if (array_key_exists($property, $node) && $node[$property] !== $value) {
+                    $node[$property] = $value;
+                    $changed = true;
+                }
+            }
+        }
+        $kept[] = $node;
+    }
+    if (!$changed) {
+        return $custom;
+    }
+    return $kept ? array('@context' => 'https://schema.org', '@graph' => $kept) : array();
+}
+
 function tk_geo_merge_custom_into_graph(array $seo, array $custom, string $current_url): array {
     if (!isset($seo['@graph']) || !is_array($seo['@graph'])) {
         return $seo;
@@ -737,6 +816,11 @@ function tk_geo_build_schema_documents(): array {
         $seo_schema = (array) tk_seo_build_schema_graph($current_url, $title, $description);
     }
     $custom = tk_geo_decode_custom_jsonld((string) tk_get_option('geo_custom_jsonld', ''));
+    $faq = tk_geo_build_faq_schema();
+    if (is_array($custom)) {
+        // The page's own SEO Content and the Tool Kits FAQ win over the site-wide Custom JSON-LD.
+        $custom = tk_geo_custom_for_page($custom, !empty($faq), tk_geo_page_node_overrides(), $current_url);
+    }
     if (!empty($seo_schema)) {
         $docs[] = is_array($custom) ? tk_geo_merge_custom_into_graph($seo_schema, $custom, $current_url) : $seo_schema;
     } elseif (is_array($custom)) {
@@ -745,7 +829,6 @@ function tk_geo_build_schema_documents(): array {
             $docs[] = $custom;
         }
     }
-    $faq = tk_geo_build_faq_schema();
     if (!empty($faq)) {
         $docs[] = $faq;
     }
@@ -3346,108 +3429,51 @@ function tk_render_geo_panel(): void {
         var add = document.getElementById('tk-geo-faq-add');
         var faqDefaultLanguage = <?php echo wp_json_encode($faq_default_language); ?>;
         var faqPreferredLanguages = <?php echo wp_json_encode($faq_languages); ?>;
-        var faqLanguage = faqDefaultLanguage;
-        var faqLanguages = [];
-        var removeLanguageButton = null;
-        var faqTabs = document.createElement('div');
-        faqTabs.setAttribute('role', 'tablist');
-        faqTabs.setAttribute('aria-label', 'FAQ language');
-        faqTabs.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin:16px 0;';
-        var updateFaqLanguageTools = function() {
-            if (removeLanguageButton) {
-                removeLanguageButton.disabled = faqLanguage === faqDefaultLanguage || faqLanguages.length <= 1;
-                removeLanguageButton.title = removeLanguageButton.disabled ? 'The default locale cannot be removed.' : 'Remove the active locale and all of its FAQ items.';
-            }
-        };
-        var activateFaqLanguage = function(tag) {
-            faqLanguage = tag;
-            faqTabs.querySelectorAll('button').forEach(function(button) {
-                var selected = button.dataset.language === tag;
-                button.setAttribute('aria-selected', String(selected));
-                button.classList.toggle('button-primary', selected);
+        var faqPicker = null;
+        var faqRowLanguage = function(row) { return row.querySelector('[name="geo_faq_language[]"]').value; };
+        if (rows && add && window.ToolKitsLanguagePicker) {
+            faqPicker = window.ToolKitsLanguagePicker.create({
+                defaultLanguage: faqDefaultLanguage,
+                preferred: faqPreferredLanguages,
+                label: 'FAQ language',
+                className: 'tk-geo-faq-languages',
+                onError: function(message) {
+                    var field = faqPicker ? faqPicker.element.querySelector('input[type="search"]') : null;
+                    if (field) { field.setCustomValidity(message); if (message) { field.reportValidity(); } }
+                },
+                onActivate: function(tag) {
+                    rows.querySelectorAll('.tk-geo-faq-row').forEach(function(row) {
+                        row.style.display = faqRowLanguage(row) === tag ? 'grid' : 'none';
+                    });
+                    var hasRows = Array.prototype.some.call(rows.querySelectorAll('.tk-geo-faq-row'), function(row) {
+                        return faqRowLanguage(row) === tag;
+                    });
+                    if (!hasRows && rowCount() < 50) { add.click(); }
+                },
+                onRemove: function(tag) {
+                    var localeRows = Array.prototype.filter.call(rows.querySelectorAll('.tk-geo-faq-row'), function(row) {
+                        return faqRowLanguage(row) === tag;
+                    });
+                    var filled = localeRows.filter(function(row) {
+                        return row.querySelector('[name="geo_faq_question[]"]').value.trim() || row.querySelector('[name="geo_faq_answer[]"]').value.trim();
+                    }).length;
+                    if (filled && !window.confirm('Remove locale ' + tag.toUpperCase() + ' and all ' + filled + ' FAQ item(s) in it?')) { return false; }
+                    localeRows.forEach(function(row) { row.remove(); });
+                    updateFaqLimit();
+                    return true;
+                }
             });
-            rows.querySelectorAll('.tk-geo-faq-row').forEach(function(row) {
-                row.style.display = row.querySelector('[name="geo_faq_language[]"]').value === tag ? 'grid' : 'none';
-            });
-            var hasRows = Array.prototype.some.call(rows.querySelectorAll('.tk-geo-faq-row'), function(row) {
-                return row.querySelector('[name="geo_faq_language[]"]').value === tag;
-            });
-            if (!hasRows && rowCount() < 50) { add.click(); }
-            updateFaqLanguageTools();
-        };
-        var addFaqLanguage = function(tag) {
-            if (faqLanguages.indexOf(tag) !== -1) { return; }
-            faqLanguages.push(tag);
-            var button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'button';
-            button.setAttribute('role', 'tab');
-            button.dataset.language = tag;
-            button.textContent = tag ? tag.toUpperCase() : 'Default';
-            button.addEventListener('click', function() { activateFaqLanguage(tag); });
-            faqTabs.appendChild(button);
-            updateFaqLanguageTools();
-        };
-        if (rows && add) {
-            rows.before(faqTabs);
-            faqPreferredLanguages.forEach(addFaqLanguage);
+            faqPicker.element.querySelector('input[type="search"]').addEventListener('input', function(event) { event.target.setCustomValidity(''); });
+            rows.before(faqPicker.element);
+            faqPreferredLanguages.forEach(faqPicker.add);
             rows.querySelectorAll('[name="geo_faq_language[]"]').forEach(function(field) {
-                field.value = field.value.trim().toLowerCase().replace(/_/g, '-');
-                if (!/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(field.value)) {
+                field.value = window.ToolKitsLanguagePicker.normalize(field.value);
+                if (!window.ToolKitsLanguagePicker.pattern.test(field.value)) {
                     field.value = faqDefaultLanguage;
                 }
                 field.type = 'hidden';
-                addFaqLanguage(field.value);
+                faqPicker.add(field.value);
             });
-            var languageTools = document.createElement('div');
-            languageTools.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;';
-            var languageCode = document.createElement('input');
-            languageCode.type = 'text';
-            languageCode.placeholder = 'Language code: fr, en-sg';
-            languageCode.setAttribute('aria-label', 'Additional FAQ language');
-            var addLanguageButton = document.createElement('button');
-            addLanguageButton.type = 'button';
-            addLanguageButton.className = 'button';
-            addLanguageButton.textContent = 'Add Language';
-            removeLanguageButton = document.createElement('button');
-            removeLanguageButton.type = 'button';
-            removeLanguageButton.className = 'button';
-            removeLanguageButton.textContent = 'Remove Locale';
-            addLanguageButton.addEventListener('click', function() {
-                var tag = languageCode.value.trim().toLowerCase().replace(/_/g, '-');
-                if (!/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(tag)) {
-                    languageCode.setCustomValidity('Use a language code such as id, en, or en-sg.');
-                    languageCode.reportValidity();
-                    return;
-                }
-                languageCode.setCustomValidity('');
-                addFaqLanguage(tag);
-                activateFaqLanguage(tag);
-                languageCode.value = '';
-            });
-            removeLanguageButton.addEventListener('click', function() {
-                if (faqLanguage === faqDefaultLanguage || faqLanguages.length <= 1) { return; }
-                var tag = faqLanguage;
-                var localeRows = Array.prototype.filter.call(rows.querySelectorAll('.tk-geo-faq-row'), function(row) {
-                    return row.querySelector('[name="geo_faq_language[]"]').value === tag;
-                });
-                if (!window.confirm('Remove locale ' + tag.toUpperCase() + ' and all ' + localeRows.length + ' FAQ item(s) in it?')) { return; }
-                localeRows.forEach(function(row) { row.remove(); });
-                var index = faqLanguages.indexOf(tag);
-                if (index !== -1) {
-                    faqLanguages.splice(index, 1);
-                    faqTabs.children[index].remove();
-                }
-                activateFaqLanguage(faqLanguages.indexOf(faqDefaultLanguage) !== -1 ? faqDefaultLanguage : faqLanguages[0]);
-                updateFaqLimit();
-            });
-            languageCode.addEventListener('input', function() { languageCode.setCustomValidity(''); });
-            languageCode.addEventListener('keydown', function(event) {
-                if (event.key === 'Enter') { event.preventDefault(); addLanguageButton.click(); }
-            });
-            languageTools.append(languageCode, addLanguageButton, removeLanguageButton);
-            rows.before(languageTools);
-            updateFaqLanguageTools();
         }
         var rowCount = function() {
             return rows ? rows.querySelectorAll('.tk-geo-faq-row').length : 0;
@@ -3464,7 +3490,7 @@ function tk_render_geo_panel(): void {
                     row.remove();
                 } else if (row) {
                     row.querySelectorAll('input, textarea').forEach(function(field){ field.value = ''; });
-                    row.querySelector('[name="geo_faq_language[]"]').value = faqLanguage;
+                    row.querySelector('[name="geo_faq_language[]"]').value = faqPicker ? faqPicker.active() : faqDefaultLanguage;
                 }
                 updateFaqLimit();
             });
@@ -3483,12 +3509,12 @@ function tk_render_geo_panel(): void {
                 rows.insertBefore(row, rows.querySelector('.description'));
                 var rowLanguage = row.querySelector('[name="geo_faq_language[]"]');
                 rowLanguage.type = 'hidden';
-                rowLanguage.value = faqLanguage;
+                rowLanguage.value = faqPicker ? faqPicker.active() : faqDefaultLanguage;
                 wireRemove(row.querySelector('.tk-geo-faq-remove'));
                 updateFaqLimit();
                 row.querySelector('[name="geo_faq_question[]"]').focus();
             });
-            activateFaqLanguage(faqDefaultLanguage);
+            if (faqPicker) { faqPicker.activate(faqDefaultLanguage); }
         }
 
         var sectionRows = document.getElementById('tk-geo-llms-section-rows');

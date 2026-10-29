@@ -12,6 +12,7 @@ function current_user_can($cap) { return $cap === 'unfiltered_html' && $GLOBALS[
 function tk_check_nonce($action) { if (!$GLOBALS['valid_nonce'] || $action !== 'tk_analytics_save') { throw new RuntimeException('Bad nonce'); } }
 function tk_get_option($key, $default = '') { return $GLOBALS['options'][$key] ?? $default; }
 function tk_update_option($key, $value) { $GLOBALS['options'][$key] = $value; }
+function tk_is_report_option($key) { return $key === 'toolkits_audit_log'; }
 function tk_post($key, $default = '') { return isset($_POST[$key]) ? stripslashes($_POST[$key]) : $default; }
 function sanitize_text_field($value) { return strip_tags($value); }
 function wp_die($message) { throw new RuntimeException($message); }

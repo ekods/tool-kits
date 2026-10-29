@@ -5,7 +5,19 @@ define('ABSPATH', __DIR__ . '/');
 $GLOBALS['tk_test'] = array('admin' => false, 'uri' => '/our-story/', 'options' => array(), 'seo' => true);
 function tk_get_option($key, $default = null) { return $GLOBALS['tk_test']['options'][$key] ?? $default; }
 function is_admin() { return $GLOBALS['tk_test']['admin']; }
-function is_singular() { return false; }
+function is_singular() { return !empty($GLOBALS['tk_test']['post']); }
+function get_queried_object_id() { return (int) ($GLOBALS['tk_test']['post'] ?? 0); }
+function get_post_meta($id, $key, $single = false) { return $GLOBALS['tk_test']['meta'][$key] ?? ''; }
+function tk_seo_expand_variables($value, $post_id = 0) { return (string) $value; }
+function wp_strip_all_tags($value) { return strip_tags((string) $value); }
+function has_filter($hook) { return false; }
+function tk_license_features_enabled() { return true; }
+function sanitize_title($value) { return strtolower(preg_replace('/[^a-z0-9]+/i', '-', $value)); }
+function esc_html($value) { return htmlspecialchars((string) $value, ENT_QUOTES); }
+function wpautop($value) { return '<p>' . $value . '</p>'; }
+function wp_enqueue_style() {}
+function tk_asset_version($path) { return '1'; }
+define('TK_URL', 'https://site.example/wp-content/plugins/tool-kits/');
 function home_url($path = '/') { return 'https://site.example' . $path; }
 function get_bloginfo($key) { return $key === 'language' ? 'en-US' : 'Site'; }
 function wp_parse_url($url, $component = -1) { return parse_url($url, $component); }
@@ -94,4 +106,39 @@ $found = tk_geo_html_schema_ids($pretty);
 check_merge(isset($found[tk_geo_schema_id_key('https://site.example/a/#webpage')]) && isset($found[tk_geo_schema_id_key('https://site.example/#website')]), 'Pretty-printed or escaped JSON-LD definitions were missed');
 check_merge(!isset($found[tk_geo_schema_id_key('https://site.example/#organization')]), 'A reference was counted as a definition');
 
-echo 'PASS: ' . $checks . " Custom JSON-LD merge, page-node scoping, admin preview and crawler fallback checks\n";
+// Page-level Tool Kits content wins over site-wide settings, and nothing is printed twice.
+$GLOBALS['tk_test']['seo'] = true;
+$GLOBALS['tk_test']['uri'] = '/our-story/';
+$GLOBALS['tk_test']['post'] = 7;
+$GLOBALS['tk_test']['options']['geo_enabled'] = 1;
+$GLOBALS['tk_test']['options']['geo_faq_enabled'] = 1;
+$GLOBALS['tk_test']['options']['geo_faq_items'] = array(array('question' => 'Global question?', 'answer' => 'Global answer.'));
+$GLOBALS['tk_test']['options']['geo_custom_jsonld'] = json_encode(array('@context' => 'https://schema.org', '@graph' => array(
+    array('@type' => 'WebPage', '@id' => 'https://site.example/our-story/#webpage', 'url' => 'https://site.example/our-story/', 'name' => 'Custom name', 'description' => 'Custom description', 'inLanguage' => 'en-US'),
+    array('@type' => 'FAQPage', '@id' => 'https://site.example/our-story/#faq', 'url' => 'https://site.example/our-story/', 'mainEntity' => array(array('@type' => 'Question', 'name' => 'Custom question?'))),
+)));
+$GLOBALS['tk_test']['meta'] = array('_tk_seo_title' => 'Page SEO title', '_tk_seo_meta_description' => 'Page SEO description', '_tk_geo_faq_items' => array(array('question' => 'Page question?', 'answer' => 'Page answer.')));
+$docs = tk_geo_build_schema_documents();
+$page = node_by_id($docs[0], 'https://site.example/our-story/#webpage');
+check_merge($page['@type'] === 'WebPage' && $page['name'] === 'Page SEO title' && $page['description'] === 'Page SEO description' && $page['inLanguage'] === 'en-US', 'Custom JSON-LD overwrote the page SEO Content: ' . json_encode($page));
+$faq_pages = array_values(array_filter($docs, function ($doc) { return ($doc['@type'] ?? '') === 'FAQPage'; }));
+$custom_faq = array_filter($docs[0]['@graph'], function ($node) { return tk_geo_schema_has_type($node, 'FAQPage'); });
+check_merge(count($faq_pages) === 1 && !$custom_faq && $faq_pages[0]['mainEntity'][0]['name'] === 'Page question?', 'FAQPage printed twice or the page FAQ did not replace the global FAQ');
+check_merge(strpos(tk_geo_faq_shortcode(), 'itemscope') === false && strpos(tk_geo_faq_shortcode(), 'Page question?') !== false, 'FAQ shortcode repeats the JSON-LD FAQPage as microdata');
+
+// An emptied page FAQ falls back to the global FAQ; without page SEO Content the custom values stay.
+$GLOBALS['tk_test']['meta'] = array('_tk_geo_faq_items' => array());
+$docs = tk_geo_build_schema_documents();
+$faq_pages = array_values(array_filter($docs, function ($doc) { return ($doc['@type'] ?? '') === 'FAQPage'; }));
+check_merge(count($faq_pages) === 1 && $faq_pages[0]['mainEntity'][0]['name'] === 'Global question?', 'An empty page FAQ hid the global FAQ');
+check_merge(node_by_id($docs[0], 'https://site.example/our-story/#webpage')['description'] === 'Custom description', 'Custom page values were dropped without page SEO Content');
+
+// No Tool Kits FAQ at all: the Custom JSON-LD FAQPage is kept; with GEO output off the shortcode keeps microdata.
+$GLOBALS['tk_test']['options']['geo_faq_enabled'] = 0;
+check_merge(count(array_filter(tk_geo_build_schema_documents()[0]['@graph'], function ($node) { return tk_geo_schema_has_type($node, 'FAQPage'); })) === 1, 'Custom FAQPage dropped although Tool Kits prints no FAQ');
+$GLOBALS['tk_test']['options']['geo_faq_enabled'] = 1;
+$GLOBALS['tk_test']['options']['geo_enabled'] = 0;
+check_merge(strpos(tk_geo_faq_shortcode(), 'itemtype="https://schema.org/FAQPage"') !== false, 'Shortcode lost its microdata while JSON-LD output is off');
+$GLOBALS['tk_test']['post'] = 0;
+
+echo 'PASS: ' . $checks . " Custom JSON-LD merge, page-node scoping, admin preview, crawler fallback and page-over-global (SEO Content, FAQ GEO) checks\n";

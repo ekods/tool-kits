@@ -1,0 +1,24 @@
+/* Language tags for FAQ editors (assets/language-picker.js). */
+.tk-lang-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tk-lang-tabs { display: contents; }
+.tk-lang-chip { display: inline-flex; align-items: stretch; overflow: hidden; border: 1px solid #c3c4c7; border-radius: 999px; background: #f6f7f7; }
+.tk-lang-chip [role="tab"] { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border: 0; background: transparent; color: #1d2327; font-size: 13px; line-height: 20px; cursor: pointer; }
+.tk-lang-chip [role="tab"] span { color: #50575e; }
+.tk-lang-chip-remove { width: 26px; padding: 0 8px 0 2px; border: 0; background: transparent; color: #50575e; font-size: 16px; line-height: 1; cursor: pointer; }
+.tk-lang-chip-remove:hover { color: #b32d2e; }
+.tk-lang-chip-remove[hidden] { display: none; }
+.tk-lang-chip.is-active { border-color: #2271b1; background: #2271b1; }
+.tk-lang-chip.is-active [role="tab"], .tk-lang-chip.is-active [role="tab"] span, .tk-lang-chip.is-active .tk-lang-chip-remove { color: #fff; }
+.tk-lang-chip:focus-within { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2271b1; }
+.tk-lang-chip button:focus { outline: none; box-shadow: none; }
+.tk-lang-search { position: relative; flex: 1 1 180px; min-width: 160px; max-width: 360px; }
+.tk-lang-search input[type="search"] { box-sizing: border-box; width: 100%; min-height: 30px; margin: 0; padding: 4px 12px; border: 1px dashed #8c8f94; border-radius: 999px; background: #fff; }
+.tk-lang-search input[type="search"]:focus { border-style: solid; }
+.tk-lang-options { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30; min-width: 220px; max-height: 240px; margin: 0; padding: 4px; overflow: auto; list-style: none; border: 1px solid #dcdcde; border-radius: 8px; background: #fff; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+.tk-lang-options[hidden] { display: none; }
+.tk-lang-options li { display: flex; align-items: baseline; gap: 10px; margin: 0; padding: 7px 10px; border-radius: 6px; cursor: pointer; }
+.tk-lang-options li strong { min-width: 44px; }
+.tk-lang-options li span { color: #50575e; }
+.tk-lang-options li[aria-selected="true"], .tk-lang-options li[role="option"]:hover { background: #f0f6fc; color: #135e96; }
+.tk-lang-options .tk-lang-empty { color: #646970; cursor: default; }
+.tk-geo-faq-languages { margin: 16px 0; }

@@ -94,6 +94,16 @@ const cases = [
     "source": ["<?php", "require __DIR__ . '/geo-fix-summary-regression.php';"]
   },
   {
+    "name": "report-options",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/report-options-regression.php';"]
+  },
+  {
+    "name": "uninstall",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/uninstall-regression.php';"]
+  },
+  {
     "name": "runtime-load",
     "runtime": "php",
     "source": ["<?php", "require __DIR__ . '/runtime-load-regression.php';"]
@@ -416,13 +426,14 @@ const cases = [
       "const assert = require('node:assert/strict');",
       "const postFaq = fs.readFileSync(path.join(__dirname, '../assets/post-faq.js'), 'utf8');",
       "const geo = fs.readFileSync(path.join(__dirname, '../includes/geo.php'), 'utf8');",
-      "assert.ok(postFaq.includes(\"languageRemove.textContent = 'Remove language'\"));",
-      "assert.ok(postFaq.includes('activeLanguage === defaultLanguage'));",
-      "assert.ok(postFaq.includes(\"row.querySelector('.tk-faq-language').value === tag\"));",
-      "assert.ok(geo.includes(\"removeLanguageButton.textContent = 'Remove Locale'\"));",
-      "assert.ok(geo.includes('faqLanguage === faqDefaultLanguage'));",
+      "const picker = fs.readFileSync(path.join(__dirname, '../assets/language-picker.js'), 'utf8');",
+      "assert.ok(picker.includes(\"close.className = 'tk-lang-chip-remove'\"));",
+      "assert.ok(picker.includes('if (tag === defaultLanguage || languages.length <= 1) { return; }'));",
+      "assert.ok(picker.includes(\"input.setAttribute('role', 'combobox')\") && picker.includes('function matches(query)'));",
+      "assert.ok(postFaq.includes('Picker.create(') && geo.includes('window.ToolKitsLanguagePicker.create('));",
       "assert.ok(geo.includes(\"'Remove locale ' + tag.toUpperCase() + ' and all '\"));",
-      "assert.ok(geo.includes('faqPreferredLanguages.forEach(addFaqLanguage)'));",
+      "assert.ok(geo.includes('faqPreferredLanguages.forEach(faqPicker.add)'));",
+      "assert.ok(geo.includes(\"'assets/language-picker.js'), false)\"));",
       "assert.ok(postFaq.includes('preferredLanguages'));",
       "console.log('PASS: FAQ locale removal is available and protects the default locale');"
     ]
@@ -560,7 +571,14 @@ const cases = [
       "function add_action($hook, $callback, $priority = 10) { $GLOBALS['hooks'][] = array($hook, $callback); }",
       "function apply_filters($hook, $value, ...$args) { return $value; }",
       "function tk_get_option($key, $default = null) { return $key === 'page_cache_enabled' ? 1 : $default; }",
+      "$cron = false; $editor = true;",
+      "function wp_doing_cron() { return $GLOBALS['cron']; }",
+      "function did_action($hook) { return 1; }",
+      "function is_admin() { return false; }",
+      "function current_user_can($cap) { return $GLOBALS['editor']; }",
       "require dirname(__DIR__) . '/includes/cache.php';",
+      "$editor = false; tk_page_cache_purge_on_option_change('some_plugin_settings'); $editor = true; $cron = true; tk_page_cache_purge_on_option_change('some_plugin_settings'); $cron = false;",
+      "if ($hooks) { throw new RuntimeException('Visitor or cron option writes purged the page cache'); }",
       "$old = array('geo_enabled' => 1, 'geo_faq_items' => array('question' => 'Old'), 'seo_geo_audit_report' => array());",
       "$new = $old; $new['seo_geo_audit_report'] = array('items' => array('new result'));",
       "tk_page_cache_purge_on_updated_option('tk_options', $old, $new);",
@@ -572,7 +590,7 @@ const cases = [
       "$new['geo_faq_items'] = array('question' => 'Updated');",
       "tk_page_cache_purge_on_updated_option('tk_options', $old, $new);",
       "if ($hooks !== array(array('shutdown', 'tk_page_cache_flush_pending'))) { throw new RuntimeException('Real content/settings changes must purge cache'); }",
-      "echo \"PASS: report updates/removals preserve cache; mixed FAQ/settings updates invalidate cache\\n\";"
+      "echo \"PASS: report updates/removals and visitor/cron option writes preserve cache; editor FAQ/settings updates invalidate cache\\n\";"
     ]
   },
   {
@@ -872,6 +890,9 @@ const cases = [
       "function _doing_it_wrong($function, $message, $version) { throw new RuntimeException($function . ': ' . $message); }",
       "function __($value) { return $value; }",
       "function wp_cache_delete($key, $group) {}",
+      "if (!defined('DAY_IN_SECONDS')) { define('DAY_IN_SECONDS', 86400); }",
+      "function wp_cache_get($key, $group = '', $force = false, &$found = null) { $found = false; return false; }",
+      "function wp_cache_set($key, $value, $group = '', $expire = 0) { return true; }",
       "function wp_next_scheduled($hook) { return false; }",
       "function wp_schedule_single_event($time, $hook) { $GLOBALS['test_scheduled'][] = $hook; }",
       "function get_the_title($id) { return 'Test ' . $id; }",

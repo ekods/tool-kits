@@ -14,6 +14,8 @@ function tk_image_opt_init() {
     add_filter('wp_calculate_image_srcset', 'tk_image_opt_original_only_srcset', 30, 5);
     add_filter('wp_get_attachment_image_src', 'tk_image_opt_filter_image_src', 30, 4);
     add_action('template_redirect', 'tk_image_opt_start_output_rewrite', 1);
+    add_action('add_attachment', 'tk_image_opt_forget_attachment_id');
+    add_action('delete_attachment', 'tk_image_opt_forget_attachment_id');
 }
 
 function tk_image_opt_on_upload($metadata, $attachment_id) {
@@ -200,6 +202,37 @@ function tk_image_opt_frontend_url(string $url): string {
     return tk_image_opt_frontend_optimize_enabled() ? tk_image_opt_get_or_create_optimized_url($url) : $url;
 }
 
+/**
+ * attachment_url_to_postid() scans postmeta by an unindexed value. Remember answers for this request and,
+ * with a persistent object cache, across requests until the attachment changes.
+ */
+function tk_image_opt_attachment_id(string $url): int {
+    static $ids = array();
+    if ($url === '') {
+        return 0;
+    }
+    if (isset($ids[$url])) {
+        return $ids[$url];
+    }
+    $key = md5($url);
+    $id = wp_cache_get($key, 'tk_image_opt_ids', false, $found);
+    if (!$found) {
+        $id = (int) attachment_url_to_postid($url);
+        wp_cache_set($key, $id, 'tk_image_opt_ids', DAY_IN_SECONDS);
+    }
+    return $ids[$url] = (int) $id;
+}
+
+function tk_image_opt_forget_attachment_id($attachment_id): void {
+    $file = get_attached_file($attachment_id);
+    $url = wp_get_attachment_url($attachment_id);
+    foreach (array($url, is_string($file) ? tk_image_opt_path_to_upload_url($file) : '') as $candidate) {
+        if (is_string($candidate) && $candidate !== '') {
+            wp_cache_delete(md5($candidate), 'tk_image_opt_ids');
+        }
+    }
+}
+
 function tk_image_opt_filter_image_src($image, $attachment_id, $size = null, $icon = false) {
     if (is_admin() || $icon || !is_array($image) || !tk_image_opt_frontend_optimize_enabled()) {
         return $image;
@@ -273,7 +306,7 @@ function tk_image_opt_original_url_for_intermediate_url(string $url): string {
         return $url;
     }
     if (preg_match('/-scaled\\.(jpe?g|png|webp)$/i', $path)) {
-        $id = attachment_url_to_postid($url);
+        $id = tk_image_opt_attachment_id($url);
         $source = $id ? tk_image_opt_source_file($id) : '';
         return $source !== '' ? tk_image_opt_path_to_upload_url($source) : $url;
     }
@@ -290,7 +323,7 @@ function tk_image_opt_original_url_for_intermediate_url(string $url): string {
                 continue;
             }
             $candidate_url = tk_image_opt_path_to_upload_url($candidate);
-            $id = attachment_url_to_postid($candidate_url);
+            $id = tk_image_opt_attachment_id($candidate_url);
             if ($id) {
                 $source = tk_image_opt_source_file($id);
                 return $source !== '' ? tk_image_opt_path_to_upload_url($source) : $candidate_url;
@@ -644,7 +677,7 @@ function tk_image_opt_source_candidates_for_derivative(string $path): array {
     } elseif (preg_match('/-tkopt\.webp$/i', $path)) {
         $stem = substr($path, 0, -11);
         $native_webp = $stem . '.webp';
-        if (is_file($native_webp) && attachment_url_to_postid(tk_image_opt_path_to_upload_url($native_webp))) {
+        if (is_file($native_webp) && tk_image_opt_attachment_id(tk_image_opt_path_to_upload_url($native_webp))) {
             $candidates[] = $native_webp;
         }
         foreach (array('jpg', 'jpeg', 'png') as $ext) {

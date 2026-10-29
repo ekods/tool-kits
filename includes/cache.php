@@ -711,7 +711,7 @@ function tk_page_cache_purge_on_updated_option($option, $old_value, $new_value) 
 
 function tk_page_cache_purge_on_option_change($option) {
     $option = is_scalar($option) ? (string) $option : '';
-    if ($option === '' || tk_page_cache_should_ignore_option_change($option)) {
+    if ($option === '' || tk_page_cache_should_ignore_option_change($option) || !tk_page_cache_option_change_can_purge($option)) {
         return;
     }
 
@@ -739,6 +739,22 @@ function tk_page_cache_flush_pending() {
         try { tk_page_cache_purge(); }
         finally { if ($switched) { restore_current_blog(); } }
     }
+}
+
+// Settings that change the site are saved by people who can edit it (wp-admin, the Customizer, REST, WP-CLI).
+// Option writes during visitor requests and cron are bookkeeping by other plugins (stats, sessions, queues,
+// remote-data caches) and must not empty the whole page cache; cached pages still expire on their TTL.
+function tk_page_cache_option_change_can_purge(string $option): bool {
+    if (defined('WP_CLI') && WP_CLI) {
+        $allowed = true;
+    } elseif (wp_doing_cron()) {
+        $allowed = false;
+    } elseif (!did_action('set_current_user') || !function_exists('current_user_can')) {
+        $allowed = is_admin();
+    } else {
+        $allowed = current_user_can('edit_posts') || current_user_can('manage_options');
+    }
+    return (bool) apply_filters('tk_page_cache_option_change_can_purge', $allowed, $option);
 }
 
 function tk_page_cache_should_ignore_option_change(string $option): bool {
@@ -770,6 +786,7 @@ function tk_page_cache_should_ignore_option_change(string $option): bool {
     }
 
     $ignored_prefixes = array(
+        'tk_report_',
         'tk_html_scan_',
         'tk_health_center_',
         '_site_transient_',

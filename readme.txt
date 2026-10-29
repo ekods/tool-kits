@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.66
+Stable tag: 2.7.67
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,18 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.67 =
+- Performance, public pages: admin-only modules (DB tools, malware/HTML/vulnerability scanners, Health Center, incident response, theme checker, file integrity, dashboard widgets, role management, user ID change, PageSpeed diagnostics) are no longer loaded on public page views, about 500 KB less PHP per request. wp-admin, admin-ajax, admin-post, cron, REST, XML-RPC and WP-CLI still load everything; the tk_load_admin_modules filter can force it.
+- Performance, GEO ItemList: the posts queries behind the ItemList JSON-LD are cached (per language) and refreshed when posts, terms, permalinks or ItemList settings change, instead of running on every page.
+- Performance, Image Optimizer: attachment lookups by URL (an unindexed postmeta search) are remembered for the request and, with a persistent object cache, until the attachment changes.
+- Performance, database: scan reports, the Tool Kits audit log, contact anti-spam and OTP logs, and the image queue move out of tk_options into their own non-autoloaded options (tk_report_*). Saving a report or log entry no longer rewrites every setting, settings reads no longer unserialize every report, and the kill-switch snapshot stays small. Existing data migrates automatically; settings exports and imports no longer carry reports.
+- Performance, 404 logging: 404 hits are buffered and merged into the log once a minute or every 20 paths, so a scanner burst no longer rewrites the 200-entry log on every request. With a persistent object cache the buffer never touches the database. The log screen still shows current counts.
+- Performance, page cache: option changes purge the page cache only when made by someone who can edit the site (wp-admin, Customizer, REST, WP-CLI). Option writes during visitor requests and cron (other plugins' stats, sessions, queues, remote-data caches) no longer empty the whole cache; the tk_page_cache_option_change_can_purge filter can override this.
+- Performance, wp-admin: the 45 KB admin stylesheet loads only on Tool Kits pages, the Dashboard and the post editor; other screens get a 3 KB stylesheet for the Tool Kits menu.
+- CAPTCHA: expired challenge records are removed every 5 minutes instead of waiting for the daily WordPress cleanup, so bots reloading the login page cannot pile up rows in wp_options.
+- Uninstall: new General → Maintenance → "Uninstall Data" option (off by default). When on, deleting Tool Kits removes its settings, reports, logs, transients, login/security event tables, page cache files and per-post SEO/GEO fields. .htaccess hardening rules and optimized image copies are kept. The choice is stored outside tk_options, so imports and presets cannot turn it on.
+- GEO/SEO, page over global: a page's Tool Kits SEO Content title and description now also win over the site-wide Custom JSON-LD on that page's WebPage node (meta tags already did). A page's Tool Kits FAQ GEO replaces the global FAQ, and an emptied page FAQ falls back to the global FAQ instead of hiding it. When Tool Kits prints a FAQPage, FAQPage nodes from Custom JSON-LD are dropped, and the [tool_kits_geo_faq] shortcode no longer repeats it as microdata, so each page has one FAQPage.
+- FAQ editors: in the page FAQ GEO popup and the GEO Setup FAQPage panel, languages are chips that switch the visible FAQs, with a remove button on every non-default language. "Add language" is a searchable tag field (search by name or code, arrow keys and Enter, any valid code accepted). Both editors share one language picker. In the popup, FAQ cards are numbered, errors show at the top, and the layout fits small screens.
 = 2.7.66 =
 - Performance, public requests: 404s, firewall blocks and redirect hits no longer rewrite the whole tk_options row; each log has its own small option. Blocked requests use cached geolocation only (no outbound lookups), and redirect hits or blocks no longer purge the page cache. The 404 log groups entries by path without query strings.
 - Performance, page cache: campaign/click parameters (utm_*, gclid, fbclid, msclkid) no longer create separate cache entries. Pages are stored minified, so cache hits are not minified again. Expired cache files are removed daily. The early-cache sync no longer reads wp-config.php and the drop-in on every request.
