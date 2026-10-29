@@ -276,6 +276,34 @@ function tk_geo_audit_remove_all_fixes_handler(): void {
     wp_safe_redirect(admin_url('admin.php?page=tool-kits-geo-audit&tk_geo_fixes_removed=1') . '#geo-audit'); exit;
 }
 
+// @id values defined (not merely referenced) by the page's JSON-LD, keyed by normalized URL plus fragment.
+function tk_geo_html_schema_ids(string $html): array {
+    $ids = array();
+    if (!preg_match_all('/<script\b[^>]*type=("|\')application\/ld\+json\1[^>]*>(.*?)<\/script>/is', $html, $matches)) {
+        return $ids;
+    }
+    $walk = function ($node) use (&$walk, &$ids) {
+        if (!is_array($node)) {
+            return;
+        }
+        if (isset($node['@id']) && is_string($node['@id']) && count(array_diff(array_keys($node), array('@id', '@context'))) > 0) {
+            $ids[tk_geo_schema_id_key($node['@id'])] = true;
+        }
+        foreach ($node as $child) {
+            $walk($child);
+        }
+    };
+    foreach ($matches[2] as $raw) {
+        $walk(json_decode(trim($raw), true));
+    }
+    return $ids;
+}
+
+function tk_geo_schema_id_key(string $id): string {
+    $fragment = strpos($id, '#') !== false ? substr($id, strpos($id, '#')) : '';
+    return tk_geo_schema_url_key($id) . $fragment;
+}
+
 function tk_geo_crawler_fix_html(string $html, string $url, array $fix): string {
     $attributes = '(?:"[^"]*"|\'[^\']*\'|[^\'">])*';
     preg_match_all('~<!--.*?-->|<(script|style|textarea|title)\b' . $attributes . '>.*?</\1\s*>|<head\b' . $attributes . '>|</head\s*>~is', $html, $tokens, PREG_OFFSET_CAPTURE);
@@ -295,8 +323,11 @@ function tk_geo_crawler_fix_html(string $html, string $url, array $fix): string 
     $edits = array();
     $inject_h1 = false;
     $schema_added = false;
+    // Parse existing JSON-LD so formatting differences (spacing, escaped slashes, trailing slash) cannot
+    // hide an existing WebPage and cause a second Organization/WebSite/WebPage graph.
+    $defined_ids = tk_geo_html_schema_ids($html);
     foreach (($fix['fields'] ?? array()) as $field) {
-        if ($field === 'schema_graph' && strpos($html, '"@id":"' . $url . '#webpage"') !== false) { continue; }
+        if ($field === 'schema_graph' && isset($defined_ids[tk_geo_schema_id_key($url . '#webpage')])) { continue; }
         if ($field !== 'schema_graph' && (!array_key_exists($field, $metadata) || !empty($metadata[$field]))) { continue; }
         $tag = '';
         if ($field === 'title' && !empty($fix['title'])) {
@@ -330,7 +361,12 @@ function tk_geo_crawler_fix_html(string $html, string $url, array $fix): string 
                 if ($published) { $page['datePublished'] = $published; }
                 if ($modified) { $page['dateModified'] = $modified; }
             }
-            $schema = array('@context' => 'https://schema.org', '@graph' => array($organization, $website, $page));
+            $graph = array();
+            foreach (array($organization, $website) as $entity) {
+                if (!isset($defined_ids[tk_geo_schema_id_key($entity['@id'])])) { $graph[] = $entity; }
+            }
+            $graph[] = $page;
+            $schema = array('@context' => 'https://schema.org', '@graph' => $graph);
             $tag = '<script type="application/ld+json"' . tk_csp_nonce_attr() . '>'
                 . wp_json_encode($schema, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES) . '</script>';
             $schema_added = true;

@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.64
+Stable tag: 2.7.65
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,13 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.65 =
+- GEO JSON-LD: Custom JSON-LD is now merged into the generated SEO graph by @id, so WebSite, Organization and WebPage are each defined once per page. Custom values win, and generated properties the custom node lacks are kept. Previously a Custom JSON-LD that repeated #website, #organization or #webpage printed a second definition on every page.
+- Page nodes (WebPage and its subtypes) in the site-wide Custom JSON-LD now print only on the URL they describe. A home page WebPage no longer appears on every inner page, and on its own URL (including with a query string) it merges into the generated WebPage. The same rule applies when another SEO plugin turns the Tool Kits SEO graph off.
+- Crawler metadata fallback: existing JSON-LD is parsed instead of matched as text, so formatting differences can no longer add a third Organization/WebSite/WebPage graph. Only entities that are genuinely missing are added.
+- SEO schema: relatedLink moves from Article/BlogPosting/Service/Product to the page's WebPage, where schema.org defines it. This clears the validator.schema.org warning on posts.
+- Tests: the CAPTCHA UI regression now covers the proof-of-work flow.
+
 = 2.7.64 =
 - GEO Setup > Custom JSON-LD: new schema check in the style of validator.schema.org. It checks the setting draft as you type, or every JSON-LD block of a live URL, against a bundled schema.org vocabulary snapshot. Results are grouped by type with error, warning and item counts and per-property messages. Tool Kits tips (recommended properties, repeated @id, references without a definition) are counted separately so the counts stay comparable with validator.schema.org.
 - GEO ItemList output no longer adds inLanguage to ItemList and ListItem. schema.org does not define that property for these types, and validator.schema.org reported one warning per item.

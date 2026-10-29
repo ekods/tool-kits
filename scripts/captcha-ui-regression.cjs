@@ -13,7 +13,8 @@ function classes() {
     return { add: value => values.add(value), contains: value => values.has(value), remove: value => values.delete(value) };
 }
 function field(type, owner) {
-    const current = { owner, dataset: {}, isConnected: true, attributes: { 'data-type': type },
+    // Server-issued proof-of-work challenge (salt:bits); 1 bit keeps the solver instant.
+    const current = { owner, dataset: { pow: 'a'.repeat(32) + ':1' }, isConnected: true, attributes: { 'data-type': type },
         output: { textContent: '' }, token: { value: 'token-' + (++serial) }, answer: { value: '' },
         input: { value: '', focused: false }, button: { disabled: false },
         box: { classList: classes(), setAttribute(key, value) { this[key] = value; }, removeAttribute(key) { delete this[key]; } },
@@ -53,7 +54,7 @@ function form(type) {
 const checkboxForm = form('checkbox');
 const classicForm = form('text');
 const context = vm.createContext({
-    Date: { now: () => now }, URLSearchParams,
+    Date: { now: () => now }, URLSearchParams, TextEncoder, navigator: { webdriver: false },
     window: { tkCaptcha: { refreshUrl: '/refresh', verifyUrl: '/verify', refreshNonce: 'refresh-nonce', verifyNonce: 'verify-nonce',
         minSeconds: 1, loading: 'Loading', required: 'Required', incorrect: 'Incorrect', verifyFailed: 'Check the box again', refreshFailed: 'Refresh failed', tooFast: 'Wait', rateLimited: 'Rate limited' },
         setTimeout(resolve, ms) { now += ms; resolve(); },
@@ -113,6 +114,7 @@ function submit(owner) {
     assert.equal(requests.length, 3, 'Repeated clicks started overlapping verification requests');
     assert.equal(requests[2].url, '/verify');
     assert.equal(requests[2].options.body.get('checked'), '1');
+    assert.match(requests[2].options.body.get('pow_nonce') || '', /^\d+$/, 'Checkbox did not send its proof-of-work nonce');
     assert.equal(requests[2].options.body.get('answer'), null, 'Checkbox still submits a human-entered answer');
     assert.equal(requests[2].options.body.get('interact'), null, 'Client interaction counters must not be a security credential');
     assert.equal(checkbox.box.classList.contains('is-loading'), true);

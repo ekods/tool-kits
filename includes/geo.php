@@ -619,8 +619,111 @@ function tk_geo_build_itemlist_schema(): array {
     return $schema;
 }
 
+// Compare page URLs without scheme case, query, fragment or trailing slash differences.
+function tk_geo_schema_url_key(string $url): string {
+    $parts = wp_parse_url($url);
+    if (!is_array($parts) || empty($parts['host'])) {
+        return rtrim((string) strtok($url, '#?'), '/');
+    }
+    return strtolower(($parts['scheme'] ?? 'https') . '://' . $parts['host']) . (isset($parts['port']) ? ':' . $parts['port'] : '') . rtrim((string) ($parts['path'] ?? ''), '/');
+}
+
+function tk_geo_schema_is_page_node(array $node): bool {
+    $page_types = array('WebPage', 'AboutPage', 'CheckoutPage', 'CollectionPage', 'ContactPage', 'FAQPage', 'ItemPage', 'MedicalWebPage', 'ProfilePage', 'QAPage', 'RealEstateListing', 'SearchResultsPage');
+    return (bool) array_intersect((array) ($node['@type'] ?? array()), $page_types);
+}
+
+// Top-level nodes of a decoded JSON-LD value: list items, @graph entries, or the object itself.
+function tk_geo_schema_top_nodes(array $document): array {
+    if ($document && array_keys($document) === range(0, count($document) - 1)) {
+        $nodes = array();
+        foreach ($document as $item) {
+            if (is_array($item)) {
+                $nodes = array_merge($nodes, tk_geo_schema_top_nodes($item));
+            }
+        }
+        return $nodes;
+    }
+    if (isset($document['@graph']) && is_array($document['@graph'])) {
+        $nodes = array_values(array_filter($document['@graph'], 'is_array'));
+        $root = $document;
+        unset($root['@graph'], $root['@context']);
+        if (isset($root['@type'])) {
+            $nodes[] = $root;
+        }
+        return $nodes;
+    }
+    unset($document['@context']);
+    return array($document);
+}
+
+// Site-wide Custom JSON-LD is printed on every URL. A page node (WebPage and subtypes) whose @id or url
+// names another URL describes that page, not the current one, so it is only kept on its own URL.
+function tk_geo_schema_node_belongs_here(array $node, string $current_url): bool {
+    if (!tk_geo_schema_is_page_node($node)) {
+        return true;
+    }
+    $target = isset($node['@id']) && is_string($node['@id']) && preg_match('#^https?://#i', $node['@id']) ? $node['@id'] : (isset($node['url']) && is_string($node['url']) ? $node['url'] : '');
+    return $target === '' || tk_geo_schema_url_key($target) === tk_geo_schema_url_key($current_url);
+}
+
+// Merge Custom JSON-LD into the generated SEO graph so each @id is defined once. Custom values win because
+// they are the administrator's explicit data; generated properties the custom node lacks are kept.
+function tk_geo_merge_custom_into_graph(array $seo, array $custom, string $current_url): array {
+    if (!isset($seo['@graph']) || !is_array($seo['@graph'])) {
+        return $seo;
+    }
+    $index = array();
+    $page = null;
+    foreach ($seo['@graph'] as $position => $node) {
+        if (is_array($node) && isset($node['@id']) && is_string($node['@id']) && $node['@id'] !== '') {
+            $index[$node['@id']] = $position;
+        }
+        if ($page === null && is_array($node) && tk_geo_schema_is_page_node($node)) {
+            $page = $position;
+        }
+    }
+    foreach (tk_geo_schema_top_nodes($custom) as $node) {
+        if (!tk_geo_schema_node_belongs_here($node, $current_url)) {
+            continue;
+        }
+        $id = isset($node['@id']) && is_string($node['@id']) ? $node['@id'] : '';
+        if ($id !== '' && isset($index[$id])) {
+            $seo['@graph'][$index[$id]] = array_merge($seo['@graph'][$index[$id]], $node);
+            continue;
+        }
+        // The current page's node under another @id spelling (query string, trailing slash): keep the generated
+        // @id, which the breadcrumb and article nodes reference.
+        if ($page !== null && tk_geo_schema_is_page_node($node)) {
+            unset($node['@id']);
+            $seo['@graph'][$page] = array_merge($seo['@graph'][$page], $node);
+            continue;
+        }
+        $seo['@graph'][] = $node;
+        if ($id !== '') {
+            $index[$id] = count($seo['@graph']) - 1;
+        }
+    }
+    return $seo;
+}
+
+// Without a generated graph, print Custom JSON-LD unchanged unless it carries another URL's page node.
+function tk_geo_filter_custom_jsonld(array $custom, string $current_url): array {
+    $nodes = tk_geo_schema_top_nodes($custom);
+    $kept = array_values(array_filter($nodes, function ($node) use ($current_url) {
+        return tk_geo_schema_node_belongs_here($node, $current_url);
+    }));
+    if (count($kept) === count($nodes)) {
+        return $custom;
+    }
+    return $kept ? array('@context' => 'https://schema.org', '@graph' => $kept) : array();
+}
+
 function tk_geo_build_schema_documents(): array {
     $docs = array();
+    // Admin previews and checks describe the home page rather than the wp-admin URL.
+    $current_url = is_admin() ? home_url('/') : (function_exists('tk_seo_current_url') ? tk_seo_current_url() : tk_geo_current_url());
+    $seo_schema = array();
     $seo_schema_allowed = (function_exists('tk_seo_tools_enabled') ? tk_seo_tools_enabled() : true);
     if (function_exists('tk_seo_post_feature_enabled') && !tk_seo_post_feature_enabled('seo')) {
         $seo_schema_allowed = false;
@@ -632,17 +735,18 @@ function tk_geo_build_schema_documents(): array {
         $seo_schema_allowed = false;
     }
     if ($seo_schema_allowed && (int) tk_get_option('seo_schema_enabled', 1) === 1 && function_exists('tk_seo_build_schema_graph')) {
-        $url = function_exists('tk_seo_current_url') ? tk_seo_current_url() : tk_geo_current_url();
         $title = wp_get_document_title();
         $description = function_exists('tk_seo_generate_description') ? tk_seo_generate_description() : '';
-        $seo_schema = tk_seo_build_schema_graph($url, $title, $description);
-        if (!empty($seo_schema)) {
-            $docs[] = $seo_schema;
-        }
+        $seo_schema = (array) tk_seo_build_schema_graph($current_url, $title, $description);
     }
     $custom = tk_geo_decode_custom_jsonld((string) tk_get_option('geo_custom_jsonld', ''));
-    if (is_array($custom)) {
-        $docs[] = $custom;
+    if (!empty($seo_schema)) {
+        $docs[] = is_array($custom) ? tk_geo_merge_custom_into_graph($seo_schema, $custom, $current_url) : $seo_schema;
+    } elseif (is_array($custom)) {
+        $custom = tk_geo_filter_custom_jsonld($custom, $current_url);
+        if (!empty($custom)) {
+            $docs[] = $custom;
+        }
     }
     $faq = tk_geo_build_faq_schema();
     if (!empty($faq)) {

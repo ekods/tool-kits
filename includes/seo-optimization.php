@@ -884,6 +884,7 @@ function tk_seo_build_schema_graph($url, $title, $description) {
     if (!empty($breadcrumb)) {
         $webpage['breadcrumb'] = array('@id' => $breadcrumb['@id']);
     }
+    $webpage_index = count($graph);
     $graph[] = $webpage;
     if (!empty($breadcrumb)) {
         $graph[] = $breadcrumb;
@@ -954,8 +955,9 @@ function tk_seo_build_schema_graph($url, $title, $description) {
                 if (!empty($references)) {
                     $content_node['citation'] = $references;
                 }
+                // schema.org defines relatedLink on WebPage only, not on Article, Service or Product.
                 if (!empty($related)) {
-                    $content_node['relatedLink'] = $related;
+                    $graph[$webpage_index]['relatedLink'] = $related;
                 }
                 $graph[] = $content_node;
             }
