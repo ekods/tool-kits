@@ -23,7 +23,10 @@ function tk_captcha_image_uri(string $code): string {
         ob_start(); imagepng($image); $png = ob_get_clean(); imagedestroy($image);
         if (is_string($png) && $png !== '') { return 'data:image/png;base64,' . base64_encode($png); }
     }
+    return tk_captcha_svg_uri($code, $width, $height);
+}
 
+function tk_captcha_svg_uri(string $code, int $width, int $height): string {
     // Path-only bitmap glyphs keep the answer out of source text on hosts without GD.
     $glyphs = array(
         'A'=>array(14,17,17,31,17,17,17), 'B'=>array(30,17,17,30,17,17,30),
@@ -49,15 +52,33 @@ function tk_captcha_image_uri(string $code): string {
         '%'=>array(17,2,4,4,8,16,17), '^'=>array(4,10,17,0,0,0,0),
         '&'=>array(12,18,20,8,21,18,13), '*'=>array(0,21,14,31,14,21,0),
     );
-    $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' . $width . '" height="68" viewBox="0 0 ' . $width . ' 68"><path fill="#eef3fa" d="M0 0h' . $width . 'v68H0z"/>';
+    // Cells are placed in absolute, jittered coordinates and shuffled across all glyphs, so no per-character
+    // path string or transform repeats between challenges and the source cannot be matched against a glyph table.
+    $cells = array();
     foreach (str_split($code) as $index => $char) {
-        $path = '';
+        $angle = deg2rad(random_int(-10, 10));
+        $scale = random_int(90, 110) / 100;
+        $origin_x = 10 + $index * 28 + random_int(-1, 2);
+        $origin_y = random_int(8, 14);
         foreach ($glyphs[$char] ?? array() as $row => $bits) {
             for ($col = 0; $col < 5; $col++) {
-                if ($bits & (1 << (4 - $col))) { $path .= 'M' . ($col * 4) . ' ' . ($row * 6) . 'h4v6h-4z'; }
+                if (!($bits & (1 << (4 - $col)))) { continue; }
+                $x = ($col * 4 - 10) * $scale;
+                $y = ($row * 6 - 21) * $scale;
+                $cx = $origin_x + 10 + $x * cos($angle) - $y * sin($angle) + random_int(-30, 30) / 100;
+                $cy = $origin_y + 21 + $x * sin($angle) + $y * cos($angle) + random_int(-30, 30) / 100;
+                $w = round(4 * $scale + random_int(0, 40) / 100, 2);
+                $h = round(6 * $scale + random_int(0, 40) / 100, 2);
+                $cells[] = 'M' . round($cx, 2) . ' ' . round($cy, 2) . 'h' . $w . 'v' . $h . 'h-' . $w . 'z';
             }
         }
-        $svg .= '<path fill="#1e293b" transform="translate(' . (10 + $index * 28) . ' ' . random_int(8, 14) . ') rotate(' . random_int(-8, 8) . ' 10 21)" d="' . $path . '"/>';
     }
+    shuffle($cells);
+    $noise = '';
+    for ($i = 0; $i < 8; $i++) {
+        $noise .= '<path stroke="#' . sprintf('%02x%02x%02x', random_int(150, 200), random_int(165, 210), random_int(180, 225)) . '" stroke-width="1.2" fill="none" d="M' . random_int(0, $width) . ' ' . random_int(0, $height) . 'L' . random_int(0, $width) . ' ' . random_int(0, $height) . '"/>';
+    }
+    $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' . $width . '" height="' . $height . '" viewBox="0 0 ' . $width . ' ' . $height . '"><path fill="#eef3fa" d="M0 0h' . $width . 'v' . $height . 'H0z"/>'
+        . $noise . '<path fill="#1e293b" d="' . implode('', $cells) . '"/>';
     return 'data:image/svg+xml;base64,' . base64_encode($svg . '</svg>');
 }

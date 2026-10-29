@@ -8,7 +8,13 @@ require_once __DIR__ . '/captcha-image.php';
 
 function tk_captcha_init() {
     add_action('login_form', 'tk_captcha_render_field');
+    add_filter('login_form_middle', 'tk_captcha_login_form_middle');
     add_filter('authenticate', 'tk_captcha_validate', 40, 3);
+    add_action('wp_login_failed', 'tk_captcha_login_failed', 10, 2);
+    add_action('lostpassword_form', 'tk_captcha_render_field');
+    add_action('lostpassword_post', 'tk_captcha_validate_lostpassword', 10, 1);
+    add_action('register_form', 'tk_captcha_render_field');
+    add_filter('registration_errors', 'tk_captcha_validate_registration', 10, 1);
     add_action('admin_post_tk_captcha_save', 'tk_captcha_save');
     add_shortcode('toolkits_captcha', 'tk_captcha_shortcode');
     add_action('wpcf7_init', 'tk_captcha_register_wpcf7_tag');
@@ -278,6 +284,62 @@ function tk_captcha_cleanup_claims(): void {
     set_transient('tk_captcha_claim_cleanup', 1, 300);
 }
 
+function tk_captcha_pow_bits(): int {
+    return max(14, min(22, (int) tk_get_option('captcha_pow_bits', 18)));
+}
+
+function tk_captcha_adaptive(): bool {
+    return (bool) tk_get_option('captcha_adaptive_pow', 1);
+}
+
+/** Proof-of-work: sha256(salt:token:nonce) must start with $bits zero bits. Cheap once, costly at bot scale. */
+function tk_captcha_pow_valid(string $salt, string $token, string $nonce, int $bits): bool {
+    if ($salt === '' || !preg_match('/^[0-9]{1,12}$/D', $nonce)) { return false; }
+    $hash = hash('sha256', $salt . ':' . $token . ':' . $nonce, true);
+    $full = intdiv($bits, 8);
+    for ($i = 0; $i < $full; $i++) {
+        if ($hash[$i] !== "\0") { return false; }
+    }
+    $rest = $bits % 8;
+    return $rest === 0 || (ord($hash[$full]) >> (8 - $rest)) === 0;
+}
+
+function tk_captcha_failure_keys(): array {
+    return array('tk_captcha_fail_' . md5(tk_captcha_client()), 'tk_captcha_fail_' . md5('peer:' . ($_SERVER['REMOTE_ADDR'] ?? '')));
+}
+
+function tk_captcha_record_failure(): void {
+    foreach (tk_captcha_failure_keys() as $key) {
+        set_transient($key, (int) get_transient($key) + 1, HOUR_IN_SECONDS);
+    }
+}
+
+function tk_captcha_failures(): int {
+    return max(array_map(function ($key) { return (int) get_transient($key); }, tk_captcha_failure_keys()));
+}
+
+/** Request signals a real browser sends on its own; each one is cheap to fake, so they only raise the work required. */
+function tk_captcha_risk_score(): int {
+    $agent = strtolower((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''));
+    $score = min(3, tk_captcha_failures());
+    if ($agent === '' || preg_match('/headless|phantomjs|selenium|puppeteer|playwright|webdriver|curl|wget|python|httpclient|go-http|java\/|okhttp|scrapy|node-fetch|axios|libwww/', $agent)) { $score += 2; }
+    if (empty($_SERVER['HTTP_ACCEPT_LANGUAGE'])) { $score++; }
+    if (empty($_SERVER['HTTP_SEC_FETCH_SITE'])) { $score++; }
+    if (tk_captcha_scalar($_POST, 'automation') === '1') { $score += 2; }
+    // A script calling element.click() produces an untrusted event; a real tap or click does not.
+    if (isset($_POST['interaction']) && tk_captcha_scalar($_POST, 'interaction') !== '1') { $score += 2; }
+    return $score;
+}
+
+/**
+ * Instead of an image challenge, suspicious visitors get exponentially more work: every 2 risk points
+ * add 4x the hashes, capped at 24 bits (~64x the default), so the user still only ticks a box.
+ */
+function tk_captcha_required_bits(): int {
+    $extra = tk_captcha_adaptive() ? min(6, 2 * tk_captcha_risk_score()) : 0;
+    return min(24, tk_captcha_pow_bits() + $extra);
+}
+
 function tk_captcha_challenge_valid($challenge): bool {
     return is_array($challenge) && !empty($challenge['client']) && !empty($challenge['issued_at'])
         && ($challenge['expires_at'] ?? 0) > time()
@@ -293,18 +355,21 @@ function tk_captcha_create_challenge(string $type = ''): array {
     $code = $type === 'text' ? tk_captcha_make_code() : '';
     $token = bin2hex(random_bytes(24));
     $hash = $type === 'text' ? tk_captcha_answer_hash($code, $token) : '';
+    $pow = $type === 'checkbox' ? array('salt' => bin2hex(random_bytes(16)), 'bits' => tk_captcha_required_bits()) : array();
     set_transient(
         'tk_captcha_' . $token,
         array(
             'hash' => $hash,
             'type' => $type,
+            'stage' => $type === 'checkbox' ? 'checkbox' : 'text',
+            'pow' => $pow,
             'client' => tk_captcha_client(),
             'issued_at' => time(),
             'expires_at' => time() + 300,
         ),
         MINUTE_IN_SECONDS * 5
     );
-    return ['code' => $code, 'token' => $token];
+    return ['code' => $code, 'token' => $token, 'pow' => $pow];
 }
 
 function tk_captcha_render_field() {
@@ -312,6 +377,56 @@ function tk_captcha_render_field() {
         return;
     }
     echo tk_captcha_render_markup();
+}
+
+/** wp_login_form() never fires login_form, yet its POST still reaches tk_captcha_validate(). */
+function tk_captcha_login_form_middle($content) {
+    if (!tk_get_option('captcha_enabled') || !tk_get_option('captcha_on_login')) {
+        return $content;
+    }
+    return $content . tk_captcha_render_markup();
+}
+
+/** A wrong password raises the next proof-of-work too, so password guessing gets slower per attempt. */
+function tk_captcha_login_failed($username = '', $error = null) {
+    if (!tk_get_option('captcha_enabled') || !tk_get_option('captcha_on_login')) {
+        return;
+    }
+    // CAPTCHA rejections were already counted by tk_captcha_validate_request().
+    if (is_wp_error($error) && in_array($error->get_error_code(), array('captcha_missing', 'captcha_invalid'), true)) {
+        return;
+    }
+    tk_captcha_record_failure();
+}
+
+/** Adds the CAPTCHA error of a wp-login.php form submission to $errors, when protection applies. */
+function tk_captcha_add_login_page_error(WP_Error $errors): void {
+    if (!tk_get_option('captcha_enabled') || !tk_get_option('captcha_on_login')) {
+        return;
+    }
+    $validation = tk_captcha_validate_request();
+    if (!$validation['present']) {
+        $errors->add('captcha_missing', tk_captcha_text('required'));
+    } elseif (!$validation['valid']) {
+        $errors->add('captcha_invalid', tk_captcha_text('incorrect'));
+    }
+}
+
+function tk_captcha_validate_lostpassword($errors = null) {
+    // retrieve_password() also runs for an admin's "Send password reset" and WooCommerce's own lost-password form,
+    // neither of which renders this CAPTCHA.
+    $doing_ajax = function_exists('wp_doing_ajax') && wp_doing_ajax();
+    if (!is_wp_error($errors) || is_admin() || $doing_ajax || isset($_POST['wc_reset_password']) || !isset($_POST['user_login'])) {
+        return;
+    }
+    tk_captcha_add_login_page_error($errors);
+}
+
+function tk_captcha_validate_registration($errors) {
+    if (is_wp_error($errors)) {
+        tk_captcha_add_login_page_error($errors);
+    }
+    return $errors;
 }
 
 function tk_captcha_render_markup(string $type = ''): string {
@@ -579,7 +694,7 @@ function tk_captcha_render_markup(string $type = ''): string {
     $html = '<style' . tk_csp_nonce_attr() . '>' . $css . '</style>';
     
     if ($type === 'checkbox') {
-        $html .= '<div class="tk-captcha-field" data-type="checkbox">';
+        $html .= '<div class="tk-captcha-field" data-type="checkbox" data-pow="' . esc_attr($challenge['pow']['salt'] . ':' . $challenge['pow']['bits']) . '">';
         $html .= '<div class="tk-captcha-checkbox-wrap">';
         $html .= '  <div class="tk-captcha-checkbox-left">';
         $html .= '    <div class="tk-captcha-checkbox-box" role="checkbox" aria-checked="false" tabindex="0">
@@ -719,15 +834,33 @@ function tk_captcha_verify_click_ajax() {
     if (time() - $challenge['issued_at'] < tk_captcha_min_seconds()) { wp_send_json_error('too_fast', 400); }
     if (tk_captcha_scalar($_POST, 'tk_robot_honeypot') !== '' || is_array($_POST['tk_robot_honeypot'] ?? null)) {
         delete_transient('tk_captcha_' . $token);
+        tk_captcha_record_failure();
         wp_send_json_error('incorrect', 400);
+    }
+    $remaining = max(1, $challenge['expires_at'] - time());
+    if (($challenge['stage'] ?? 'checkbox') !== 'checkbox') { wp_send_json_error('expired', 400); }
+    $pow = (array) ($challenge['pow'] ?? array());
+    $salt = (string) ($pow['salt'] ?? '');
+    $issued = (int) ($pow['bits'] ?? 32);
+    $nonce = tk_captcha_scalar($_POST, 'pow_nonce');
+    if (!tk_captcha_pow_valid($salt, $token, $nonce, $issued)) {
+        tk_captcha_record_failure();
+        wp_send_json_error('invalid_proof', 400);
+    }
+    // Signals only visible at click time (automation flag, untrusted click) can still raise the work once more.
+    $required = max($issued, tk_captcha_required_bits());
+    if ($required > $issued && !tk_captcha_pow_valid($salt, $token, $nonce, $required)) {
+        $challenge['pow']['bits'] = $required;
+        set_transient('tk_captcha_' . $token, $challenge, $remaining);
+        wp_send_json_success(array('work' => $required));
     }
     if (!tk_captcha_claim($token, 'solve')) { wp_send_json_error('expired', 400); }
     $proof = bin2hex(random_bytes(32));
-    $remaining = max(1, $challenge['expires_at'] - time());
     set_transient('tk_captcha_verified_' . $token, array(
         'hash' => hash('sha256', $proof), 'client' => $challenge['client'], 'expires_at' => $challenge['expires_at'],
     ), $remaining);
     $challenge['hash'] = '';
+    $challenge['stage'] = 'done';
     set_transient('tk_captcha_' . $token, $challenge, $remaining);
     wp_send_json_success(array('answer' => $proof));
 }
@@ -768,7 +901,12 @@ function tk_captcha_validate($user) {
     return $user;
 }
 
-function tk_captcha_validate_request(): array {
+/**
+ * $expected lists the challenge types this form accepts. The refresh endpoint lets the browser choose a
+ * type, so without it a bot could swap a Classic image for the checkbox flow and never read the image.
+ */
+function tk_captcha_validate_request(array $expected = array()): array {
+    $expected = $expected ? array_unique(array_map('tk_captcha_normalize_type', $expected)) : array(tk_captcha_current_type());
     $names = tk_captcha_field_names();
     $token = tk_captcha_scalar($_POST, $names['token']);
     $answer = tk_captcha_scalar($_POST, $names['answer']);
@@ -779,6 +917,7 @@ function tk_captcha_validate_request(): array {
         || tk_captcha_rate_limited('submit')) { return $invalid; }
     $challenge = get_transient('tk_captcha_' . $token);
     if (!tk_captcha_challenge_valid($challenge)) { return $invalid; }
+    if (!in_array($challenge['type'] ?? '', $expected, true)) { return $invalid; }
     if (time() - $challenge['issued_at'] < tk_captcha_min_seconds()) { return $invalid; }
     $verified = get_transient('tk_captcha_verified_' . $token);
     if (!tk_captcha_claim($token, 'submit')) { return $invalid; }
@@ -792,6 +931,7 @@ function tk_captcha_validate_request(): array {
     } else {
         $valid = !empty($challenge['hash']) && hash_equals($challenge['hash'], tk_captcha_answer_hash($answer, $token));
     }
+    if (!$valid) { tk_captcha_record_failure(); }
     return array('present' => true, 'valid' => (bool) $valid);
 }
 
@@ -807,12 +947,30 @@ function tk_captcha_cf7_required($tags): bool {
     return false;
 }
 
+/** Types configured on the form itself (server side), never the type the browser asked for. */
+function tk_captcha_cf7_types($tags): array {
+    $types = array();
+    foreach ((array) $tags as $tag) {
+        $type = is_object($tag) ? ($tag->basetype ?? $tag->type ?? '') : ($tag['basetype'] ?? $tag['type'] ?? '');
+        if ($type === 'toolkits_captcha') { $types[] = tk_captcha_type_from_wpcf7_tag($tag); }
+    }
+    if (!$types && function_exists('wpcf7_get_current_contact_form')) {
+        $form = wpcf7_get_current_contact_form();
+        if ($form && preg_match_all('/\[toolkits_captcha(?:\s+([^\]]*))?\]/', (string) $form->prop('form'), $matches)) {
+            foreach ($matches[1] as $options) {
+                $types[] = tk_captcha_type_from_wpcf7_tag(array('options' => preg_split('/\s+/', trim($options), -1, PREG_SPLIT_NO_EMPTY)));
+            }
+        }
+    }
+    return $types;
+}
+
 function tk_captcha_validate_cf7($result, $tags) {
     $GLOBALS['tk_captcha_cf7_error'] = '';
     if (!tk_get_option('captcha_enabled') || !function_exists('wpcf7')) { return $result; }
     $required = tk_captcha_cf7_required($tags);
     if (!$required && !isset($_POST['tk_captcha_token'], $_POST['tk_captcha_answer'])) { return $result; }
-    $validation = tk_captcha_validate_request();
+    $validation = tk_captcha_validate_request(tk_captcha_cf7_types($tags));
     if ($validation['valid']) { return $result; }
     $message = tk_captcha_text($validation['present'] ? 'incorrect' : 'required');
     $GLOBALS['tk_captcha_cf7_error'] = $message;
@@ -861,6 +1019,8 @@ function tk_render_captcha_panel() {
     $strength = tk_captcha_strength();
     $min_seconds = tk_captcha_min_seconds();
     $max_attempts = max(5, min(100, (int) tk_get_option('captcha_max_attempts', 20)));
+    $pow_bits = tk_captcha_pow_bits();
+    $adaptive = tk_captcha_adaptive();
 
     ?>
     <div class="tk-card">
@@ -874,7 +1034,7 @@ function tk_render_captcha_panel() {
             <div style="display:flex; flex-direction:column; gap:20px; margin-bottom:24px;">
                 <?php 
                 tk_render_switch('enabled', 'Enable Captcha Module', 'Activate the global captcha system for all forms.', $enabled);
-                tk_render_switch('on_login', 'Protect Login Form', 'Display a captcha on the standard WordPress login page.', $on_login);
+                tk_render_switch('on_login', 'Protect Login Form', 'Display a captcha on the WordPress login, lost password and registration forms.', $on_login);
                 ?>
             </div>
             
@@ -919,6 +1079,15 @@ function tk_render_captcha_panel() {
                     <div><label for="tk-captcha-max-attempts">Maximum Verification Attempts / 5 Minutes</label>
                         <input id="tk-captcha-max-attempts" class="widefat" type="number" min="5" max="100" name="max_attempts" value="<?php echo esc_attr($max_attempts); ?>">
                         <p class="description">Limits repeated guesses and verification requests from one visitor.</p></div>
+                    <div><label for="tk-captcha-pow-bits">"I'm not a robot" Proof-of-Work Difficulty</label>
+                        <input id="tk-captcha-pow-bits" class="widefat" type="number" min="14" max="22" name="pow_bits" value="<?php echo esc_attr($pow_bits); ?>">
+                        <p class="description">Leading zero bits (14-22). Each +1 doubles the browser work; 18 takes well under a second on a phone.</p></div>
+                    <div><label for="tk-captcha-adaptive">"I'm not a robot" Adaptive Difficulty</label>
+                        <select id="tk-captcha-adaptive" class="widefat" name="adaptive_pow">
+                            <option value="1" <?php selected($adaptive, true); ?>>On (suspicious visitors get up to 64x more work)</option>
+                            <option value="0" <?php selected($adaptive, false); ?>>Off (same work for everyone)</option>
+                        </select>
+                        <p class="description">Automation user agents, missing browser headers, scripted clicks and repeated failures make the checkbox take longer. Visitors never see an image.</p></div>
                 </div>
             </div>
             
@@ -961,6 +1130,8 @@ function tk_captcha_save() {
     tk_update_option('captcha_strength', $strength);
     tk_update_option('captcha_min_seconds', max(1, min(10, (int) tk_post('min_seconds', 2))));
     tk_update_option('captcha_max_attempts', max(5, min(100, (int) tk_post('max_attempts', 20))));
+    tk_update_option('captcha_pow_bits', max(14, min(22, (int) tk_post('pow_bits', 18))));
+    tk_update_option('captcha_adaptive_pow', (string) tk_post('adaptive_pow', '1') === '0' ? 0 : 1);
 
     wp_redirect(add_query_arg(array('page'=>'tool-kits-security-spam','tk_tab'=>'captcha','tk_saved'=>1), admin_url('admin.php')));
     exit;

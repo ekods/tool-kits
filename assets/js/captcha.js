@@ -6,6 +6,60 @@
     const pending = new WeakMap();
     let refreshQueue = Promise.resolve();
 
+    // Synchronous SHA-256: crypto.subtle costs one promise per hash, far too slow for proof-of-work.
+    // Constants are the fractional parts of prime square/cube roots, as in FIPS 180-4.
+    const primes = [];
+    for (let n = 2; primes.length < 64; n++) { if (primes.every(function (p) { return n % p; })) primes.push(n); }
+    const K = Uint32Array.from(primes, function (p) { const r = Math.cbrt(p); return (r - Math.floor(r)) * 4294967296; });
+    const IV = Uint32Array.from(primes.slice(0, 8), function (p) { const r = Math.sqrt(p); return (r - Math.floor(r)) * 4294967296; });
+    const W = new Uint32Array(64);
+
+    function sha256Head(bytes) {
+        const length = bytes.length, total = ((length + 72) >> 6) << 6;
+        const buffer = new Uint8Array(total);
+        buffer.set(bytes); buffer[length] = 0x80;
+        const bits = length * 8;
+        buffer[total - 4] = bits >>> 24; buffer[total - 3] = bits >>> 16; buffer[total - 2] = bits >>> 8; buffer[total - 1] = bits;
+        const H = IV.slice();
+        for (let offset = 0; offset < total; offset += 64) {
+            for (let i = 0; i < 16; i++) {
+                const j = offset + i * 4;
+                W[i] = buffer[j] << 24 | buffer[j + 1] << 16 | buffer[j + 2] << 8 | buffer[j + 3];
+            }
+            for (let i = 16; i < 64; i++) {
+                const x = W[i - 15], y = W[i - 2];
+                W[i] = W[i - 16] + ((x >>> 7 | x << 25) ^ (x >>> 18 | x << 14) ^ (x >>> 3)) + W[i - 7]
+                    + ((y >>> 17 | y << 15) ^ (y >>> 19 | y << 13) ^ (y >>> 10));
+            }
+            let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+            for (let i = 0; i < 64; i++) {
+                const t1 = h + ((e >>> 6 | e << 26) ^ (e >>> 11 | e << 21) ^ (e >>> 25 | e << 7)) + (e & f ^ ~e & g) + K[i] + W[i] | 0;
+                const t2 = ((a >>> 2 | a << 30) ^ (a >>> 13 | a << 19) ^ (a >>> 22 | a << 10)) + (a & b ^ a & c ^ b & c) | 0;
+                h = g; g = f; f = e; e = d + t1 | 0; d = c; c = b; b = a; a = t1 + t2 | 0;
+            }
+            H[0] += a; H[1] += b; H[2] += c; H[3] += d; H[4] += e; H[5] += f; H[6] += g; H[7] += h;
+        }
+        return H[0];
+    }
+
+    async function solvePow(field) {
+        const parts = (field.dataset.pow || '').split(':');
+        const bits = Number(parts[1]);
+        if (!/^[a-f0-9]{32}$/.test(parts[0]) || !(bits >= 1 && bits <= 32)) throw new Error('invalid_pow');
+        const token = field.querySelector('[name="tk_captcha_token"]').value;
+        const encoder = new TextEncoder();
+        const prefix = encoder.encode(parts[0] + ':' + token + ':');
+        const bytes = new Uint8Array(prefix.length + 12);
+        bytes.set(prefix);
+        for (let nonce = 0; nonce < 1e12; nonce++) {
+            const digits = encoder.encode(String(nonce));
+            bytes.set(digits, prefix.length);
+            if (sha256Head(bytes.subarray(0, prefix.length + digits.length)) >>> (32 - bits) === 0) return String(nonce);
+            if (nonce % 4096 === 4095) await new Promise(function (resolve) { window.setTimeout(resolve, 0); });
+        }
+        throw new Error('invalid_pow');
+    }
+
     function status(field, message) {
         const output = field.querySelector('.tk-captcha-status');
         if (output) output.textContent = message || '';
@@ -54,7 +108,7 @@
         return job;
     }
 
-    async function verify(field) {
+    async function verify(field, trusted) {
         if (field.dataset.tkCaptchaReady !== '1' || field.dataset.tkCaptchaVerifying === '1') return;
         const box = field.querySelector('.tk-captcha-checkbox-box');
         if (!box || box.classList.contains('is-checked')) return;
@@ -63,13 +117,21 @@
         box.setAttribute('aria-busy', 'true');
         status(field, config.loading);
         try {
-            const delay = Math.max(0, Number(field.dataset.tkCaptchaNotBefore || 0) - Date.now());
-            if (delay) await new Promise(function (resolve) { window.setTimeout(resolve, delay); });
-            const data = await request(config.verifyUrl, { nonce: config.verifyNonce,
-                token: field.querySelector('[name="tk_captcha_token"]').value, checked: '1',
-                tk_robot_honeypot: field.querySelector('[name="tk_robot_honeypot"]')?.value || '' });
+            let data = {};
+            // The server may ask for more work when click-time signals look automated (capped at 24 bits).
+            for (let round = 0; round < 3 && !data.answer; round++) {
+                const pow = await solvePow(field);
+                const delay = Math.max(0, Number(field.dataset.tkCaptchaNotBefore || 0) - Date.now());
+                if (delay) await new Promise(function (resolve) { window.setTimeout(resolve, delay); });
+                if (!field.isConnected) return;
+                data = await request(config.verifyUrl, { nonce: config.verifyNonce,
+                    token: field.querySelector('[name="tk_captcha_token"]').value, checked: '1', pow_nonce: pow,
+                    automation: navigator.webdriver ? '1' : '0', interaction: trusted ? '1' : '0',
+                    tk_robot_honeypot: field.querySelector('[name="tk_robot_honeypot"]')?.value || '' });
+                if (!field.isConnected) return;
+                if (data.work) field.dataset.pow = field.dataset.pow.split(':')[0] + ':' + Number(data.work);
+            }
             if (!/^[a-f0-9]{64}$/.test(data.answer || '')) throw new Error('invalid_proof');
-            if (!field.isConnected) return;
             field.querySelector('.tk-captcha-answer-field').value = data.answer;
             box.classList.add('is-checked');
             box.setAttribute('aria-checked', 'true');
@@ -96,8 +158,8 @@
             event.preventDefault();
             if (field.querySelector('.is-checked')) return;
             if (field.dataset.tkCaptchaReady !== '1') {
-                refresh(field).then(function (next) { if (next) verify(next); });
-            } else verify(field);
+                refresh(field).then(function (next) { if (next) verify(next, event.isTrusted); });
+            } else verify(field, event.isTrusted);
         }
     }
     document.addEventListener('click', handleClick);

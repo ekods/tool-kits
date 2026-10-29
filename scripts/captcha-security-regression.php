@@ -7,11 +7,13 @@ set_error_handler(function ($level, $message) {
 });
 define('ABSPATH', __DIR__ . '/');
 define('MINUTE_IN_SECONDS', 60);
-$options = array('captcha_enabled' => 1, 'captcha_on_login' => 1, 'captcha_max_attempts' => 100);
+define('HOUR_IN_SECONDS', 3600);
+$options = array('captcha_enabled' => 1, 'captcha_on_login' => 1, 'captcha_max_attempts' => 100, 'captcha_pow_bits' => 14);
 $cache = $claims = array();
 $checks = 0;
 $_COOKIE = array('tk_captcha_browser' => str_repeat('a', 64));
-$_SERVER = array('REMOTE_ADDR' => '192.0.2.1', 'HTTP_USER_AGENT' => 'Human browser', 'REQUEST_METHOD' => 'POST');
+$_SERVER = array('REMOTE_ADDR' => '192.0.2.1', 'HTTP_USER_AGENT' => 'Human browser', 'REQUEST_METHOD' => 'POST',
+    'HTTP_ACCEPT_LANGUAGE' => 'id-ID,id;q=0.9', 'HTTP_SEC_FETCH_SITE' => 'same-origin');
 $_POST = array();
 function tk_get_option($key, $default = null) { return $GLOBALS['options'][$key] ?? $default; }
 function tk_update_option($key, $value) { $GLOBALS['options'][$key] = $value; }
@@ -46,7 +48,14 @@ function wp_die($message) { throw new DomainException($message); }
 function wp_redirect($url) { throw new LogicException('redirect'); }
 function admin_url($path) { return '/wp-admin/' . $path; }
 function add_query_arg($args, $url) { return $url . '?' . http_build_query($args); }
-class WP_Error { public $code; public function __construct($code, $message) { $this->code = $code; } }
+class WP_Error {
+    public $code; public $codes = array();
+    public function __construct($code = '', $message = '') { $this->code = $code; }
+    public function get_error_code() { return $this->code; }
+    public function add($code, $message) { $this->codes[] = $code; }
+}
+function is_admin() { return $GLOBALS['is_admin'] ?? false; }
+function wp_doing_ajax() { return $GLOBALS['doing_ajax'] ?? false; }
 class CaptchaResponse extends RuntimeException {
     public $success; public $data; public $status;
     public function __construct($success, $data, $status) { $this->success = $success; $this->data = $data; $this->status = $status; }
@@ -61,7 +70,7 @@ if ($real_cf7) {
     require $cf7_root . '/includes/validation.php';
 } else {
     class WPCF7_FormTag {
-        public $name = ''; public $type = ''; public $basetype = '';
+        public $name = ''; public $type = ''; public $basetype = ''; public $options = array();
         public function __construct($properties) { foreach ($properties as $key => $value) { $this->$key = $value; } }
     }
     class WPCF7_Validation {
@@ -80,6 +89,7 @@ class CaptchaDatabase {
 $wpdb = new CaptchaDatabase();
 function check_captcha($condition, $message) { if (!$condition) { throw new RuntimeException($message); } $GLOBALS['checks']++; }
 function fixture_challenge($type = 'text') {
+    foreach (array_keys($GLOBALS['cache']) as $key) { if (strpos($key, 'tk_captcha_fail_') === 0) { unset($GLOBALS['cache'][$key]); } }
     $challenge = tk_captcha_create_challenge($type);
     $GLOBALS['cache']['tk_captcha_' . $challenge['token']]['issued_at'] -= 3;
     return $challenge;
@@ -87,6 +97,13 @@ function fixture_challenge($type = 'text') {
 function submit_challenge($challenge, $answer = null) {
     $_POST = array('tk_captcha_token' => $challenge['token'], 'tk_captcha_answer' => $answer ?? $challenge['code']);
     return tk_captcha_validate_request();
+}
+function solve_pow($token) {
+    $pow = $GLOBALS['cache']['tk_captcha_' . $token]['pow'] ?? array();
+    for ($nonce = 0; $nonce < 10000000; $nonce++) {
+        if (tk_captcha_pow_valid((string) ($pow['salt'] ?? ''), $token, (string) $nonce, (int) ($pow['bits'] ?? 32))) { return (string) $nonce; }
+    }
+    return '';
 }
 function captcha_endpoint($name, $post) {
     $_POST = $post;
@@ -145,12 +162,13 @@ check_captcha(!tk_captcha_validate_request()['valid'], 'Malformed field arrays w
 $challenge = fixture_challenge(); $_POST = array('tk_robot_honeypot' => 'bot', 'tk_captcha_token' => $challenge['token'], 'tk_captcha_answer' => $challenge['code']);
 check_captcha(!tk_captcha_validate_request()['valid'], 'Filled honeypot was ignored');
 
+$options['captcha_type'] = 'checkbox';
 $checkbox = fixture_challenge('checkbox');
 check_captcha(!submit_challenge($checkbox, 'VERIFIED_CLICK')['valid'], 'Legacy constant click marker was accepted');
 $checkbox = fixture_challenge('checkbox');
-$proof = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1'));
+$proof = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1', 'pow_nonce' => solve_pow($checkbox['token'])));
 check_captcha($proof->success && preg_match('/^[a-f0-9]{64}$/D', $proof->data['answer']), 'Checkbox-only verification did not return an opaque proof');
-$repeat = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1'));
+$repeat = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1', 'pow_nonce' => solve_pow($checkbox['token'])));
 check_captcha(!$repeat->success, 'Checkbox verification could mint another proof');
 check_captcha(submit_challenge($checkbox, $proof->data['answer'])['valid'], 'Valid server proof was rejected');
 check_captcha(!submit_challenge($checkbox, $proof->data['answer'])['valid'], 'Checkbox proof was reusable');
@@ -158,14 +176,14 @@ $checkbox = fixture_challenge('checkbox');
 $bad = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '0'));
 check_captcha(!$bad->success && !isset($cache['tk_captcha_verified_' . $checkbox['token']]), 'An unchecked widget was approved');
 $checkbox = tk_captcha_create_challenge('checkbox');
-$fast = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1'));
+$fast = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1', 'pow_nonce' => solve_pow($checkbox['token'])));
 check_captcha(!$fast->success && $fast->data === 'too_fast', 'Checkbox bypassed minimum server timing');
 $checkbox = fixture_challenge('checkbox');
-$bot = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1', 'tk_robot_honeypot' => 'bot'));
+$bot = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1', 'pow_nonce' => solve_pow($checkbox['token']), 'tk_robot_honeypot' => 'bot'));
 check_captcha(!$bot->success && !isset($cache['tk_captcha_' . $checkbox['token']]), 'Checkbox ignored its filled honeypot');
 $checkbox = fixture_challenge('checkbox');
 $original_cookie = $_COOKIE['tk_captcha_browser']; $_COOKIE['tk_captcha_browser'] = str_repeat('f', 64);
-$foreign = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1'));
+$foreign = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1', 'pow_nonce' => solve_pow($checkbox['token'])));
 check_captcha(!$foreign->success, 'Checkbox verification ignored browser binding');
 $_COOKIE['tk_captcha_browser'] = $original_cookie;
 $checkbox_markup = tk_captcha_render_markup('checkbox');
@@ -173,6 +191,64 @@ check_captcha(strpos($checkbox_markup, 'class="tk-captcha-puzzle"') === false &&
 $checkbox = fixture_challenge('checkbox');
 $missing = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'interact' => 999, 'timing' => 999999));
 check_captcha(!$missing->success, 'Fabricated interactions bypassed the actual puzzle');
+// Proof-of-work is required before the checkbox mints a proof.
+$checkbox = fixture_challenge('checkbox');
+$no_pow = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1'));
+check_captcha(!$no_pow->success && $no_pow->data === 'invalid_proof', 'Checkbox accepted a click without proof-of-work');
+$pow = $cache['tk_captcha_' . $checkbox['token']]['pow'];
+for ($bad_nonce = 0; tk_captcha_pow_valid($pow['salt'], $checkbox['token'], (string) $bad_nonce, $pow['bits']); $bad_nonce++) {}
+$wrong_pow = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1', 'pow_nonce' => (string) $bad_nonce));
+check_captcha(!$wrong_pow->success && $wrong_pow->data === 'invalid_proof', 'Checkbox accepted an invalid proof-of-work nonce');
+check_captcha(strpos(tk_captcha_render_markup('checkbox'), 'data-pow="') !== false, 'Checkbox markup has no proof-of-work parameters');
+// Adaptive proof-of-work: suspicious visitors only tick the box, but must do far more hashing.
+$base = tk_captcha_pow_bits();
+$checkbox = fixture_challenge('checkbox');
+check_captcha($cache['tk_captcha_' . $checkbox['token']]['pow']['bits'] === $base, 'A normal visitor did not get the base difficulty');
+$adaptive_tests = array(
+    'headless agent' => function () { $_SERVER['HTTP_USER_AGENT'] = 'Mozilla/5.0 HeadlessChrome/120'; },
+    'no browser headers' => function () { unset($_SERVER['HTTP_ACCEPT_LANGUAGE'], $_SERVER['HTTP_SEC_FETCH_SITE']); },
+);
+foreach ($adaptive_tests as $label => $setup) {
+    $server = $_SERVER;
+    $setup();
+    $checkbox = fixture_challenge('checkbox');
+    check_captcha($cache['tk_captcha_' . $checkbox['token']]['pow']['bits'] >= $base + 4, 'Suspicious visitor (' . $label . ') got the base difficulty');
+    $_SERVER = $server;
+}
+$checkbox = fixture_challenge('checkbox');
+tk_captcha_record_failure(); tk_captcha_record_failure();
+check_captcha(tk_captcha_required_bits() >= $base + 4, 'Repeated failures did not raise the difficulty');
+$cache = array_filter($cache, function ($key) { return strpos($key, 'tk_captcha_fail_') !== 0; }, ARRAY_FILTER_USE_KEY);
+$_SERVER['HTTP_USER_AGENT'] = 'curl/8.0'; unset($_SERVER['HTTP_ACCEPT_LANGUAGE'], $_SERVER['HTTP_SEC_FETCH_SITE']);
+check_captcha(tk_captcha_required_bits() === $base + 6, 'Maximum risk did not add the full extra difficulty');
+$options['captcha_pow_bits'] = 22;
+check_captcha(tk_captcha_required_bits() === 24, 'Difficulty is not capped at 24 bits');
+$options['captcha_pow_bits'] = 14;
+$_SERVER['HTTP_USER_AGENT'] = 'Human browser'; $_SERVER['HTTP_ACCEPT_LANGUAGE'] = 'id-ID,id;q=0.9'; $_SERVER['HTTP_SEC_FETCH_SITE'] = 'same-origin';
+
+// Click-time signals: a scripted (untrusted) click on a base-difficulty challenge must redo more work first.
+foreach (array('untrusted click' => array('interaction' => '0'), 'webdriver' => array('automation' => '1')) as $label => $signal) {
+    $checkbox = fixture_challenge('checkbox');
+    $pow = $cache['tk_captcha_' . $checkbox['token']]['pow'];
+    for ($weak = 0; !tk_captcha_pow_valid($pow['salt'], $checkbox['token'], (string) $weak, $base)
+        || tk_captcha_pow_valid($pow['salt'], $checkbox['token'], (string) $weak, $base + 4); $weak++) {}
+    $step = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1', 'pow_nonce' => (string) $weak) + $signal);
+    check_captcha($step->success && ($step->data['work'] ?? 0) >= $base + 4 && !isset($step->data['answer']) && !isset($cache['tk_captcha_verified_' . $checkbox['token']]), 'A ' . $label . ' got a proof without extra work');
+    $again = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1', 'pow_nonce' => (string) $weak) + $signal);
+    check_captcha(!$again->success && $again->data === 'invalid_proof', 'A ' . $label . ' reused its weak proof after the difficulty was raised');
+    $cache = array_filter($cache, function ($key) { return strpos($key, 'tk_captcha_fail_') !== 0; }, ARRAY_FILTER_USE_KEY);
+    $strong = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1', 'pow_nonce' => solve_pow($checkbox['token'])) + $signal);
+    check_captcha($strong->success && preg_match('/^[a-f0-9]{64}$/D', $strong->data['answer'] ?? '') && submit_challenge($checkbox, $strong->data['answer'])['valid'], 'A ' . $label . ' could not finish after doing the extra work');
+}
+$checkbox = fixture_challenge('checkbox');
+$human = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $checkbox['token'], 'checked' => '1', 'interaction' => '1', 'automation' => '0', 'pow_nonce' => solve_pow($checkbox['token'])));
+check_captcha(!empty($human->data['answer']), 'A trusted human click was asked for extra work');
+$options['captcha_adaptive_pow'] = 0;
+$_SERVER['HTTP_USER_AGENT'] = 'curl/8.0';
+check_captcha(tk_captcha_required_bits() === $base, 'Adaptive difficulty ignored being switched off');
+$_SERVER['HTTP_USER_AGENT'] = 'Human browser';
+unset($options['captcha_adaptive_pow']);
+$options['captcha_type'] = 'text';
 
 $old = fixture_challenge();
 $refresh = captcha_endpoint('tk_captcha_refresh_ajax', array('nonce' => 'valid', 'type' => 'text', 'old_token' => $old['token']));
@@ -196,6 +272,98 @@ $decoded = base64_decode(substr($uri, strpos($uri, ',') + 1));
 check_captcha(strpos($decoded, 'ABC234') === false && strpos($decoded, '<text') === false, 'Answer remains available as source text');
 check_captcha(substr($decoded, 0, 8) === "\x89PNG\r\n\x1a\n" || strpos($decoded, '<svg') === 0, 'Image is not a valid PNG/SVG');
 if (getenv('TK_CAPTCHA_PREVIEW')) { file_put_contents(getenv('TK_CAPTCHA_PREVIEW'), $decoded); }
+$svg_a = base64_decode(substr(tk_captcha_svg_uri('AAAAAA', 188, 68), 26));
+$svg_b = base64_decode(substr(tk_captcha_svg_uri('AAAAAA', 188, 68), 26));
+preg_match_all('/<path fill="#1e293b" d="([^"]+)"/', $svg_a, $glyph_paths);
+check_captcha(strpos($svg_a, '<svg') === 0 && strpos($svg_a, '<text') === false && strpos($svg_a, 'transform=') === false
+    && count($glyph_paths[1]) === 1 && $svg_a !== $svg_b, 'SVG fallback exposes repeatable per-character glyph paths');
+
+// A form configured for Classic must not accept the click-only checkbox flow, and vice versa.
+$options['captcha_type'] = 'text';
+$downgrade = fixture_challenge('checkbox');
+$proof = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $downgrade['token'], 'checked' => '1', 'pow_nonce' => solve_pow($downgrade['token'])));
+check_captcha($proof->success && !submit_challenge($downgrade, $proof->data['answer'])['valid'], 'Checkbox proof bypassed a Classic-only form');
+$options['captcha_type'] = 'checkbox';
+$upgrade = fixture_challenge('text');
+check_captcha(!submit_challenge($upgrade)['valid'], 'Classic answer was accepted by a checkbox-only form');
+$options['captcha_type'] = 'text';
+$robot_tag = new WPCF7_FormTag(array('type' => 'toolkits_captcha', 'basetype' => 'toolkits_captcha', 'name' => '', 'options' => array('robot:1')));
+check_captcha(tk_captcha_cf7_types(array($tags[0], $robot_tag)) === array('checkbox') && tk_captcha_cf7_types(array($tags[1])) === array('text'), 'CF7 expected type was not read from the form tag');
+$classic_form = fixture_challenge('checkbox');
+$proof = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $classic_form['token'], 'checked' => '1', 'pow_nonce' => solve_pow($classic_form['token'])));
+$_POST = array('tk_captcha_token' => $classic_form['token'], 'tk_captcha_answer' => $proof->data['answer']);
+check_captcha(!tk_captcha_validate_cf7(new WPCF7_Validation(), $tags)->is_valid() || tk_captcha_cf7_spam(false), 'Checkbox proof bypassed a Classic CF7 form');
+$robot_form = fixture_challenge('checkbox');
+$proof = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $robot_form['token'], 'checked' => '1', 'pow_nonce' => solve_pow($robot_form['token'])));
+$_POST = array('tk_captcha_token' => $robot_form['token'], 'tk_captcha_answer' => $proof->data['answer']);
+tk_captcha_validate_cf7(new WPCF7_Validation(), array($tags[0], $robot_tag));
+check_captcha(!tk_captcha_cf7_spam(false), 'A robot CF7 form rejected its valid checkbox proof');
+
+// Login form: same type enforcement, proof-of-work and adaptive rules as every other form.
+$user = (object) array('ID' => 3);
+$options['captcha_type'] = 'checkbox';
+$login = fixture_challenge('checkbox');
+$proof = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $login['token'], 'checked' => '1', 'interaction' => '1', 'pow_nonce' => solve_pow($login['token'])));
+$_POST = array('log' => 'member', 'pwd' => 'password', 'tk_captcha_token' => $login['token'], 'tk_captcha_answer' => $proof->data['answer']);
+check_captcha(tk_captcha_validate($user) === $user, 'Robot checkbox proof was rejected on the login form');
+check_captcha(tk_captcha_validate($user) instanceof WP_Error, 'Login checkbox proof was reusable');
+$login = fixture_challenge('checkbox');
+$_POST = array('log' => 'member', 'pwd' => 'password', 'tk_captcha_token' => $login['token'], 'tk_captcha_answer' => str_repeat('a', 64));
+check_captcha(tk_captcha_validate($user) instanceof WP_Error, 'Login accepted a checkbox without a server proof');
+$options['captcha_type'] = 'text';
+$login = fixture_challenge('checkbox');
+$proof = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $login['token'], 'checked' => '1', 'interaction' => '1', 'pow_nonce' => solve_pow($login['token'])));
+$_POST = array('log' => 'member', 'pwd' => 'password', 'tk_captcha_token' => $login['token'], 'tk_captcha_answer' => $proof->data['answer']);
+check_captcha(tk_captcha_validate($user) instanceof WP_Error, 'Checkbox proof bypassed a Classic login form');
+$login = fixture_challenge();
+$_POST = array('log' => 'member', 'pwd' => 'password', 'tk_captcha_token' => $login['token'], 'tk_captcha_answer' => strtolower($login['code']));
+check_captcha(tk_captcha_validate($user) === $user, 'Correct Classic code was rejected on the login form');
+$options['captcha_type'] = 'checkbox';
+fixture_challenge('checkbox');
+$base_login = tk_captcha_required_bits();
+tk_captcha_login_failed('member', new WP_Error('incorrect_password', ''));
+tk_captcha_login_failed('member', new WP_Error('incorrect_password', ''));
+check_captcha(tk_captcha_required_bits() >= $base_login + 4, 'Wrong passwords did not raise the login proof-of-work');
+$login = fixture_challenge('checkbox');
+check_captcha($cache['tk_captcha_' . $login['token']]['pow']['bits'] === $base_login, 'Fixture did not reset failures');
+tk_captcha_login_failed('member', new WP_Error('captcha_invalid', ''));
+check_captcha(tk_captcha_failures() === 0, 'A CAPTCHA rejection was counted twice on login');
+$options['captcha_on_login'] = 0;
+tk_captcha_login_failed('member', new WP_Error('incorrect_password', ''));
+check_captcha(tk_captcha_failures() === 0 && tk_captcha_login_form_middle('<p>x</p>') === '<p>x</p>', 'Login CAPTCHA hooks ran while login protection was off');
+$options['captcha_on_login'] = 1;
+check_captcha(strpos(tk_captcha_login_form_middle('<p>x</p>'), 'data-pow="') !== false, 'wp_login_form() did not render the login CAPTCHA');
+$options['captcha_type'] = 'text';
+
+// Lost password and registration on wp-login.php follow the same rules; admin and WooCommerce resets are untouched.
+$errors = new WP_Error(); $_POST = array('user_login' => 'member');
+tk_captcha_validate_lostpassword($errors);
+check_captcha($errors->codes === array('captcha_missing'), 'Lost password without CAPTCHA was accepted');
+$reset = fixture_challenge(); $errors = new WP_Error();
+$_POST = array('user_login' => 'member', 'tk_captcha_token' => $reset['token'], 'tk_captcha_answer' => $reset['code']);
+tk_captcha_validate_lostpassword($errors);
+check_captcha($errors->codes === array(), 'Lost password with a correct CAPTCHA was rejected');
+$errors = new WP_Error();
+tk_captcha_validate_lostpassword($errors);
+check_captcha($errors->codes === array('captcha_invalid'), 'Lost password CAPTCHA was reusable');
+foreach (array('admin reset' => function () { $GLOBALS['is_admin'] = true; }, 'ajax reset' => function () { $GLOBALS['doing_ajax'] = true; },
+    'WooCommerce reset' => function () { $_POST['wc_reset_password'] = 'true'; }) as $label => $setup) {
+    $_POST = array('user_login' => 'member'); $errors = new WP_Error(); $setup();
+    tk_captcha_validate_lostpassword($errors);
+    check_captcha($errors->codes === array(), 'CAPTCHA blocked the ' . $label);
+    $GLOBALS['is_admin'] = $GLOBALS['doing_ajax'] = false;
+}
+$options['captcha_type'] = 'checkbox';
+$signup = fixture_challenge('checkbox');
+$proof = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid', 'token' => $signup['token'], 'checked' => '1', 'interaction' => '1', 'pow_nonce' => solve_pow($signup['token'])));
+$_POST = array('user_login' => 'new', 'user_email' => 'new@example.test', 'tk_captcha_token' => $signup['token'], 'tk_captcha_answer' => $proof->data['answer']);
+check_captcha(tk_captcha_validate_registration(new WP_Error())->codes === array(), 'Registration with a robot checkbox proof was rejected');
+$_POST = array('user_login' => 'new', 'user_email' => 'new@example.test');
+check_captcha(tk_captcha_validate_registration(new WP_Error())->codes === array('captcha_missing'), 'Registration without CAPTCHA was accepted');
+$options['captcha_type'] = 'text';
+$options['captcha_on_login'] = 0;
+check_captcha(tk_captcha_validate_registration(new WP_Error())->codes === array(), 'Registration CAPTCHA ran while login protection was off');
+$options['captcha_on_login'] = 1;
 
 $user = (object) array('ID' => 3); $_POST = array();
 check_captcha(tk_captcha_validate($user) === $user, 'Login GET requests were blocked');
@@ -203,9 +371,10 @@ $_POST = array('log' => 'member', 'pwd' => 'password');
 check_captcha(tk_captcha_validate($user) instanceof WP_Error, 'Login without CAPTCHA was accepted');
 $options['captcha_enabled'] = 0;
 check_captcha(tk_captcha_validate($user) === $user, 'Disabled CAPTCHA still blocked login');
-$_POST = array('_nonce' => 'valid', 'enabled' => 1, 'captcha_type' => 'unsupported', 'length' => 1, 'min_seconds' => 0, 'max_attempts' => 500);
+$_POST = array('_nonce' => 'valid', 'enabled' => 1, 'captcha_type' => 'unsupported', 'length' => 1, 'min_seconds' => 0, 'max_attempts' => 500, 'pow_bits' => 99, 'adaptive_pow' => '0');
 try { tk_captcha_save(); } catch (LogicException $error) {}
-check_captcha($options['captcha_type'] === 'text' && $options['captcha_length'] === 6 && $options['captcha_min_seconds'] === 1 && $options['captcha_max_attempts'] === 100, 'Captcha settings were not normalized/clamped');
+check_captcha($options['captcha_type'] === 'text' && $options['captcha_length'] === 6 && $options['captcha_min_seconds'] === 1 && $options['captcha_max_attempts'] === 100
+    && $options['captcha_pow_bits'] === 22 && $options['captcha_adaptive_pow'] === 0, 'Captcha settings were not normalized/clamped');
 $before = $options; $_POST = array();
 try { tk_captcha_save(); } catch (DomainException $error) {}
 check_captcha($before === $options, 'Invalid settings nonce changed options');

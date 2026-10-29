@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.62
+Stable tag: 2.7.63
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,13 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.63 =
+- I'm not a robot now requires a browser proof-of-work (SHA-256) before the server issues a proof. Normal visitors still only tick the box; the default difficulty finishes in well under a second.
+- Adaptive difficulty: automation user agents, missing browser headers, scripted (untrusted) clicks, navigator.webdriver and repeated failures raise the work up to 64x, without ever showing an image. New settings: Proof-of-Work Difficulty and Adaptive Difficulty.
+- Each form now only accepts the CAPTCHA type it is configured with (login, comments and per-tag CF7), so a Classic form can no longer be passed with the checkbox flow.
+- The SVG fallback image (hosts without GD) no longer exposes repeatable per-character paths that could be read without OCR.
+- Login protection now also covers Lost Password and Registration on wp-login.php and login forms built with wp_login_form(). Wrong passwords raise the next proof-of-work. Admin and WooCommerce password resets are unaffected.
+
 = 2.7.62 =
 - Remove the image puzzle and code input from I'm not a robot mode. A single click or keyboard activation starts automatic server verification and checks the widget only after receiving a valid opaque proof.
 - Preserve browser binding, server timing, honeypot, rate limits, expiry, atomic token consumption and missing-CAPTCHA rejection in CF7. Unchecked, expired, repeated and cross-browser verification requests remain rejected.
