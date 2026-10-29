@@ -11,7 +11,21 @@ final class TK_Page_Cache_Runtime {
         $ssl = isset($server['HTTPS'])
             ? (strtolower((string) $server['HTTPS']) === 'on' || (string) $server['HTTPS'] === '1')
             : (isset($server['SERVER_PORT']) && (string) $server['SERVER_PORT'] === '443');
-        return md5(($ssl ? 'https' : 'http') . '|' . strtolower((string) ($server['HTTP_HOST'] ?? '')) . '|' . (string) ($server['REQUEST_URI'] ?? ''));
+        return md5(($ssl ? 'https' : 'http') . '|' . strtolower((string) ($server['HTTP_HOST'] ?? '')) . '|' . self::cache_uri((string) ($server['REQUEST_URI'] ?? '')));
+    }
+
+    /** Drop campaign/click parameters: every ad click carries a unique value, which made each one a cache miss and a new file. */
+    public static function cache_uri(string $uri): string {
+        $position = strpos($uri, '?');
+        if ($position === false) { return $uri; }
+        $kept = array();
+        foreach (explode('&', (string) substr($uri, $position + 1)) as $pair) {
+            if ($pair === '') { continue; }
+            $name = urldecode((string) strtok($pair, '='));
+            if (!self::dynamic_query(array($name => ''), self::allowed_query_keys())) { continue; }
+            $kept[] = $pair;
+        }
+        return substr($uri, 0, $position) . ($kept ? '?' . implode('&', $kept) : '');
     }
 
     public static function allowed_query_keys(): array {

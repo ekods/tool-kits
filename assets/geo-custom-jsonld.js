@@ -10,7 +10,6 @@
         var summary = root.querySelector('.tk-geo-schema-summary');
         var source = root.querySelector('.tk-geo-schema-source');
         var report = root.querySelector('.tk-sv-report');
-        var validate = root.querySelector('.tk-geo-schema-validate');
         var urlInput = root.querySelector('#tk-geo-schema-url');
         var fetchButton = root.querySelector('.tk-geo-schema-fetch');
         var vocab = null, vocabState = 'loading', mode = 'code', live = null, timer = 0;
@@ -156,10 +155,11 @@
             } finally { fetchButton.disabled = false; }
         }
         editor.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(function () { mode = 'code'; render(); }, 300); });
-        validate.addEventListener('click', function () { mode = 'code'; render(); });
         fetchButton.addEventListener('click', fetchUrl);
         urlInput.addEventListener('keydown', function (event) { if (event.key === 'Enter') { event.preventDefault(); fetchUrl(); } });
         render();
+        // Opened from the Duplicate Detector with ?tk_schema_test=URL: test that page straight away.
+        if (urlInput.dataset.autorun) fetchUrl();
         fetch(root.dataset.vocabulary, {credentials: 'same-origin'}).then(function (response) {
             if (!response.ok) throw new Error('HTTP ' + response.status);
             return response.json();

@@ -1,6 +1,6 @@
 <?php
 define('ABSPATH', '/tmp/');
-require dirname(__DIR__) . '/includes/geo-schema-modal.php';
+require dirname(__DIR__) . '/includes/geo-schema-check.php';
 require dirname(__DIR__) . '/includes/geo.php';
 function verify_schema($ok, $message) { if (!$ok) throw new RuntimeException($message); }
 verify_schema(tk_geo_schema_validate_json('')['valid'], 'Empty setting cannot be removed');
@@ -73,19 +73,19 @@ function wp_remote_retrieve_body($response) { return $response; }
 function wp_json_encode($value, $options = 0) { return json_encode($value, $options); }
 function esc_attr($value) { return htmlspecialchars($value, ENT_QUOTES); }
 function esc_html($value) { return esc_attr($value); }
-function schema_ajax($live = false) {
-    try { if ($live) tk_geo_schema_editor_live_ajax(); else tk_geo_schema_editor_ajax(); }
+function schema_ajax() {
+    try { tk_geo_schema_check_url_ajax(); }
     catch (SchemaAjaxResponse $response) { return $response; }
 }
 $GLOBALS['schema_manage'] = true;
-$_POST = array('url' => 'https://site.example/', 'mode' => 'load');
-$editor = schema_ajax();
-verify_schema($editor->success && isset($editor->data['json']) && !isset($editor->data['live']), 'Editor route must not fetch live output');
-$live = schema_ajax(true);
-verify_schema($live->success && $live->data['operation'] === 'live' && count($live->data['live']['documents']) === 1, 'Dedicated live route returned editor payload');
-$_POST['url'] = 'https://external.example/';
-verify_schema(!schema_ajax(true)->success, 'External live URL accepted');
+$_POST = array('url' => 'https://site.example/page/');
+$check = schema_ajax();
+verify_schema($check->success && $check->data['blocks'] === array('{"@type":"WebSite","@id":"#website"}'), 'URL test did not return the raw JSON-LD blocks');
+foreach (array('ftp://site.example/', 'https://user:pass@site.example/', 'not a url') as $bad) {
+    $_POST['url'] = $bad;
+    verify_schema(!schema_ajax()->success, 'URL test accepted ' . $bad);
+}
 $_POST['url'] = 'https://site.example/';
 $GLOBALS['schema_manage'] = false;
-verify_schema(!schema_ajax(true)->success, 'Live route bypassed permissions');
-echo "PASS: editor/live AJAX contracts, independent operations, same-site URLs and permissions\n";
+verify_schema(!schema_ajax()->success, 'URL test bypassed permissions');
+echo "PASS: Custom JSON-LD URL test contract: raw blocks, http(s) only, no credentials, permissions\n";

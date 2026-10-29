@@ -91,6 +91,39 @@ function tk_page_cache_early_hook_requirements(): array {
     return $requirements;
 }
 
+// Everything the early-cache snapshot depends on that can be read without touching files.
+function tk_page_cache_early_fingerprint(): string {
+    $claims = tk_license_features_enabled() ? tk_license_verified_claims() : false;
+    return md5((string) wp_json_encode(array(
+        !empty($GLOBALS['tk_page_cache_early_deactivated']), tk_cache_page_enabled(), tk_license_features_enabled(),
+        tk_page_cache_early_hook_requirements(), (int) tk_get_option('page_cache_ttl', 3600),
+        (string) tk_get_option('page_cache_exclude_paths', ''), tk_page_cache_dir(), defined('TK_VERSION') ? TK_VERSION : '',
+        is_array($claims) ? (int) ($claims['expires_at'] ?? 0) : 0, home_url('/'),
+    )));
+}
+
+// wp_loaded entry point. A full sync reads wp-config.php, the drop-in and the config file, so public requests
+// reuse the last result until an input changes or the signed snapshot nears expiry; admin and cron always sync.
+function tk_page_cache_early_sync_request(): void {
+    $fingerprint = tk_page_cache_early_fingerprint();
+    if (!is_admin() && !wp_doing_cron()) {
+        $state = get_option('tk_page_cache_early_state', array());
+        if (is_array($state) && ($state['fp'] ?? '') === $fingerprint
+            && ((int) ($state['until'] ?? 0) === 0 || (int) $state['until'] > time() + 300)) {
+            $GLOBALS['tk_page_cache_early_notice'] = (string) ($state['notice'] ?? '');
+            return;
+        }
+    }
+    tk_page_cache_early_sync();
+    $path = tk_page_cache_early_config_path();
+    $snapshot = is_file($path) ? include $path : array();
+    $state = array('fp' => $fingerprint, 'until' => is_array($snapshot) ? (int) ($snapshot['valid_until'] ?? 0) : 0,
+        'notice' => (string) ($GLOBALS['tk_page_cache_early_notice'] ?? ''));
+    if (get_option('tk_page_cache_early_state', array()) !== $state) {
+        update_option('tk_page_cache_early_state', $state, true);
+    }
+}
+
 function tk_page_cache_early_sync(): void {
     $GLOBALS['tk_page_cache_early_notice'] = '';
     if (!empty($GLOBALS['tk_page_cache_early_deactivated']) || !tk_cache_page_enabled() || !tk_license_features_enabled()) { tk_page_cache_early_remove(); return; }
@@ -165,6 +198,7 @@ function tk_page_cache_early_option_changed($option, $old = null, $new = null): 
     }
     // Disable immediately after an option/license change, then publish one
     // consistent snapshot after all fields in the settings form have saved.
+    delete_option('tk_page_cache_early_state');
     $config = tk_page_cache_early_config_path();
     if (is_file($config)) { @unlink($config); if (function_exists('opcache_invalidate')) { @opcache_invalidate($config, true); } }
     if (empty($GLOBALS['tk_page_cache_early_sync_pending'])) {

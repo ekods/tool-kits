@@ -220,12 +220,18 @@ function tk_rate_limit_is_whitelisted($ip) {
     return in_array($ip, tk_rate_limit_whitelist_ips(), true);
 }
 
+// Blocked IPs live in their own option (read only on login and form POSTs). Inside tk_options, every newly
+// blocked attacker IP rewrote all settings and reports, which a distributed brute force turns into a write storm.
 function tk_rate_limit_blocked_ips() {
-    $blocked = tk_get_option('rate_limit_blocked_ips', array());
+    $blocked = get_option('tk_rate_limit_blocked_ips', array());
     if (!is_array($blocked)) {
         return array();
     }
     return $blocked;
+}
+
+function tk_rate_limit_save_blocked_ips(array $blocked): void {
+    update_option('tk_rate_limit_blocked_ips', $blocked, false);
 }
 
 function tk_rate_limit_is_blocked($ip) {
@@ -246,7 +252,7 @@ function tk_rate_limit_block_ip($ip) {
     $blocked = tk_rate_limit_blocked_ips();
     if (!isset($blocked[$ip])) {
         $blocked[$ip] = time();
-        tk_update_option('rate_limit_blocked_ips', $blocked);
+        tk_rate_limit_save_blocked_ips($blocked);
     }
 }
 
@@ -262,7 +268,7 @@ function tk_rate_limit_unblock_ips($ips) {
         }
         unset($blocked[$ip]);
     }
-    tk_update_option('rate_limit_blocked_ips', $blocked);
+    tk_rate_limit_save_blocked_ips($blocked);
 }
 
 function tk_rate_limit_authenticate($user, $username, $password) {
@@ -641,7 +647,7 @@ function tk_rate_limit_save() {
         foreach ($whitelist_ips as $ip) {
             unset($blocked[$ip]);
         }
-        tk_update_option('rate_limit_blocked_ips', $blocked);
+        tk_rate_limit_save_blocked_ips($blocked);
     }
 
     wp_safe_redirect(admin_url('admin.php?page=tool-kits-security-rate-limit'));

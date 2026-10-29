@@ -99,16 +99,6 @@ function tk_geo_build_ai_radar(array $search, array $access): array {
     );
 }
 
-function tk_geo_ai_search_radar_scan(): void {
-    tk_require_admin_post('tk_geo_ai_search_radar_scan');
-    $url = tk_geo_normalize_site_url((string) tk_post('geo_ai_search_radar_url', home_url('/')));
-    tk_update_option('geo_visibility_report', array());
-    $visibility = tk_geo_run_visibility_scan($url);
-    tk_update_option('geo_visibility_report', $visibility);
-    tk_update_option('geo_ai_search_radar_report', tk_geo_build_search_radar($visibility));
-    wp_safe_redirect(admin_url('admin.php?page=tool-kits-geo-audit') . '#ai-search-radar'); exit;
-}
-
 function tk_geo_ai_radar_scan(): void {
     tk_require_admin_post('tk_geo_ai_radar_scan');
     tk_update_option('geo_visibility_report', array());
@@ -116,19 +106,17 @@ function tk_geo_ai_radar_scan(): void {
     $search = tk_geo_build_search_radar($visibility);
     tk_update_option('geo_ai_access_report', array());
     $access = tk_geo_run_ai_access_review();
-    tk_update_option('geo_ai_search_radar_report', $search);
     tk_update_option('geo_ai_access_report', $access);
     tk_update_option('geo_ai_radar_report', tk_geo_build_ai_radar($search, $access));
     wp_safe_redirect(admin_url('admin.php?page=tool-kits-geo-audit') . '#ai-radar'); exit;
 }
 
+// Search readiness section of the AI Visibility report, derived from the same per-URL scan.
 function tk_geo_render_search_radar(array $report): void {
-    ?>
-    <h3>AI Search Radar</h3><p>Audit one public URL across entity clarity, content readiness, E-E-A-T signals, and technical foundations.</p>
-    <div class="tk-grid tk-grid-2"><p><label>URL</label><input type="url" form="tk-geo-ai-search-radar-form" name="geo_ai_search_radar_url" value="<?php echo esc_attr((string) ($report['url'] ?? home_url('/'))); ?>"></p><p style="display:flex;align-items:flex-end"><button class="button button-primary" form="tk-geo-ai-search-radar-form">Run AI Search Radar</button></p></div>
-    <?php if (empty($report)) { echo '<p class="description">No AI Search Radar report yet.</p>'; return; }
+    if (empty($report)) { return; }
     $labels = array('entity' => 'Entity Analysis', 'content' => 'Content Readiness', 'eeat' => 'E-E-A-T Signals', 'tech' => 'Tech Foundation'); ?>
-    <p><span class="tk-badge <?php echo ((int) $report['score'] >= 80) ? 'tk-on' : 'tk-warn'; ?>">Overall: <?php echo esc_html((string) ((int) $report['score'])); ?>/100</span> <span class="description">Last scan: <?php echo esc_html(wp_date('Y-m-d H:i:s', (int) ($report['scanned_at'] ?? time()))); ?></span></p>
+    <h4 style="margin-top:18px;">AI Search Readiness</h4>
+    <p><span class="tk-badge <?php echo ((int) $report['score'] >= 80) ? 'tk-on' : 'tk-warn'; ?>">Overall: <?php echo esc_html((string) ((int) $report['score'])); ?>/100</span> <span class="description">Entity clarity, content readiness, E-E-A-T signals and technical foundations.</span></p>
     <div class="tk-grid tk-grid-2" style="gap:12px;margin:14px 0"><?php foreach ($labels as $key => $label) : $score = (int) ($report['scores'][$key] ?? 0); ?><div class="tk-card"><strong><?php echo esc_html($label); ?></strong><br><span style="font-size:24px;font-weight:700"><?php echo esc_html((string) $score); ?></span>/100</div><?php endforeach; ?></div>
     <h4>Strategic Recommendations</h4><div class="tk-table-scroll"><table class="widefat striped tk-table"><thead><tr><th>Recommendation</th><th>Category</th><th>Priority</th><th>Detail</th></tr></thead><tbody><?php foreach (($report['recommendations'] ?? array()) as $item) : ?><tr><td><strong><?php echo esc_html((string) $item['title']); ?></strong><?php if (!empty($item['quick'])) : ?> <span class="tk-badge tk-on">Quick win</span><?php endif; ?></td><td><?php echo esc_html(strtoupper((string) $item['category'])); ?></td><td><span class="tk-badge tk-priority-<?php echo esc_attr((string) $item['priority']); ?>"><?php echo esc_html(strtoupper((string) $item['priority'])); ?></span></td><td><?php echo esc_html((string) $item['detail']); ?></td></tr><?php endforeach; ?></tbody></table></div>
     <?php

@@ -81,16 +81,14 @@ function tk_license_validate(bool $force = false): array {
         $body = wp_json_encode($payload);
         if (!is_string($body)) { $failure = 'Cannot encode license request.'; }
         else {
-            $response = tk_toolkits_signed_post($url, $body, $now, array('timeout' => 15, 'license_request' => true));
+            $response = tk_toolkits_signed_post($url, $body, $now, array('timeout' => 10, 'license_request' => true));
             $network_error = is_wp_error($response);
             $code = $network_error ? 0 : (int) wp_remote_retrieve_response_code($response);
             // A temporary outage may use an already verified receipt, but only
             // until its original signed deadline. Never renew it locally.
             if (($network_error || $code >= 500 || $code === 429) && $verified && tk_license_features_enabled()) {
                 $result = array('status' => 'valid', 'message' => 'License server temporarily unavailable. Using the existing signed license until its original expiry.');
-                tk_update_option('license_last_checked', $now);
-                tk_update_option('license_last_failure', $now);
-                tk_update_option('license_last_error_message', $result['message']);
+                tk_update_options(array('license_last_checked' => $now, 'license_last_failure' => $now, 'license_last_error_message' => $result['message']));
                 return $result;
             }
             if ($network_error) { $failure = $response->get_error_message(); }

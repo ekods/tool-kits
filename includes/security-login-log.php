@@ -22,7 +22,8 @@ function tk_login_log_table() {
 }
 
 function tk_login_log_install_table() {
-    $schema_version = '1';
+    // 2: indexes for the dashboard's time/status/IP aggregates.
+    $schema_version = '2';
     if ((string) get_option('tk_login_log_schema_version', '') === $schema_version) {
         return;
     }
@@ -39,7 +40,10 @@ function tk_login_log_install_table() {
         agent VARCHAR(255),
         reason VARCHAR(191),
         status VARCHAR(20),
-        PRIMARY KEY (id)
+        PRIMARY KEY  (id),
+        KEY time (time),
+        KEY status_time (status,time),
+        KEY ip_time (ip,time)
     ) {$wpdb->get_charset_collate()};";
 
     dbDelta($sql);
@@ -48,6 +52,17 @@ function tk_login_log_install_table() {
     if (is_string($found) && $found === $table) {
         update_option('tk_login_log_schema_version', $schema_version, false);
     }
+}
+
+// Rows older than the security-event retention are removed in bounded batches by the daily maintenance job.
+function tk_login_log_cleanup(): int {
+    global $wpdb;
+    $days = max(7, (int) tk_get_option('security_events_retention_days', 90));
+    $result = $wpdb->query($wpdb->prepare(
+        'DELETE FROM ' . tk_login_log_table() . ' WHERE time < %s LIMIT 1000',
+        gmdate('Y-m-d H:i:s', time() - ($days * DAY_IN_SECONDS))
+    ));
+    return is_numeric($result) ? (int) $result : 0;
 }
 
 function tk_login_log_insert($username, $user_id, $status, $reason = '') {

@@ -43,6 +43,9 @@ function tk_seo_opt_init() {
     add_action('wp_ajax_tk_seo_copy_locale', 'tk_seo_copy_locale_ajax');
 
     add_action('init', 'tk_seo_sitemap_maybe_render', 1);
+    foreach (array('save_post', 'deleted_post', 'trashed_post', 'created_term', 'edited_term', 'delete_term', 'update_option_permalink_structure') as $hook) {
+        add_action($hook, 'tk_seo_sitemap_flush_cache');
+    }
     add_action('template_redirect', 'tk_seo_redirect_maybe_handle', 1);
     add_action('add_meta_boxes', 'tk_seo_add_geo_meta_boxes');
     add_action('save_post', 'tk_seo_save_geo_meta_box', 10, 2);
@@ -1034,7 +1037,29 @@ function tk_seo_get_redirect_rules() {
             'last' => isset($item['last']) ? (int) $item['last'] : 0,
         );
     }
+    // Hit counters live in their own option; they replace the legacy values stored with the rules.
+    $stats = tk_seo_redirect_hit_stats();
+    foreach ($rules as $index => $rule) {
+        $stat = $stats[md5($rule['from'])] ?? null;
+        if (is_array($stat)) {
+            $rules[$index]['hits'] = (int) ($stat['hits'] ?? 0);
+            $rules[$index]['last'] = (int) ($stat['last'] ?? 0);
+        }
+    }
     return $rules;
+}
+
+// Counting a redirect hit must not rewrite tk_options (and purge the page cache) on a public request.
+function tk_seo_redirect_hit_stats(): array {
+    $stats = get_option('tk_audit_redirect_hits', array());
+    return is_array($stats) ? $stats : array();
+}
+
+function tk_seo_redirect_record_hit(array $rule): void {
+    $stats = tk_seo_redirect_hit_stats();
+    $key = md5((string) $rule['from']);
+    $stats[$key] = array('hits' => (int) ($rule['hits'] ?? 0) + 1, 'last' => time());
+    update_option('tk_audit_redirect_hits', $stats, false);
 }
 
 function tk_seo_redirect_maybe_handle() {
@@ -1068,9 +1093,7 @@ function tk_seo_redirect_maybe_handle() {
         }
 
         $status = (int) $rule['status'];
-        $rules[$index]['hits'] = isset($rules[$index]['hits']) ? (int) $rules[$index]['hits'] + 1 : 1;
-        $rules[$index]['last'] = time();
-        tk_update_option('seo_redirect_rules', $rules);
+        tk_seo_redirect_record_hit($rule);
 
         if ($status === 410) {
             status_header(410);
@@ -1157,8 +1180,8 @@ function tk_seo_redirect_delete() {
 }
 
 function tk_seo_redirect_suggestions() {
-    $log = tk_get_option('monitoring_404_log', array());
-    if (!is_array($log) || empty($log)) {
+    $log = function_exists('tk_monitoring_404_log') ? tk_monitoring_404_log() : array();
+    if (empty($log)) {
         return array();
     }
     $entries = array_values($log);
@@ -1211,12 +1234,37 @@ function tk_seo_sitemap_maybe_render() {
         return;
     }
 
-    $rows = tk_seo_collect_sitemap_rows();
+    // Building the sitemap walks every public post and term; serve a cached copy that content changes clear.
+    $cache_key = tk_seo_sitemap_cache_key();
+    $xml = get_transient($cache_key);
+    if (!is_string($xml) || $xml === '') {
+        $xml = tk_seo_build_sitemap_xml(tk_seo_collect_sitemap_rows());
+        set_transient($cache_key, $xml, 6 * HOUR_IN_SECONDS);
+    }
 
-    nocache_headers();
     header('Content-Type: application/xml; charset=' . get_bloginfo('charset'));
-    echo tk_seo_build_sitemap_xml($rows);
+    header('Cache-Control: public, max-age=3600');
+    echo $xml;
     exit;
+}
+
+// The key changes with the sitemap settings, so saving them needs no explicit flush.
+function tk_seo_sitemap_cache_key(): string {
+    $settings = array();
+    foreach (array('seo_sitemap_changefreq', 'seo_sitemap_priority', 'seo_sitemap_exclude_paths', 'seo_sitemap_include_images', 'seo_sitemap_include_taxonomies') as $key) {
+        $settings[$key] = tk_get_option($key, '');
+    }
+    return 'tk_seo_sitemap_' . md5((string) wp_json_encode(array($settings, home_url('/'), (int) get_option('tk_seo_sitemap_generation', 0))));
+}
+
+function tk_seo_sitemap_flush_cache(): void {
+    // Bump a generation counter instead of guessing transient names; stale copies expire on their own.
+    static $flushed = false;
+    if ($flushed) {
+        return;
+    }
+    $flushed = true;
+    update_option('tk_seo_sitemap_generation', (int) get_option('tk_seo_sitemap_generation', 0) + 1, false);
 }
 
 function tk_seo_build_sitemap_xml(array $rows): string {
@@ -1300,17 +1348,22 @@ function tk_seo_collect_sitemap_rows() {
     unset($post_types['attachment']);
 
     if (!empty($post_types)) {
+        // Full post objects with primed meta and thumbnail caches: get_permalink() and the thumbnail URL
+        // otherwise cost several queries per post.
         $query = new WP_Query(array(
             'post_type' => array_values($post_types),
             'post_status' => 'publish',
             'posts_per_page' => 1000,
-            'fields' => 'ids',
             'no_found_rows' => false,
+            'ignore_sticky_posts' => true,
             'paged' => 1,
         ));
         while (true) {
+            if ($include_images && !empty($query->posts)) {
+                update_post_thumbnail_cache($query);
+            }
             if (!empty($query->posts)) {
-                foreach ($query->posts as $post_id) {
+                foreach (wp_list_pluck($query->posts, 'ID') as $post_id) {
                     $loc = get_permalink((int) $post_id);
                     if (!is_string($loc) || $loc === '') {
                         continue;
@@ -1339,8 +1392,8 @@ function tk_seo_collect_sitemap_rows() {
                 'post_type' => array_values($post_types),
                 'post_status' => 'publish',
                 'posts_per_page' => 1000,
-                'fields' => 'ids',
                 'no_found_rows' => false,
+                'ignore_sticky_posts' => true,
                 'paged' => $next,
             ));
             if ($next > 50) {

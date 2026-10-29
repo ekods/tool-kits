@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.65
+Stable tag: 2.7.66
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,15 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.66 =
+- Performance, public requests: 404s, firewall blocks and redirect hits no longer rewrite the whole tk_options row; each log has its own small option. Blocked requests use cached geolocation only (no outbound lookups), and redirect hits or blocks no longer purge the page cache. The 404 log groups entries by path without query strings.
+- Performance, page cache: campaign/click parameters (utm_*, gclid, fbclid, msclkid) no longer create separate cache entries. Pages are stored minified, so cache hits are not minified again. Expired cache files are removed daily. The early-cache sync no longer reads wp-config.php and the drop-in on every request.
+- Performance, other: sitemap.xml is cached until content changes, built with primed post caches, and may be cached by CDNs for an hour. Hardening .htaccess rules are not re-read (or re-written after a failure) on every request. captcha.js loads only on pages with a CAPTCHA or Contact Form 7. The FAQ stylesheet loads only with the FAQ shortcode.
+- Performance, admin and server: Tool Kits pages and ajax polls no longer force a remote license check, and license state is saved in one write without purging the page cache. Blocked IPs move out of tk_options. The login log gains indexes and follows the security-event retention (default 90 days). Monitoring caches its loopback checks for 15 minutes. The dashboard attacks widget caches its queries for 5 minutes. Deactivation clears every scheduled job.
+- GEO Audit: a new "What to fix" summary groups issues across URLs by priority, with affected URLs and Auto/Manual fix, plus a copyable fix prompt for an AI assistant or developer. The GEO Setup score card links to the audit.
+- GEO tables scroll horizontally inside the page with an always-visible scrollbar and a sticky header, instead of squeezing columns.
+- GEO cleanup: the Validate & Edit modal, Post Schema tab and Validate Schema Nodes button are replaced by the Custom JSON-LD validator (Duplicate Detector "Validate" opens it with the URL test running). AI Search Radar is now the AI Search Readiness section of AI Visibility.
+
 = 2.7.65 =
 - GEO JSON-LD: Custom JSON-LD is now merged into the generated SEO graph by @id, so WebSite, Organization and WebPage are each defined once per page. Custom values win, and generated properties the custom node lacks are kept. Previously a Custom JSON-LD that repeated #website, #organization or #webpage printed a second definition on every page.
 - Page nodes (WebPage and its subtypes) in the site-wide Custom JSON-LD now print only on the URL they describe. A home page WebPage no longer appears on every inner page, and on its own URL (including with a query string) it merges into the generated WebPage. The same rule applies when another SEO plugin turns the Tool Kits SEO graph off.

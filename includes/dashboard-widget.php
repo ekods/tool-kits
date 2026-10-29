@@ -150,8 +150,7 @@ function tk_dashboard_widget_login_failed_ip_rows(int $since): array {
 }
 
 function tk_dashboard_widget_firewall_events(): array {
-    $events = tk_get_option('firewall_event_log', array());
-    return is_array($events) ? $events : array();
+    return function_exists('tk_firewall_event_log') ? tk_firewall_event_log() : array();
 }
 
 function tk_dashboard_widget_firewall_count(int $since, string $kind = 'all'): int {
@@ -228,7 +227,7 @@ function tk_dashboard_widget_use_security_events(): bool {
         return false;
     }
     global $wpdb;
-    $use = (int) $wpdb->get_var('SELECT COUNT(*) FROM ' . tk_security_events_table() . ' LIMIT 1') > 0;
+    $use = $wpdb->get_var('SELECT 1 FROM ' . tk_security_events_table() . ' LIMIT 1') !== null;
     return $use;
 }
 
@@ -629,27 +628,40 @@ function tk_render_attacks_blocked_dashboard_widget() {
         'week' => $now - (7 * DAY_IN_SECONDS),
         'month' => $now - (30 * DAY_IN_SECONDS),
     );
-    $summary = array();
-    foreach ($ranges as $key => $since) {
-        $complex = tk_dashboard_widget_attacks_count($since, 'complex');
-        $brute = tk_dashboard_widget_attacks_count($since, 'brute');
-        $blocklist = tk_dashboard_widget_attacks_count($since, 'blocklist');
-        $summary[$key] = array(
-            'complex' => $complex,
-            'brute' => $brute,
-            'blocklist' => $blocklist,
-            'total' => $complex + $brute + $blocklist,
+    // About 16 aggregate queries over the event tables; one dashboard view every 5 minutes is accurate enough.
+    $cached = get_transient('tk_dashboard_attacks_summary');
+    if (!is_array($cached) || ($cached['today_start'] ?? 0) !== $today_start) {
+        $summary = array();
+        foreach ($ranges as $key => $since) {
+            $complex = tk_dashboard_widget_attacks_count($since, 'complex');
+            $brute = tk_dashboard_widget_attacks_count($since, 'brute');
+            $blocklist = tk_dashboard_widget_attacks_count($since, 'blocklist');
+            $summary[$key] = array(
+                'complex' => $complex,
+                'brute' => $brute,
+                'blocklist' => $blocklist,
+                'total' => $complex + $brute + $blocklist,
+            );
+        }
+        $cached = array(
+            'today_start' => $today_start,
+            'summary' => $summary,
+            'series_24h' => tk_dashboard_widget_attack_chart_series(1),
+            'series_30d' => tk_dashboard_widget_attack_chart_series(30),
+            'top_countries' => tk_dashboard_widget_top_countries($ranges['week']),
+            'top_ips' => array(
+                '24h' => tk_dashboard_widget_top_ips($now - DAY_IN_SECONDS),
+                '7d' => tk_dashboard_widget_top_ips($ranges['week']),
+                '30d' => tk_dashboard_widget_top_ips($ranges['month']),
+            ),
         );
+        set_transient('tk_dashboard_attacks_summary', $cached, 5 * MINUTE_IN_SECONDS);
     }
-
-    $series_24h = tk_dashboard_widget_attack_chart_series(1);
-    $series_30d = tk_dashboard_widget_attack_chart_series(30);
-    $top_countries = tk_dashboard_widget_top_countries($ranges['week']);
-    $top_ips = array(
-        '24h' => tk_dashboard_widget_top_ips($now - DAY_IN_SECONDS),
-        '7d' => tk_dashboard_widget_top_ips($ranges['week']),
-        '30d' => tk_dashboard_widget_top_ips($ranges['month']),
-    );
+    $summary = $cached['summary'];
+    $series_24h = $cached['series_24h'];
+    $series_30d = $cached['series_30d'];
+    $top_countries = $cached['top_countries'];
+    $top_ips = $cached['top_ips'];
     $last_event_time = 0;
     foreach (tk_dashboard_widget_firewall_events() as $event) {
         $last_event_time = max($last_event_time, isset($event['time']) ? (int) $event['time'] : 0);

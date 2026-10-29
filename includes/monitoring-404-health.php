@@ -12,6 +12,17 @@ function tk_monitoring_404_health_init() {
     add_action('wp_ajax_tk_realtime_health', 'tk_realtime_health_ajax');
 }
 
+// The 404 log lives in its own small, non-autoloaded option. Writing it inside tk_options rewrote every
+// setting and report on each 404, which bots turn into hundreds of large writes per minute.
+function tk_monitoring_404_log(): array {
+    $log = get_option('tk_monitoring_404_log', array());
+    return is_array($log) ? $log : array();
+}
+
+function tk_monitoring_404_log_save(array $log): void {
+    update_option('tk_monitoring_404_log', $log, false);
+}
+
 function tk_monitoring_log_404() {
     if (is_admin() || wp_doing_ajax() || !is_404()) {
         return;
@@ -27,11 +38,10 @@ function tk_monitoring_log_404() {
         return;
     }
     tk_monitoring_404_scanner_trap($path);
+    // Group by path only: random query strings from scanners must not create new entries.
+    $path = substr((string) strtok($path, '?#'), 0, 500);
     $key = md5($path);
-    $log = tk_get_option('monitoring_404_log', array());
-    if (!is_array($log)) {
-        $log = array();
-    }
+    $log = tk_monitoring_404_log();
     $entry = isset($log[$key]) && is_array($log[$key]) ? $log[$key] : array(
         'path' => $path,
         'count' => 0,
@@ -59,7 +69,7 @@ function tk_monitoring_log_404() {
         $log = array_slice($log, 0, 200, true);
     }
 
-    tk_update_option('monitoring_404_log', $log);
+    tk_monitoring_404_log_save($log);
 }
 
 function tk_monitoring_404_scanner_paths(): array {
@@ -200,7 +210,7 @@ function tk_404_monitoring_clear() {
         wp_die('Forbidden');
     }
     tk_check_nonce('tk_404_monitoring_clear');
-    tk_update_option('monitoring_404_log', array());
+    tk_monitoring_404_log_save(array());
     wp_redirect(admin_url('admin.php?page=tool-kits-monitoring&tk_404_cleared=1#missing'));
     exit;
 }

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.7.65
+ * Version: 2.7.66
  * Requires PHP: 7.4
  * GitHub Plugin URI: https://github.com/ekods/tool-kits
  * Update URI: https://github.com/ekods/tool-kits
@@ -31,7 +31,7 @@ if (version_compare(PHP_VERSION, TK_MINIMUM_PHP, '<')) {
     return;
 }
 
-define('TK_VERSION', '2.7.65');
+define('TK_VERSION', '2.7.66');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
@@ -170,6 +170,10 @@ function tk_deactivate() {
     wp_clear_scheduled_hook('tk_monitoring_deferred_checks');
     wp_clear_scheduled_hook('tk_security_events_cleanup_batch');
     wp_clear_scheduled_hook('tk_license_refresh');
+    // Every recurring job reschedules itself on the next load if its feature is still enabled.
+    foreach (array('tk_page_cache_gc', 'tk_heartbeat_cron', 'tk_monitoring_cron', 'tk_hardening_waf_cleanup', 'tk_malware_scheduled_scan', 'tk_image_opt_queue_process', 'tk_indexnow_process_queue') as $hook) {
+        wp_clear_scheduled_hook($hook);
+    }
 
 }
 register_deactivation_hook(__FILE__, 'tk_deactivate');

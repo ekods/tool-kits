@@ -21,7 +21,7 @@ function tk_captcha_init() {
     add_filter('wpcf7_validate', 'tk_captcha_validate_cf7', 10, 2);
     add_filter('wpcf7_spam', 'tk_captcha_cf7_spam', 30, 2);
     add_filter('wpcf7_feedback_response', 'tk_captcha_cf7_response', 30, 2);
-    add_action('wp_footer', 'tk_captcha_refresh_script');
+    add_action('wp_footer', 'tk_captcha_refresh_script', 19); // After footer content, before footer scripts print (20).
     add_action('login_footer', 'tk_captcha_refresh_script');
     
     // Custom AJAX handler to bypass admin-ajax.php blocks
@@ -430,6 +430,7 @@ function tk_captcha_validate_registration($errors) {
 }
 
 function tk_captcha_render_markup(string $type = ''): string {
+    $GLOBALS['tk_captcha_rendered'] = true;
     $type = $type !== '' ? tk_captcha_normalize_type($type) : tk_captcha_current_type();
     $challenge = tk_captcha_create_challenge($type);
     $names = tk_captcha_field_names();
@@ -867,6 +868,11 @@ function tk_captcha_verify_click_ajax() {
 
 function tk_captcha_refresh_script() {
     if (is_admin() || !tk_get_option('captcha_enabled')) { return; }
+    // Only pages that render a CAPTCHA, or load Contact Form 7 (forms in popups or AJAX-inserted markup bring
+    // its script), need captcha.js. The login screen always renders one.
+    $needed = !empty($GLOBALS['tk_captcha_rendered']) || doing_action('login_footer')
+        || wp_script_is('contact-form-7', 'enqueued') || wp_script_is('contact-form-7', 'done');
+    if (!apply_filters('tk_captcha_enqueue_script', $needed)) { return; }
     static $printed = false;
     if ($printed) { return; }
     $printed = true;

@@ -999,16 +999,30 @@ function tk_hardening_block_uploads_php(): void {
 
     if (in_array($server, array('apache', 'litespeed', 'openlitespeed'), true)) {
         $htaccess = trailingslashit($uploads_path) . '.htaccess';
-        $block = "# Tool Kits: block uploads php\n<IfModule mod_rewrite.c>\n  RewriteEngine On\n  RewriteRule ^.*\\.php$ - [F]\n</IfModule>\n<IfModule mod_autoindex.c>\n  Options -Indexes\n</IfModule>\n";
-        if (file_exists($htaccess)) {
-            $contents = @file_get_contents($htaccess);
-            if (is_string($contents) && strpos($contents, '# Tool Kits: block uploads php') !== false) {
+        // Runs on every request: once the rule is known to be in place, a stat is enough. A failed write is
+        // retried at most hourly instead of on every page view.
+        $state = get_option('tk_hardening_uploads_rule', array());
+        $state = is_array($state) ? $state : array();
+        if (($state['path'] ?? '') === $htaccess) {
+            if (!empty($state['ok']) && file_exists($htaccess)) {
                 return;
             }
-            @file_put_contents($htaccess, rtrim((string) $contents, "\r\n") . "\n\n" . $block);
-            return;
+            if (empty($state['ok']) && time() - (int) ($state['time'] ?? 0) < HOUR_IN_SECONDS) {
+                return;
+            }
         }
-        @file_put_contents($htaccess, $block);
+        $block = "# Tool Kits: block uploads php\n<IfModule mod_rewrite.c>\n  RewriteEngine On\n  RewriteRule ^.*\\.php$ - [F]\n</IfModule>\n<IfModule mod_autoindex.c>\n  Options -Indexes\n</IfModule>\n";
+        $ok = false;
+        if (file_exists($htaccess)) {
+            $contents = @file_get_contents($htaccess);
+            $ok = is_string($contents) && strpos($contents, '# Tool Kits: block uploads php') !== false;
+            if (!$ok) {
+                $ok = @file_put_contents($htaccess, rtrim((string) $contents, "\r\n") . "\n\n" . $block) !== false;
+            }
+        } else {
+            $ok = @file_put_contents($htaccess, $block) !== false;
+        }
+        update_option('tk_hardening_uploads_rule', array('path' => $htaccess, 'ok' => $ok, 'time' => time()), true);
         return;
     }
 
@@ -1244,9 +1258,9 @@ function tk_hardening_apply_root_server_rules(): void {
     
     if (function_exists('insert_with_markers')) {
         $written = insert_with_markers($path, 'Tool Kits Root', $lines);
-        if ($written !== false) {
-            update_option('tk_hardening_root_rules_hash', hash('sha256', $server . "\n" . $snippet), false);
-        }
+        $hash = hash('sha256', $server . "\n" . $snippet);
+        // A read-only .htaccess would otherwise be rewritten on every request; retry it hourly.
+        update_option('tk_hardening_root_rules_hash', $written !== false ? $hash : 'failed:' . $hash . ':' . time(), true);
     }
 }
 
@@ -1257,7 +1271,11 @@ function tk_hardening_maybe_apply_root_server_rules(): void {
     }
     $snippet = tk_hardening_server_rule_snippet();
     $hash = hash('sha256', $server . "\n" . $snippet);
-    if ((string) get_option('tk_hardening_root_rules_hash', '') === $hash) {
+    $stored = (string) get_option('tk_hardening_root_rules_hash', '');
+    if ($stored === $hash) {
+        return;
+    }
+    if (strpos($stored, 'failed:' . $hash . ':') === 0 && time() - (int) substr($stored, strlen('failed:' . $hash . ':')) < HOUR_IN_SECONDS) {
         return;
     }
     tk_hardening_apply_root_server_rules();
@@ -2947,6 +2965,7 @@ https://staging.example.com" style="width:100%; border-radius:8px;"><?php echo e
 function tk_hardening_save() {
     tk_require_admin_post('tk_hardening_save');
     tk_killswitch_snapshot('hardening');
+    delete_transient('tk_monitoring_config_checks');
 
     $tab = isset($_POST['tk_tab']) ? sanitize_key($_POST['tk_tab']) : '';
     if ($tab === 'general') {

@@ -82,4 +82,9 @@ ok(wrapped.document.length === 1 && /no @context/.test(wrapped.document[0].messa
 const removed = tools.remove(graph, detected.groups.length ? ['@graph', 0] : []);
 ok(removed['@graph'].length === 1 && removed['@graph'][0]['@type'] === 'WebSite', 'Remove Node path broke');
 
+// Identity analysis: nested shared values are not top-level duplicates, and a context-bearing reference is not a definition.
+const sharedAddress = tools.analyze([{'@type': 'Person', '@id': '#a', address: {'@type': 'PostalAddress', streetAddress: 'Same'}}, {'@type': 'Person', '@id': '#b', address: {'@type': 'PostalAddress', streetAddress: 'Same'}}]);
+ok(Object.keys(sharedAddress.anonymous).length === 0, 'Nested shared data flagged as anonymous top-level duplicates');
+ok(tools.analyze([{'@type': 'Organization', '@id': '#org'}, {'@id': '#org', '@context': 'https://schema.org'}]).ids['#org'] === 1, 'Context-bearing reference counted as a definition');
+
 console.log('PASS: ' + checks + ' schema validator checks (vocabulary terms, domains, target types, grouping, structure, references)');

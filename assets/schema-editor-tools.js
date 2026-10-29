@@ -41,21 +41,6 @@
         if (!analyze(copy).nodes.length) return null;
         return copy;
     }
-    function add(value, node) {
-        if (!value) return {'@context': 'https://schema.org', '@graph': [node]};
-        var copy = JSON.parse(JSON.stringify(value));
-        if (Array.isArray(copy)) { copy.push(node); return copy; }
-        if (Array.isArray(copy['@graph'])) { copy['@graph'].push(node); return copy; }
-        var context = copy['@context'] || 'https://schema.org';
-        delete copy['@context'];
-        return {'@context': context, '@graph': [copy, node]};
-    }
-    function fill(value, path, defaults) {
-        var copy = JSON.parse(JSON.stringify(value)), node = copy;
-        path.forEach(function (key) { node = node[key]; });
-        Object.keys(defaults).forEach(function (key) { if (node[key] === undefined || node[key] === '') node[key] = defaults[key]; });
-        return copy;
-    }
     // Recommended properties per type; a nested array means "any one of".
     var article = ['headline', 'image', 'datePublished', 'author'];
     var recommended = {
@@ -213,7 +198,7 @@
         return {findings: findings, document: documentFindings, groups: groups, errors: count('error'), warnings: count('warning'), notices: count('notice'),
             items: groups.reduce(function (total, group) { return total + group.items.length; }, 0), vocabulary: Boolean(vocab)};
     }
-    var api = {analyze: analyze, remove: remove, add: add, fill: fill, check: check};
+    var api = {analyze: analyze, remove: remove, check: check};
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else root.ToolKitsSchemaEditor = api;
 }(typeof window !== 'undefined' ? window : globalThis));

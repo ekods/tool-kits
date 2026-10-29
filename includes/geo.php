@@ -3,14 +3,12 @@ if (!defined('ABSPATH')) { exit; }
 require_once __DIR__ . '/geo-audit-batch.php';
 require_once __DIR__ . '/geo-crawler-fixes.php';
 require_once __DIR__ . '/geo-radar.php';
-require_once __DIR__ . '/geo-schema-modal.php';
+require_once __DIR__ . '/geo-schema-check.php';
 require_once __DIR__ . '/geo-ai-catalog.php';
 
 function tk_geo_init() {
-    add_action('wp_ajax_tk_geo_schema_editor', 'tk_geo_schema_editor_ajax');
-    add_action('wp_ajax_tk_geo_schema_editor_live', 'tk_geo_schema_editor_live_ajax');
     add_action('wp_ajax_tk_geo_schema_check_url', 'tk_geo_schema_check_url_ajax');
-    add_action('admin_enqueue_scripts', 'tk_geo_schema_editor_assets');
+    add_action('admin_enqueue_scripts', 'tk_geo_schema_check_assets');
     add_action('wp_ajax_tk_geo_batch_start', 'tk_geo_batch_start');
     add_action('wp_ajax_tk_geo_batch_step', 'tk_geo_batch_step');
     add_action('wp_ajax_tk_geo_fix_batch_start', 'tk_geo_fix_batch_start');
@@ -34,10 +32,8 @@ function tk_geo_init() {
     add_action('admin_post_tk_geo_audit_bulk_fix', 'tk_geo_audit_bulk_fix_handler');
     add_action('admin_post_tk_geo_audit_remove_fix', 'tk_geo_audit_remove_fix_handler');
     add_action('admin_post_tk_geo_audit_remove_all_fixes', 'tk_geo_audit_remove_all_fixes_handler');
-    add_action('admin_post_tk_geo_ai_search_radar_scan', 'tk_geo_ai_search_radar_scan');
     add_action('admin_post_tk_geo_ai_radar_scan', 'tk_geo_ai_radar_scan');
     add_action('admin_post_tk_geo_prompt_preview', 'tk_geo_prompt_preview_handler');
-    add_action('admin_post_tk_geo_post_schema_validate', 'tk_geo_post_schema_validate_handler');
     add_action('init', 'tk_geo_llms_maybe_render', 1);
     // After post types are registered, before routing, 404 redirects and HTML buffers.
     add_action('wp_loaded', 'tk_geo_ai_catalog_maybe_render', 0);
@@ -45,9 +41,9 @@ function tk_geo_init() {
     add_action('wp_head', 'tk_geo_ai_catalog_discovery_head', 2);
     add_action('wp_head', 'tk_geo_render_head_jsonld', 3);
     add_shortcode('tool_kits_geo_faq', 'tk_geo_faq_shortcode');
-    add_action('wp_enqueue_scripts', 'tk_geo_enqueue_faq_styles');
 }
 
+// Loaded by the FAQ shortcode only, not on every page.
 function tk_geo_enqueue_faq_styles(): void {
     wp_enqueue_style('tk-geo-faq', TK_URL . 'assets/geo-faq.css', array(), tk_asset_version('assets/geo-faq.css'));
 }
@@ -510,6 +506,7 @@ function tk_geo_faq_shortcode($atts = array()): string {
     if (empty($items)) {
         return '';
     }
+    tk_geo_enqueue_faq_styles();
 
     ob_start();
     ?>
@@ -1699,72 +1696,9 @@ function tk_geo_build_prompt_preview(string $url): array {
     );
 }
 
-function tk_geo_validate_post_schema(int $post_id): array {
-    $saved = tk_get_option('geo_post_schema_report', array());
-    if (is_array($saved) && isset($saved['post_id']) && (int) $saved['post_id'] === $post_id && (int) ($saved['schema']['analysis_version'] ?? 0) === 2) { return $saved; }
-    $post = get_post($post_id);
-    if (!$post || $post->post_status !== 'publish') {
-        return array(
-            'scanned_at' => time(),
-            'post_id' => $post_id,
-            'url' => '',
-            'status' => 0,
-            'score' => 0,
-            'schema' => array('documents' => 0, 'invalid' => 0, 'types' => array(), 'duplicates' => array()),
-            'issues' => array('Post not found or not published.'),
-        );
-    }
-
-    $url = (string) get_permalink($post);
-    $response = tk_geo_fetch_url($url, 'Tool Kits GEO Post Schema Validator');
-    $status = is_wp_error($response) ? 0 : (int) wp_remote_retrieve_response_code($response);
-    $html = is_wp_error($response) ? '' : (string) wp_remote_retrieve_body($response);
-    $schema = tk_geo_extract_jsonld_report($html, true);
-    $issues = array();
-    if ($status < 200 || $status >= 400) {
-        $issues[] = 'Post URL returned HTTP ' . $status . '.';
-    }
-    if ((int) ($schema['documents'] ?? 0) === 0) {
-        $issues[] = 'No JSON-LD schema detected on this post.';
-    }
-    if ((int) ($schema['invalid'] ?? 0) > 0) {
-        $issues[] = 'Invalid JSON-LD detected.';
-    }
-    if (!empty($schema['duplicates'])) {
-        $issues[] = 'Potential duplicate entity definitions detected. Review identities and source output.';
-    }
-
-    $score = 100;
-    if ($status < 200 || $status >= 400) {
-        $score -= 35;
-    }
-    if ((int) ($schema['documents'] ?? 0) === 0) {
-        $score -= 35;
-    }
-    if ((int) ($schema['invalid'] ?? 0) > 0) {
-        $score -= 25;
-    }
-    if (!empty($schema['duplicates'])) {
-        $score -= 10;
-    }
-
-    return array(
-        'scanned_at' => time(),
-        'post_id' => $post_id,
-        'post_title' => get_the_title($post),
-        'post_type' => (string) get_post_type($post),
-        'url' => $url,
-        'status' => $status,
-        'score' => max(0, min(100, $score)),
-        'schema' => $schema,
-        'issues' => $issues,
-        'error' => is_wp_error($response) ? $response->get_error_message() : '',
-    );
-}
-
 function tk_geo_clear_saved_results(): void {
     tk_require_admin_post('tk_geo_clear_saved_results');
-    foreach (array('seo_geo_audit_report', 'geo_ai_access_report', 'geo_visibility_report', 'geo_ai_search_radar_report', 'geo_ai_radar_report', 'geo_prompt_preview_report', 'geo_post_schema_report', 'geo_schema_duplicate_report', 'geo_schema_duplicate_fix_report', 'geo_crawler_preview') as $key) {
+    foreach (array('seo_geo_audit_report', 'geo_ai_access_report', 'geo_visibility_report', 'geo_ai_radar_report', 'geo_prompt_preview_report', 'geo_schema_duplicate_report', 'geo_schema_duplicate_fix_report', 'geo_crawler_preview') as $key) {
         tk_update_option($key, array());
     }
     wp_safe_redirect(admin_url('admin.php?page=tool-kits-geo-audit') . '#geo-audit');
@@ -1787,14 +1721,6 @@ function tk_geo_prompt_preview_handler(): void {
     $url = tk_geo_normalize_site_url((string) tk_post('geo_prompt_url', home_url('/')));
     tk_update_option('geo_prompt_preview_report', tk_geo_build_prompt_preview($url));
     wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-geo-audit', 'tk_geo_prompt_preview' => 1), admin_url('admin.php')) . '#prompt-preview');
-    exit;
-}
-
-function tk_geo_post_schema_validate_handler(): void {
-    tk_require_admin_post('tk_geo_post_schema_validate');
-    $post_id = max(0, (int) tk_post('geo_schema_post_id', 0));
-    tk_update_option('geo_post_schema_report', tk_geo_validate_post_schema($post_id));
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-geo-audit', 'tk_geo_post_schema' => 1), admin_url('admin.php')) . '#post-schema');
     exit;
 }
 
@@ -2061,7 +1987,7 @@ function tk_geo_save(): void {
     if (is_wp_error($catalog_settings)) { wp_die(esc_html($catalog_settings->get_error_message()), 'Invalid AI Catalog', array('back_link' => true, 'response' => 400)); }
 
     $active_tab = sanitize_key((string) tk_post('tk_geo_active_tab', 'overview'));
-    $allowed_tabs = array('overview', 'custom-jsonld', 'faqpage', 'itemlist', 'llms', 'ai-catalog', 'geo-audit', 'ai-visibility', 'prompt-preview', 'post-schema', 'schema-duplicates', 'crawler-preview', 'ai-access', 'preview');
+    $allowed_tabs = array('overview', 'custom-jsonld', 'faqpage', 'itemlist', 'llms', 'ai-catalog', 'geo-audit', 'ai-visibility', 'prompt-preview', 'schema-duplicates', 'crawler-preview', 'ai-access', 'preview');
     if (!in_array($active_tab, $allowed_tabs, true)) {
         $active_tab = 'overview';
     }
@@ -2194,6 +2120,65 @@ function tk_geo_save(): void {
     exit;
 }
 
+// Group GEO Audit issues across URLs: one row per issue with every affected URL, most urgent first.
+function tk_geo_audit_fix_summary(array $items): array {
+    $summary = array();
+    foreach ($items as $item) {
+        if (!is_array($item) || empty($item['issues']) || !is_array($item['issues'])) {
+            continue;
+        }
+        $url = (string) ($item['url'] ?? '');
+        foreach ($item['issues'] as $issue) {
+            $issue = trim((string) $issue);
+            if ($issue === '') {
+                continue;
+            }
+            if (!isset($summary[$issue])) {
+                $data = tk_seo_geo_issue_data($issue);
+                $summary[$issue] = array('issue' => $issue, 'priority' => (string) $data['priority'], 'penalty' => (int) $data['penalty'],
+                    'solution' => (string) $data['solution'], 'automatic' => !empty($data['automatic']), 'urls' => array());
+            }
+            if ($url !== '' && !in_array($url, $summary[$issue]['urls'], true)) {
+                $summary[$issue]['urls'][] = $url;
+            }
+        }
+    }
+    $rank = array('critical' => 0, 'high' => 1, 'medium' => 2, 'low' => 3);
+    usort($summary, function ($a, $b) use ($rank) {
+        return array(($rank[$a['priority']] ?? 4), -count($a['urls']), -$a['penalty']) <=> array(($rank[$b['priority']] ?? 4), -count($b['urls']), -$b['penalty']);
+    });
+    return $summary;
+}
+
+// A ready-to-paste brief for an AI assistant or developer, built from the grouped audit findings.
+function tk_geo_audit_fix_prompt(array $summary, array $report, string $site): string {
+    $urls = array();
+    foreach ($summary as $row) {
+        $urls = array_merge($urls, $row['urls']);
+    }
+    $lines = array(
+        'Fix the GEO (AI search readiness) issues that the Tool Kits GEO Audit found on the WordPress site ' . $site . '.',
+        'Audit: ' . (!empty($report['scanned_at']) ? gmdate('Y-m-d', (int) $report['scanned_at']) : 'latest scan') . ', '
+            . count(array_unique($urls)) . ' affected URL(s) of ' . (int) ($report['checked_urls'] ?? 0) . ' checked, average GEO score '
+            . (int) ($report['average_score'] ?? 0) . '/100.',
+        '',
+        'Work through the issues in this order. Change the source that renders each page (theme templates, page content, or SEO/schema settings), not the audit report. Keep existing URLs, content meaning and valid structured data. Do not add a second definition of an entity that already has an @id; extend the existing node instead.',
+        '',
+    );
+    foreach (array_values($summary) as $index => $row) {
+        $lines[] = ($index + 1) . '. [' . strtoupper($row['priority']) . '] ' . $row['issue'] . ' (' . count($row['urls']) . ' URL' . (count($row['urls']) === 1 ? '' : 's') . ', -' . $row['penalty'] . ' points each)';
+        $lines[] = '   Fix: ' . $row['solution'];
+        if ($row['automatic']) {
+            $lines[] = '   Tool Kits can apply a fallback automatically (GEO Audit > Bulk Fix All), but fixing the source is preferred.';
+        }
+        $shown = array_slice($row['urls'], 0, 10);
+        $lines[] = '   URLs: ' . implode(', ', $shown) . (count($row['urls']) > count($shown) ? ' (+' . (count($row['urls']) - count($shown)) . ' more)' : '');
+    }
+    $lines[] = '';
+    $lines[] = 'When done, list what you changed for each numbered issue, and anything you could not fix with the reason. Then re-run the GEO Audit for the affected URLs.';
+    return implode("\n", $lines);
+}
+
 function tk_render_geo_panel(): void {
     if (!tk_is_admin_user()) return;
 
@@ -2256,16 +2241,12 @@ function tk_render_geo_panel(): void {
     $llms_preview = tk_geo_build_llms_text();
     $visibility_report = tk_get_option('geo_visibility_report', array());
     $visibility_report = is_array($visibility_report) ? $visibility_report : array();
-    $ai_search_radar_report = tk_get_option('geo_ai_search_radar_report', array());
-    $ai_search_radar_report = is_array($ai_search_radar_report) ? $ai_search_radar_report : array();
     $ai_radar_report = tk_get_option('geo_ai_radar_report', array());
     $ai_radar_report = is_array($ai_radar_report) ? $ai_radar_report : array();
     $geo_report = tk_get_option('seo_geo_audit_report', array());
     $geo_report = is_array($geo_report) ? $geo_report : array();
     $prompt_preview_report = tk_get_option('geo_prompt_preview_report', array());
     $prompt_preview_report = is_array($prompt_preview_report) ? $prompt_preview_report : array();
-    $post_schema_report = tk_get_option('geo_post_schema_report', array());
-    $post_schema_report = is_array($post_schema_report) ? $post_schema_report : array();
     $geo_audit_has_report = !empty($geo_report['scanned_at']) || !empty($geo_report['items']);
     $geo_audit_score = (int) ($geo_report['average_score'] ?? 0);
     $duplicate_has_report = !empty($schema_duplicate_report['scanned_at']);
@@ -2277,14 +2258,10 @@ function tk_render_geo_panel(): void {
         ($seo_breadcrumb && in_array('BreadcrumbList', $duplicate_types, true))
     );
     $duplicate_details_url = admin_url('admin.php?page=tool-kits-geo-audit') . '#schema-duplicates';
+    $geo_audit_details_url = admin_url('admin.php?page=tool-kits-geo-audit') . '#geo-audit';
     $configured_document_count = count($preview);
     $faq_item_count = count($faq_items);
     $faq_language_count = count($faq_languages);
-    $schema_post_type = sanitize_key((string) tk_get_option('geo_itemlist_post_type', 'post'));
-    if (!isset($post_types[$schema_post_type])) {
-        $schema_post_type = 'post';
-    }
-    $schema_posts = tk_geo_posts_for_selector($schema_post_type);
     while (count($faq_items) < 3) {
         $faq_items[] = array('question' => '', 'answer' => '');
     }
@@ -2300,7 +2277,6 @@ function tk_render_geo_panel(): void {
         <?php tk_nonce_field('tk_geo_visibility_scan'); ?>
         <input type="hidden" name="action" value="tk_geo_visibility_scan">
     </form>
-    <form id="tk-geo-ai-search-radar-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><?php tk_nonce_field('tk_geo_ai_search_radar_scan'); ?><input type="hidden" name="action" value="tk_geo_ai_search_radar_scan"></form>
     <form id="tk-geo-ai-radar-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><?php tk_nonce_field('tk_geo_ai_radar_scan'); ?><input type="hidden" name="action" value="tk_geo_ai_radar_scan"></form>
     <form id="tk-geo-crawler-fix-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
         <?php tk_nonce_field('tk_geo_crawler_fix'); ?>
@@ -2316,10 +2292,6 @@ function tk_render_geo_panel(): void {
         <?php tk_nonce_field('tk_geo_prompt_preview'); ?>
         <input type="hidden" name="action" value="tk_geo_prompt_preview">
     </form>
-    <form id="tk-geo-post-schema-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-        <?php tk_nonce_field('tk_geo_post_schema_validate'); ?>
-        <input type="hidden" name="action" value="tk_geo_post_schema_validate">
-    </form>
     <form id="tk-geo-schema-duplicate-fix-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
         <?php tk_nonce_field('tk_geo_schema_duplicate_fix'); ?>
         <input type="hidden" name="action" value="tk_geo_schema_duplicate_fix">
@@ -2331,8 +2303,8 @@ function tk_render_geo_panel(): void {
 
         <div class="tk-tabs tk-geo-tabs <?php echo $geo_audit_page ? 'tk-geo-page-audit' : 'tk-geo-page-setup'; ?>">
             <style>
-                .tk-geo-page-setup :is([data-panel="geo-audit"],[data-panel="ai-visibility"],[data-panel="ai-search-radar"],[data-panel="ai-radar"],[data-panel="prompt-preview"],[data-panel="post-schema"],[data-panel="schema-duplicates"],[data-panel="crawler-preview"],[data-panel="ai-access"]),
-                .tk-geo-page-setup :is([data-panel-id="geo-audit"],[data-panel-id="ai-visibility"],[data-panel-id="ai-search-radar"],[data-panel-id="ai-radar"],[data-panel-id="prompt-preview"],[data-panel-id="post-schema"],[data-panel-id="schema-duplicates"],[data-panel-id="crawler-preview"],[data-panel-id="ai-access"]),
+                .tk-geo-page-setup :is([data-panel="geo-audit"],[data-panel="ai-visibility"],[data-panel="ai-radar"],[data-panel="prompt-preview"],[data-panel="schema-duplicates"],[data-panel="crawler-preview"],[data-panel="ai-access"]),
+                .tk-geo-page-setup :is([data-panel-id="geo-audit"],[data-panel-id="ai-visibility"],[data-panel-id="ai-radar"],[data-panel-id="prompt-preview"],[data-panel-id="schema-duplicates"],[data-panel-id="crawler-preview"],[data-panel-id="ai-access"]),
                 .tk-geo-page-audit :is([data-panel="overview"],[data-panel="custom-jsonld"],[data-panel="faqpage"],[data-panel="itemlist"],[data-panel="llms"],[data-panel="ai-catalog"],[data-panel="preview"]),
                 .tk-geo-page-audit :is([data-panel-id="overview"],[data-panel-id="custom-jsonld"],[data-panel-id="faqpage"],[data-panel-id="itemlist"],[data-panel-id="llms"],[data-panel-id="ai-catalog"],[data-panel-id="preview"]) { display:none !important; }
             </style>
@@ -2345,10 +2317,8 @@ function tk_render_geo_panel(): void {
                 <button type="button" class="tk-tabs-nav-button" data-panel="ai-catalog">ai-catalog.json</button>
                 <button type="button" class="tk-tabs-nav-button<?php echo $geo_audit_page ? ' is-active' : ''; ?>" data-panel="geo-audit">GEO Audit</button>
                 <button type="button" class="tk-tabs-nav-button" data-panel="ai-visibility">AI Visibility</button>
-                <button type="button" class="tk-tabs-nav-button" data-panel="ai-search-radar">AI Search Radar</button>
                 <button type="button" class="tk-tabs-nav-button" data-panel="ai-radar">AI Radar</button>
                 <button type="button" class="tk-tabs-nav-button" data-panel="prompt-preview">Prompt Preview</button>
-                <button type="button" class="tk-tabs-nav-button" data-panel="post-schema">Post Schema</button>
                 <button type="button" class="tk-tabs-nav-button" data-panel="schema-duplicates">Duplicate Detector</button>
                 <button type="button" class="tk-tabs-nav-button" data-panel="crawler-preview">Crawler Preview</button>
                 <button type="button" class="tk-tabs-nav-button" data-panel="ai-access">AI Access Review</button>
@@ -2371,8 +2341,9 @@ function tk_render_geo_panel(): void {
                 </div>
                 <div>
                     <dt>GEO Audit</dt>
-                    <dd class="<?php echo !$geo_audit_has_report ? 'is-muted' : ($geo_audit_score >= 80 ? 'is-good' : ($geo_audit_score >= 60 ? 'is-warn' : 'is-danger')); ?>"><?php echo $geo_audit_has_report ? esc_html((string) $geo_audit_score) . '%' : 'Not run'; ?></dd>
+                    <dd class="<?php echo !$geo_audit_has_report ? 'is-muted' : ($geo_audit_score >= 80 ? 'is-good' : ($geo_audit_score >= 60 ? 'is-warn' : 'is-danger')); ?>"><a class="tk-geo-metric-link" href="<?php echo esc_url($geo_audit_details_url); ?>" aria-label="View GEO Audit results and run the audit"><?php echo $geo_audit_has_report ? esc_html((string) $geo_audit_score) . '%' : 'Not run'; ?></a></dd>
                     <span><?php echo $geo_audit_has_report ? esc_html((string) ((int) ($geo_report['issue_count'] ?? 0))) . ' issues in latest audit' : 'Run an audit to establish a baseline'; ?></span>
+                    <span>Click to view URLs or run the audit.</span>
                 </div>
                 <div>
                     <dt>Duplicate Schema</dt>
@@ -2393,17 +2364,18 @@ function tk_render_geo_panel(): void {
         <div class="tk-card tk-tab-panel" data-panel-id="custom-jsonld">
             <h3>Custom JSON-LD</h3>
             <p class="description">Paste a complete JSON-LD object or graph. It must be valid JSON.</p>
-            <div class="tk-schema-edit-layout tk-geo-schema-check" data-nonce="<?php echo esc_attr(wp_create_nonce('tk_geo_schema_editor')); ?>" data-vocabulary="<?php echo esc_url(TK_URL . 'assets/schema/schemaorg-vocabulary.json?ver=' . rawurlencode((string) tk_asset_version('assets/schema/schemaorg-vocabulary.json'))); ?>">
+            <div class="tk-schema-edit-layout tk-geo-schema-check" data-nonce="<?php echo esc_attr(wp_create_nonce('tk_geo_schema_check')); ?>" data-vocabulary="<?php echo esc_url(TK_URL . 'assets/schema/schemaorg-vocabulary.json?ver=' . rawurlencode((string) tk_asset_version('assets/schema/schemaorg-vocabulary.json'))); ?>">
                 <div>
                     <textarea name="geo_custom_jsonld" rows="12" style="width:100%; max-width:100%; font-family:monospace;" placeholder='{"@context":"https://schema.org","@type":"Organization","name":"Example"}'><?php echo esc_textarea($custom_json); ?></textarea>
                     <p class="tk-inline">
-                        <button type="button" class="button tk-geo-schema-validate">Validate Schema Nodes</button>
                         <button type="submit" class="button" name="geo_custom_jsonld_generate" value="1">Generate JSON-LD Draft</button>
                     </p>
+                    <p class="description">Schema nodes are validated as you type.</p>
                     <div class="tk-geo-schema-url">
                         <label for="tk-geo-schema-url">Test a live URL</label>
                         <div class="tk-inline">
-                            <input type="url" id="tk-geo-schema-url" class="regular-text" value="<?php echo esc_attr(home_url('/')); ?>" placeholder="https://example.com/page/">
+                            <?php $schema_test_url = isset($_GET['tk_schema_test']) ? esc_url_raw(wp_unslash((string) $_GET['tk_schema_test'])) : ''; ?>
+                            <input type="url" id="tk-geo-schema-url" class="regular-text" value="<?php echo esc_attr($schema_test_url !== '' ? $schema_test_url : home_url('/')); ?>" placeholder="https://example.com/page/"<?php echo $schema_test_url !== '' ? ' data-autorun="1"' : ''; ?>>
                             <button type="button" class="button tk-geo-schema-fetch">Run Test</button>
                         </div>
                         <p class="description">Checks every JSON-LD block on the page against the schema.org vocabulary, like validator.schema.org. Microdata and RDFa are not checked.</p>
@@ -2744,7 +2716,43 @@ function tk_render_geo_panel(): void {
                         Issues: <?php echo esc_html((string) ((int) ($geo_report['issue_count'] ?? 0))); ?> |
                         Avg GEO Score: <span class="tk-badge <?php echo esc_attr($geo_avg_class); ?>"><?php echo esc_html((string) $geo_avg); ?>/100</span>
                     </p>
+                    <?php $geo_fix_summary = tk_geo_audit_fix_summary($geo_items); ?>
+                    <?php if (!empty($geo_fix_summary)) : ?>
+                        <?php $geo_fix_url_count = count(array_unique(array_merge(...array_column($geo_fix_summary, 'urls')))); ?>
+                        <div class="tk-geo-fix-summary">
+                            <h4>What to fix</h4>
+                            <p class="description"><?php echo esc_html(sprintf('%d issue type%s across %d URL%s, most urgent first. Auto = Tool Kits can apply a fallback with Bulk Fix All; fixing the source is preferred.', count($geo_fix_summary), count($geo_fix_summary) === 1 ? '' : 's', $geo_fix_url_count, $geo_fix_url_count === 1 ? '' : 's')); ?></p>
+                            <div class="tk-table-scroll">
+                                <table class="widefat striped tk-table">
+                                    <thead><tr><th>Issue</th><th>Priority</th><th>URLs</th><th>Fix</th><th>Solution</th></tr></thead>
+                                    <tbody>
+                                    <?php foreach ($geo_fix_summary as $fix_row) : ?>
+                                        <tr>
+                                            <td><strong><?php echo esc_html($fix_row['issue']); ?></strong> <span class="tk-badge">-<?php echo esc_html((string) $fix_row['penalty']); ?></span></td>
+                                            <td><span class="tk-badge tk-priority-<?php echo esc_attr($fix_row['priority']); ?>"><?php echo esc_html(strtoupper($fix_row['priority'])); ?></span></td>
+                                            <td>
+                                                <details>
+                                                    <summary><?php echo esc_html((string) count($fix_row['urls'])); ?></summary>
+                                                    <ul class="tk-list"><?php foreach ($fix_row['urls'] as $fix_url) : ?><li><a href="<?php echo esc_url($fix_url); ?>" target="_blank" rel="noopener"><?php echo esc_html($fix_url); ?></a></li><?php endforeach; ?></ul>
+                                                </details>
+                                            </td>
+                                            <td><?php echo $fix_row['automatic'] ? '<span class="tk-badge tk-on">Auto</span>' : '<span class="tk-badge tk-warn">Manual</span>'; ?></td>
+                                            <td><?php echo esc_html($fix_row['solution']); ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <details class="tk-geo-fix-prompt" open>
+                                <summary><strong>Fix prompt</strong> <span class="description">Paste into an AI assistant or send to a developer.</span></summary>
+                                <textarea id="tk-geo-fix-prompt" readonly rows="12"><?php echo esc_textarea(tk_geo_audit_fix_prompt($geo_fix_summary, $geo_report, home_url('/'))); ?></textarea>
+                                <p><button type="button" class="button button-primary tk-geo-copy-prompt" data-target="tk-geo-fix-prompt">Copy Prompt</button> <span class="description tk-geo-copy-status" role="status" aria-live="polite"></span></p>
+                            </details>
+                        </div>
+                    <?php endif; ?>
                     <?php if (!empty($geo_items)) : ?>
+                        <h4>Results per URL</h4>
+                        <p class="description tk-geo-scroll-hint">Scroll the table sideways to see Schema, Semantic, Freshness and Issues.</p>
                         <div class="tk-table-scroll">
                         <?php if (!empty($geo_report['incomplete'])) : ?><p>Audit belum lengkap: pemeriksaan berhenti karena batas waktu atau kegagalan koneksi. Jalankan ulang setelah konektivitas server diperiksa.</p><?php endif; ?>
                         <table class="widefat striped tk-table">
@@ -2795,7 +2803,7 @@ function tk_render_geo_panel(): void {
                                         <?php if (empty($issues)) : ?>
                                             <span class="tk-badge tk-on">OK</span>
                                         <?php else : ?>
-                                            <ul class="tk-list" style="margin:0;min-width:280px;">
+                                            <ul class="tk-list tk-geo-issue-list">
                                                 <?php foreach (array_slice($issues, 0, 8) as $issue_index => $issue) : ?>
                                                     <?php
                                                     $issue_data = tk_seo_geo_issue_data((string) $issue);
@@ -2828,13 +2836,11 @@ function tk_render_geo_panel(): void {
             <?php endif; ?>
         </div>
 
-        <div class="tk-card tk-tab-panel" data-panel-id="ai-search-radar" id="ai-search-radar"><?php tk_geo_render_search_radar($ai_search_radar_report); ?></div>
-
         <div class="tk-card tk-tab-panel" data-panel-id="ai-radar" id="ai-radar"><?php tk_geo_render_ai_radar($ai_radar_report); ?></div>
 
         <div class="tk-card tk-tab-panel" data-panel-id="ai-visibility" id="ai-visibility">
             <h3>AI Visibility Score per URL</h3>
-            <p>Scan one URL for crawler access, indexability signals, metadata, schema availability, and AI crawler visibility.</p>
+            <p>Scan one URL for crawler access, indexability signals, metadata, schema availability, AI crawler visibility and AI search readiness.</p>
             <div class="tk-grid tk-grid-2" style="gap:12px;">
                 <p>
                     <label>URL</label>
@@ -2926,6 +2932,7 @@ function tk_render_geo_panel(): void {
                         </tbody>
                     </table>
                     </div>
+                    <?php tk_geo_render_search_radar(tk_geo_build_search_radar($visibility_report)); ?>
                 </div>
             <?php else : ?>
                 <p class="description">No AI visibility scan yet.</p>
@@ -2976,67 +2983,6 @@ function tk_render_geo_panel(): void {
             <?php endif; ?>
         </div>
 
-        <div class="tk-card tk-tab-panel" data-panel-id="post-schema" id="post-schema">
-            <h3>Schema Validation Report per Post</h3>
-            <p>Validate the frontend JSON-LD output for one published post or page.</p>
-            <div class="tk-grid tk-grid-2" style="gap:12px;">
-                <p>
-                    <label>Post</label>
-                    <select form="tk-geo-post-schema-form" name="geo_schema_post_id" style="width:100%; max-width:100%;">
-                        <?php foreach ($schema_posts as $schema_post) : ?>
-                            <option value="<?php echo esc_attr((string) $schema_post->ID); ?>" <?php selected((int) ($post_schema_report['post_id'] ?? 0), (int) $schema_post->ID); ?>>
-                                <?php echo esc_html((get_the_title($schema_post) ?: ('#' . (int) $schema_post->ID)) . ' (' . get_post_type($schema_post) . ')'); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </p>
-                <p style="display:flex; align-items:flex-end;">
-                    <button class="button button-primary" form="tk-geo-post-schema-form">Validate Post Schema</button>
-                </p>
-            </div>
-            <p class="description">Uses the current ItemList post type selector as the source list.</p>
-
-            <?php if (!empty($post_schema_report)) : ?>
-                <?php
-                $post_schema = isset($post_schema_report['schema']) && is_array($post_schema_report['schema']) ? $post_schema_report['schema'] : array();
-                $post_schema_score = (int) ($post_schema_report['score'] ?? 0);
-                $post_schema_badge = $post_schema_score >= 80 ? 'tk-on' : ($post_schema_score >= 60 ? 'tk-warn' : '');
-                $post_schema_issues = isset($post_schema_report['issues']) && is_array($post_schema_report['issues']) ? $post_schema_report['issues'] : array();
-                ?>
-                <p class="tk-report-actions">
-                    <button type="button" class="button tk-geo-export-pdf" data-report-target="tk-geo-post-schema-report" data-report-title="Post Schema Validation Report">Export Report PDF</button>
-                </p>
-                <div id="tk-geo-post-schema-report">
-                    <p>
-                        <span class="tk-badge <?php echo esc_attr($post_schema_badge); ?>">Score: <?php echo esc_html((string) $post_schema_score); ?>%</span>
-                        <span class="description">Last scan: <?php echo !empty($post_schema_report['scanned_at']) ? esc_html(wp_date('Y-m-d H:i:s', (int) $post_schema_report['scanned_at'])) : '-'; ?></span>
-                    </p>
-                    <?php if (!empty($post_schema_issues)) : ?>
-                        <ul class="tk-list">
-                            <?php foreach ($post_schema_issues as $issue) : ?>
-                                <li><?php echo esc_html((string) $issue); ?></li>
-                            <?php endforeach; ?>
-                        </ul>
-                    <?php endif; ?>
-                    <div class="tk-table-scroll">
-                    <table class="widefat striped tk-table">
-                        <tbody>
-                            <tr><th>Post</th><td><?php echo esc_html((string) ($post_schema_report['post_title'] ?? '')); ?></td></tr>
-                            <tr><th>URL</th><td><a href="<?php echo esc_url((string) ($post_schema_report['url'] ?? '')); ?>" target="_blank" rel="noopener"><?php echo esc_html((string) ($post_schema_report['url'] ?? '')); ?></a></td></tr>
-                            <tr><th>HTTP</th><td><?php echo esc_html((string) ((int) ($post_schema_report['status'] ?? 0))); ?></td></tr>
-                            <tr><th>JSON-LD</th><td><?php echo esc_html((string) ((int) ($post_schema['documents'] ?? 0))); ?> docs, <?php echo esc_html((string) ((int) ($post_schema['invalid'] ?? 0))); ?> invalid</td></tr>
-                            <tr><th>Types</th><td><?php echo tk_geo_render_schema_type_badges($post_schema['types'] ?? array()); ?></td></tr>
-                            <tr><th>Potential Duplicates</th><td><?php echo !empty($post_schema['duplicates']) ? tk_geo_render_schema_type_badges($post_schema['duplicates'] ?? array(), (int) ($post_schema['analysis_version'] ?? 0) === 2) : '<span class="tk-badge tk-on">None</span>'; ?></td></tr>
-                            <?php if (!empty($post_schema_report['error'])) : ?><tr><th>Error</th><td><?php echo esc_html((string) $post_schema_report['error']); ?></td></tr><?php endif; ?>
-                        </tbody>
-                    </table>
-                    </div>
-                </div>
-            <?php else : ?>
-                <p class="description">No post schema validation report yet.</p>
-            <?php endif; ?>
-        </div>
-
         <div class="tk-card tk-tab-panel" data-panel-id="schema-duplicates" id="schema-duplicates">
             <h3>Schema Duplicate Detector</h3>
             <p>Scan homepage and recent public content for repeated entity definitions or invalid JSON-LD blocks.</p>
@@ -3052,7 +2998,7 @@ function tk_render_geo_panel(): void {
                 <?php elseif (!$duplicate_has_report || (int) ($schema_duplicate_report['analysis_version'] ?? 0) !== 2) : ?>
                     Run Duplicate Detector to get current entity-based findings before using Auto Fix.
                 <?php else : ?>
-                    No enabled Tool Kits SEO or Breadcrumb output matches these findings. Use Validate &amp; Edit for invalid or custom JSON-LD, or review the source settings for theme and other plugin schema.
+                    No enabled Tool Kits SEO or Breadcrumb output matches these findings. Use Validate to inspect the page's JSON-LD in GEO Setup &gt; Custom JSON-LD, or review the source settings for theme and other plugin schema.
                 <?php endif; ?>
                 Use Manage Schema Output to review or disable Tool Kits schema generators while keeping their saved settings.
             </p>
@@ -3099,12 +3045,11 @@ function tk_render_geo_panel(): void {
                             <td><?php echo esc_html((string) ((int) ($item['documents'] ?? 0))); ?> docs, <?php echo esc_html((string) ((int) ($item['invalid'] ?? 0))); ?> invalid</td>
                             <td><?php echo tk_geo_render_schema_type_badges($item['types'] ?? array()); ?></td>
                             <td><?php echo !empty($duplicates) ? tk_geo_render_schema_type_badges($duplicates, (int) ($schema_duplicate_report['analysis_version'] ?? 0) === 2) : '<span class="tk-badge tk-on">None</span>'; ?></td>
-                            <td><?php echo !empty($item['issue']) ? esc_html((string) $item['issue']) : '<span class="tk-badge tk-on">OK</span>'; ?><p><button type="button" class="button tk-schema-editor-open" data-url="<?php echo esc_url((string) ($item['url'] ?? '')); ?>" data-duplicates="<?php echo esc_attr(wp_json_encode($duplicates)); ?>">Validate &amp; Edit</button></p></td>
+                            <td><?php echo !empty($item['issue']) ? esc_html((string) $item['issue']) : '<span class="tk-badge tk-on">OK</span>'; ?><p><a class="button" href="<?php echo esc_url(add_query_arg(array('page' => 'tool-kits-geo', 'tk_schema_test' => rawurlencode((string) ($item['url'] ?? ''))), admin_url('admin.php')) . '#custom-jsonld'); ?>">Validate</a></p></td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>
                 </table>
-                <?php tk_geo_schema_editor_modal(); ?>
             <?php else : ?>
                 <p class="description">No duplicate schema report yet.</p>
             <?php endif; ?>
@@ -3351,6 +3296,21 @@ function tk_render_geo_panel(): void {
                 triggerPostSelectChange();
             });
         }
+
+        document.querySelectorAll('.tk-geo-copy-prompt').forEach(function(button){
+            button.addEventListener('click', function(){
+                var field = document.getElementById(button.getAttribute('data-target'));
+                var status = button.parentNode.querySelector('.tk-geo-copy-status');
+                if (!field) { return; }
+                var done = function(ok){ if (status) { status.textContent = ok ? 'Prompt copied.' : 'Select the text and copy it manually.'; } };
+                if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(field.value).then(function(){ done(true); }, function(){ field.select(); done(false); });
+                } else {
+                    field.select();
+                    done(document.execCommand('copy'));
+                }
+            });
+        });
 
         var wrapper = document.querySelector('.tk-geo-tabs');
         var activeInput = document.getElementById('tk-geo-active-tab');

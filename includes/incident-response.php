@@ -144,7 +144,7 @@ function tk_incident_build_snapshot(): array {
         'critical_malware_findings' => count(array_filter($malware_results, function ($result) {
             return (string) ($result['severity'] ?? '') === 'critical';
         })),
-        'firewall_log_count' => count((array) tk_get_option('firewall_event_log', array())),
+        'firewall_log_count' => count(function_exists('tk_firewall_event_log') ? tk_firewall_event_log() : array()),
         'login_log_count' => count((array) get_option('tk_login_logs', array())),
     );
 }

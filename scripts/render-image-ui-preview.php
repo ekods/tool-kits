@@ -57,12 +57,11 @@ require dirname(__DIR__) . '/includes/lazy-load.php';
 require dirname(__DIR__) . '/includes/minify.php';
 require dirname(__DIR__) . '/includes/security-captcha.php';
 require dirname(__DIR__) . '/includes/smtp.php';
-require dirname(__DIR__) . '/includes/geo-schema-modal.php';
 $empty = in_array('--empty', $argv, true);
 $overview = in_array('--overview', $argv, true);
 $monitoring = in_array('--monitoring', $argv, true);
 $view = 'image';
-foreach (array('overview', 'monitoring', 'assets', 'otp', 'uploads', 'antispam', 'lazy-load', 'minify', 'captcha', 'smtp-dns', 'schema-editor') as $candidate) {
+foreach (array('overview', 'monitoring', 'assets', 'otp', 'uploads', 'antispam', 'lazy-load', 'minify', 'captcha', 'smtp-dns') as $candidate) {
     if (in_array('--' . $candidate, $argv, true)) { $view = $candidate; }
 }
 $opts = tk_get_options();
@@ -118,12 +117,11 @@ elseif ($view === 'otp') { tk_render_otp_page(); }
 else {
     echo '<div class="wrap tk-wrap">';
     tk_render_header_branding();
-    $titles = array('image' => 'Image Optimizer', 'uploads' => 'Upload Limits', 'antispam' => 'Contact Form 7 Protection', 'lazy-load' => 'Lazy Load', 'minify' => 'Minify', 'captcha' => 'Captcha', 'smtp-dns' => 'SMTP Delivery', 'schema-editor' => 'Schema Editor');
+    $titles = array('image' => 'Image Optimizer', 'uploads' => 'Upload Limits', 'antispam' => 'Contact Form 7 Protection', 'lazy-load' => 'Lazy Load', 'minify' => 'Minify', 'captcha' => 'Captcha', 'smtp-dns' => 'SMTP Delivery');
     tk_render_page_hero($titles[$view], 'Review and manage your website settings.', 'dashicons-admin-tools');
     $panels = array('uploads' => 'tk_render_upload_limits_panel', 'antispam' => 'tk_render_antispam_contact_panel', 'lazy-load' => 'tk_render_lazy_load_panel', 'minify' => 'tk_render_minify_panel', 'captcha' => 'tk_render_captcha_panel');
     if (isset($panels[$view])) { call_user_func($panels[$view]); }
     elseif ($view === 'smtp-dns') { echo '<div class="tk-tabs">'; tk_smtp_render_dns_panel(array('domain' => 'example.test', 'selector' => 'google', 'score' => 75, 'checks' => array(array('label' => 'SPF', 'ok' => true, 'detail' => 'v=spf1 include:_spf.example.test ~all')))); echo '</div>'; }
-    elseif ($view === 'schema-editor') { tk_geo_schema_editor_modal(); }
     else { require dirname(__DIR__) . '/templates/image-optimizer.php'; }
     echo '</div>';
 }

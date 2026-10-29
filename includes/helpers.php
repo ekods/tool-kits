@@ -297,6 +297,27 @@ function tk_update_option($key, $value) {
     tk_toolkits_audit_log_option_change($key, $old, $value);
 }
 
+// Write several keys with one tk_options UPDATE instead of one full rewrite per key.
+function tk_update_options(array $values): void {
+    if (!$values) {
+        return;
+    }
+    $opts = tk_get_options();
+    $old = $opts;
+    foreach ($values as $key => $value) {
+        $opts[$key] = $value;
+    }
+    update_option('tk_options', $opts, false);
+    tk_options_cache_invalidate();
+    foreach ($values as $key => $value) {
+        $recoverable_key = tk_killswitch_current_recovery_key((string) $key, $opts);
+        if ($recoverable_key !== '') {
+            update_option('tk_killswitch_last_key', $recoverable_key, false);
+        }
+        tk_toolkits_audit_log_option_change($key, array_key_exists($key, $old) ? $old[$key] : null, $value);
+    }
+}
+
 function tk_log($message) {
     if (!defined('WP_DEBUG') || !WP_DEBUG) {
         return;
@@ -960,7 +981,6 @@ function tk_option_init_defaults() {
         'rate_limit_honey_trap_paths' => "/wp-login.php\n/login\n/admin\n/wp-admin.php\n/administrator\n/user/login",
         'rate_limit_block_on_fail' => 0,
         'rate_limit_whitelist' => '',
-        'rate_limit_blocked_ips' => array(),
         // SMTP
         'smtp_enabled' => 0,
         'smtp_provider' => 'gmail',
@@ -1028,7 +1048,6 @@ function tk_option_init_defaults() {
         'firewall_ip_blocklist' => '',
         'firewall_blocked_user_agents' => "sqlmap\nmasscan",
         'firewall_log_enabled' => 1,
-        'firewall_event_log' => array(),
         'malware_scan_max_files' => 15000,
         'malware_scan_max_file_kb' => 2048,
         'malware_scan_code_files_only' => 1,
@@ -1178,10 +1197,8 @@ function tk_option_init_defaults() {
         'geo_crawler_fixes' => array(),
         'geo_fix_history' => array(),
         'geo_visibility_report' => array(),
-        'geo_ai_search_radar_report' => array(),
         'geo_ai_radar_report' => array(),
         'geo_prompt_preview_report' => array(),
-        'geo_post_schema_report' => array(),
         'geo_llms_enabled' => 0,
         'geo_ai_catalog_enabled' => 0,
         'geo_ai_catalog_mode' => 'auto',
@@ -1204,7 +1221,6 @@ function tk_option_init_defaults() {
         'monitoring_404_enabled' => 1,
         'monitoring_404_redirect_home' => 0,
         'monitoring_404_exclude_paths' => "/wp-admin\n/wp-login.php\n/wp-cron.php\n",
-        'monitoring_404_log' => array(),
         'captcha_type' => 'text', // text, checkbox
         'monitoring_healthcheck_enabled' => 0,
         'monitoring_healthcheck_key' => '',
@@ -1316,6 +1332,9 @@ function tk_run_versioned_upgrades(): void {
     if ($stored_version === '' || version_compare($stored_version, '2.5.34', '<')) {
         tk_upgrade_to_2534_image_quality_srcset();
     }
+    if ($stored_version !== '' && version_compare($stored_version, '2.7.66', '<')) {
+        tk_upgrade_to_2766_split_runtime_logs();
+    }
     update_option('tk_version', $current_version, false);
 }
 
@@ -1383,6 +1402,53 @@ function tk_upgrade_to_2534_image_quality_srcset(): void {
         tk_update_option('webp_quality', 90);
     }
     tk_update_option('image_opt_srcset_original_only', 1);
+}
+
+// 2.7.66: logs written by public requests move out of tk_options into their own options, so a 404, blocked
+// request, redirect hit or newly blocked IP no longer rewrites every setting and report. Reports of removed
+// GEO tabs (AI Search Radar, Post Schema) are dropped.
+function tk_upgrade_to_2766_split_runtime_logs(): void {
+    $opts = get_option('tk_options', array());
+    if (!is_array($opts)) {
+        return;
+    }
+    $moves = array(
+        'monitoring_404_log' => 'tk_monitoring_404_log',
+        'firewall_event_log' => 'tk_firewall_event_log',
+        'rate_limit_blocked_ips' => 'tk_rate_limit_blocked_ips',
+    );
+    $changed = false;
+    foreach ($moves as $key => $option) {
+        if (!array_key_exists($key, $opts)) {
+            continue;
+        }
+        if (is_array($opts[$key]) && $opts[$key] && get_option($option, null) === null) {
+            add_option($option, $opts[$key], '', false);
+        }
+        unset($opts[$key]);
+        $changed = true;
+    }
+    if (!empty($opts['seo_redirect_rules']) && is_array($opts['seo_redirect_rules']) && get_option('tk_audit_redirect_hits', null) === null) {
+        $hits = array();
+        foreach ($opts['seo_redirect_rules'] as $rule) {
+            if (is_array($rule) && !empty($rule['from']) && !empty($rule['hits'])) {
+                $hits[md5(tk_seo_normalize_path((string) $rule['from']))] = array('hits' => (int) $rule['hits'], 'last' => (int) ($rule['last'] ?? 0));
+            }
+        }
+        if ($hits) {
+            add_option('tk_audit_redirect_hits', $hits, '', false);
+        }
+    }
+    foreach (array('geo_ai_search_radar_report', 'geo_post_schema_report') as $key) {
+        if (array_key_exists($key, $opts)) {
+            unset($opts[$key]);
+            $changed = true;
+        }
+    }
+    if ($changed) {
+        update_option('tk_options', $opts, false);
+        tk_options_cache_invalidate();
+    }
 }
 
 function tk_upgrade_to_220(): void {
@@ -1768,7 +1834,8 @@ function tk_security_events_cleanup(): int {
         'DELETE FROM ' . tk_security_events_table() . ' WHERE time < %s LIMIT 1000',
         $before
     ));
-    if ((int) $result === 1000 && !wp_next_scheduled('tk_security_events_cleanup_batch')) {
+    $login_rows = function_exists('tk_login_log_cleanup') && (string) get_option('tk_login_log_schema_version', '') !== '' ? tk_login_log_cleanup() : 0;
+    if (((int) $result === 1000 || $login_rows === 1000) && !wp_next_scheduled('tk_security_events_cleanup_batch')) {
         wp_schedule_single_event(time() + MINUTE_IN_SECONDS, 'tk_security_events_cleanup_batch');
     }
     return is_numeric($result) ? (int) $result : 0;
@@ -1873,8 +1940,8 @@ function tk_security_events_backfill_login_log(): int {
 }
 
 function tk_security_events_backfill_firewall_log(): int {
-    $events = tk_get_option('firewall_event_log', array());
-    if (!is_array($events) || empty($events)) {
+    $events = function_exists('tk_firewall_event_log') ? tk_firewall_event_log() : array();
+    if (empty($events)) {
         return 0;
     }
 
@@ -2346,22 +2413,16 @@ function tk_license_update_state(array $state): void {
         'license_expires_at',
         'license_receipt',
     );
-    foreach ($state as $key => $value) {
-        if (!in_array($key, $allowed, true)) {
-            continue;
-        }
-        tk_update_option($key, $value);
-    }
-
     $new_status = isset($state['license_status']) ? (string) $state['license_status'] : $old_status;
     $message = isset($state['license_message']) ? (string) $state['license_message'] : '';
 
     // Local HMACs are no longer an activation credential.
-    tk_update_option('license_signature', '');
-    if ($new_status !== 'valid') { tk_update_option('license_receipt', array()); }
-    elseif (!tk_license_has_valid_signature()) {
-        tk_update_option('license_status', 'invalid');
-        tk_update_option('license_receipt', array());
+    $values = array_intersect_key($state, array_flip($allowed));
+    $values['license_signature'] = '';
+    if ($new_status !== 'valid') { $values['license_receipt'] = array(); }
+    tk_update_options($values);
+    if ($new_status === 'valid' && !tk_license_has_valid_signature()) {
+        tk_update_options(array('license_status' => 'invalid', 'license_receipt' => array()));
     }
     $final_status = (string) tk_get_option('license_status', 'inactive');
     if ($old_status !== $final_status) {
@@ -2372,29 +2433,23 @@ function tk_license_update_state(array $state): void {
 function tk_heartbeat_record_diagnostic_result(array $result, string $endpoint = ''): void {
     $now = time();
     $message = isset($result['message']) ? trim((string) $result['message']) : '';
-    tk_update_option('heartbeat_last_checked', $now);
-    tk_update_option('heartbeat_last_endpoint', $endpoint);
+    $values = array('heartbeat_last_checked' => $now, 'heartbeat_last_endpoint' => $endpoint);
     if (!empty($result['ok'])) {
-        tk_update_option('heartbeat_last_success', $now);
-        tk_update_option('heartbeat_last_error_message', '');
+        tk_update_options($values + array('heartbeat_last_success' => $now, 'heartbeat_last_error_message' => ''));
         return;
     }
-    tk_update_option('heartbeat_last_failure', $now);
-    tk_update_option('heartbeat_last_error_message', $message);
+    tk_update_options($values + array('heartbeat_last_failure' => $now, 'heartbeat_last_error_message' => $message));
 }
 
 function tk_license_record_diagnostic_result(array $result, string $endpoint = ''): void {
     $now = time();
     $message = isset($result['message']) ? trim((string) $result['message']) : '';
-    tk_update_option('license_last_checked', $now);
-    tk_update_option('license_last_endpoint', $endpoint);
+    $values = array('license_last_checked' => $now, 'license_last_endpoint' => $endpoint);
     if (isset($result['status']) && (string) $result['status'] === 'valid') {
-        tk_update_option('license_last_success', $now);
-        tk_update_option('license_last_error_message', '');
+        tk_update_options($values + array('license_last_success' => $now, 'license_last_error_message' => ''));
         return;
     }
-    tk_update_option('license_last_failure', $now);
-    tk_update_option('license_last_error_message', $message);
+    tk_update_options($values + array('license_last_failure' => $now, 'license_last_error_message' => $message));
 }
 
 function tk_license_reset(): void {
@@ -2538,6 +2593,10 @@ function tk_toolkits_audit_log_option_change($key, $old, $new): void {
     if ($key === 'toolkits_audit_log') {
         return;
     }
+    // License/heartbeat bookkeeping is written by the plugin, not by an administrator.
+    if ((strpos((string) $key, 'license_') === 0 && $key !== 'license_key') || strpos((string) $key, 'heartbeat_last_') === 0) {
+        return;
+    }
     if ($old === $new) {
         return;
     }
@@ -2646,7 +2705,9 @@ function tk_toolkits_guard(): void {
         tk_license_validate(true);
         return;
     }
-    $license = tk_license_validate(true);
+    // The cached result still requires a locally verified signed receipt; only the Access page forces a
+    // remote check. Forcing here made every Tool Kits page, ajax poll and batch step call the license server.
+    $license = tk_license_validate();
     if (!tk_license_is_valid()) {
         $detail = isset($license['message']) && $license['message'] !== '' ? $license['message'] : 'License invalid.';
         $message = '<h1>License Required</h1><p>' . esc_html($detail) . '</p><p><a href="' . esc_url(admin_url('admin.php?page=tool-kits-access')) . '">Open License Settings</a></p>';

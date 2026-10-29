@@ -69,14 +69,34 @@ const cases = [
     "source": ["<?php", "require __DIR__ . '/admin-asset-version-regression.php';"]
   },
   {
-    "name": "modal-loading-recovery",
-    "runtime": "node",
-    "source": ["require(__dirname + '/modal-loading-regression.cjs');"]
+    "name": "schema-check",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/schema-check-regression.php';"]
   },
   {
-    "name": "schema-validate-edit-modal",
+    "name": "schema-node-validator",
+    "runtime": "node",
+    "source": ["require(__dirname + '/schema-node-check-regression.cjs');"]
+  },
+  {
+    "name": "schema-merge",
     "runtime": "php",
-    "source": ["<?php", "require __DIR__ . '/schema-modal-regression.php';"]
+    "source": ["<?php", "require __DIR__ . '/schema-merge-regression.php';"]
+  },
+  {
+    "name": "smtp-auth",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/smtp-auth-regression.php';"]
+  },
+  {
+    "name": "geo-fix-summary",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/geo-fix-summary-regression.php';"]
+  },
+  {
+    "name": "runtime-load",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/runtime-load-regression.php';"]
   },
   {
     "name": "content-seo-modal",

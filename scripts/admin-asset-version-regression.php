@@ -11,7 +11,7 @@ function remove_query_arg($key, $url) {
 }
 function verify_asset_version($ok, $message) { if (!$ok) throw new RuntimeException($message); }
 function version_filters($url) { return tk_remove_wp_version_strings(tk_remove_wp_ver_css_js($url)); }
-$base = 'https://site.example/wp-content/plugins/tool-kits/assets/geo-schema-editor.js';
+$base = 'https://site.example/wp-content/plugins/tool-kits/assets/geo-custom-jsonld.js';
 $old = $base . '?ver=100'; $new = $base . '?ver=200';
 $GLOBALS['admin_request'] = true;
 verify_asset_version(version_filters($old) === $old && version_filters($new) === $new, 'Plugin versions stripped in admin');

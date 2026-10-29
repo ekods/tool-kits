@@ -137,7 +137,12 @@ function tk_register_admin_menus() {
 function tk_render_monitoring_page() {
     if (!tk_is_admin_user()) return;
     
-    $checks = tk_hardening_config_checks();
+    // Up to four loopback requests (5 s timeout each); hardening saves clear this cache.
+    $checks = get_transient('tk_monitoring_config_checks');
+    if (!is_array($checks)) {
+        $checks = tk_hardening_config_checks();
+        set_transient('tk_monitoring_config_checks', $checks, 15 * MINUTE_IN_SECONDS);
+    }
     $server = tk_hardening_detect_server();
     $server_rules = tk_hardening_server_rules();
     $server_snippet = tk_hardening_server_rule_snippet();
@@ -150,8 +155,7 @@ function tk_render_monitoring_page() {
     }
 
     $monitor_email = (string) tk_get_option('monitoring_alert_email', '');
-    $log = tk_get_option('monitoring_404_log', array());
-    if (!is_array($log)) { $log = array(); }
+    $log = tk_monitoring_404_log();
     $log_values = array_values($log);
     
     usort($log_values, function($a, $b) {

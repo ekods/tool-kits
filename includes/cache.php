@@ -15,15 +15,23 @@ function tk_cache_init() {
     add_action('admin_post_tk_fragment_cache_flush', 'tk_fragment_cache_flush');
     add_action('admin_bar_menu', 'tk_cache_admin_bar_menu', 100);
     add_action('admin_notices', 'tk_cache_admin_notice');
-    add_action('wp_loaded', 'tk_page_cache_early_sync', 99);
+    add_action('wp_loaded', 'tk_page_cache_early_sync_request', 99);
+    add_action('tk_page_cache_gc', 'tk_page_cache_gc');
+    if ($page_cache_enabled && (int) tk_get_option('page_cache_ttl', 3600) > 0) {
+        if (!wp_next_scheduled('tk_page_cache_gc')) { wp_schedule_event(time() + HOUR_IN_SECONDS, 'daily', 'tk_page_cache_gc'); }
+    } elseif (wp_next_scheduled('tk_page_cache_gc')) {
+        wp_clear_scheduled_hook('tk_page_cache_gc');
+    }
     add_action('admin_notices', 'tk_page_cache_early_admin_notice');
     add_action('updated_option', 'tk_page_cache_early_option_changed', 20, 3);
     add_action('added_option', 'tk_page_cache_early_option_changed', 20);
     add_action('deleted_option', 'tk_page_cache_early_option_changed', 20);
 
     if ($page_cache_enabled) {
+        // Serve first, then open the outermost content buffer so the stored page already includes every
+        // HTML processor (minify starts at priority 1, inside this buffer).
         add_action('template_redirect', 'tk_page_cache_maybe_serve', 0);
-        add_action('template_redirect', 'tk_page_cache_start_buffer', 1);
+        add_action('template_redirect', 'tk_page_cache_start_buffer', 0);
     }
     add_action('save_post', 'tk_page_cache_purge_once');
     add_action('deleted_post', 'tk_page_cache_purge_once');
@@ -309,7 +317,7 @@ function tk_server_cache_purge_layers(): array {
 
 function tk_page_cache_key() {
     $host = isset($_SERVER['HTTP_HOST']) ? strtolower((string) $_SERVER['HTTP_HOST']) : '';
-    $uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+    $uri = TK_Page_Cache_Runtime::cache_uri(isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '');
     $scheme = is_ssl() ? 'https' : 'http';
     // Multisite is isolated by tk_page_cache_dir(), not by a different key.
     return md5($scheme . '|' . $host . '|' . $uri);
@@ -594,6 +602,29 @@ function tk_page_cache_callback($html, $phase = PHP_OUTPUT_HANDLER_FINAL) {
     } finally { tk_page_cache_release_writer(); }
 }
 
+// Expired pages are only replaced when the same URL is requested again; pages nobody revisits stayed on disk
+// forever. Remove them daily, bounded per run. No purge lock: a concurrent writer simply recreates its file.
+function tk_page_cache_gc(): int {
+    $ttl = (int) tk_get_option('page_cache_ttl', 3600);
+    $dir = tk_page_cache_dir();
+    if ($ttl <= 0 || !is_dir($dir)) {
+        return 0;
+    }
+    $cutoff = time() - $ttl - 30;
+    $deleted = 0;
+    foreach (glob($dir . '/*.html') ?: array() as $file) {
+        if ($deleted >= 5000) {
+            break;
+        }
+        $mtime = @filemtime($file);
+        if ($mtime !== false && $mtime < $cutoff && @unlink($file)) {
+            @unlink($file . '.meta.json');
+            $deleted++;
+        }
+    }
+    return $deleted;
+}
+
 function tk_page_cache_purge() {
     $dir = tk_page_cache_dir();
     $deleted = 0;
@@ -654,10 +685,10 @@ function tk_page_cache_purge_on_updated_option($option, $old_value, $new_value) 
         $reports = array(
             'seo_geo_audit_report', 'seo_content_audit_report', 'seo_canonical_audit_report',
             'seo_broken_links_report', 'seo_index_monitor', 'seo_indexability_report', 'authority_reports',
-            'geo_visibility_report', 'geo_prompt_preview_report', 'geo_post_schema_report',
+            'geo_visibility_report', 'geo_prompt_preview_report',
             'geo_schema_duplicate_report', 'geo_schema_duplicate_fix_report',
             'geo_crawler_preview', 'geo_ai_access_report',
-            'geo_ai_search_radar_report', 'geo_ai_radar_report',
+            'geo_ai_radar_report',
             'geo_fix_history',
             'monitoring_404_log', 'toolkits_audit_log', 'operations_health_report',
             'smtp_dns_report', 'image_opt_compression_report', 'image_opt_cleanup_report',
@@ -666,6 +697,8 @@ function tk_page_cache_purge_on_updated_option($option, $old_value, $new_value) 
             'heartbeat_last_success', 'heartbeat_last_failure', 'heartbeat_last_message',
             'heartbeat_last_checked', 'heartbeat_last_error_message', 'heartbeat_last_endpoint',
             'security_events_backfilled', 'security_events_last_backfill_count', 'security_events_last_backfill_time',
+            'license_last_checked', 'license_last_endpoint', 'license_last_success', 'license_last_failure',
+            'license_last_error_message', 'license_message', 'license_receipt', 'firewall_event_log',
         );
         $reports = (array) apply_filters('tk_page_cache_ignored_config_keys', $reports);
         foreach ($reports as $key) {
@@ -724,6 +757,12 @@ function tk_page_cache_should_ignore_option_change(string $option): bool {
         'tk_cache_object_flush',
         'tk_cache_opcache_reset',
         'tk_fragment_cache_keys',
+        'tk_firewall_event_log',
+        'tk_rate_limit_blocked_ips',
+        'tk_seo_sitemap_generation',
+        'tk_hardening_uploads_rule',
+        'tk_hardening_root_rules_hash',
+        'tk_page_cache_early_state',
     );
 
     if (in_array($option, $ignored, true)) {

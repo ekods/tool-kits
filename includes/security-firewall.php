@@ -104,9 +104,21 @@ function tk_firewall_ip_matches_any(string $ip, array $rules): bool {
     return false;
 }
 
+// Blocked-request log in its own small option: a flood of blocked requests must not rewrite tk_options.
+function tk_firewall_event_log(): array {
+    $events = get_option('tk_firewall_event_log', array());
+    return is_array($events) ? $events : array();
+}
+
+function tk_firewall_event_log_save(array $events): void {
+    update_option('tk_firewall_event_log', $events, false);
+}
+
 function tk_firewall_log_event(string $reason, string $ip): void {
     if (function_exists('tk_security_events_record')) {
-        $location = function_exists('tk_security_alert_ip_location') ? tk_security_alert_ip_location($ip) : '';
+        // Cached location only: a blocked request must not wait on geolocation APIs. The daily
+        // security-events maintenance fills in 'Unknown' locations.
+        $location = function_exists('tk_security_alert_ip_location') ? tk_security_alert_ip_location($ip, false) : '';
         $is_blocklist = stripos($reason, 'Blocked IP/CIDR') !== false || stripos($reason, 'Blocked user agent') !== false;
         tk_security_events_record(array(
             'event_type' => 'blocked',
@@ -123,8 +135,7 @@ function tk_firewall_log_event(string $reason, string $ip): void {
     if (!(int) tk_get_option('firewall_log_enabled', 1)) {
         return;
     }
-    $events = tk_get_option('firewall_event_log', array());
-    $events = is_array($events) ? $events : array();
+    $events = tk_firewall_event_log();
     array_unshift($events, array(
         'time' => time(),
         'ip' => $ip,
@@ -132,7 +143,7 @@ function tk_firewall_log_event(string $reason, string $ip): void {
         'method' => isset($_SERVER['REQUEST_METHOD']) ? sanitize_key(strtolower((string) $_SERVER['REQUEST_METHOD'])) : '',
         'uri' => isset($_SERVER['REQUEST_URI']) ? substr(sanitize_text_field((string) $_SERVER['REQUEST_URI']), 0, 500) : '',
     ));
-    tk_update_option('firewall_event_log', array_slice($events, 0, 200));
+    tk_firewall_event_log_save(array_slice($events, 0, 200));
 }
 
 function tk_firewall_enforce_request_rules(): void {
@@ -225,7 +236,7 @@ function tk_firewall_clear_log(): void {
         wp_die(esc_html__('Forbidden', 'tool-kits'), '', array('response' => 403));
     }
     tk_check_nonce('tk_firewall_clear_log');
-    tk_update_option('firewall_event_log', array());
+    tk_firewall_event_log_save(array());
     wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-firewall', 'tk_log_cleared' => '1'), admin_url('admin.php')));
     exit;
 }
@@ -234,8 +245,7 @@ function tk_firewall_render_page(): void {
     if (!current_user_can('manage_options')) {
         return;
     }
-    $events = tk_get_option('firewall_event_log', array());
-    $events = is_array($events) ? $events : array();
+    $events = tk_firewall_event_log();
     ?>
     <div class="wrap tk-wrap">
         <?php tk_render_header_branding(); ?>

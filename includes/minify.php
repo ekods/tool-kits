@@ -3,7 +3,8 @@ if (!defined('ABSPATH')) { exit; }
 
 function tk_minify_init() {
     add_action('admin_post_tk_minify_save', 'tk_minify_save');
-    add_action('template_redirect', 'tk_minify_start_buffer', 0);
+    // Inside the page-cache buffer (priority 0): cached pages are stored minified and served without re-minifying.
+    add_action('template_redirect', 'tk_minify_start_buffer', 1);
     add_filter('style_loader_src', 'tk_minify_filter_asset_src', 20, 2);
     add_filter('script_loader_src', 'tk_minify_filter_asset_src', 20, 2);
 }
