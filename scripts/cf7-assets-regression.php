@@ -14,6 +14,7 @@ if (!is_file($core . '/wp-includes/plugin.php') || !is_file($cf7 . '/includes/co
 define('ABSPATH', $core . '/');
 define('WPINC', 'wp-includes');
 define('WPCF7_VERSION', 'fixture');
+define('TK_URL', 'https://example.test/wp-content/plugins/tool-kits/');
 foreach (array('compat.php', 'plugin.php', 'class-wp-error.php', 'class-wp-dependency.php', 'class-wp-dependencies.php', 'class-wp-scripts.php', 'class-wp-styles.php', 'functions.wp-scripts.php', 'functions.wp-styles.php', 'shortcodes.php', 'class-wp-block-parser.php', 'blocks.php') as $file) {
     require ABSPATH . WPINC . '/' . $file;
 }
@@ -34,6 +35,8 @@ function is_singular() { return $GLOBALS['state']['singular'] ?? true; }
 function get_queried_object_id() { return 123; }
 function get_post($id) { return $GLOBALS['state']['refs'][$id] ?? null; }
 function tk_get_option($key, $default = null) { return $GLOBALS['options'][$key] ?? $default; }
+function tk_asset_version($path) { return 'fixture'; }
+function __($value, $domain = '') { return $value; }
 function tk_update_option($key, $value) { $GLOBALS['writes'][] = $key; $GLOBALS['options'][$key] = $value; }
 function wp_parse_url($url, $component = -1) { return parse_url($url, $component); }
 function wp_unslash($value) { return stripslashes($value); }
@@ -67,7 +70,9 @@ function _doing_it_wrong($function, $message, $version) { throw new RuntimeExcep
 function wp_is_valid_utf8($value) { return true; }
 require $cf7 . '/includes/controller.php';
 require dirname(__DIR__) . '/includes/cf7-assets.php';
+require dirname(__DIR__) . '/includes/antispam-contact.php';
 tk_cf7_assets_init();
+tk_antispam_contact_init();
 do_action('init');
 
 function check_cf7($condition, $message) {
@@ -219,4 +224,18 @@ $options['cf7_assets_always_load'] = '</textarea><script>alert(1)</script>';
 ob_start(); tk_cf7_assets_render_panel(); $html = ob_get_clean();
 check_cf7(strpos($html, '<script>alert(1)</script>') === false && strpos($html, '&lt;/textarea&gt;') !== false, 'Settings panel did not escape saved content');
 check_cf7(strpos($html, 'name="_tk_nonce"') !== false && strpos($html, 'name="cf7_assets_reset"') !== false, 'Save/reset controls missing');
-echo "PASS: {$checks} CF7 loading, real WordPress dependencies/localization, detection, preview isolation, validation, save/reset and escaped UI checks\n";
+// The optional timer is enqueued after CF7 asset optimization and never forces a form dependency.
+foreach (array(false, true) as $has_form) {
+    fixture_cf7($has_form ? '[contact-form-7 id="12"]' : '');
+    $options['antispam_cf7_enabled'] = $options['antispam_cooldown_enabled'] = 1;
+    do_action('wp_enqueue_scripts');
+    do_action('wp_footer');
+    check_cf7(wp_script_is('tk-antispam-cooldown', 'enqueued') === $has_form, 'Cooldown asset did not follow optimized CF7 loading');
+    check_cf7(wp_script_is('contact-form-7', 'enqueued') === $has_form, 'Cooldown forced unused CF7 assets');
+}
+fixture_cf7('[contact-form-7 id="12"]');
+$options['antispam_cf7_enabled'] = 1;
+$options['antispam_cooldown_enabled'] = 0;
+do_action('wp_enqueue_scripts'); do_action('wp_footer');
+check_cf7(wp_script_is('contact-form-7', 'enqueued') && !wp_script_is('tk-antispam-cooldown', 'enqueued'), 'Disabling the timer affected CF7 asset loading');
+echo "PASS: {$checks} CF7 loading, real WordPress dependencies/localization, detection, preview isolation, validation, save/reset, escaped UI and cooldown integration checks\n";

@@ -267,7 +267,7 @@ function tk_form_guard_scalar_post_values(): array {
         if ($name === '' || strpos($name, '_wp') === 0) {
             continue;
         }
-        if (in_array($name, array('_tk_nonce', 'tk_hp_field', 'tk_form_ts', 'tk_comment_hp', 'tk_comment_ts', 'tk_captcha_token', 'tk_captcha_answer'), true)) {
+        if (in_array($name, array('_tk_nonce', 'tk_hp_field', 'tk_form_ts', 'tk_comment_hp', 'tk_comment_ts', 'tk_captcha_token', 'tk_captcha_answer', 'tk_robot_honeypot'), true)) {
             continue;
         }
         $values[$name] = trim((string) wp_unslash($value));

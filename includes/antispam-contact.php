@@ -4,6 +4,7 @@ if (!defined('ABSPATH')) { exit; }
 function tk_antispam_contact_init() {
     add_action('admin_post_tk_antispam_save', 'tk_antispam_save_settings');
     add_action('admin_post_tk_antispam_log_clear', 'tk_antispam_log_clear');
+    add_action('wp_footer', 'tk_antispam_enqueue_countdown', 5);
 
     // Contact Form 7 integration (optional, only active if CF7 present + enabled)
     add_filter('wpcf7_form_elements', 'tk_cf7_add_honeypot_and_time', 20, 1);
@@ -19,6 +20,22 @@ function tk_antispam_enabled() {
     return (int) tk_get_option('antispam_cf7_enabled', 0) === 1;
 }
 
+function tk_antispam_cooldown_enabled(): bool {
+    return (int) tk_get_option('antispam_cooldown_enabled', 1) === 1;
+}
+
+function tk_antispam_enqueue_countdown(): void {
+    if (!tk_antispam_enabled() || !tk_antispam_cooldown_enabled() || !function_exists('wpcf7')
+        || (!wp_script_is('contact-form-7', 'enqueued') && !wp_script_is('contact-form-7', 'done'))) {
+        return;
+    }
+    wp_enqueue_script('tk-antispam-cooldown', TK_URL . 'assets/js/antispam-cooldown.js', array(), tk_asset_version('assets/js/antispam-cooldown.js'), true);
+    wp_localize_script('tk-antispam-cooldown', 'tkAntispamCooldown', array(
+        'waiting' => __('Please wait %s before sending another message.', 'tool-kits'),
+        'ready' => __('You can send another message now.', 'tool-kits'),
+    ));
+}
+
 function tk_antispam_key() {
     return 'tk_antispam_' . md5(tk_get_ip() . '|' . tk_user_agent());
 }
@@ -30,7 +47,8 @@ function tk_antispam_scalar_post_values(): array {
             continue;
         }
         $name = sanitize_key((string) $key);
-        if (strpos($name, '_wpcf7') === 0 || in_array($name, array('tk_hp_field', 'tk_form_ts', '_wpnonce', '_tk_nonce'), true)) {
+        if (strpos($name, '_wpcf7') === 0 || strpos($name, 'tk_captcha_') === 0
+            || in_array($name, array('tk_hp_field', 'tk_form_ts', 'tk_robot_honeypot', '_wpnonce', '_tk_nonce'), true)) {
             continue;
         }
         $values[$name] = trim((string) wp_unslash($value));
@@ -327,57 +345,67 @@ function tk_antispam_submission_request_cache(string $signature = '', bool $regi
     return !empty($seen[$signature]);
 }
 
-function tk_antispam_replay_reason(array $values): string {
-    $signature = tk_antispam_submission_signature($values);
-    if ($signature !== '' && tk_antispam_submission_request_cache($signature)) {
-        return '';
+/** The start time lets changed durations apply to existing cooldown records. */
+function tk_antispam_cooldown_remaining(string $key, int $duration): int {
+    if ($duration <= 0) { return 0; }
+    $record = get_transient($key);
+    if (!$record) { return 0; }
+    $now = time();
+    if (!is_array($record) || empty($record['started_at'])) {
+        // Preserve the expiry of pre-timer database transients. Object caches do not expose TTLs;
+        // upgrade their legacy flags once to a timestamp instead of restarting on each rejection.
+        $expiry = (int) get_option('_transient_timeout_' . $key, 0);
+        if ($expiry > 0 && $expiry <= $now) { return 0; }
+        $expiry = $expiry > $now ? min($expiry, $now + $duration) : $now + $duration;
+        $record = array('started_at' => $expiry > $now ? $expiry - $duration : $now);
+        set_transient($key, $record, max(1, (int) $record['started_at'] + $duration - $now));
     }
+    return max(0, (int) $record['started_at'] + $duration - $now);
+}
 
-    $duplicate_window = max(0, (int) tk_get_option('antispam_duplicate_window_minutes', 5));
-    if (
-        $duplicate_window > 0 &&
-        $signature !== '' &&
-        get_transient(tk_antispam_duplicate_key($signature))
-    ) {
-        return 'duplicate_submission';
+function tk_antispam_cooldown_rules(array $values): array {
+    $rules = array(array(
+        'duplicate_submission', tk_antispam_duplicate_key(tk_antispam_submission_signature($values)),
+        max(0, (int) tk_get_option('antispam_duplicate_window_minutes', 5)) * MINUTE_IN_SECONDS,
+    ));
+    $email_seconds = max(0, (int) tk_get_option('antispam_email_cooldown_minutes', 15)) * MINUTE_IN_SECONDS;
+    foreach (tk_antispam_submission_emails($values) as $email) {
+        $rules[] = array('email_cooldown:' . $email, tk_antispam_email_cooldown_key($email), $email_seconds);
     }
+    $rules[] = array('ip_cooldown_active', tk_antispam_ip_cooldown_key(), max(0, (int) tk_get_option('antispam_ip_cooldown_seconds', 60)));
+    return $rules;
+}
 
-    $email_cooldown = max(0, (int) tk_get_option('antispam_email_cooldown_minutes', 15));
-    if ($email_cooldown > 0) {
-        foreach (tk_antispam_submission_emails($values) as $email) {
-            if (get_transient(tk_antispam_email_cooldown_key($email))) {
-                return 'email_cooldown:' . $email;
-            }
+/** Use the longest active wait, so an expired timer does not reveal another cooldown. */
+function tk_antispam_cooldown_status(array $values): array {
+    $status = array();
+    if (!tk_antispam_cooldown_enabled()) { return $status; }
+    foreach (tk_antispam_cooldown_rules($values) as $rule) {
+        list($reason, $key, $duration) = $rule;
+        $remaining = tk_antispam_cooldown_remaining($key, $duration);
+        if ($remaining > ($status['retry_after'] ?? 0)) {
+            $status = array('reason' => $reason, 'retry_after' => $remaining, 'expires_at' => time() + $remaining);
         }
     }
+    return $status;
+}
 
-    $ip_cooldown = max(0, (int) tk_get_option('antispam_ip_cooldown_seconds', 60));
-    if ($ip_cooldown > 0 && get_transient(tk_antispam_ip_cooldown_key())) {
-        return 'ip_cooldown_active';
-    }
-
-    return '';
+function tk_antispam_replay_reason(array $values): string {
+    $signature = tk_antispam_submission_signature($values);
+    if (tk_antispam_submission_request_cache($signature)) { return ''; }
+    $status = tk_antispam_cooldown_status($values);
+    return (string) ($status['reason'] ?? '');
 }
 
 function tk_antispam_register_submission(array $values): void {
+    if (!tk_antispam_cooldown_enabled()) { return; }
     $signature = tk_antispam_submission_signature($values);
-    $duplicate_window = max(0, (int) tk_get_option('antispam_duplicate_window_minutes', 5));
-    if ($duplicate_window > 0 && $signature !== '') {
-        set_transient(tk_antispam_duplicate_key($signature), 1, $duplicate_window * MINUTE_IN_SECONDS);
-        tk_antispam_submission_request_cache($signature, true);
+    if (tk_antispam_submission_request_cache($signature)) { return; }
+    foreach (tk_antispam_cooldown_rules($values) as $rule) {
+        list($reason, $key, $duration) = $rule;
+        if ($duration > 0) { set_transient($key, array('started_at' => time()), $duration); }
     }
-
-    $email_cooldown = max(0, (int) tk_get_option('antispam_email_cooldown_minutes', 15));
-    if ($email_cooldown > 0) {
-        foreach (tk_antispam_submission_emails($values) as $email) {
-            set_transient(tk_antispam_email_cooldown_key($email), 1, $email_cooldown * MINUTE_IN_SECONDS);
-        }
-    }
-
-    $ip_cooldown = max(0, (int) tk_get_option('antispam_ip_cooldown_seconds', 60));
-    if ($ip_cooldown > 0) {
-        set_transient(tk_antispam_ip_cooldown_key(), 1, $ip_cooldown);
-    }
+    tk_antispam_submission_request_cache($signature, true);
 }
 
 function tk_antispam_contains_html(array $values): bool {
@@ -463,7 +491,7 @@ function tk_antispam_current_rejection_key(): string {
     return 'tk_antispam_reject_' . md5(tk_get_ip() . '|' . tk_user_agent());
 }
 
-function tk_antispam_rejection_message(string $reason, string $fallback = ''): string {
+function tk_antispam_rejection_message(string $reason, string $fallback = '', int $retry_after = 0): string {
     $base_reason = strtolower(trim(strtok($reason, ':')));
     $messages = array(
         'mail_guard_html_detected' => __('HTML is not allowed in this form submission.', 'tool-kits'),
@@ -472,6 +500,9 @@ function tk_antispam_rejection_message(string $reason, string $fallback = ''): s
         'links_blocked' => __('Links are not allowed in this form submission.', 'tool-kits'),
         'rate_limit_exceeded' => __('Too many form submissions. Please try again later.', 'tool-kits'),
         'submitted_too_quickly' => __('Form submitted too quickly. Please try again.', 'tool-kits'),
+        'duplicate_submission' => __('Please wait before sending another message.', 'tool-kits'),
+        'email_cooldown' => __('Please wait before sending another message.', 'tool-kits'),
+        'ip_cooldown_active' => __('Please wait before sending another message.', 'tool-kits'),
         'mail_guard_shortener_link_detected' => __('Shortened links are not allowed in this form submission.', 'tool-kits'),
         'shortener_link_detected' => __('Shortened links are not allowed in this form submission.', 'tool-kits'),
     );
@@ -480,15 +511,20 @@ function tk_antispam_rejection_message(string $reason, string $fallback = ''): s
     if ($message === '') {
         $message = __('Form submission blocked by security policy.', 'tool-kits');
     }
+    if ($retry_after > 0) {
+        $remaining = sprintf('%02d:%02d', (int) floor($retry_after / 60), $retry_after % 60);
+        $message = sprintf(__('Please wait %s before sending another message.', 'tool-kits'), $remaining);
+    }
 
     return sprintf('%s Reason: %s', $message, $reason);
 }
 
-function tk_antispam_store_rejection(string $reason, string $message): void {
+function tk_antispam_store_rejection(string $reason, string $message, array $cooldown = array()): void {
     $payload = array(
         'reason' => $reason,
         'message' => $message,
         'time' => time(),
+        'cooldown' => $cooldown,
     );
 
     $GLOBALS['tk_antispam_current_rejection'] = $payload;
@@ -549,8 +585,10 @@ function tk_antispam_cf7_rejection_field(array $values = array(), $tags = null):
 
 function tk_antispam_reject($result, string $message, string $reason, array $values = array(), $tags = null) {
     tk_antispam_log_record($reason, $values);
-    $message = tk_antispam_rejection_message($reason, $message);
-    tk_antispam_store_rejection($reason, $message);
+    $is_cooldown = in_array(strtok($reason, ':'), array('duplicate_submission', 'email_cooldown', 'ip_cooldown_active'), true);
+    $cooldown = $is_cooldown ? tk_antispam_cooldown_status($values) : array();
+    $message = tk_antispam_rejection_message($reason, $message, (int) ($cooldown['retry_after'] ?? 0));
+    tk_antispam_store_rejection($reason, $message, $cooldown);
     $field = tk_antispam_cf7_rejection_field($values, $tags);
     if ($field !== '') {
         $result->invalidate($field, $message);
@@ -581,16 +619,23 @@ function tk_antispam_cf7_ajax_json_echo($response, $result) {
     }
 
     $rejection = tk_antispam_get_rejection();
-    if (empty($rejection['message']) || empty($rejection['reason'])) {
-        return $response;
+    $cooldown = array();
+    if (!empty($rejection['message']) && !empty($rejection['reason'])) {
+        $response['status'] = 'validation_failed';
+        $response['message'] = (string) $rejection['message'];
+        if (empty($response['invalid_fields']) || !is_array($response['invalid_fields'])) {
+            $response['invalid_fields'] = array();
+        }
+        $response['tool_kits_reason'] = (string) $rejection['reason'];
+        $cooldown = $rejection['cooldown'] ?? array();
+    } elseif (($response['status'] ?? '') === 'mail_sent') {
+        $cooldown = tk_antispam_cooldown_status(tk_antispam_scalar_post_values());
     }
-
-    $response['status'] = 'validation_failed';
-    $response['message'] = (string) $rejection['message'];
-    if (empty($response['invalid_fields']) || !is_array($response['invalid_fields'])) {
-        $response['invalid_fields'] = array();
+    if (tk_antispam_cooldown_enabled() && !empty($cooldown['retry_after'])) {
+        // Only expose the rule name, not the email address stored in the server log.
+        $cooldown['reason'] = strtok($cooldown['reason'], ':');
+        $response['tool_kits_cooldown'] = $cooldown;
     }
-    $response['tool_kits_reason'] = (string) $rejection['reason'];
 
     return $response;
 }
@@ -786,6 +831,10 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
     if (!tk_antispam_enabled()) return $result;
     if (!function_exists('wpcf7')) return $result;
 
+    // A rejection belongs to this submission, never the previous request from this visitor.
+    unset($GLOBALS['tk_antispam_current_rejection']);
+    delete_transient(tk_antispam_current_rejection_key());
+
     $hp = isset($_POST['tk_hp_field']) ? trim(wp_unslash($_POST['tk_hp_field'])) : '';
     if ($hp !== '') {
         return tk_antispam_reject($result, __('Spam detected.', 'tool-kits'), 'honeypot_filled', array(), $tags);
@@ -887,7 +936,7 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
         return tk_antispam_reject($result, __('Please wait before sending another message.', 'tool-kits'), $replay_reason, $values, $tags);
     }
 
-    tk_antispam_register_submission($values);
+    if ($result->is_valid()) { tk_antispam_register_submission($values); }
 
     return $result;
 }
@@ -925,6 +974,7 @@ function tk_render_antispam_contact_panel() {
     $block_html = (int) tk_get_option('antispam_block_html', 1);
     $block_shorteners = (int) tk_get_option('antispam_block_shorteners', 1);
     $duplicate_window = (int) tk_get_option('antispam_duplicate_window_minutes', 5);
+    $cooldown_enabled = (int) tk_get_option('antispam_cooldown_enabled', 1);
     $email_cooldown = (int) tk_get_option('antispam_email_cooldown_minutes', 15);
     $ip_cooldown = (int) tk_get_option('antispam_ip_cooldown_seconds', 60);
     $rate_limit_enabled = (int) tk_get_option('antispam_rate_limit_enabled', 1);
@@ -962,13 +1012,29 @@ function tk_render_antispam_contact_panel() {
                             </div>
                             <input class="small-text" type="number" min="0" name="min_seconds" value="<?php echo esc_attr($min_seconds); ?>">
                         </div>
+                        <?php tk_render_switch('cooldown_enabled', 'Submission Cooldown', 'Enable duplicate, email and IP cooldowns. Turn off to disable these waits; other anti-spam rules remain active.', $cooldown_enabled); ?>
                         <div class="tk-control-row">
                             <div class="tk-control-info">
                                 <label>Duplicate Window</label>
-                                <p class="description">Minutes to block identical posts.</p>
+                                <p class="description">Minutes to block identical posts. Set 0 to disable this rule.</p>
                             </div>
                             <input class="small-text" type="number" min="0" name="duplicate_window_minutes" value="<?php echo esc_attr($duplicate_window); ?>">
                         </div>
+                        <div class="tk-control-row">
+                            <div class="tk-control-info">
+                                <label for="tk-email-cooldown">Email Cooldown (minutes)</label>
+                                <p class="description">Wait between messages from the same email. Set 0 to disable.</p>
+                            </div>
+                            <input id="tk-email-cooldown" class="small-text" type="number" min="0" step="1" name="email_cooldown_minutes" value="<?php echo esc_attr($email_cooldown); ?>">
+                        </div>
+                        <div class="tk-control-row">
+                            <div class="tk-control-info">
+                                <label for="tk-ip-cooldown">IP Cooldown (seconds)</label>
+                                <p class="description">Wait between messages from the same IP. Set 0 to disable.</p>
+                            </div>
+                            <input id="tk-ip-cooldown" class="small-text" type="number" min="0" step="1" name="ip_cooldown_seconds" value="<?php echo esc_attr($ip_cooldown); ?>">
+                        </div>
+                        <p class="description">Forms show a countdown during the active cooldown and allow retrying when it ends.</p>
                         <?php tk_render_switch('rate_limit_enabled', 'IP Rate Limiting', 'Throttle multiple submissions from one IP.', $rate_limit_enabled); ?>
                         <div class="tk-control-row" style="margin-left:26px;">
                             <div class="tk-control-info"><label>Max Attempts</label></div>
@@ -1110,8 +1176,8 @@ function tk_render_antispam_block_notes(): void {
         array(
             'type' => 'Replay / cooldown',
             'reasons' => 'duplicate_submission, email_cooldown:email, ip_cooldown_active',
-            'cause' => 'Same submission is blocked for ' . $duplicate_window . ' minutes, same email for ' . $email_cooldown . ' minutes, and same IP for ' . $ip_cooldown . ' seconds' . ($ip_cooldown_minutes > 0 ? ' (' . $ip_cooldown_minutes . ' minutes)' : '') . '.',
-            'response' => 'Please wait before sending another message.',
+            'cause' => tk_antispam_cooldown_enabled() ? 'Same submission is blocked for ' . $duplicate_window . ' minutes, same email for ' . $email_cooldown . ' minutes, and same IP for ' . $ip_cooldown . ' seconds' . ($ip_cooldown_minutes > 0 ? ' (' . $ip_cooldown_minutes . ' minutes)' : '') . '. A value of 0 disables that rule.' : 'Submission Cooldown is disabled. Duplicate, email and IP cooldowns are not enforced.',
+            'response' => 'Please wait MM:SS before sending another message. A live countdown shows the remaining wait.',
         ),
         array(
             'type' => 'Mail guard',
@@ -1219,6 +1285,7 @@ function tk_antispam_save_settings() {
     $block_keywords = isset($_POST['block_keywords']) ? trim((string) wp_unslash($_POST['block_keywords'])) : '';
     tk_update_option('antispam_block_keywords', $block_keywords);
     tk_update_option('antispam_message_min_chars', max(0, (int) tk_post('message_min_chars', 20)));
+    tk_update_option('antispam_cooldown_enabled', !empty($_POST['cooldown_enabled']) ? 1 : 0);
     tk_update_option('antispam_duplicate_window_minutes', max(0, (int) tk_post('duplicate_window_minutes', 5)));
     tk_update_option('antispam_email_cooldown_minutes', max(0, (int) tk_post('email_cooldown_minutes', 15)));
     tk_update_option('antispam_ip_cooldown_seconds', max(0, (int) tk_post('ip_cooldown_seconds', 60)));

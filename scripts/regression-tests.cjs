@@ -2,6 +2,10 @@
 // Each case runs in its own process so PHP mocks and browser state stay isolated.
 const { spawnSync } = require('node:child_process');
 const cases = [
+  { "name": "captcha-security", "runtime": "php", "source": ["<?php", "require __DIR__ . '/captcha-security-regression.php';"] },
+  { "name": "captcha-ui", "runtime": "node", "source": ["require(__dirname + '/captcha-ui-regression.cjs');"] },
+  { "name": "antispam-cooldown", "runtime": "php", "source": ["<?php", "require __DIR__ . '/antispam-cooldown-regression.php';"] },
+  { "name": "antispam-cooldown-ui", "runtime": "node", "source": ["require(__dirname + '/antispam-cooldown-ui-regression.cjs');"] },
   { "name": "analytics-gtm", "runtime": "php", "source": ["<?php", "require __DIR__ . '/analytics-gtm-regression.php';"] },
   { "name": "heartbeat-recheck", "runtime": "php", "source": ["<?php", "require __DIR__ . '/heartbeat-recheck-regression.php';"] },
   { "name": "php-runtime-security", "runtime": "php", "source": ["<?php", "require __DIR__ . '/php-runtime-security-regression.php';"] },

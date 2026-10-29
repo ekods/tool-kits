@@ -1,5 +1,6 @@
 <?php
 if (!defined('ABSPATH')) exit;
+require_once __DIR__ . '/captcha-image.php';
 
 /**
  * Random string captcha
@@ -11,7 +12,9 @@ function tk_captcha_init() {
     add_action('admin_post_tk_captcha_save', 'tk_captcha_save');
     add_shortcode('toolkits_captcha', 'tk_captcha_shortcode');
     add_action('wpcf7_init', 'tk_captcha_register_wpcf7_tag');
-    add_filter('wpcf7_validate', 'tk_captcha_validate_cf7', 30, 2);
+    add_filter('wpcf7_validate', 'tk_captcha_validate_cf7', 10, 2);
+    add_filter('wpcf7_spam', 'tk_captcha_cf7_spam', 30, 2);
+    add_filter('wpcf7_feedback_response', 'tk_captcha_cf7_response', 30, 2);
     add_action('wp_footer', 'tk_captcha_refresh_script');
     add_action('login_footer', 'tk_captcha_refresh_script');
     
@@ -49,7 +52,7 @@ function tk_captcha_custom_ajax_handler() {
 }
 
 function tk_captcha_length(): int {
-    return max(3, min(10, (int) tk_get_option('captcha_length', 5)));
+    return max(6, min(10, (int) tk_get_option('captcha_length', 6)));
 }
 
 function tk_captcha_make_code(int $length = 0): string {
@@ -63,7 +66,7 @@ function tk_captcha_make_code(int $length = 0): string {
         $pick = $chars[random_int(0, $max)];
         $out .= tk_captcha_rand_letter_case($pick);
     }
-    return $out;
+    return strtoupper($out);
 }
 
 function tk_captcha_strength(): string {
@@ -191,22 +194,30 @@ function tk_captcha_text(string $key): string {
         'en' => array(
             'enter_code' => 'Enter the code below',
             'type_captcha' => 'Type the captcha',
-            'exact_case' => 'Type the code exactly as shown, including uppercase and lowercase letters.',
+            'exact_case' => 'Type the verification code shown in the image.',
             'expires' => 'The code expires in 5 minutes.',
             'not_robot' => "I'm not a robot",
             'refresh_failed' => 'Failed to refresh captcha. Please reload the page.',
             'required' => 'Captcha is required.',
             'incorrect' => 'Captcha incorrect.',
+            'verify' => 'Verify code',
+            'loading' => 'Loading verification…',
+            'too_fast' => 'Please wait a moment before verifying.',
+            'rate_limited' => 'Too many verification attempts. Please try again later.',
         ),
         'id' => array(
             'enter_code' => 'Masukkan kode di bawah ini',
             'type_captcha' => 'Ketik kode captcha',
-            'exact_case' => 'Ketik kode persis seperti yang ditampilkan, termasuk huruf besar dan kecil.',
+            'exact_case' => 'Ketik kode verifikasi yang terlihat pada gambar.',
             'expires' => 'Kode akan kedaluwarsa dalam 5 menit.',
             'not_robot' => 'Saya bukan robot',
             'refresh_failed' => 'Captcha gagal dimuat ulang. Silakan muat ulang halaman.',
             'required' => 'Captcha wajib diisi.',
             'incorrect' => 'Captcha tidak sesuai.',
+            'verify' => 'Verifikasi kode',
+            'loading' => 'Memuat verifikasi…',
+            'too_fast' => 'Tunggu sebentar sebelum melakukan verifikasi.',
+            'rate_limited' => 'Terlalu banyak percobaan verifikasi. Silakan coba lagi nanti.',
         ),
     );
 
@@ -214,19 +225,80 @@ function tk_captcha_text(string $key): string {
     return $dictionary[$key] ?? ($strings['en'][$key] ?? $key);
 }
 
+function tk_captcha_scalar(array $source, string $key): string {
+    return isset($source[$key]) && is_scalar($source[$key]) ? trim((string) wp_unslash($source[$key])) : '';
+}
+
+function tk_captcha_client(): string {
+    // REMOTE_ADDR cannot be forged by adding an arbitrary X-Forwarded-For header.
+    $cookie = tk_captcha_scalar($_COOKIE, 'tk_captcha_browser');
+    $peer = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
+    $agent = isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
+    // The browser cookie remains stable when a mobile connection or reverse-proxy peer changes.
+    $identity = preg_match('/^[a-f0-9]{64}$/D', $cookie) ? 'browser:' . $cookie : 'peer:' . $peer;
+    return hash_hmac('sha256', $identity . '|' . $agent, wp_salt('auth'));
+}
+
+function tk_captcha_browser_cookie(): void {
+    if (preg_match('/^[a-f0-9]{64}$/D', tk_captcha_scalar($_COOKIE, 'tk_captcha_browser')) || headers_sent()) { return; }
+    $value = bin2hex(random_bytes(32));
+    setcookie('tk_captcha_browser', $value, array('expires' => 0, 'path' => '/', 'secure' => is_ssl(), 'httponly' => true, 'samesite' => 'Lax'));
+    $_COOKIE['tk_captcha_browser'] = $value;
+}
+
+function tk_captcha_min_seconds(): int {
+    return max(1, min(10, (int) tk_get_option('captcha_min_seconds', 2)));
+}
+
+function tk_captcha_rate_limited(string $bucket): bool {
+    $max = max(5, min(100, (int) tk_get_option('captcha_max_attempts', 20)));
+    foreach (array(tk_captcha_client() => $bucket === 'refresh' ? $max * 3 : $max,
+        'peer:' . ($_SERVER['REMOTE_ADDR'] ?? '') => 600) as $identity => $limit) {
+        $key = 'tk_captcha_rate_' . md5($bucket . '|' . $identity);
+        $record = get_transient($key);
+        if (!is_array($record) || ($record['expires_at'] ?? 0) <= time()) { $record = array('count' => 0, 'expires_at' => time() + 300); }
+        $record['count']++;
+        set_transient($key, $record, max(1, $record['expires_at'] - time()));
+        if ($record['count'] > $limit) { return true; }
+    }
+    return false;
+}
+
+/** Unique option names make token consumption atomic, including with an external object cache. */
+function tk_captcha_claim(string $token, string $stage): bool {
+    return add_option('_tk_captcha_used_' . $stage . '_' . $token, time() + 600, '', false);
+}
+
+function tk_captcha_cleanup_claims(): void {
+    if (get_transient('tk_captcha_claim_cleanup')) { return; }
+    global $wpdb;
+    $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->options} WHERE option_name LIKE %s AND option_value < %d LIMIT 1000", $wpdb->esc_like('_tk_captcha_used_') . '%', time()));
+    set_transient('tk_captcha_claim_cleanup', 1, 300);
+}
+
+function tk_captcha_challenge_valid($challenge): bool {
+    return is_array($challenge) && !empty($challenge['client']) && !empty($challenge['issued_at'])
+        && ($challenge['expires_at'] ?? 0) > time()
+        && hash_equals($challenge['client'], tk_captcha_client());
+}
+
+function tk_captcha_answer_hash(string $answer, string $token): string {
+    return hash_hmac('sha256', $token . '|' . strtoupper($answer), wp_salt('nonce'));
+}
+
 function tk_captcha_create_challenge(string $type = ''): array {
     $type = $type !== '' ? tk_captcha_normalize_type($type) : tk_captcha_current_type();
     $code = tk_captcha_make_code();
-    if ($type === 'checkbox') {
-        $code = wp_generate_password(12, false, false);
-    }
-    $token = wp_generate_password(18, false, false) . '_' . rand(1000, 9999);
-    $hash = wp_hash_password($code);
+    $token = bin2hex(random_bytes(24));
+    $hash = tk_captcha_answer_hash($code, $token);
     set_transient(
         'tk_captcha_' . $token,
         array(
             'hash' => $hash,
             'type' => $type,
+            'client' => tk_captcha_client(),
+            'issued_at' => time(),
+            'expires_at' => time() + 300,
         ),
         MINUTE_IN_SECONDS * 5
     );
@@ -250,11 +322,7 @@ function tk_captcha_render_markup(string $type = ''): string {
     $bgNoise = 'radial-gradient(circle at 25px 15px, rgba(255,255,255,0.12), transparent 47%), radial-gradient(circle at 80px 45px, rgba(255,255,255,0.06), transparent 40%)';
     $noiseSvg = "url('data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'140\\' height=\\'60\\'><line x1=\\'0\\' y1=\\'30\\' x2=\\'140\\' y2=\\'30\\' stroke=\\'rgba(255,255,255,0.05)\\' stroke-width=\\'1\\'/><circle cx=\\'20\\' cy=\\'15\\' r=\\'1\\' fill=\\'rgba(255,255,255,0.3)\\'/><circle cx=\\'60\\' cy=\\'10\\' r=\\'2\\' fill=\\'rgba(255,255,255,0.25)\\'/></svg>')";
 
-    $chars = str_split($challenge['code']);
-    $charSpans = '';
-    foreach ($chars as $char) {
-        $charSpans .= tk_captcha_span_for_char($char, ['shadow' => $shadow]);
-    }
+    $image = '<img src="' . esc_attr(tk_captcha_image_uri($challenge['code'])) . '" alt="' . esc_attr(tk_captcha_text('type_captcha')) . '" width="' . (strlen($challenge['code']) * 28 + 20) . '" height="68" draggable="false">';
 
     // inject CSS once per request (kalau function dipanggil berkali-kali)
     static $css_loaded = false;
@@ -505,7 +573,8 @@ function tk_captcha_render_markup(string $type = ''): string {
 }';
     }
 
-    $html = $css !== '' ? '<style' . tk_csp_nonce_attr() . '>' . $css . '</style>' : '';
+    $css .= '.tk-captcha-codebox img{display:block;max-width:100%;height:68px;object-fit:contain}.tk-captcha-codebox{height:auto;min-height:68px;background:#eef3fa!important;padding:4px}.tk-captcha-puzzle{margin-top:12px}.tk-captcha-puzzle[hidden]{display:none!important}.tk-captcha-status{font-size:13px;margin:8px 0}.tk-captcha-verify{margin-top:8px;cursor:pointer}.tk-captcha-field[aria-busy="true"]{opacity:.65}';
+    $html = '<style' . tk_csp_nonce_attr() . '>' . $css . '</style>';
     
     if ($type === 'checkbox') {
         $html .= '<div class="tk-captcha-field" data-type="checkbox">';
@@ -530,9 +599,13 @@ function tk_captcha_render_markup(string $type = ''): string {
         $html .= '    </div>';
         $html .= '  </div>';
         $html .= '</div>';
+        $html .= '<div class="tk-captcha-puzzle" hidden><div class="tk-captcha-codebox">' . $image . '</div>';
+        $html .= '<label>' . esc_html(tk_captcha_text('exact_case')) . '<input type="text" class="tk-captcha-input tk-captcha-puzzle-input" autocomplete="off" maxlength="10" aria-label="' . esc_attr(tk_captcha_text('type_captcha')) . '"></label>';
+        $html .= '<button type="button" class="tk-captcha-verify">' . esc_html(tk_captcha_text('verify')) . '</button></div>';
         $html .= '<input type="hidden" name="' . esc_attr($names['answer']) . '" value="" class="tk-captcha-answer-field">';
         $html .= '<input type="hidden" name="' . esc_attr($names['token']) . '" value="' . esc_attr($challenge['token']) . '">';
-        $html .= '<div class="tk-robot-honeypot-wrap"><input type="text" name="tk_robot_honeypot" value="" tabindex="-1" autocomplete="off"></div>';
+        $html .= '<div class="tk-robot-honeypot-wrap"><input type="text" name="tk_robot_honeypot" value="" tabindex="-1" autocomplete="off" aria-hidden="true"></div>';
+        $html .= '<p class="tk-captcha-status" role="status" aria-live="polite"></p>';
         $html .= '</div>';
     } else {
         $html .= '<div class="tk-captcha-field" data-type="text">';
@@ -540,7 +613,7 @@ function tk_captcha_render_markup(string $type = ''): string {
         $html .= '<div class="tk-captcha-panel">';
         $html .= '<div class="tk-captcha-code-wrapper">';
         $html .= '<div class="tk-captcha-codebox">';
-        $html .= $charSpans;
+        $html .= $image;
         $html .= '</div>';
         $html .= '<button type="button" class="tk-captcha-refresh" aria-label="Refresh captcha">
             <svg class="tk-captcha-refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -564,6 +637,7 @@ function tk_captcha_render_markup(string $type = ''): string {
         $html .= '<small>' . esc_html(tk_captcha_text('expires')) . '</small>';
         $html .= '</div>';
         $html .= '<input type="hidden" name="' . esc_attr($names['token']) . '" value="' . esc_attr($challenge['token']) . '">';
+        $html .= '<p class="tk-captcha-status" role="status" aria-live="polite"></p>';
         $html .= '</div>';
     }
 
@@ -616,188 +690,65 @@ function tk_captcha_type_from_wpcf7_tag($tag): string {
 }
 
 function tk_captcha_refresh_ajax() {
-    $nonce = isset($_REQUEST['nonce']) ? sanitize_text_field(wp_unslash($_REQUEST['nonce'])) : '';
-    if (!wp_verify_nonce($nonce, 'tk_captcha_refresh')) {
-        wp_send_json_error('invalid_nonce');
+    nocache_headers();
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { wp_send_json_error('method_not_allowed', 405); }
+    if (!wp_verify_nonce(tk_captcha_scalar($_POST, 'nonce'), 'tk_captcha_refresh')) { wp_send_json_error('invalid_nonce', 403); }
+    if (!tk_get_option('captcha_enabled')) { wp_send_json_error('disabled', 403); }
+    tk_captcha_browser_cookie();
+    if (tk_captcha_rate_limited('refresh')) { wp_send_json_error('rate_limited', 429); }
+    tk_captcha_cleanup_claims();
+    $old = tk_captcha_scalar($_POST, 'old_token');
+    if (preg_match('/^[a-f0-9]{48}$/D', $old) && tk_captcha_challenge_valid(get_transient('tk_captcha_' . $old))) {
+        tk_captcha_claim($old, 'submit');
+        delete_transient('tk_captcha_' . $old);
+        delete_transient('tk_captcha_verified_' . $old);
     }
-    
-    if (!tk_get_option('captcha_enabled')) {
-        wp_send_json_error('disabled');
-    }
-    $type = isset($_REQUEST['type']) ? sanitize_key((string) wp_unslash($_REQUEST['type'])) : '';
-    wp_send_json_success(array('markup' => tk_captcha_render_markup($type)));
+    wp_send_json_success(array('markup' => tk_captcha_render_markup(tk_captcha_scalar($_POST, 'type'))));
 }
 
 function tk_captcha_verify_click_ajax() {
-    $nonce = isset($_REQUEST['nonce']) ? sanitize_text_field(wp_unslash($_REQUEST['nonce'])) : '';
-    if (!wp_verify_nonce($nonce, 'tk_captcha_verify_click')) {
-        wp_send_json_error('invalid_nonce');
+    nocache_headers();
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { wp_send_json_error('method_not_allowed', 405); }
+    if (!wp_verify_nonce(tk_captcha_scalar($_POST, 'nonce'), 'tk_captcha_verify_click')) { wp_send_json_error('invalid_nonce', 403); }
+    if (!tk_get_option('captcha_enabled')) { wp_send_json_error('disabled', 403); }
+    if (tk_captcha_rate_limited('verify')) { wp_send_json_error('rate_limited', 429); }
+    $token = tk_captcha_scalar($_POST, 'token');
+    $answer = strtoupper(tk_captcha_scalar($_POST, 'answer'));
+    if (!preg_match('/^[a-f0-9]{48}$/D', $token) || $answer === '' || strlen($answer) > 10) { wp_send_json_error('invalid_challenge', 400); }
+    $challenge = get_transient('tk_captcha_' . $token);
+    if (!tk_captcha_challenge_valid($challenge) || ($challenge['type'] ?? '') !== 'checkbox') { wp_send_json_error('expired', 400); }
+    if (time() - $challenge['issued_at'] < tk_captcha_min_seconds()) { wp_send_json_error('too_fast', 400); }
+    if (empty($challenge['hash']) || !tk_captcha_claim($token, 'solve')) { wp_send_json_error('expired', 400); }
+    if (!hash_equals($challenge['hash'], tk_captcha_answer_hash($answer, $token))) {
+        delete_transient('tk_captcha_' . $token);
+        wp_send_json_error('incorrect', 400);
     }
-    
-    if (!tk_get_option('captcha_enabled')) {
-        wp_send_json_error('disabled');
-    }
-
-    $token = isset($_REQUEST['token']) ? sanitize_text_field(wp_unslash($_REQUEST['token'])) : '';
-    if ($token === '') {
-        wp_send_json_error('missing_token');
-    }
-    $hash = get_transient('tk_captcha_' . $token);
-    if (!$hash) {
-        wp_send_json_error('expired');
-    }
-    // Record that this token was verified by a real click
-    set_transient('tk_captcha_verified_' . $token, 1, MINUTE_IN_SECONDS * 5);
-    
-    // Return a temporary "solve" value that PHP can check later.
-    // For simplicity, we just use the original code but only return it here.
-    // In a real scenario, we could use a different salt.
-    wp_send_json_success(array('answer' => 'VERIFIED_CLICK'));
+    $proof = bin2hex(random_bytes(32));
+    $remaining = max(1, $challenge['expires_at'] - time());
+    set_transient('tk_captcha_verified_' . $token, array(
+        'hash' => hash('sha256', $proof), 'client' => $challenge['client'], 'expires_at' => $challenge['expires_at'],
+    ), $remaining);
+    $challenge['hash'] = '';
+    set_transient('tk_captcha_' . $token, $challenge, $remaining);
+    wp_send_json_success(array('answer' => $proof));
 }
 
 function tk_captcha_refresh_script() {
-    if (is_admin() || !tk_get_option('captcha_enabled')) {
-        return;
-    }
+    if (is_admin() || !tk_get_option('captcha_enabled')) { return; }
     static $printed = false;
-    if ($printed) {
-        return;
-    }
+    if ($printed) { return; }
     $printed = true;
-
-    $verify_url = home_url('/?tk_captcha_action=verify_click');
-    $nonce_refresh = wp_create_nonce('tk_captcha_refresh');
-    $nonce_verify = wp_create_nonce('tk_captcha_verify_click');
-    
-    tk_csp_print_inline_script(
-        "(function(){
-            var verifyUrl = '" . esc_js($verify_url) . "';
-            var nonceRefresh = '" . esc_js($nonce_refresh) . "';
-            var nonceVerify = '" . esc_js($nonce_verify) . "';
-            
-            var interactions = 0;
-            var startTime = Date.now();
-            
-            function trackInteraction() { interactions++; }
-            window.addEventListener('mousemove', trackInteraction, {once: true});
-            window.addEventListener('touchstart', trackInteraction, {once: true});
-            window.addEventListener('keydown', trackInteraction, {once: true});
-
-            if (window.tkCaptchaRefreshBound) return;
-            window.tkCaptchaRefreshBound = true;
-
-            function verifyCheckbox(target, event) {
-                var field = target.closest('.tk-captcha-field');
-                if (!field || field.getAttribute('data-type') !== 'checkbox') return;
-
-                if (event) event.preventDefault();
-
-                var realBox = field.querySelector('.tk-captcha-checkbox-box');
-                if (!realBox || realBox.classList.contains('is-checked') || realBox.classList.contains('is-loading')) return;
-
-                var tokenInput = field.querySelector('input[name=\"tk_captcha_token\"]');
-                if (!tokenInput || !tokenInput.value) return;
-
-                realBox.classList.add('is-loading');
-                realBox.setAttribute('aria-busy', 'true');
-
-                fetch(verifyUrl, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body: new URLSearchParams({
-                        nonce: nonceVerify,
-                        token: tokenInput.value,
-                        interact: interactions,
-                        timing: Date.now() - startTime
-                    })
-                }).then(function(resp){
-                    if (!resp.ok) throw new Error('Network response was not ok');
-                    return resp.json();
-                }).then(function(data){
-                    if (data.success && data.data.answer) {
-                        setTimeout(function(){
-                            realBox.classList.remove('is-loading');
-                            realBox.classList.add('is-checked');
-                            realBox.removeAttribute('aria-busy');
-                            realBox.setAttribute('aria-checked', 'true');
-                            var ans = field.querySelector('.tk-captcha-answer-field');
-                            if (ans) ans.value = data.data.answer;
-                        }, 600);
-                    } else {
-                        throw new Error(data.data || 'Verification failed');
-                    }
-                }).catch(function(){
-                    realBox.classList.remove('is-loading');
-                    realBox.removeAttribute('aria-busy');
-                    alert('Verification failed. Please try again.');
-                });
-            }
-
-            document.addEventListener('click', function(e){
-                var box = e.target.closest('.tk-captcha-checkbox-box');
-                var text = e.target.closest('.tk-captcha-checkbox-text');
-                var left = e.target.closest('.tk-captcha-checkbox-left');
-                
-                if (box || text || left) {
-                    verifyCheckbox(e.target, e);
-                    return;
-                }
-
-                var btn = e.target.closest('.tk-captcha-refresh');
-                if (!btn) {
-                    return;
-                }
-                e.preventDefault();
-                var field = btn.closest('.tk-captcha-field');
-                if (!field) {
-                    return;
-                }
-                var captchaType = field.getAttribute('data-type') || '';
-                btn.disabled = true;
-                btn.classList.add('is-refreshing');
-                btn.setAttribute('aria-busy', 'true');
-                var refreshUrl = '" . home_url('/?tk_captcha_action=refresh') . "';
-                fetch(refreshUrl, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body: new URLSearchParams({
-                        nonce: nonceRefresh,
-                        type: captchaType
-                    })
-                }).then(function(resp){ 
-                    if (!resp.ok) throw new Error('Network response was not ok');
-                    return resp.json(); 
-                }).then(function(data){
-                    if (data.success && data.data.markup) {
-                        field.outerHTML = data.data.markup;
-                    } else {
-                        throw new Error('Invalid response from server');
-                    }
-                }).catch(function(){
-                    btn.disabled = false;
-                    btn.classList.remove('is-refreshing');
-                    btn.removeAttribute('aria-busy');
-                    alert('" . esc_js(tk_captcha_text('refresh_failed')) . "');
-                }).finally(function(){
-                    if (document.body.contains(btn)) {
-                        btn.disabled = false;
-                        btn.classList.remove('is-refreshing');
-                        btn.removeAttribute('aria-busy');
-                    }
-                });
-            });
-
-            document.addEventListener('keydown', function(e){
-                var box = e.target.closest('.tk-captcha-checkbox-box');
-                if (box && (e.key === 'Enter' || e.key === ' ')) {
-                    verifyCheckbox(box, e);
-                }
-            });
-        })();",
-        array('id' => 'tk-captcha-refresh')
-    );
+    wp_enqueue_script('tk-captcha', TK_URL . 'assets/js/captcha.js', array(), tk_asset_version('assets/js/captcha.js'), true);
+    wp_localize_script('tk-captcha', 'tkCaptcha', array(
+        'refreshUrl' => home_url('/?tk_captcha_action=refresh'),
+        'verifyUrl' => home_url('/?tk_captcha_action=verify_click'),
+        'refreshNonce' => wp_create_nonce('tk_captcha_refresh'),
+        'verifyNonce' => wp_create_nonce('tk_captcha_verify_click'),
+        'minSeconds' => tk_captcha_min_seconds(),
+        'loading' => tk_captcha_text('loading'), 'required' => tk_captcha_text('required'),
+        'incorrect' => tk_captcha_text('incorrect'), 'refreshFailed' => tk_captcha_text('refresh_failed'),
+        'tooFast' => tk_captcha_text('too_fast'), 'rateLimited' => tk_captcha_text('rate_limited'),
+    ));
 }
 
 function tk_captcha_validate($user) {
@@ -819,60 +770,71 @@ function tk_captcha_validate($user) {
 
 function tk_captcha_validate_request(): array {
     $names = tk_captcha_field_names();
-    
-    // Honeypot check
-    if (!empty($_POST['tk_robot_honeypot'])) {
-        return array('present' => true, 'valid' => false);
-    }
-
-    $token = isset($_POST[$names['token']]) ? sanitize_text_field(wp_unslash($_POST[$names['token']])) : '';
-    $answer = isset($_POST[$names['answer']]) ? trim((string) wp_unslash($_POST[$names['answer']])) : '';
-
-    if ($token === '' && $answer === '') {
-        return array('present' => false, 'valid' => false);
-    }
-
-    if ($token === '' || $answer === '') {
-        return array('present' => true, 'valid' => false);
-    }
-
+    $token = tk_captcha_scalar($_POST, $names['token']);
+    $answer = tk_captcha_scalar($_POST, $names['answer']);
+    if ($token === '' && $answer === '') { return array('present' => false, 'valid' => false); }
+    $invalid = array('present' => true, 'valid' => false);
+    if (!preg_match('/^[a-f0-9]{48}$/D', $token) || $answer === '' || strlen($answer) > 128
+        || tk_captcha_scalar($_POST, 'tk_robot_honeypot') !== '' || is_array($_POST['tk_robot_honeypot'] ?? null)
+        || tk_captcha_rate_limited('submit')) { return $invalid; }
     $challenge = get_transient('tk_captcha_' . $token);
-    $hash = is_array($challenge) && isset($challenge['hash']) ? (string) $challenge['hash'] : (string) $challenge;
-    $type = is_array($challenge) && isset($challenge['type']) ? tk_captcha_normalize_type($challenge['type']) : tk_captcha_current_type();
-
-    if ($type === 'checkbox') {
-        if ($answer !== 'VERIFIED_CLICK') {
-            return array('present' => true, 'valid' => false);
-        }
-        $verified = get_transient('tk_captcha_verified_' . $token);
-        delete_transient('tk_captcha_verified_' . $token);
-        delete_transient('tk_captcha_' . $token);
-        return array('present' => true, 'valid' => (bool)$verified);
-    }
-
+    if (!tk_captcha_challenge_valid($challenge)) { return $invalid; }
+    if (time() - $challenge['issued_at'] < tk_captcha_min_seconds()) { return $invalid; }
+    $verified = get_transient('tk_captcha_verified_' . $token);
+    if (!tk_captcha_claim($token, 'submit')) { return $invalid; }
     delete_transient('tk_captcha_' . $token);
+    delete_transient('tk_captcha_verified_' . $token);
+    if ($challenge['type'] === 'checkbox') {
+        $valid = is_array($verified) && !empty($verified['hash'])
+            && ($verified['expires_at'] ?? 0) > time()
+            && hash_equals((string) ($verified['client'] ?? ''), tk_captcha_client())
+            && hash_equals($verified['hash'], hash('sha256', $answer));
+    } else {
+        $valid = !empty($challenge['hash']) && hash_equals($challenge['hash'], tk_captcha_answer_hash($answer, $token));
+    }
+    return array('present' => true, 'valid' => (bool) $valid);
+}
 
-    return array(
-        'present' => true,
-        'valid' => (bool) ($hash && wp_check_password($answer, $hash)),
-    );
+function tk_captcha_cf7_required($tags): bool {
+    foreach ((array) $tags as $tag) {
+        $type = is_object($tag) ? ($tag->basetype ?? $tag->type ?? '') : ($tag['basetype'] ?? $tag['type'] ?? '');
+        if ($type === 'toolkits_captcha') { return true; }
+    }
+    if (function_exists('wpcf7_get_current_contact_form')) {
+        $form = wpcf7_get_current_contact_form();
+        if ($form && preg_match('/\[toolkits_captcha(?:\s|\])/', (string) $form->prop('form'))) { return true; }
+    }
+    return false;
 }
 
 function tk_captcha_validate_cf7($result, $tags) {
-    if (!tk_get_option('captcha_enabled') || !function_exists('wpcf7')) {
-        return $result;
-    }
-
+    $GLOBALS['tk_captcha_cf7_error'] = '';
+    if (!tk_get_option('captcha_enabled') || !function_exists('wpcf7')) { return $result; }
+    $required = tk_captcha_cf7_required($tags);
+    if (!$required && !isset($_POST['tk_captcha_token'], $_POST['tk_captcha_answer'])) { return $result; }
     $validation = tk_captcha_validate_request();
-    if (!$validation['present']) {
-        return $result;
+    if ($validation['valid']) { return $result; }
+    $message = tk_captcha_text($validation['present'] ? 'incorrect' : 'required');
+    $GLOBALS['tk_captcha_cf7_error'] = $message;
+    // CF7 silently ignores invalidate(null, ...). Always target a real, named server-side tag.
+    foreach ((array) $tags as $tag) {
+        $name = is_object($tag) ? ($tag->name ?? '') : ($tag['name'] ?? '');
+        if ($name !== '' && wpcf7_is_name($name)) { $result->invalidate($tag, $message); break; }
     }
-
-    if (!$validation['valid']) {
-        $result->invalidate(null, tk_captcha_text('incorrect'));
-    }
-
     return $result;
+}
+
+function tk_captcha_cf7_spam($spam, $submission = null) {
+    return $spam || !empty($GLOBALS['tk_captcha_cf7_error']);
+}
+
+function tk_captcha_cf7_response($response, $result) {
+    if (is_array($response) && !empty($GLOBALS['tk_captcha_cf7_error'])) {
+        $response['status'] = 'validation_failed';
+        $response['message'] = $GLOBALS['tk_captcha_cf7_error'];
+        $response['tool_kits_captcha_error'] = true;
+    }
+    return $response;
 }
 
 function tk_render_captcha_page() {
@@ -897,6 +859,8 @@ function tk_render_captcha_panel() {
     $on_comments = (int) tk_get_option('captcha_on_comments', 0);
     $length = tk_captcha_length();
     $strength = tk_captcha_strength();
+    $min_seconds = tk_captcha_min_seconds();
+    $max_attempts = max(5, min(100, (int) tk_get_option('captcha_max_attempts', 20)));
 
     ?>
     <div class="tk-card">
@@ -916,7 +880,7 @@ function tk_render_captcha_panel() {
             
             <div style="background:var(--tk-bg-soft); padding:24px; border-radius:16px; border:1px solid var(--tk-border-soft); margin-bottom:24px;">
                 <label style="display:block; font-weight:700; margin-bottom:16px; font-size:14px; color:var(--tk-primary);">Verification Method</label>
-                <?php $captcha_type = tk_get_option('captcha_type', 'text'); ?>
+                <?php $captcha_type = tk_captcha_current_type(); ?>
                 <div class="tk-choice-grid">
                     <label class="tk-radio-card" style="flex:1; cursor:pointer; padding:16px; background:#fff; border:1px solid <?php echo $captcha_type === 'text' ? 'var(--tk-primary)' : 'var(--tk-border-soft)'; ?>; border-radius:12px;">
                         <input type="radio" name="captcha_type" value="text" <?php checked('text', $captcha_type); ?> style="margin-right:8px;">
@@ -926,21 +890,21 @@ function tk_render_captcha_panel() {
                     <label class="tk-radio-card" style="flex:1; cursor:pointer; padding:16px; background:#fff; border:1px solid <?php echo $captcha_type === 'checkbox' ? 'var(--tk-primary)' : 'var(--tk-border-soft)'; ?>; border-radius:12px;">
                         <input type="radio" name="captcha_type" value="checkbox" <?php checked('checkbox', $captcha_type); ?> style="margin-right:8px;">
                         <strong>"I'm not a robot"</strong>
-                        <p class="description" style="margin:4px 0 0 25px;">Simple checkbox verification for better UX.</p>
+                        <p class="description" style="margin:4px 0 0 25px;">Opens an image-code challenge. A click alone cannot verify the visitor.</p>
                     </label>
                 </div>
 
-                <div id="tk-captcha-text-settings" style="<?php echo $captcha_type === 'checkbox' ? 'display:none;' : ''; ?> margin-top:24px; padding-top:24px; border-top:1px solid var(--tk-border-soft);">
+                <div id="tk-captcha-text-settings" style="margin-top:24px; padding-top:24px; border-top:1px solid var(--tk-border-soft);">
                     <div class="tk-responsive-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
                         <div>
                             <label style="display:block; font-weight:600; margin-bottom:8px;">Code Length</label>
-                            <input class="widefat" type="number" min="3" max="10" name="length" value="<?php echo esc_attr($length); ?>" style="border-radius:8px;">
-                            <p class="description">Number of characters to generate (3-10).</p>
+                            <input class="widefat" type="number" min="6" max="10" name="length" value="<?php echo esc_attr($length); ?>" style="border-radius:8px;">
+                            <p class="description">Image code length for both verification methods (6-10).</p>
                         </div>
                         <div>
                             <label style="display:block; font-weight:600; margin-bottom:8px;">Complexity Level</label>
                             <select name="strength" class="widefat" style="border-radius:8px; height:40px;">
-                                <option value="easy" <?php selected($strength, 'easy'); ?>>Easy (Lowercase letters)</option>
+                                <option value="easy" <?php selected($strength, 'easy'); ?>>Easy (Letters)</option>
                                 <option value="medium" <?php selected($strength, 'medium'); ?>>Medium (Letters + Digits)</option>
                                 <option value="hard" <?php selected($strength, 'hard'); ?>>Hard (Letters + Digits + Symbols)</option>
                             </select>
@@ -948,12 +912,19 @@ function tk_render_captcha_panel() {
                         </div>
                     </div>
                 </div>
+                <div class="tk-responsive-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+                    <div><label for="tk-captcha-min-seconds">Minimum Solve Time (seconds)</label>
+                        <input id="tk-captcha-min-seconds" class="widefat" type="number" min="1" max="10" name="min_seconds" value="<?php echo esc_attr($min_seconds); ?>">
+                        <p class="description">Enforced by the server, independently of browser timing.</p></div>
+                    <div><label for="tk-captcha-max-attempts">Maximum Verification Attempts / 5 Minutes</label>
+                        <input id="tk-captcha-max-attempts" class="widefat" type="number" min="5" max="100" name="max_attempts" value="<?php echo esc_attr($max_attempts); ?>">
+                        <p class="description">Limits repeated guesses and verification requests from one visitor.</p></div>
+                </div>
             </div>
             
             <script<?php echo tk_csp_nonce_attr(); ?>>
                 document.querySelectorAll('input[name="captcha_type"]').forEach(function(radio){
                     radio.addEventListener('change', function(){
-                        document.getElementById('tk-captcha-text-settings').style.display = (this.value === 'checkbox' ? 'none' : 'block');
                         document.querySelectorAll('.tk-radio-card').forEach(function(card){
                            card.style.borderColor = 'var(--tk-border-soft)';
                         });
@@ -978,15 +949,17 @@ function tk_captcha_save() {
     tk_update_option('captcha_on_login', !empty($_POST['on_login']) ? 1 : 0);
     tk_update_option('captcha_on_comments', !empty($_POST['on_comments']) ? 1 : 0);
     if (isset($_POST['captcha_type'])) {
-        tk_update_option('captcha_type', sanitize_key($_POST['captcha_type']));
+        tk_update_option('captcha_type', tk_captcha_normalize_type(tk_captcha_scalar($_POST, 'captcha_type')));
     }
-    $length = isset($_POST['length']) ? max(3, min(10, (int) $_POST['length'])) : tk_captcha_length();
+    $length = isset($_POST['length']) ? max(6, min(10, (int) $_POST['length'])) : tk_captcha_length();
     $strength = isset($_POST['strength']) ? sanitize_key($_POST['strength']) : tk_captcha_strength();
     if (!in_array($strength, array('easy','medium','hard'), true)) {
         $strength = 'medium';
     }
     tk_update_option('captcha_length', $length);
     tk_update_option('captcha_strength', $strength);
+    tk_update_option('captcha_min_seconds', max(1, min(10, (int) tk_post('min_seconds', 2))));
+    tk_update_option('captcha_max_attempts', max(5, min(100, (int) tk_post('max_attempts', 20))));
 
     wp_redirect(add_query_arg(array('page'=>'tool-kits-security-spam','tk_tab'=>'captcha','tk_saved'=>1), admin_url('admin.php')));
     exit;

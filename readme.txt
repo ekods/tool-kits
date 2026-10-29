@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.59
+Stable tag: 2.7.61
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,8 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.61 strengthens CAPTCHA enforcement. Protected CF7 forms reject missing CAPTCHA fields, and checkbox mode opens an image-code challenge rather than approving a click alone. Codes have at least 6 characters, expire after 5 minutes and use visitor-bound, one-use tokens. Adjust minimum solve time and attempt limits under Spam Protection > Captcha. Clear page/CDN caches after installing; old cached CAPTCHA markup and click proofs are no longer valid.
+- Version 2.7.60 adds a live Contact Form 7 cooldown timer and Submission Cooldown settings under Spam Protection > Timing & Velocity. Adjust email minutes, IP seconds and the duplicate window; use 0 to disable an individual rule or turn off Submission Cooldown to disable all three. IP Rate Limiting remains a separate setting.
 - Version 2.7.58 adds Meta AI (WhatsApp, Instagram, Facebook, Messenger) to GEO crawler access, Crawler Preview, AI Radar and the AI Catalog, and warns when Tool Kits firewall user-agent rules block recommended AI crawlers. A fragment such as facebook blocks every Meta crawler. Run AI Access Review again after updating to add the Meta rows to saved results.
 - Version 2.7.57 adds a GEO indicator column beside the SEO score in content lists (wp-admin/edit.php). It reads the latest saved GEO Audit & Fixes results and never audits pages while the list loads; run GEO Audit to refresh scores. Hide it under SEO Settings > Editor Panels.
 - Version 2.7.56 moves the FAQ GEO popup into its own Tool Kits FAQ GEO editor panel and adds an optional SEO score column to content lists (wp-admin/edit.php). Both are enabled by default and can be hidden under SEO Settings > Editor Panels. Saved FAQs, metadata and public SEO/GEO output are unchanged.
@@ -77,6 +79,19 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.61 =
+- Fix CF7 CAPTCHA rejection: invalidate a real named form tag instead of null, require CAPTCHA based on the server-side form configuration, and block mail even on unnamed CAPTCHA-only forms.
+- Render verification codes as images instead of readable HTML characters. Checkbox verification requires the real image answer and returns an opaque, short-lived proof; the previous constant click marker is rejected.
+- Bind challenges to a browser cookie and user agent, with a network-peer fallback before cookies are issued; enforce server-side minimum solve time, expiry and attempt limits. Atomic consumption prevents concurrent or sequential token replay.
+- Refresh challenges per visitor to support cached pages, multiple forms, validation errors and resubmission. Retire old challenges when refreshing, handle keyboard verification, and keep failure feedback visible.
+- Add adjustable solve-time and attempt limits, enforce a minimum six-character code, and exclude CAPTCHA internals from spam keyword scanning.
+
+= 2.7.60 =
+- Add email and IP cooldown duration controls plus a master Submission Cooldown switch. Zero disables an individual cooldown rule, including already active records.
+- Show the longest remaining cooldown as a live MM:SS countdown on Contact Form 7 forms, including after a successful send, and prevent repeated submissions until the timer ends.
+- Preserve elapsed time across retries, support cooldown flags saved by older versions, and discard previous rejection messages when processing a new submission.
+- Keep independent anti-spam rules and IP Rate Limiting active when Submission Cooldown is disabled.
+
 = 2.7.59 =
 - Restore the Polylang language on self-referencing canonical and og:url tags. Themes that normalize URLs with home_url('/') and then home_url($path) drop the language because Polylang only filters the bare home URL, so /id/kontak/ declared /kontak/ (which redirects to the default language) and translated pages could be treated as duplicates.
 - Add the language back with Polylang's own links model, covering directory URLs with or without the /language/ base, subdomains, multiple domains and ?lang= plain permalinks, for bilingual and multilingual sites with the default language hidden or prefixed.
