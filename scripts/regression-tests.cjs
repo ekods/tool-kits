@@ -2,6 +2,9 @@
 // Each case runs in its own process so PHP mocks and browser state stay isolated.
 const { spawnSync } = require('node:child_process');
 const cases = [
+  { "name": "maintenance-jobs", "runtime": "php", "source": ["<?php", "require __DIR__ . '/maintenance-jobs-regression.php';"] },
+  { "name": "cleanup-ui", "runtime": "node", "source": ["require(__dirname + '/db-cleanup-ui-regression.cjs');"] },
+  { "name": "cleanup-browser", "runtime": "node", "source": ["require(__dirname + '/db-cleanup-browser-regression.cjs');"] },
   { "name": "seo-score-refresh", "runtime": "php", "source": ["<?php", "require __DIR__ . '/seo-score-refresh-regression.php';"] },
   { "name": "seo-score-ui", "runtime": "node", "source": ["require(__dirname + '/seo-score-ui-regression.cjs');"] },
   { "name": "captcha-security", "runtime": "php", "source": ["<?php", "require __DIR__ . '/captcha-security-regression.php';"] },
@@ -1645,7 +1648,7 @@ if (requested === '--list') {
     cases.forEach(test => console.log(test.name));
     process.exit(0);
 }
-const optional = new Set(['request-options', 'performance-core', 'cf7-assets', 'admin-layout-ui', 'image-optimizer', 'image-optimizer-no-imagick', 'monitoring-ui']);
+const optional = new Set(['cleanup-browser', 'request-options', 'performance-core', 'cf7-assets', 'admin-layout-ui', 'image-optimizer', 'image-optimizer-no-imagick', 'monitoring-ui']);
 const selected = requested ? cases.filter(test => test.name === requested) : cases.filter(test => !optional.has(test.name));
 if (!selected.length) { console.error('Unknown test: ' + requested); process.exit(1); }
 let failures = 0;

@@ -2,6 +2,7 @@
 if (!defined('ABSPATH')) { exit; }
 require_once __DIR__ . '/health-center-summary.php';
 require_once __DIR__ . '/monitoring-heartbeat-recheck.php';
+require_once __DIR__ . '/monitoring-heartbeat-retry.php';
 
 if (!defined('TK_HEARTBEAT_URL')) {
     define('TK_HEARTBEAT_URL', 'https://nexamonitor.theteamtheteam.com/api/toolkits/heartbeat');
@@ -20,6 +21,9 @@ if (!defined('TK_LICENSE_SERVER_URL')) {
 }
 
 function tk_heartbeat_init() {
+    add_filter('cron_schedules', 'tk_heartbeat_cron_schedules');
+    add_action('tk_heartbeat_retry', 'tk_heartbeat_retry_run');
+    add_action('admin_post_tk_heartbeat_settings', 'tk_heartbeat_settings_save');
     add_action('rest_api_init', 'tk_heartbeat_recheck_register');
     add_action('tk_heartbeat_cron', 'tk_heartbeat_cron_run');
     add_action('init', 'tk_heartbeat_schedule');
@@ -160,16 +164,21 @@ function tk_heartbeat_schedule() {
         tk_heartbeat_unschedule();
         return;
     }
-    if (!wp_next_scheduled('tk_heartbeat_cron')) {
-        wp_schedule_event(time() + HOUR_IN_SECONDS, 'daily', 'tk_heartbeat_cron');
+    $event = wp_get_scheduled_event('tk_heartbeat_cron');
+    if ($event && (int) $event->interval !== tk_heartbeat_interval()) {
+        wp_clear_scheduled_hook('tk_heartbeat_cron'); $event = false;
     }
+    if (!$event) {
+        wp_schedule_event(time() + min(HOUR_IN_SECONDS, tk_heartbeat_interval()) + wp_rand(0, 120), 'tk_heartbeat_interval', 'tk_heartbeat_cron');
+    }
+    $retry = get_option('tk_jobs_heartbeat', array());
+    if (!empty($retry['next'])) { tk_heartbeat_retry_schedule((int) $retry['next']); }
 }
 
 function tk_heartbeat_unschedule() {
-    $timestamp = wp_next_scheduled('tk_heartbeat_cron');
-    if ($timestamp) {
-        wp_unschedule_event($timestamp, 'tk_heartbeat_cron');
-    }
+    wp_clear_scheduled_hook('tk_heartbeat_cron');
+    wp_clear_scheduled_hook('tk_heartbeat_retry');
+    delete_option('tk_jobs_heartbeat');
 }
 
 function tk_heartbeat_seo_geo_summary(): array {
@@ -277,29 +286,23 @@ function tk_heartbeat_send(): array {
         'timeout' => 10,
     ));
     if (is_wp_error($response)) {
-        return array('ok' => false, 'message' => $response->get_error_message());
+        return array('ok' => false, 'message' => 'Heartbeat transport failed. Check DNS, TLS and collector connectivity.', 'retryable' => true, 'http_status' => 0);
     }
     $code = (int) wp_remote_retrieve_response_code($response);
     if ($code >= 200 && $code < 300) {
         $data = json_decode((string) wp_remote_retrieve_body($response), true);
         if (is_array($data) && array_key_exists('ok', $data) && empty($data['ok'])) {
-            $message = isset($data['message']) ? (string) $data['message'] : 'Heartbeat accepted with license warning.';
-            $status = isset($data['license_status']) ? (string) $data['license_status'] : 'warning';
-            return array('ok' => false, 'message' => $status . ': ' . $message);
+            return array('ok' => false, 'message' => 'Collector accepted telemetry with a license warning. Check the license assignment.', 'retryable' => false, 'http_status' => $code);
         }
-        return array('ok' => true, 'message' => 'Heartbeat accepted.');
-    }
-    $resp_message = wp_remote_retrieve_response_message($response);
-    $resp_body = wp_remote_retrieve_body($response);
-    $detail = $resp_message !== '' ? $resp_message : 'Unexpected response.';
-    if (is_string($resp_body) && $resp_body !== '') {
-        $detail .= ' ' . substr(trim($resp_body), 0, 160);
-        $data = json_decode($resp_body, true);
-        if (is_array($data) && isset($data['status']) && (string) $data['status'] === 'missing_fields') {
-            $detail .= ' Sent fields: ' . implode(', ', array_keys($payload)) . '.';
+        if (!is_array($data) || ($data['ok'] ?? null) !== true) {
+            return array('ok' => false, 'message' => 'Collector returned an invalid heartbeat acknowledgement.', 'retryable' => true, 'http_status' => $code);
         }
+        return array('ok' => true, 'message' => 'Heartbeat accepted.', 'http_status' => $code);
     }
-    return array('ok' => false, 'message' => 'HTTP ' . $code . ': ' . $detail);
+    // Do not persist or log response bodies: proxies and collectors may echo request credentials.
+    return array('ok' => false, 'message' => 'Heartbeat rejected by collector (HTTP ' . $code . ').',
+        'http_status' => $code, 'retryable' => $code === 0 || $code === 408 || $code === 429 || $code >= 500,
+        'retry_after' => in_array($code, array(429, 503), true) ? tk_job_retry_after((string) wp_remote_retrieve_header($response, 'retry-after')) : 0);
 }
 
 function tk_heartbeat_record_result(array $result): bool {
@@ -319,11 +322,7 @@ function tk_heartbeat_record_result(array $result): bool {
 }
 
 function tk_heartbeat_cron_run(): void {
-    $result = tk_heartbeat_send();
-    if (!$result['ok'] && !empty($result['message'])) {
-        error_log('[Tool Kits] Heartbeat cron failed: ' . $result['message']);
-    }
-    tk_heartbeat_record_result($result);
+    tk_heartbeat_run();
 }
 
 function tk_heartbeat_manual_send() {
@@ -331,10 +330,10 @@ function tk_heartbeat_manual_send() {
         wp_die('Forbidden');
     }
     tk_check_nonce('tk_heartbeat_manual');
-    $result = tk_heartbeat_send();
+    $result = tk_heartbeat_run(false, true);
     $ok = !empty($result['ok']);
     $status = $ok ? 'ok' : 'fail';
-    tk_heartbeat_record_result($result);
+    if (!$ok) { set_transient('tk_heartbeat_last_error', $result['message'], 600); }
     wp_redirect(add_query_arg(array(
         'page' => 'tool-kits-monitoring',
         'tk_heartbeat' => $status,

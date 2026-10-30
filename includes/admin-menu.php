@@ -1715,8 +1715,7 @@ function tk_toolkits_access_save() {
         tk_update_option('license_server_url', $license_server_url);
         
         if ($connection_test === 'heartbeat') {
-            $result = tk_heartbeat_send();
-            tk_heartbeat_record_result($result);
+            $result = tk_heartbeat_run(false, true);
             wp_redirect(admin_url('admin.php?page=tool-kits-access&tk_saved=1&tk_test=heartbeat&tk_test_status=' . (!empty($result['ok']) ? 'ok' : 'fail') . '#' . $tab));
             exit;
         }

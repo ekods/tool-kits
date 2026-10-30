@@ -1,8 +1,10 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
+require_once __DIR__ . '/db-cleanup-job.php';
 
 function tk_db_cleanup_init() {
     add_action('admin_post_tk_db_cleanup_run', 'tk_db_cleanup_run_handler');
+    add_action('wp_ajax_tk_db_cleanup_job', 'tk_db_cleanup_job_ajax');
     add_filter('wp_revisions_to_keep', 'tk_db_cleanup_revision_limit', 99, 2);
 }
 
@@ -381,7 +383,7 @@ function tk_render_db_cleanup_panel() {
         'trash_posts' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'trash'"),
         'spam_comments' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->comments} WHERE comment_approved = 'spam'"),
         'trash_comments' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->comments} WHERE comment_approved = 'trash'"),
-        'transients' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE '_transient_%' OR option_name LIKE '_site_transient_%'"),
+        'transients' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->options} WHERE (SUBSTRING(option_name, 1, 19) = '_transient_timeout_' OR SUBSTRING(option_name, 1, 24) = '_site_transient_timeout_') AND CAST(option_value AS UNSIGNED) > 0 AND CAST(option_value AS UNSIGNED) < " . time()),
         'auto_drafts' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'auto-draft'"),
         'orphaned_postmeta' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->postmeta} pm LEFT JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE p.ID IS NULL"),
         'orphaned_acf' => (int) ($acf_scan['reference_rows'] ?? 0),
@@ -420,7 +422,7 @@ function tk_render_db_cleanup_panel() {
                     <strong><?php echo number_format($counts['spam_comments']); ?></strong>
                 </div>
                 <div class="tk-stat-row" style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--tk-border-soft);">
-                    <span>Transients</span>
+                    <span>Expired Transients</span>
                     <strong><?php echo number_format($counts['transients']); ?></strong>
                 </div>
                 <div class="tk-stat-row" style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--tk-border-soft);">
@@ -443,7 +445,7 @@ function tk_render_db_cleanup_panel() {
             <h3 style="margin-top:0; font-size:16px;">Cleanup Actions</h3>
             <p class="description">Select the items you wish to prune from your database.</p>
             
-            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:20px;">
+            <form id="tk-db-cleanup-form" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:20px;">
                 <?php tk_nonce_field('tk_db_cleanup_run'); ?>
                 <input type="hidden" name="action" value="tk_db_cleanup_run">
 
@@ -452,7 +454,8 @@ function tk_render_db_cleanup_panel() {
                     tk_render_switch('do_revisions', 'Delete Revisions', 'Remove all post and page revisions.', true);
                     tk_render_switch('do_trash_posts', 'Prune Trash', 'Permanently delete items in trash.', true);
                     tk_render_switch('do_spam_comments', 'Clear Spam', 'Delete all comments marked as spam.', true);
-                    tk_render_switch('do_transients', 'Clear Transients', 'Remove expired and temporary options.', true);
+                    tk_render_switch('do_transients', 'Clear Expired Transients', 'Remove expired transient caches; keep valid caches and Tool Kits security state.', true);
+                    tk_render_switch('transients_all', 'Include Unexpired Transients', 'Also remove valid transient caches. This may temporarily increase server load. Tool Kits state is excluded.', false);
                     tk_render_switch('do_auto_drafts', 'Delete Auto-drafts', 'Prune system-generated empty drafts.', true);
                     tk_render_switch('do_orphaned_postmeta', 'Orphaned Meta', 'Delete meta data with no parent post.', true);
                     if (!empty($acf_scan['cleanup_allowed'])) {
@@ -476,116 +479,37 @@ function tk_render_db_cleanup_panel() {
                         </div>
                         <?php
                     }
-                    tk_render_switch('do_optimize', 'Optimize Tables', 'Run OPTIMIZE TABLE on all database tables.', true);
+                    tk_render_switch('do_optimize', 'Optimize Tables', 'Optimize this site’s tables one at a time. A single table operation can still take time on large tables.', false);
                     ?>
                 </div>
 
-                <button class="button button-primary button-hero" style="width:100%;" onclick="return confirm('Pruning your database is permanent. Are you sure you have a backup?')">Run Database Pruning</button>
+                <button class="button button-primary button-hero" style="width:100%;">Run Database Pruning</button>
+                <p class="description">Deletes are permanent. Back up the database first. Processing runs in small batches while this page is open; you can pause and resume.</p>
             </form>
+            <?php $job = get_option('tk_jobs_cleanup', array()); ?>
+            <div id="tk-db-cleanup-progress" role="status" aria-live="polite"
+                 data-job="<?php echo esc_attr(wp_json_encode($job)); ?>"
+                 data-owner="<?php echo esc_attr(get_current_user_id()); ?>"
+                 data-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>">
+                <p class="tk-cleanup-status"></p>
+                <pre class="tk-cleanup-counts" style="white-space:pre-wrap;"></pre>
+                <button type="button" class="button" data-command="pause" hidden>Pause</button>
+                <button type="button" class="button" data-command="resume" hidden>Continue / Resume</button>
+                <button type="button" class="button" data-command="cancel" hidden>Cancel remaining work</button>
+            </div>
         </div>
     </div>
     <?php
+    wp_enqueue_script('tool-kits-db-cleanup', TK_URL . 'assets/db-cleanup.js', array(), tk_asset_version('assets/db-cleanup.js'), true);
 }
 
 function tk_db_cleanup_run_handler() {
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { wp_die('Forbidden'); }
     tk_require_admin_post('tk_db_cleanup_run');
-
-    global $wpdb;
-
-    $do_revisions = !empty($_POST['do_revisions']);
-    $do_trash_posts = !empty($_POST['do_trash_posts']);
-    $do_spam_comments = !empty($_POST['do_spam_comments']);
-    $do_trash_comments = !empty($_POST['do_trash_comments']);
-    $do_transients = !empty($_POST['do_transients']);
-    $do_auto_drafts = !empty($_POST['do_auto_drafts']);
-    $do_orphaned_postmeta = !empty($_POST['do_orphaned_postmeta']);
-    $do_orphaned_acf = !empty($_POST['do_orphaned_acf']);
-    $do_optimize = !empty($_POST['do_optimize']);
-    $summary = array(
-        'revisions'         => 0,
-        'trash_posts'       => 0,
-        'spam_comments'     => 0,
-        'spam_commentmeta'  => 0,
-        'trash_comments'    => 0,
-        'trash_commentmeta' => 0,
-        'transients'        => 0,
-        'auto_drafts'       => 0,
-        'orphaned_postmeta' => 0,
-        'acf_references'    => 0,
-        'acf_values'        => 0,
-        'acf_option_references' => 0,
-        'acf_option_values' => 0,
-        'optimized_tables'  => 0,
-    );
-
-    @set_time_limit(0);
-
-    if ($do_revisions) {
-        $result = $wpdb->query("DELETE FROM {$wpdb->posts} WHERE post_type = 'revision'");
-        $summary['revisions'] = $result !== false ? (int) $result : 0;
-        update_option('tk_db_cleanup_revision_last_run', time(), false);
-    }
-    if ($do_trash_posts) {
-        $result = $wpdb->query("DELETE FROM {$wpdb->posts} WHERE post_status = 'trash'");
-        $summary['trash_posts'] = $result !== false ? (int) $result : 0;
-    }
-    if ($do_spam_comments) {
-        $result = $wpdb->query("DELETE FROM {$wpdb->comments} WHERE comment_approved = 'spam'");
-        $summary['spam_comments'] = $result !== false ? (int) $result : 0;
-        $result = $wpdb->query("DELETE FROM {$wpdb->commentmeta} WHERE comment_id NOT IN (SELECT comment_ID FROM {$wpdb->comments})");
-        $summary['spam_commentmeta'] = $result !== false ? (int) $result : 0;
-    }
-    if ($do_trash_comments) {
-        $result = $wpdb->query("DELETE FROM {$wpdb->comments} WHERE comment_approved = 'trash'");
-        $summary['trash_comments'] = $result !== false ? (int) $result : 0;
-        $result = $wpdb->query("DELETE FROM {$wpdb->commentmeta} WHERE comment_id NOT IN (SELECT comment_ID FROM {$wpdb->comments})");
-        $summary['trash_commentmeta'] = $result !== false ? (int) $result : 0;
-    }
-    if ($do_transients) {
-        $result = $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_%' OR option_name LIKE '_site_transient_%'");
-        $summary['transients'] = $result !== false ? (int) $result : 0;
-    }
-    if ($do_auto_drafts) {
-        $result = $wpdb->query("DELETE FROM {$wpdb->posts} WHERE post_status = 'auto-draft'");
-        $summary['auto_drafts'] = $result !== false ? (int) $result : 0;
-    }
-    if ($do_orphaned_postmeta) {
-        $result = $wpdb->query("DELETE pm FROM {$wpdb->postmeta} pm LEFT JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE p.ID IS NULL");
-        $summary['orphaned_postmeta'] = $result !== false ? (int) $result : 0;
-    }
-    if ($do_orphaned_acf) {
-        $acf_result = tk_db_cleanup_acf_orphans(tk_db_cleanup_acf_scan(true));
-        $summary['acf_references'] = (int) $acf_result['references'];
-        $summary['acf_values'] = (int) $acf_result['values'];
-        $summary['acf_option_references'] = (int) $acf_result['option_references'];
-        $summary['acf_option_values'] = (int) $acf_result['option_values'];
-        update_option('tk_db_cleanup_acf_last_run', array(
-            'timestamp' => time(),
-            'references' => $summary['acf_references'],
-            'values' => $summary['acf_values'],
-            'option_references' => $summary['acf_option_references'],
-            'option_values' => $summary['acf_option_values'],
-            'rows_deleted' => array_sum(array(
-                $summary['acf_references'],
-                $summary['acf_values'],
-                $summary['acf_option_references'],
-                $summary['acf_option_values'],
-            )),
-        ), false);
-    }
-
-    if ($do_optimize) {
-        $tables = $wpdb->get_col("SHOW TABLES");
-        foreach ($tables as $t) {
-            $result = $wpdb->query("OPTIMIZE TABLE `$t`");
-            if ($result !== false) {
-                $summary['optimized_tables']++;
-            }
-        }
-    }
-
-    set_transient('tk_db_cleanup_last_summary', $summary, MINUTE_IN_SECONDS * 10);
-
-    wp_safe_redirect(add_query_arg(array('page'=>'tool-kits-db','tk_tab'=>'db-cleanup','tk_done'=>1), admin_url('admin.php')));
+    if (tk_toolkits_is_locked()) { wp_die('Tool Kits settings are locked.'); }
+    try {
+        tk_db_cleanup_job_command('start', wp_unslash($_POST), get_current_user_id());
+    } catch (RuntimeException $error) { wp_die(esc_html($error->getMessage())); }
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-db', 'tk_tab' => 'db-cleanup'), admin_url('admin.php')));
     exit;
 }

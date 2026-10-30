@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.70
+Stable tag: 2.7.71
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,12 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.71 =
+- DB Cleanup processes small resumable batches with progress, pause and cancel controls; transient cleanup preserves valid caches by default and table optimization is opt-in.
+- Security alerts use a bounded per-site queue with duplicate grouping, independent email/webhook checkpoints, delivery retries and audited failures. Login alerts no longer wait for remote geolocation or reverse DNS.
+- Heartbeat adds configurable intervals, bounded retries with Retry-After support, fresh credentials per attempt, worker locks and credential-safe error diagnostics.
+- Deactivation/uninstall clean up the new delivery schedules and internal job state; job progress does not purge page cache.
+
 = 2.7.70 =
 - GEO, theme-managed SEO: new GEO → Schema switch "Replace Theme JSON-LD" (off by default, shown only when the active theme prints its own SEO, such as egghead). When on, Tool Kits prints its SEO JSON-LD graph with Custom JSON-LD merged into it, and the theme's JSON-LD blocks are removed while the theme's title, meta, Open Graph and Twitter tags stay. This removes repeated @id definitions (for example two #service nodes) and the theme's invalid thumbnailUrl on Service. The theme JSON-LD is only removed on requests where the Tool Kits graph is printed.
 

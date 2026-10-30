@@ -31,6 +31,29 @@ if (!defined('ABSPATH')) { exit; }
     </div>';
     tk_render_page_hero(__('System Monitoring', 'tool-kits'), __('Real-time health tracking and security audits for your WordPress site.', 'tool-kits'), 'dashicons-visibility', $heartbeat_action); 
     ?>
+    <div class="tk-card" style="margin:16px 0;">
+        <h3>Collector heartbeat delivery</h3>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+            <?php tk_nonce_field('tk_heartbeat_settings'); ?>
+            <input type="hidden" name="action" value="tk_heartbeat_settings">
+            <label for="tk-heartbeat-interval">Automatic heartbeat interval</label>
+            <select id="tk-heartbeat-interval" name="heartbeat_interval">
+                <?php foreach (array(900 => '15 minutes', 3600 => '1 hour', 21600 => '6 hours', 86400 => '24 hours') as $seconds => $label) : ?>
+                    <option value="<?php echo esc_attr($seconds); ?>" <?php selected(tk_heartbeat_interval(), $seconds); ?>><?php echo esc_html($label); ?></option>
+                <?php endforeach; ?>
+            </select>
+            <button class="button">Save interval</button>
+        </form>
+        <?php $retry = get_option('tk_jobs_heartbeat', array()); ?>
+        <p class="description">Temporary connection errors are retried up to five times. Authentication and license errors require configuration changes.
+            <?php if (!empty($retry['next'])) : ?>
+                Next retry: <?php echo esc_html(wp_date('Y-m-d H:i:s T', (int) $retry['next'])); ?> (attempts so far: <?php echo (int) $retry['attempts']; ?>).
+            <?php elseif (($retry['status'] ?? '') === 'stopped') : ?>
+                Retry stopped after <?php echo (int) $retry['attempts']; ?> attempt(s); check connection diagnostics.
+            <?php endif; ?>
+            Delivery depends on WP-Cron or a configured server scheduler.
+        </p>
+    </div>
     <?php
     $notices = array(
         'tk_wpconfig' => array(

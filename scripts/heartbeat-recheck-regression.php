@@ -35,6 +35,7 @@ function set_transient($key, $value, $ttl) {
     $GLOBALS['transients'][$key] = $value;
 }
 function add_action($name, $callback, $priority = 10) { $GLOBALS['actions'][$name][] = $callback; }
+function add_filter($name, $callback, $priority = 10) { add_action($name, $callback, $priority); }
 function register_rest_route($namespace, $route, $args) { $GLOBALS['registered'] = array($namespace, $route, $args); }
 function home_url($path = '/') { return 'https://93.184.216.34' . $path; }
 function tk_license_normalize_site_url($url) { return TK_License_Receipt::normalize_site($url); }

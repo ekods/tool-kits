@@ -21,6 +21,7 @@ function tk_uninstall_option_names(): array {
 
 function tk_uninstall_option_prefixes(): array {
     return array(
+        'tk_jobs_',
         'tk_report_', 'tk_killswitch_', 'tk_html_scan_', 'tk_health_center_', 'tk_monitoring_', 'tk_audit_',
         'tk_page_cache_', 'tk_seo_sitemap_', 'tk_hardening_', '_tk_captcha_used_',
         '_transient_tk_', '_transient_timeout_tk_', '_site_transient_tk_', '_site_transient_timeout_tk_',

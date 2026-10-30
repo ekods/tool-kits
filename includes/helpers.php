@@ -1144,6 +1144,7 @@ function tk_option_init_defaults() {
         'monitoring_tamper_enabled' => 1,
         'monitoring_tamper_hashes' => array(),
         'heartbeat_enabled' => 0,
+        'heartbeat_interval' => 86400,
         'heartbeat_collector_url' => '',
         'heartbeat_auth_key' => '',
         'heartbeat_http_user' => '',
@@ -2737,6 +2738,7 @@ function tk_toolkits_guard(): void {
         'tk_db_import',
         'tk_db_live_replace',
         'tk_db_cleanup_run',
+        'tk_db_cleanup_job',
     );
     $license_setup_actions = array(
         'tk_toolkits_access_save',

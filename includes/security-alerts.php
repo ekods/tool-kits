@@ -1,7 +1,9 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
+require_once __DIR__ . '/security-alert-queue.php';
 
 function tk_security_alerts_init() {
+    tk_security_alert_queue_init();
     add_action('user_register', 'tk_security_alert_user_register', 10, 1);
     add_action('set_user_role', 'tk_security_alert_set_user_role', 10, 3);
     add_action('wp_login', 'tk_security_alert_login', 10, 2);
@@ -23,22 +25,7 @@ function tk_security_alert_send(string $subject, string $message): void {
     if (!tk_security_alert_enabled()) {
         return;
     }
-    $email = tk_security_alert_email();
-    if ($email !== '') {
-        wp_mail($email, $subject, $message);
-    }
-
-    $webhook = (string) tk_get_option('toolkits_alert_webhook', '');
-    if ($webhook !== '') {
-        wp_remote_post($webhook, array(
-            'headers' => array('Content-Type' => 'application/json'),
-            'body'    => wp_json_encode(array(
-                'text' => "*" . $subject . "*\n" . $message
-            )),
-        ));
-    }
-
-    tk_toolkits_audit_log('security_alert', array('subject' => $subject));
+    tk_security_alert_enqueue($subject, $message);
 }
 
 function tk_security_alert_site_context(): array {
@@ -141,7 +128,7 @@ function tk_security_alert_user_register($user_id) {
     }
     $ip = tk_get_ip();
     $site = tk_security_alert_site_context();
-    $location = tk_security_alert_ip_location($ip);
+    $location = tk_security_alert_ip_location($ip, false);
     $creator_label = 'System/Unknown';
     $actor_id = get_current_user_id();
     if ($actor_id > 0) {
@@ -216,11 +203,8 @@ function tk_security_alert_login($user_login, $user) {
     update_user_meta($user->ID, 'tk_admin_login_ips', $known);
 
     $site = tk_security_alert_site_context();
-    $hostname = @gethostbyaddr($ip);
-    if (!is_string($hostname) || $hostname === '' || $hostname === $ip) {
-        $hostname = 'Unknown';
-    }
-    $location = tk_security_alert_ip_location($ip);
+    $hostname = 'Not resolved';
+    $location = tk_security_alert_ip_location($ip, false);
     $user_agent = function_exists('tk_user_agent') ? tk_user_agent() : '';
     if ($user_agent === '') {
         $user_agent = isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : 'Unknown';
