@@ -148,8 +148,15 @@ function tk_rate_limit_honey_trap_matches_path(string $path): bool {
     if ($path === '') {
         return false;
     }
+    // Exact match only, also relative to a subdirectory install; a suffix match also hit real pages
+    // such as /members/login or /author/admin.
+    $paths = array($path);
+    $base = '/' . trim((string) wp_parse_url(home_url('/'), PHP_URL_PATH), '/');
+    if ($base !== '/' && strpos($path, $base . '/') === 0) {
+        $paths[] = substr($path, strlen($base));
+    }
     foreach (tk_rate_limit_honey_trap_paths() as $trap_path) {
-        if ($path === $trap_path || substr($path, -strlen($trap_path)) === $trap_path) {
+        if (in_array($trap_path, $paths, true)) {
             return true;
         }
     }
@@ -179,9 +186,15 @@ function tk_rate_limit_honey_trap_request(): void {
     if (!tk_rate_limit_honey_trap_matches_path($path)) {
         return;
     }
+    // Admins opening an old /wp-login.php bookmark, and pages that really exist at a trap path, pass.
+    if (is_user_logged_in() || (function_exists('url_to_postid') && url_to_postid(preg_replace('#^(https?://[^/]+).*$#i', '$1', home_url('/')) . $path) > 0)) {
+        return;
+    }
 
-    $minutes = tk_rate_limit_next_lock_minutes();
-    tk_rate_limit_lock_current_ip($minutes, 'login_honey_trap:' . $path);
+    // Visiting a trap path only redirects; locking is reserved for credential POSTs to it.
+    if (isset($_SERVER['REQUEST_METHOD']) && strtoupper((string) $_SERVER['REQUEST_METHOD']) === 'POST') {
+        tk_rate_limit_lock_current_ip(tk_rate_limit_next_lock_minutes(), 'login_honey_trap:' . $path);
+    }
     wp_safe_redirect(home_url('/'));
     exit;
 }

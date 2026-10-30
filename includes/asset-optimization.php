@@ -1,5 +1,7 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
+require_once __DIR__ . '/html-image-tags.php';
+require_once __DIR__ . '/script-delay.php';
 
 function tk_assets_opt_init() {
     // Add a cheap fallback only to unversioned local theme assets.
@@ -234,7 +236,7 @@ function tk_assets_apply_image_hints($html, $dimensions = null, $lcp = null) {
     $lcp = $lcp ?? ((int) tk_get_option('assets_lcp_boost_enabled', 1) === 1);
     if (!$dimensions && !$lcp) { return $html; }
     $first = true;
-    return preg_replace_callback('/<img\b[^>]*>/i', function($m) use ($dimensions, $lcp, &$first) {
+    return tk_html_map_img_tags($html, function($m) use ($dimensions, $lcp, &$first) {
         $tag = $m[0];
         $src = tk_assets_html_get_attr($tag, 'src');
         if ($src === '' || strpos($src, 'data:') === 0) { return $tag; }
@@ -272,7 +274,7 @@ function tk_assets_apply_image_hints($html, $dimensions = null, $lcp = null) {
             $tag = tk_assets_html_upsert_attr($tag, 'style', rtrim(trim($style), ';') . '; aspect-ratio: ' . $w . ' / ' . $h . ';');
         }
         return $tag;
-    }, $html);
+    });
 }
 
 function tk_assets_html_has_attr($tag, $attr) {
@@ -330,7 +332,7 @@ function tk_assets_script_loader_tag($tag, $handle, $src) {
     if ($url === '') {
         return $tag;
     }
-    return '<script type="text/plain" data-tk-assets-delay="1" data-tk-assets-handle="' . esc_attr($handle) . '" data-tk-assets-src="' . $url . '"></script>';
+    return tk_script_delay_tag((string) $tag, (string) $src, 'data-tk-assets-delay="1" data-tk-assets-handle="' . esc_attr($handle) . '"', 'data-tk-assets-src');
 }
 
 function tk_assets_is_protected_script_handle($handle) {
@@ -361,21 +363,33 @@ function tk_assets_delay_js_bootstrap() {
         return;
     }
     $script = "(function(){
+        var nonce = document.currentScript ? (document.currentScript.nonce || document.currentScript.getAttribute('nonce') || '') : '';
         var delayEvents = ['keydown', 'mousedown', 'mousemove', 'touchmove', 'touchstart', 'touchend', 'scroll'];
         var triggered = false;
         function trigger() {
             if (triggered) return;
             triggered = true;
             delayEvents.forEach(function(e){ window.removeEventListener(e, trigger); });
-            document.querySelectorAll('script[data-tk-assets-delay]').forEach(function(s){
+            var queue = [].slice.call(document.querySelectorAll('script[data-tk-assets-delay]'));
+            // Replay in document order so dependent handles and their inline after code see their dependencies.
+            (function next(){
+                var s = queue.shift();
+                if (!s) return;
                 var n = document.createElement('script');
-                n.async = true;
-                if (s.src) n.src = s.src;
-                if (s.getAttribute('data-tk-assets-src')) n.src = s.getAttribute('data-tk-assets-src');
-                if (s.textContent) n.textContent = s.textContent;
-                document.head.appendChild(n);
+                if (nonce) n.nonce = nonce;
+                var src = s.getAttribute('data-tk-assets-src');
                 s.parentNode.removeChild(s);
-            });
+                if (src) {
+                    n.src = src;
+                    n.async = false;
+                    n.onload = n.onerror = next;
+                    document.head.appendChild(n);
+                } else {
+                    n.text = s.text;
+                    document.head.appendChild(n);
+                    next();
+                }
+            })();
         }
         delayEvents.forEach(function(e){ window.addEventListener(e, trigger, {passive:true}); });
     })();";
@@ -469,6 +483,14 @@ function tk_assets_style_loader_tag($tag, $handle, $href, $media) {
     $media_attr = $media && $media !== 'all' ? ' media="' . esc_attr($media) . '"' : '';
 
     if (in_array($handle, $defer, true)) {
+        // Hardened/Strict CSP blocks inline onload="" handlers, so the preload would never become a
+        // stylesheet. Load it as media="print" and restore the media from a nonce'd script instead.
+        if (function_exists('tk_csp_nonce_enabled') && tk_csp_nonce_enabled() && function_exists('tk_csp_nonce_attr')) {
+            $target_media = $media && $media !== 'all' ? $media : 'all';
+            return '<link rel="stylesheet" href="' . $href . '" media="print" data-tk-media="' . esc_attr($target_media) . '">'
+                . '<script' . tk_csp_nonce_attr() . '>(function(l){if(!l)return;function on(){l.media=l.getAttribute("data-tk-media");}if(l.sheet){on();}else{l.addEventListener("load",on);}})(document.currentScript&&document.currentScript.previousElementSibling);</script>'
+                . '<noscript><link rel="stylesheet" href="' . $href . '"' . $media_attr . '></noscript>';
+        }
         $preload_tag = '<link rel="preload" as="style" href="' . $href . '"' . $media_attr . ' onload="this.onload=null;this.rel=\'stylesheet\'">';
         $noscript = '<noscript><link rel="stylesheet" href="' . $href . '"' . $media_attr . '></noscript>';
         return $preload_tag . $noscript;

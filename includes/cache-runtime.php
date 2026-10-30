@@ -50,6 +50,9 @@ final class TK_Page_Cache_Runtime {
 
     public static function dynamic_cookie(array $cookies, array $markers): bool {
         foreach (array_keys($cookies) as $name) {
+            // Analytics cookies (Hotjar _hjSession, Google _ga, Clarity _clsk, ...) never personalize the page,
+            // but their names contain generic markers such as "session".
+            if (preg_match('/^(_hj|_ga|_gid|_gcl|_fbp|_fbc|_clck|_clsk|_pk_|mp_|_uet|_tt_)/i', (string) $name)) { continue; }
             foreach ($markers as $marker) {
                 if ($marker !== '' && strpos(strtolower((string) $name), strtolower($marker)) !== false) { return true; }
             }

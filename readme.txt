@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.73
+Stable tag: 2.7.74
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,20 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.74 =
+- Minify: the inline JavaScript minifier is a single pass that keeps string, template literal (including nested ${}), regex and comment state across lines. It no longer cuts template literals at "//" (for example a URL inside a template) or treats a regex after return/typeof as a comment. Only comments and redundant whitespace are removed; newlines are kept.
+- Lazy load and image hints: <img> attributes are no longer added inside <script>, JSON-LD, <template>, <noscript> or HTML comments, which broke scripts and structured data and used up the first eager image slots.
+- Delay JS (Lazy Load and Asset Optimization): only the external file and its inline "after" code are delayed; translations and "before" code (for example Contact Form 7's wpcf7 settings) run as before. Delayed scripts are replayed in document order, one after another, with the page's CSP nonce.
+- Deferred CSS now applies under the Hardened and Strict CSP modes, which block the inline onload handler; it uses a media swap from a nonce'd script instead.
+- CAPTCHA keeps working on full-page cached pages after the embedded nonce expires: same-origin requests are accepted, cross-site requests are still rejected.
+- Hardening: HTTP Basic Auth, WAF and HTTP method allow paths match the URL path only, so a query string such as ?x=/wp-json/ no longer skips them. The dangerous HTTP methods filter no longer blocks REST API PUT/PATCH/DELETE requests; TRACE and CONNECT stay blocked.
+- Honey trap: trap paths match exactly (also under a subdirectory install), so pages such as /members/login keep working. Logged-in users and existing pages are not redirected, and only POSTs to a trap path lock the IP.
+- Anti-spam: generic phrases only match short messages that are essentially the phrase ("this" no longer matches "hi", "contest" no longer matches "test", real questions pass), and keywords match at the start of a word ("Essex" no longer matches "sex"). The contact email guard no longer treats order emails mentioning a phone or full name as contact notifications and skips WooCommerce checkout.
+- WebP: WebP images are served to every visitor when enabled instead of depending on the Accept header, so the page cache no longer stores whichever variant the first visitor or the preloader received.
+- Page cache: analytics cookies (Hotjar, Google Analytics, Clarity, Meta and similar) no longer bypass the cache.
+- Image optimizer: "Full-resolution source" only swaps a size for the original when the aspect ratio matches; cropped thumbnails keep their crop.
+- Changing a user ID clears the user cache; disconnecting Microsoft SMTP clears the copied username; the bulk WebP generator advances through batches instead of repeating the first one.
+
 = 2.7.73 =
 - Security, visitor IP: forwarded IP headers (CF-Connecting-IP, X-Forwarded-For, X-Real-IP) are trusted only from Cloudflare's published ranges and from local/private proxies. Visitors can no longer spoof their IP to bypass login rate limits, use a whitelisted IP, or get another IP blocked. Proxies or load balancers with a public IP can be added with define('TK_TRUSTED_PROXIES', '...') in wp-config.php; Brute Force Protection shows the detected IP and when this is needed.
 - Security, login: typing a common username such as "admin" now applies a temporary progressive lock (15/60/360/1440 minutes) instead of blocking the IP permanently. Login guard locks apply even when the rate limiter is off.

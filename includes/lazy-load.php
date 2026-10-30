@@ -1,5 +1,7 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
+require_once __DIR__ . '/html-image-tags.php';
+require_once __DIR__ . '/script-delay.php';
 
 function tk_lazy_load_init() {
     add_action('admin_post_tk_lazy_load_save', 'tk_lazy_load_save');
@@ -36,7 +38,7 @@ function tk_lazy_html_buffer($html) {
 
     $count = 0;
     $eager = max(0, (int) tk_get_option('lazy_load_eager_images', 2));
-    return preg_replace_callback('/<img\b[^>]*>/i', function($m) use (&$count, $eager) {
+    return tk_html_map_img_tags($html, function($m) use (&$count, $eager) {
         $tag = (string) $m[0];
         if (stripos($tag, 'data:') !== false || preg_match('/\s(?:loading|fetchpriority|data-src|data-lazy-src|data-tk-lazy-src)\s*=/i', $tag)) {
             return $tag;
@@ -50,7 +52,7 @@ function tk_lazy_html_buffer($html) {
             $tag = tk_lazy_html_upsert_attr($tag, 'fetchpriority', 'auto');
         }
         return preg_match('/\sdecoding\s*=/i', $tag) ? $tag : tk_lazy_html_upsert_attr($tag, 'decoding', 'async');
-    }, $html);
+    });
 }
 
 function tk_lazy_html_upsert_attr($tag, $attr, $value) {
@@ -131,10 +133,7 @@ function tk_lazy_script_loader_tag($tag, $handle, $src) {
     $delay = tk_lazy_handles_list('lazy_load_script_delay');
     $defer = tk_lazy_handles_list('lazy_load_script_defer');
     if (in_array($handle, $delay, true)) {
-        $tag = preg_replace('/\stype=["\']text\/javascript["\']/', '', $tag);
-        $tag = preg_replace('/\ssrc=["\'][^"\']+["\']/', '', $tag);
-        $tag = str_replace('<script', '<script type="text/plain" data-tk-delay="1" data-tk-src="' . esc_url($src) . '"', $tag);
-        return $tag;
+        return tk_script_delay_tag((string) $tag, (string) $src, 'data-tk-delay="1"', 'data-tk-src');
     }
     if (in_array($handle, $defer, true) && strpos($tag, ' defer') === false) {
         return str_replace('<script ', '<script defer ', $tag);
@@ -163,6 +162,7 @@ function tk_lazy_frontend_script() {
     wp_enqueue_script('tool-kits-lazy');
     $script = <<<'JS'
 (function(){
+    var nonce = document.currentScript ? (document.currentScript.nonce || document.currentScript.getAttribute('nonce') || '') : '';
     if (window.tkLazyMediaInitialized) { return; }
     window.tkLazyMediaInitialized = true;
     function initialize() {
@@ -237,14 +237,24 @@ function tk_lazy_frontend_script() {
         function activate() {
             if (activated) { return; }
             activated = true;
-            delayed.forEach(function(tag){
-                var src = tag.getAttribute('data-tk-src');
-                if (!src) { return; }
+            // Replay in document order: each file finishes before the next one or its "after" code runs.
+            (function next(){
+                var tag = delayed.shift();
+                if (!tag) { return; }
                 var s = document.createElement('script');
-                s.src = src;
-                s.defer = true;
-                document.head.appendChild(s);
-            });
+                if (nonce) { s.nonce = nonce; }
+                var src = tag.getAttribute('data-tk-src');
+                if (src) {
+                    s.src = src;
+                    s.async = false;
+                    s.onload = s.onerror = next;
+                    document.head.appendChild(s);
+                } else {
+                    s.text = tag.text;
+                    document.head.appendChild(s);
+                    next();
+                }
+            })();
         }
         ['scroll','mousemove','keydown','touchstart','click'].forEach(function(evt){
             window.addEventListener(evt, activate, { once: true, passive: true });

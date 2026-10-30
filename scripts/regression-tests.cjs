@@ -20,6 +20,7 @@ const cases = [
   { "name": "seo-language-canonical", "runtime": "php", "source": ["<?php", "require __DIR__ . '/language-canonical-regression.php';"] },
   { "name": "license-security", "runtime": "php", "source": ["<?php", "require __DIR__ . '/license-security-regression.php';"] },
   { "name": "request-trust", "runtime": "php", "source": ["<?php", "require __DIR__ . '/request-trust-regression.php';"] },
+  { "name": "html-rewrite", "runtime": "php", "source": ["<?php", "require __DIR__ . '/html-rewrite-regression.php';"] },
   { "name": "html-injection-engine", "runtime": "php", "source": ["<?php", "require __DIR__ . '/html-injection-engine-regression.php';"] },
   { "name": "html-injection-context", "runtime": "php", "source": ["<?php", "require __DIR__ . '/html-injection-context-regression.php';"] },
   { "name": "html-injection-scanner", "runtime": "php", "source": ["<?php", "require __DIR__ . '/html-injection-scanner-regression.php';"] },

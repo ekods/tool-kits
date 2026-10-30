@@ -240,7 +240,7 @@ function tk_image_opt_filter_image_src($image, $attachment_id, $size = null, $ic
     if (tk_image_opt_original_only_srcset_enabled()) {
         $file = tk_image_opt_source_file($attachment_id);
         $full_url = $file !== '' ? tk_image_opt_path_to_upload_url($file) : '';
-        if ($full_url !== '') {
+        if ($full_url !== '' && tk_image_opt_same_aspect((int) ($image[1] ?? 0), (int) ($image[2] ?? 0), $file)) {
             $image[0] = $full_url;
         }
     }
@@ -300,6 +300,25 @@ function tk_image_opt_path_to_upload_url(string $path): string {
     return trailingslashit((string) $upload['baseurl']) . str_replace('%2F', '/', rawurlencode($relative));
 }
 
+/**
+ * Whether a $width x $height rendition shows the same picture as the original file. Hard-cropped
+ * sizes (150x150 thumbnails, 16:9 crops of a portrait) must not be swapped for the original.
+ */
+function tk_image_opt_same_aspect(int $width, int $height, string $original_path): bool {
+    static $sizes = array();
+    if ($width <= 0 || $height <= 0 || $original_path === '') {
+        return false;
+    }
+    if (!array_key_exists($original_path, $sizes)) {
+        $sizes[$original_path] = is_file($original_path) ? @getimagesize($original_path) : false;
+    }
+    $original = $sizes[$original_path];
+    if (!$original || empty($original[0]) || empty($original[1])) {
+        return false;
+    }
+    return abs(($width / $height) / ($original[0] / $original[1]) - 1) <= 0.01;
+}
+
 function tk_image_opt_original_url_for_intermediate_url(string $url): string {
     $path = tk_image_opt_url_to_local_path($url);
     if ($path === '') {
@@ -310,9 +329,15 @@ function tk_image_opt_original_url_for_intermediate_url(string $url): string {
         $source = $id ? tk_image_opt_source_file($id) : '';
         return $source !== '' ? tk_image_opt_path_to_upload_url($source) : $url;
     }
-    if (!preg_match('/-\\d+x\\d+(?:-tkopt)?\\.(jpe?g|png|webp)$/i', $path)) {
+    if (!preg_match('/-(\\d+)x(\\d+)(?:-tkopt)?\\.(jpe?g|png|webp)$/i', $path, $size_match)) {
         return $url;
     }
+    $mapped = tk_image_opt_original_url_for_sized_path($url, $path);
+    $mapped_path = $mapped !== $url ? tk_image_opt_url_to_local_path($mapped) : '';
+    return tk_image_opt_same_aspect((int) $size_match[1], (int) $size_match[2], $mapped_path) ? $mapped : $url;
+}
+
+function tk_image_opt_original_url_for_sized_path(string $url, string $path): string {
     $base = preg_replace('/-\\d+x\\d+(?:-tkopt)?\\.(jpe?g|png|webp)$/i', '', $path);
     $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
     $candidates = array();

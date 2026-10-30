@@ -677,6 +677,46 @@ function tk_hardening_url_param_guard(): void {
     }
 }
 
+/**
+ * Whether the request path matches one of the configured allow-path lines. Only the path is
+ * compared, never the query string: "/wp-admin/?x=/wp-json/" must not match "/wp-json/".
+ * Lines starting with "/" are prefixes (also relative to a subdirectory install); others are
+ * substrings of the path.
+ */
+function tk_hardening_path_allowed(string $request_uri, string $lines_raw): bool {
+    if (trim($lines_raw) === '') {
+        return false;
+    }
+    $path = (string) wp_parse_url($request_uri, PHP_URL_PATH);
+    $paths = array($path);
+    $base = rtrim((string) wp_parse_url(home_url('/'), PHP_URL_PATH), '/');
+    if ($base !== '' && stripos($path, $base . '/') === 0) {
+        $paths[] = substr($path, strlen($base));
+    }
+    foreach (preg_split('/\r\n|\r|\n/', $lines_raw) as $line) {
+        $line = trim($line);
+        if ($line === '') {
+            continue;
+        }
+        foreach ($paths as $candidate) {
+            if ($line[0] === '/' ? stripos($candidate, $line) === 0 : stripos($candidate, $line) !== false) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/** REST API request, detected early (REST_REQUEST is only defined after parse_request). */
+function tk_hardening_is_rest_request(): bool {
+    if ((defined('REST_REQUEST') && REST_REQUEST) || isset($_GET['rest_route'])) {
+        return true;
+    }
+    $path = (string) wp_parse_url(isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '', PHP_URL_PATH);
+    $prefix = '/' . trim(function_exists('rest_get_url_prefix') ? rest_get_url_prefix() : 'wp-json', '/') . '/';
+    return strpos($path, $prefix) !== false;
+}
+
 function tk_hardening_http_methods_filter(): void {
     if (is_admin()) {
         return;
@@ -696,18 +736,8 @@ function tk_hardening_http_methods_filter(): void {
     }
 
     $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
-    $allow_paths = tk_get_option('hardening_http_methods_allow_paths', '');
-    if (is_string($allow_paths) && $allow_paths !== '') {
-        $lines = preg_split('/\r\n|\r|\n/', $allow_paths);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line === '') {
-                continue;
-            }
-            if (stripos($request_uri, $line) !== false) {
-                return;
-            }
-        }
+    if (tk_hardening_path_allowed($request_uri, (string) tk_get_option('hardening_http_methods_allow_paths', ''))) {
+        return;
     }
 
     status_header(405);
@@ -729,20 +759,14 @@ function tk_hardening_block_dangerous_methods(): void {
     if (empty($blocked) || !in_array($method, $blocked, true)) {
         return;
     }
+    // The REST API uses PUT/PATCH/DELETE and authenticates them itself; TRACE/CONNECT stay blocked.
+    if (in_array($method, array('PUT', 'PATCH', 'DELETE'), true) && tk_hardening_is_rest_request()) {
+        return;
+    }
 
     $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
-    $allow_paths = tk_get_option('hardening_dangerous_methods_allow_paths', '');
-    if (is_string($allow_paths) && $allow_paths !== '') {
-        $lines = preg_split('/\r\n|\r|\n/', $allow_paths);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line === '') {
-                continue;
-            }
-            if (stripos($request_uri, $line) !== false) {
-                return;
-            }
-        }
+    if (tk_hardening_path_allowed($request_uri, (string) tk_get_option('hardening_dangerous_methods_allow_paths', ''))) {
+        return;
     }
 
     status_header(405);
@@ -1109,7 +1133,7 @@ function tk_hardening_httpauth_scope_match(string $scope): bool {
         $screen = get_current_screen();
         $is_admin_request = $screen ? $screen->in_admin() : false;
     }
-    if (!$is_admin_request && strpos($request_uri, '/wp-admin') !== false) {
+    if (!$is_admin_request && strpos($request_path, '/wp-admin') !== false) {
         $is_admin_request = true;
     }
     if (!$is_admin_request && isset($GLOBALS['pagenow']) && $GLOBALS['pagenow'] === 'wp-login.php') {
@@ -1125,18 +1149,8 @@ function tk_hardening_httpauth_scope_match(string $scope): bool {
 }
 
 function tk_hardening_httpauth_is_allowed(string $request_uri): bool {
-    $allow_paths = tk_get_option('hardening_httpauth_allow_paths', '');
-    if (is_string($allow_paths) && $allow_paths !== '') {
-        $lines = preg_split('/\r\n|\r|\n/', $allow_paths);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line === '') {
-                continue;
-            }
-            if (stripos($request_uri, $line) !== false) {
-                return true;
-            }
-        }
+    if (tk_hardening_path_allowed($request_uri, (string) tk_get_option('hardening_httpauth_allow_paths', ''))) {
+        return true;
     }
     $allow_regex = tk_get_option('hardening_httpauth_allow_regex', '');
     if (is_string($allow_regex) && $allow_regex !== '') {
@@ -2063,7 +2077,8 @@ function tk_hardening_waf(): void {
     }
     $request_uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
     // Skip admin and login requests to avoid blocking legitimate users.
-    if (is_admin() || stripos($request_uri, 'wp-login.php') !== false) {
+    $request_path = (string) wp_parse_url($request_uri, PHP_URL_PATH);
+    if (is_admin() || stripos($request_path, 'wp-login.php') !== false) {
         return;
     }
 
@@ -2075,18 +2090,8 @@ function tk_hardening_waf(): void {
     if (!empty($methods) && !in_array($method, $methods, true)) {
         return;
     }
-    $allow_paths = tk_get_option('hardening_waf_allow_paths', '');
-    if (is_string($allow_paths) && $allow_paths !== '') {
-        $lines = preg_split('/\r\n|\r|\n/', $allow_paths);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line === '') {
-                continue;
-            }
-            if (stripos($request_uri, $line) !== false) {
-                return;
-            }
-        }
+    if (tk_hardening_path_allowed($request_uri, (string) tk_get_option('hardening_waf_allow_paths', ''))) {
+        return;
     }
     $allow_regex = tk_get_option('hardening_waf_allow_regex', '');
     if (is_string($allow_regex) && $allow_regex !== '') {

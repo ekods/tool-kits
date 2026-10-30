@@ -25,8 +25,10 @@ function tk_webp_should_serve() {
     if (!tk_get_option('webp_serve_enabled', 0)) {
         return false;
     }
-    $accept = isset($_SERVER['HTTP_ACCEPT']) ? strtolower((string) $_SERVER['HTTP_ACCEPT']) : '';
-    return strpos($accept, 'image/webp') !== false;
+    // Every current browser renders WebP, but Safari omits image/webp from its page Accept header and the
+    // page cache does not vary on Accept: deciding per request made the first visitor (or the preloader)
+    // pick JPEG or WebP HTML for everyone. Serve WebP consistently instead.
+    return true;
 }
 
 function tk_webp_generate_on_upload($metadata, $attachment_id) {
@@ -339,7 +341,8 @@ function tk_webp_save() {
 
 function tk_webp_generate_all() {
     tk_require_admin_post('tk_webp_generate_all');
-    $offset = max(0, (int) tk_post('offset', 0));
+    // Later batches arrive through the GET redirect below, so read the offset from the request.
+    $offset = max(0, isset($_REQUEST['offset']) ? (int) $_REQUEST['offset'] : 0);
     $limit = 20;
     $query = new WP_Query(array(
         'post_type' => 'attachment',

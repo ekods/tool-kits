@@ -686,6 +686,38 @@ function tk_antispam_text_values_from_string(string $text): array {
     return $values;
 }
 
+/**
+ * Generic spam openers ("hi", "check this", "see it here") only match a short message that is
+ * essentially the phrase (at most three extra words, e.g. a link); "This quote" or
+ * "I have a question about pricing for 500 units" are real messages.
+ */
+function tk_antispam_message_is_generic_phrase(string $message, string $phrase): bool {
+    $normalize = static function ($text) {
+        return trim((string) preg_replace('/[^\p{L}\p{N}]+/u', ' ', strtolower($text)));
+    };
+    $phrase = $normalize($phrase);
+    $message = $normalize($message);
+    if ($phrase === '' || $message === '') {
+        return false;
+    }
+    if ($message === $phrase) {
+        return true;
+    }
+    return strpos($message . ' ', $phrase . ' ') === 0
+        && count(explode(' ', $message)) <= count(explode(' ', $phrase)) + 3;
+}
+
+/** Keyword match at the start of a word: "sex" does not match "Essex", "loan" still matches "loans". */
+function tk_antispam_text_has_keyword(string $haystack, string $keyword): bool {
+    $keyword = strtolower(trim($keyword));
+    if ($keyword === '') {
+        return false;
+    }
+    $boundary = preg_match('/^[\p{L}\p{N}]/u', $keyword) ? '(?<![\p{L}\p{N}])' : '';
+    $matched = preg_match('/' . $boundary . preg_quote($keyword, '/') . '/iu', $haystack);
+    return $matched === 1 || ($matched === false && strpos(strtolower($haystack), $keyword) !== false);
+}
+
 function tk_antispam_is_contact_notification_mail(array $atts): bool {
     $subject = isset($atts['subject']) ? strtolower((string) $atts['subject']) : '';
     $message = isset($atts['message']) ? strtolower((string) $atts['message']) : '';
@@ -694,8 +726,6 @@ function tk_antispam_is_contact_notification_mail(array $atts): bool {
         'new contact form submission',
         'message body:',
         'this email was sent from the contact form',
-        'full name',
-        'phone',
     );
     foreach ($markers as $marker) {
         if (($subject !== '' && strpos($subject, $marker) !== false) || ($message !== '' && strpos($message, $marker) !== false)) {
@@ -728,7 +758,7 @@ function tk_antispam_mail_guard_reason(array $values): string {
     if ($reason === '') {
         $haystack = strtolower(implode("\n", array_filter($values, 'is_string')));
         foreach (tk_antispam_line_list((string) tk_get_option('antispam_block_keywords', '')) as $keyword) {
-            if ($keyword !== '' && strpos($haystack, strtolower($keyword)) !== false) {
+            if (tk_antispam_text_has_keyword($haystack, $keyword)) {
                 $reason = 'mail_guard_blocked_keyword:' . strtolower($keyword);
                 break;
             }
@@ -739,8 +769,7 @@ function tk_antispam_mail_guard_reason(array $values): string {
         $message_value = tk_antispam_message_value($values);
         $normalized_message = strtolower(trim(preg_replace('/\s+/', ' ', $message_value)));
         foreach (tk_antispam_line_list((string) tk_get_option('antispam_generic_phrases', '')) as $phrase) {
-            $phrase = strtolower(trim($phrase));
-            if ($phrase !== '' && strpos($normalized_message, $phrase) !== false) {
+            if (tk_antispam_message_is_generic_phrase($normalized_message, $phrase)) {
                 $reason = 'mail_guard_generic_message_phrase';
                 break;
             }
@@ -785,6 +814,10 @@ function tk_antispam_pre_wp_mail($return, array $atts) {
         return $return;
     }
     if (!tk_antispam_is_contact_notification_mail($atts)) {
+        return $return;
+    }
+    // Order and account emails sent during a WooCommerce checkout are not contact notifications.
+    if (isset($_POST['woocommerce-process-checkout-nonce']) || (isset($_GET['wc-ajax']) && (string) $_GET['wc-ajax'] === 'checkout') || did_action('woocommerce_checkout_order_processed')) {
         return $return;
     }
 
@@ -885,8 +918,7 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
     if ($message !== '' && !empty($generic_phrases)) {
         $normalized_message = strtolower(trim(preg_replace('/\s+/', ' ', $message)));
         foreach ($generic_phrases as $phrase) {
-            $phrase = strtolower(trim($phrase));
-            if ($phrase !== '' && strpos($normalized_message, $phrase) !== false) {
+            if (tk_antispam_message_is_generic_phrase($normalized_message, $phrase)) {
                 return tk_antispam_reject($result, __('Spam-like content detected.', 'tool-kits'), 'generic_message_phrase', $values, $tags);
             }
         }
@@ -925,7 +957,7 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
     if (!empty($keywords)) {
         $haystack = strtolower(implode("\n", array_filter($values, 'is_string')));
         foreach ($keywords as $keyword) {
-            if ($keyword !== '' && strpos($haystack, strtolower($keyword)) !== false) {
+            if (tk_antispam_text_has_keyword($haystack, $keyword)) {
                 return tk_antispam_reject($result, __('Spam-like content detected.', 'tool-kits'), 'blocked_keyword:' . strtolower($keyword), $values, $tags);
             }
         }

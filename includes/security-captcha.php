@@ -814,10 +814,30 @@ function tk_captcha_type_from_wpcf7_tag($tag): string {
     return tk_captcha_type_from_shortcode_atts($atts);
 }
 
+/**
+ * Nonce check that survives full-page caching: nonces baked into cached HTML expire after 12-24h,
+ * after which every visitor's captcha would fail. A same-origin Origin (or Referer) header gives the
+ * same cross-site protection without expiring, so it is accepted when the nonce is stale.
+ */
+function tk_captcha_request_authorized(string $action): bool {
+    if (wp_verify_nonce(tk_captcha_scalar($_POST, 'nonce'), $action)) {
+        return true;
+    }
+    $site_host = strtolower((string) wp_parse_url(home_url('/'), PHP_URL_HOST));
+    foreach (array('HTTP_ORIGIN', 'HTTP_REFERER') as $header) {
+        $value = isset($_SERVER[$header]) ? (string) $_SERVER[$header] : '';
+        if ($value === '' || $value === 'null') {
+            continue;
+        }
+        return $site_host !== '' && strtolower((string) wp_parse_url($value, PHP_URL_HOST)) === $site_host;
+    }
+    return false;
+}
+
 function tk_captcha_refresh_ajax() {
     nocache_headers();
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { wp_send_json_error('method_not_allowed', 405); }
-    if (!wp_verify_nonce(tk_captcha_scalar($_POST, 'nonce'), 'tk_captcha_refresh')) { wp_send_json_error('invalid_nonce', 403); }
+    if (!tk_captcha_request_authorized('tk_captcha_refresh')) { wp_send_json_error('invalid_nonce', 403); }
     if (!tk_get_option('captcha_enabled')) { wp_send_json_error('disabled', 403); }
     tk_captcha_browser_cookie();
     if (tk_captcha_rate_limited('refresh')) { wp_send_json_error('rate_limited', 429); }
@@ -834,7 +854,7 @@ function tk_captcha_refresh_ajax() {
 function tk_captcha_verify_click_ajax() {
     nocache_headers();
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { wp_send_json_error('method_not_allowed', 405); }
-    if (!wp_verify_nonce(tk_captcha_scalar($_POST, 'nonce'), 'tk_captcha_verify_click')) { wp_send_json_error('invalid_nonce', 403); }
+    if (!tk_captcha_request_authorized('tk_captcha_verify_click')) { wp_send_json_error('invalid_nonce', 403); }
     if (!tk_get_option('captcha_enabled')) { wp_send_json_error('disabled', 403); }
     if (tk_captcha_rate_limited('verify')) { wp_send_json_error('rate_limited', 429); }
     $token = tk_captcha_scalar($_POST, 'token');

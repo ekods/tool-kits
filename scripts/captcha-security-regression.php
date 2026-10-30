@@ -41,6 +41,8 @@ function wpcf7_scan_form_tags($conditions = array()) { return $GLOBALS['tags'] ?
 function wpcf7_get_current_contact_form() { return $GLOBALS['form'] ?? null; }
 function is_wp_error($value) { return $value instanceof WP_Error; }
 function wp_verify_nonce($nonce, $action) { return $nonce === 'valid'; }
+if (!function_exists('wp_parse_url')) { function wp_parse_url($url, $component = -1) { return parse_url($url, $component); } }
+if (!function_exists('home_url')) { function home_url($path = '/') { return 'https://example.test' . $path; } }
 function nocache_headers() { $GLOBALS['no_cache'] = true; }
 function is_ssl() { return true; }
 function tk_is_admin_user() { return $GLOBALS['admin'] ?? true; }
@@ -258,6 +260,13 @@ check_captcha(strpos($refresh->data['markup'], 'data:image/') !== false, 'Image 
 check_captcha(strpos($refresh->data['markup'], 'tk-captcha-status') !== false, 'Accessible retry status is missing');
 $nonce = captcha_endpoint('tk_captcha_refresh_ajax', array('nonce' => 'invalid'));
 check_captcha(!$nonce->success && $nonce->status === 403, 'Invalid refresh nonce was accepted');
+$_SERVER['HTTP_ORIGIN'] = 'https://evil.example';
+$cross = captcha_endpoint('tk_captcha_refresh_ajax', array('nonce' => 'invalid'));
+check_captcha(!$cross->success && $cross->status === 403, 'Cross-site refresh with a stale nonce was accepted');
+$_SERVER['HTTP_ORIGIN'] = 'https://example.test';
+$cached = captcha_endpoint('tk_captcha_refresh_ajax', array('nonce' => 'expired-on-cached-page', 'type' => 'text'));
+check_captcha($cached->success, 'Same-origin refresh from a cached page with an expired nonce was rejected');
+unset($_SERVER['HTTP_ORIGIN']);
 $_SERVER['REQUEST_METHOD'] = 'GET';
 $method = captcha_endpoint('tk_captcha_verify_click_ajax', array('nonce' => 'valid'));
 check_captcha(!$method->success && $method->status === 405, 'GET verification was accepted');

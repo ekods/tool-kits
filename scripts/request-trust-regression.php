@@ -95,4 +95,14 @@ $big = '<!doctype html><html><head><script>var d = "' . str_repeat('x', 20000) .
 $out = tk_minify_buffer_callback($big);
 check($out === $big, 'minify returns the original document when PCRE fails instead of an empty page');
 
+load_helper_functions(dirname(__DIR__) . '/includes/antispam-contact.php', array('tk_antispam_message_is_generic_phrase', 'tk_antispam_text_has_keyword'));
+check(tk_antispam_message_is_generic_phrase('Hi!', 'hi'), 'a message that is only a generic greeting is rejected');
+check(tk_antispam_message_is_generic_phrase('see it here: https://spam.example', 'see it here'), 'a generic opener followed by a link is rejected');
+check(!tk_antispam_message_is_generic_phrase('Please send me this quote', 'hi'), '"this" does not match the generic phrase "hi"');
+check(!tk_antispam_message_is_generic_phrase('I have a question about pricing for 500 units', 'i have a question'), 'a real question is not treated as a generic phrase');
+check(!tk_antispam_message_is_generic_phrase('Latest contest results', 'test'), '"contest" does not match the generic phrase "test"');
+check(!tk_antispam_text_has_keyword('Our office is in Essex', 'sex'), 'keyword "sex" does not match "Essex"');
+check(tk_antispam_text_has_keyword('cheap loans today', 'loan'), 'keyword "loan" still matches "loans"');
+check(tk_antispam_text_has_keyword('visit bit.ly/abc', 'bit.ly'), 'punctuated keywords still match');
+
 echo $checks . " request trust checks passed." . PHP_EOL;

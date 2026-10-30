@@ -254,179 +254,168 @@ function tk_minify_inline_css($css) {
     return trim($css);
 }
 
+/**
+ * Conservative inline JS minifier: removes comments and redundant whitespace only.
+ * One pass over the whole script keeps string, template literal (including nested ${}),
+ * regex and comment state across lines; newlines are kept so automatic semicolon
+ * insertion behaves exactly as before.
+ */
 function tk_minify_inline_js($js) {
     if (!is_string($js) || $js === '') {
         return $js;
     }
-    $js = preg_replace('!/\*.*?\*/!s', '', $js);
-    $lines = preg_split('/\r\n|\r|\n/', $js);
-    if (!is_array($lines)) {
-        $lines = array($js);
-    }
-    foreach ($lines as &$line) {
-        $out = '';
-        $len = strlen($line);
-        $in_single = false;
-        $in_double = false;
-        $in_backtick = false;
-        $in_regex = false;
-        $in_char_class = false;
-        $escape = false;
-        $last_non_space = '';
-        for ($i = 0; $i < $len; $i++) {
-            $ch = $line[$i];
-            $next = ($i + 1 < $len) ? $line[$i + 1] : '';
-            if ($escape) {
-                $out .= $ch;
-                $escape = false;
+    $len = strlen($js);
+    $out = '';
+    $i = 0;
+    $pending_space = false;
+    $prev = '';        // last significant code character emitted
+    $prev_word = '';   // identifier/keyword that ended at $prev
+    $word = '';
+    $braces = 0;
+    $templates = array(); // brace depth at each open ${ ... }
+    $regex_keywords = array('return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await');
+    $is_ident = static function ($ch) {
+        return $ch !== '' && (ctype_alnum($ch) || $ch === '_' || $ch === '$' || ord($ch) > 127);
+    };
+    $emit = static function ($text) use (&$out, &$pending_space) {
+        if ($pending_space && $out !== '' && substr($out, -1) !== "\n") {
+            $out .= ' ';
+        }
+        $pending_space = false;
+        $out .= $text;
+    };
+    // Copies template literal text from $i until the closing backtick or a "${".
+    $copy_template = static function () use (&$i, $len, $js, &$out, &$templates, &$braces) {
+        while ($i < $len) {
+            $ch = $js[$i];
+            if ($ch === '\\') {
+                $out .= substr($js, $i, 2);
+                $i += 2;
                 continue;
             }
-            if ($in_regex) {
-                if ($ch === '\\') {
-                    $out .= $ch;
-                    $escape = true;
-                    continue;
-                }
-                if ($ch === '[') {
-                    $in_char_class = true;
-                    $out .= $ch;
-                    continue;
-                }
-                if ($ch === ']' && $in_char_class) {
-                    $in_char_class = false;
-                    $out .= $ch;
-                    continue;
-                }
-                if ($ch === '/' && !$in_char_class) {
-                    $in_regex = false;
-                    $out .= $ch;
-                    $last_non_space = '/';
-                    continue;
-                }
-                $out .= $ch;
-                continue;
+            if ($ch === '`') {
+                $out .= '`';
+                $i++;
+                return;
             }
-            if ($in_single || $in_double || $in_backtick) {
-                if ($ch === '\\') {
-                    $out .= $ch;
-                    $escape = true;
-                    continue;
-                }
-                if ($in_single && $ch === "'") {
-                    $in_single = false;
-                } elseif ($in_double && $ch === '"') {
-                    $in_double = false;
-                } elseif ($in_backtick && $ch === '`') {
-                    $in_backtick = false;
-                }
-                $out .= $ch;
-                continue;
-            }
-            if ($ch === "'" && !$in_double && !$in_backtick) {
-                $in_single = true;
-                $out .= $ch;
-                $last_non_space = "'";
-                continue;
-            }
-            if ($ch === '"' && !$in_single && !$in_backtick) {
-                $in_double = true;
-                $out .= $ch;
-                $last_non_space = '"';
-                continue;
-            }
-            if ($ch === '`' && !$in_single && !$in_double) {
-                $in_backtick = true;
-                $out .= $ch;
-                $last_non_space = '`';
-                continue;
-            }
-            if ($ch === '/' && $next === '/') {
-                break;
-            }
-            if ($ch === '/' && $next !== '/' && $next !== '*') {
-                $regex_start_tokens = array('(', '[', '{', '=', ':', ',', '!', '?', ';', '+', '-', '*', '%', '&', '|', '^', '~');
-                if ($last_non_space === '' || in_array($last_non_space, $regex_start_tokens, true)) {
-                    $in_regex = true;
-                }
-                $out .= $ch;
-                $last_non_space = '/';
-                continue;
+            if ($ch === '$' && $i + 1 < $len && $js[$i + 1] === '{') {
+                $out .= '${';
+                $i += 2;
+                $templates[] = $braces;
+                return;
             }
             $out .= $ch;
-            if ($ch !== ' ' && $ch !== "\t") {
-                $last_non_space = $ch;
+            $i++;
+        }
+    };
+
+    while ($i < $len) {
+        $ch = $js[$i];
+        $next = $i + 1 < $len ? $js[$i + 1] : '';
+
+        if ($ch === "\n" || $ch === "\r") {
+            if ($word !== '') { $prev_word = $word; $word = ''; }
+            if ($out !== '' && substr($out, -1) !== "\n") {
+                $out .= "\n";
+            }
+            $pending_space = false;
+            $i++;
+            continue;
+        }
+        if ($ch === ' ' || $ch === "\t" || $ch === "\f" || $ch === "\v") {
+            if ($word !== '') { $prev_word = $word; $word = ''; }
+            $pending_space = true;
+            $i++;
+            continue;
+        }
+        if ($ch === '/' && $next === '/') {
+            $eol = strpos($js, "\n", $i);
+            $i = $eol === false ? $len : $eol;
+            continue;
+        }
+        if ($ch === '/' && $next === '*') {
+            $close = strpos($js, '*/', $i + 2);
+            if ($close === false) {
+                return $js; // unterminated comment: leave the script untouched
+            }
+            if (strpos(substr($js, $i, $close - $i), "\n") !== false) {
+                if ($out !== '' && substr($out, -1) !== "\n") {
+                    $out .= "\n";
+                }
+                $pending_space = false;
+            } else {
+                $pending_space = true;
+            }
+            $i = $close + 2;
+            continue;
+        }
+        if ($word !== '' && !$is_ident($ch)) {
+            $prev_word = $word;
+            $word = '';
+        }
+        if ($ch === '"' || $ch === "'") {
+            $start = $i++;
+            while ($i < $len && $js[$i] !== $ch && $js[$i] !== "\n") {
+                $i += $js[$i] === '\\' ? 2 : 1;
+            }
+            $i++;
+            $emit(substr($js, $start, $i - $start));
+            $prev = $ch;
+            $prev_word = '';
+            continue;
+        }
+        if ($ch === '`') {
+            $emit('`');
+            $i++;
+            $copy_template();
+            $prev = '`';
+            $prev_word = '';
+            continue;
+        }
+        if ($ch === '/') {
+            $regex_allowed = $prev === '' || strpos('(,=:[!&|?{};+-*%<>~^}', $prev) !== false
+                || ($is_ident($prev) && in_array($prev_word, $regex_keywords, true));
+            if ($regex_allowed) {
+                $start = $i++;
+                $in_class = false;
+                while ($i < $len && $js[$i] !== "\n") {
+                    $c = $js[$i];
+                    if ($c === '\\') { $i += 2; continue; }
+                    if ($c === '[') { $in_class = true; }
+                    elseif ($c === ']') { $in_class = false; }
+                    elseif ($c === '/' && !$in_class) { break; }
+                    $i++;
+                }
+                $i++;
+                $emit(substr($js, $start, $i - $start));
+                $prev = '/';
+                $prev_word = '';
+                continue;
             }
         }
-        $line = trim($out);
+        if ($ch === '{') {
+            $braces++;
+        } elseif ($ch === '}') {
+            if (!empty($templates) && end($templates) === $braces) {
+                array_pop($templates);
+                $emit('}');
+                $i++;
+                $copy_template();
+                $prev = '`';
+                $prev_word = '';
+                continue;
+            }
+            $braces--;
+        }
+        if ($is_ident($ch)) {
+            if ($word === '' && $pending_space === false && $is_ident(substr($out, -1))) {
+                $pending_space = true;
+            }
+            $word .= $ch;
+        }
+        $emit($ch);
+        $prev = $ch;
+        $i++;
     }
-    unset($line);
-    $js = implode("\n", $lines);
-    $js = preg_replace('/[ \t]+/', ' ', $js);
-    return trim($js);
-}
-
-function tk_render_minify_page() {
-    if (!tk_is_admin_user()) return;
-    ?>
-    <div class="wrap tk-wrap">
-        <?php tk_render_header_branding(); ?>
-        <?php tk_render_page_hero('Minify', 'Reduce frontend HTML, inline CSS, inline JavaScript, and local asset payload where safe.', 'dashicons-editor-code'); ?>
-        <?php if (isset($_GET['tk_saved']) && sanitize_key((string) $_GET['tk_saved']) === '1') : ?>
-            <?php tk_notice('Settings saved.', 'success'); ?>
-        <?php endif; ?>
-        <?php tk_render_minify_panel(); ?>
-    </div>
-    <?php
-}
-
-function tk_render_minify_panel() {
-    if (!tk_is_admin_user()) return;
-    ?>
-    <div class="tk-card">
-        <h2>Minify</h2>
-        <p>Optimize frontend output by trimming HTML and using minified assets when available.</p>
-        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-            <?php tk_nonce_field('tk_minify_save'); ?>
-            <input type="hidden" name="action" value="tk_minify_save">
-            <input type="hidden" name="tk_tab" value="minify">
-            <p>
-                <label>
-                    <input type="checkbox" name="minify_html_enabled" value="1" <?php checked(1, tk_get_option('minify_html_enabled', 0)); ?>>
-                    Minify HTML output (frontend)
-                </label>
-            </p>
-            <p>
-                <label>
-                    <input type="checkbox" name="minify_inline_css" value="1" <?php checked(1, tk_get_option('minify_inline_css', 1)); ?>>
-                    Minify inline CSS blocks
-                </label>
-            </p>
-            <p>
-                <label>
-                    <input type="checkbox" name="minify_inline_js" value="1" <?php checked(1, tk_get_option('minify_inline_js', 1)); ?>>
-                    Minify inline JS blocks (conservative)
-                </label>
-            </p>
-            <p>
-                <label>
-                    <input type="checkbox" name="minify_assets_enabled" value="1" <?php checked(1, tk_get_option('minify_assets_enabled', 0)); ?>>
-                    Use .min.css/.min.js when available for local assets
-                </label>
-            </p>
-            <p><button class="button button-primary">Save</button></p>
-        </form>
-    </div>
-    <?php
-}
-
-function tk_minify_save() {
-    tk_require_admin_post('tk_minify_save');
-
-    tk_update_option('minify_html_enabled', !empty($_POST['minify_html_enabled']) ? 1 : 0);
-    tk_update_option('minify_inline_css', !empty($_POST['minify_inline_css']) ? 1 : 0);
-    tk_update_option('minify_inline_js', !empty($_POST['minify_inline_js']) ? 1 : 0);
-    tk_update_option('minify_assets_enabled', !empty($_POST['minify_assets_enabled']) ? 1 : 0);
-
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-minify', 'tk_saved' => 1), admin_url('admin.php')));
-    exit;
+    return trim($out);
 }

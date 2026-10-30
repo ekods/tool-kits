@@ -650,6 +650,11 @@ function tk_smtp_microsoft_callback(): void {
 
 function tk_smtp_microsoft_disconnect(): void {
     tk_require_admin_post('tk_smtp_microsoft_disconnect');
+    // Connecting copied the mailbox into smtp_username; without a token SMTP would keep using it.
+    $email = (string) tk_get_option('smtp_microsoft_email', '');
+    if ($email !== '' && (string) tk_get_option('smtp_username', '') === $email) {
+        tk_update_option('smtp_username', '');
+    }
     tk_smtp_set_oauth_error('microsoft', '');
     tk_update_option('smtp_microsoft_access_token', '');
     tk_update_option('smtp_microsoft_refresh_token', '');

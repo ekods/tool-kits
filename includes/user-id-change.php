@@ -118,6 +118,12 @@ function tk_user_id_change_save() {
 
     if ($ok) {
         $wpdb->query('COMMIT');
+        // A persistent object cache would keep resolving the login to the old, now missing, ID.
+        clean_user_cache($user);
+        foreach (array($user_id, $new_id) as $cached_id) {
+            wp_cache_delete($cached_id, 'users');
+            wp_cache_delete($cached_id, 'user_meta');
+        }
         tk_toolkits_audit_log('user_id_change', array('from' => $user_id, 'to' => $new_id));
         tk_user_id_change_redirect('ok', 'User ' . $user->user_login . ' updated to ID ' . $new_id . '.');
     }
