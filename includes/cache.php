@@ -1007,11 +1007,12 @@ function tk_cache_admin_bar_menu($wp_admin_bar) {
     }
 
     $current_url = isset($_SERVER['REQUEST_URI']) ? home_url(wp_unslash((string) $_SERVER['REQUEST_URI'])) : '';
+    // add_query_arg() does not encode values; a raw "post.php?post=1&action=edit" would override action.
     $url = wp_nonce_url(
         add_query_arg(
             array(
                 'action' => 'tk_cache_purge',
-                'redirect_to' => $current_url !== '' ? $current_url : tk_admin_url('tool-kits-cache'),
+                'redirect_to' => rawurlencode($current_url !== '' ? $current_url : tk_admin_url('tool-kits-cache')),
             ),
             admin_url('admin-post.php')
         ),

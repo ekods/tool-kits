@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.71
+Stable tag: 2.7.72
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,9 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.72 =
+- Page cache: the admin bar "Purge Page Cache" link no longer opens a blank page on screens whose URL has an action parameter, such as the post editor (post.php?post=98&action=edit). The return URL is now encoded, so its "&action=edit" no longer overrides action=tk_cache_purge; the cache is purged and the editor reopens.
+
 = 2.7.71 =
 - DB Cleanup processes small resumable batches with progress, pause and cancel controls; transient cleanup preserves valid caches by default and table optimization is opt-in.
 - Security alerts use a bounded per-site queue with duplicate grouping, independent email/webhook checkpoints, delivery retries and audited failures. Login alerts no longer wait for remote geolocation or reverse DNS.
