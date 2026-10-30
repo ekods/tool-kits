@@ -39,6 +39,9 @@ function add_meta_box(...$args) { $GLOBALS['boxes'][] = $args; }
 function wp_nonce_field(...$args) {}
 function esc_attr($value) { return htmlspecialchars($value, ENT_QUOTES, 'UTF-8'); }
 function esc_html($value) { return esc_attr($value); }
+function esc_url($value) { return esc_attr($value); }
+function admin_url($path = '') { return 'https://site.example/wp-admin/' . $path; }
+function wp_create_nonce($action = -1) { return 'nonce'; }
 function checked($value) { if ($value) echo ' checked'; }
 function get_bloginfo($key) { return 'en-US'; }
 function wp_json_encode($value) { return json_encode($value); }

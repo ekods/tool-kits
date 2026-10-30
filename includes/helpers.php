@@ -1224,6 +1224,7 @@ function tk_option_init_defaults() {
         'smtp_dns_report' => array(),
         'geo_enabled' => 0,
         'geo_custom_jsonld' => '',
+        'geo_schema_override_theme' => 0,
         'geo_faq_enabled' => 0,
         'geo_faq_items' => array(),
         'geo_itemlist_enabled' => 0,

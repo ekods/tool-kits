@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.69
+Stable tag: 2.7.70
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,9 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.70 =
+- GEO, theme-managed SEO: new GEO → Schema switch "Replace Theme JSON-LD" (off by default, shown only when the active theme prints its own SEO, such as egghead). When on, Tool Kits prints its SEO JSON-LD graph with Custom JSON-LD merged into it, and the theme's JSON-LD blocks are removed while the theme's title, meta, Open Graph and Twitter tags stay. This removes repeated @id definitions (for example two #service nodes) and the theme's invalid thumbnailUrl on Service. The theme JSON-LD is only removed on requests where the Tool Kits graph is printed.
+
 = 2.7.69 =
 - Move Copy to locale below all SEO Content tabs.
 - Refresh the sidebar Content score and SEO analysis after successful Gutenberg saves, waiting for metabox fields to finish saving and invalidating cached scores after REST metadata is persisted.

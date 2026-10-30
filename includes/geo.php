@@ -40,6 +40,7 @@ function tk_geo_init() {
     add_action('wp_loaded', 'tk_geo_ai_catalog_maybe_render', 0);
     add_filter('wp_headers', 'tk_geo_ai_catalog_discovery_headers');
     add_action('wp_head', 'tk_geo_ai_catalog_discovery_head', 2);
+    add_action('wp_head', 'tk_geo_maybe_replace_theme_schema', 0);
     add_action('wp_head', 'tk_geo_render_head_jsonld', 3);
     // Same content-change hooks as the sitemap cache; WordPress registers the shared callback once.
     foreach (array('save_post', 'deleted_post', 'trashed_post', 'update_option_permalink_structure') as $hook) {
@@ -795,22 +796,55 @@ function tk_geo_filter_custom_jsonld(array $custom, string $current_url): array 
     return $kept ? array('@context' => 'https://schema.org', '@graph' => $kept) : array();
 }
 
+// Opt-in: Tool Kits prints the JSON-LD for a theme that manages its own SEO, and the theme's blocks are removed.
+function tk_geo_schema_overrides_theme(): bool {
+    return (int) tk_get_option('geo_schema_override_theme', 0) === 1
+        && function_exists('tk_seo_has_theme_managed_seo') && tk_seo_has_theme_managed_seo();
+}
+
+function tk_geo_seo_schema_allowed(): bool {
+    if (function_exists('tk_seo_tools_enabled') && !tk_seo_tools_enabled()) {
+        return false;
+    }
+    if (function_exists('tk_seo_post_feature_enabled') && !tk_seo_post_feature_enabled('seo')) {
+        return false;
+    }
+    if (function_exists('tk_seo_has_third_party_plugin') && tk_seo_has_third_party_plugin()) {
+        return false;
+    }
+    if (function_exists('tk_seo_has_theme_managed_seo') && tk_seo_has_theme_managed_seo() && !tk_geo_schema_overrides_theme()) {
+        return false;
+    }
+    return (int) tk_get_option('seo_schema_enabled', 1) === 1 && function_exists('tk_seo_build_schema_graph');
+}
+
+// The theme prints its meta tags and JSON-LD from one wp_head callback (cst_seo). Swap it for a wrapper that keeps
+// the meta tags and drops the JSON-LD, only when the Tool Kits graph replaces it on this request.
+function tk_geo_maybe_replace_theme_schema(): void {
+    if (is_admin() || !tk_geo_enabled() || !tk_geo_schema_overrides_theme() || !tk_geo_seo_schema_allowed()) {
+        return;
+    }
+    $priority = has_action('wp_head', 'cst_seo');
+    if ($priority === false) {
+        return;
+    }
+    remove_action('wp_head', 'cst_seo', $priority);
+    add_action('wp_head', 'tk_geo_render_theme_seo_without_schema', $priority);
+}
+
+function tk_geo_render_theme_seo_without_schema(): void {
+    ob_start();
+    cst_seo();
+    $html = (string) ob_get_clean();
+    echo preg_replace('#<script\b[^>]*\btype\s*=\s*["\']application/ld\+json["\'][^>]*>.*?</script>\s*#is', '', $html);
+}
+
 function tk_geo_build_schema_documents(): array {
     $docs = array();
     // Admin previews and checks describe the home page rather than the wp-admin URL.
     $current_url = is_admin() ? home_url('/') : (function_exists('tk_seo_current_url') ? tk_seo_current_url() : tk_geo_current_url());
     $seo_schema = array();
-    $seo_schema_allowed = (function_exists('tk_seo_tools_enabled') ? tk_seo_tools_enabled() : true);
-    if (function_exists('tk_seo_post_feature_enabled') && !tk_seo_post_feature_enabled('seo')) {
-        $seo_schema_allowed = false;
-    }
-    if (function_exists('tk_seo_has_third_party_plugin') && tk_seo_has_third_party_plugin()) {
-        $seo_schema_allowed = false;
-    }
-    if (function_exists('tk_seo_has_theme_managed_seo') && tk_seo_has_theme_managed_seo()) {
-        $seo_schema_allowed = false;
-    }
-    if ($seo_schema_allowed && (int) tk_get_option('seo_schema_enabled', 1) === 1 && function_exists('tk_seo_build_schema_graph')) {
+    if (tk_geo_seo_schema_allowed()) {
         $title = wp_get_document_title();
         $description = function_exists('tk_seo_generate_description') ? tk_seo_generate_description() : '';
         $seo_schema = (array) tk_seo_build_schema_graph($current_url, $title, $description);
@@ -2153,6 +2187,7 @@ function tk_geo_save(): void {
     tk_update_option('geo_enabled', !empty($_POST['geo_enabled']) ? 1 : 0);
     tk_update_option('seo_schema_enabled', !empty($_POST['seo_schema_enabled']) ? 1 : 0);
     tk_update_option('seo_breadcrumb_enabled', !empty($_POST['seo_breadcrumb_enabled']) ? 1 : 0);
+    tk_update_option('geo_schema_override_theme', !empty($_POST['geo_schema_override_theme']) ? 1 : 0);
     // Schema types are detected automatically. Legacy maps are preserved but no longer read or edited.
     tk_update_option('geo_custom_jsonld', $custom_json);
     tk_update_option('geo_faq_enabled', !empty($_POST['geo_faq_enabled']) ? 1 : 0);
@@ -2439,6 +2474,9 @@ function tk_render_geo_panel(): void {
             <div style="margin-top:16px;">
                 <?php tk_render_switch('seo_schema_enabled', 'SEO JSON-LD Schema', 'Generate WebSite, Organization, WebPage, Article, and Service schema through GEO output.', $seo_schema); ?>
                 <?php tk_render_switch('seo_breadcrumb_enabled', 'BreadcrumbList Schema', 'Generate a hierarchy-aware breadcrumb graph and connect it to WebPage.', $seo_breadcrumb); ?>
+                <?php if (tk_seo_has_theme_managed_seo()) : ?>
+                    <?php tk_render_switch('geo_schema_override_theme', 'Replace Theme JSON-LD', 'The active theme prints its own SEO schema. Output the Tool Kits schema instead and remove the theme JSON-LD; the theme meta tags stay.', (int) tk_get_option('geo_schema_override_theme', 0)); ?>
+                <?php endif; ?>
                 <p class="description">This setting was moved from SEO so all JSON-LD output is managed from GEO.</p>
                 <p class="description">Schema types are detected automatically from the content type. No manual mapping is required.</p>
             </div>

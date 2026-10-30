@@ -141,4 +141,42 @@ $GLOBALS['tk_test']['options']['geo_enabled'] = 0;
 check_merge(strpos(tk_geo_faq_shortcode(), 'itemtype="https://schema.org/FAQPage"') !== false, 'Shortcode lost its microdata while JSON-LD output is off');
 $GLOBALS['tk_test']['post'] = 0;
 
-echo 'PASS: ' . $checks . " Custom JSON-LD merge, page-node scoping, admin preview, crawler fallback and page-over-global (SEO Content, FAQ GEO) checks\n";
+// Theme-managed SEO (cst_seo): the theme keeps its JSON-LD unless Replace Theme JSON-LD is on. Then the Tool Kits graph
+// prints with Custom JSON-LD merged into it (one #service), and the theme's JSON-LD is removed while its meta tags stay.
+function tk_seo_has_theme_managed_seo() { return !empty($GLOBALS['tk_test']['theme']); }
+function has_action($hook, $callback) { return $GLOBALS['tk_test']['hooks'][$hook][$callback] ?? false; }
+function add_action($hook, $callback, $priority = 10) { $GLOBALS['tk_test']['hooks'][$hook][$callback] = $priority; }
+function remove_action($hook, $callback, $priority = 10) { unset($GLOBALS['tk_test']['hooks'][$hook][$callback]); }
+function cst_seo() {
+    echo "<meta property=\"og:title\" content=\"Theme\">\n<script type=\"application/ld+json\">\n{\"@graph\":[{\"@type\":\"Service\",\"@id\":\"https://site.example/#service\",\"thumbnailUrl\":\"x.svg\"}]}\n</script>\n<meta name=\"twitter:card\" content=\"summary\">";
+}
+$GLOBALS['tk_test']['options']['geo_enabled'] = 1;
+$GLOBALS['tk_test']['options']['geo_faq_enabled'] = 0;
+$GLOBALS['tk_test']['options']['geo_custom_jsonld'] = json_encode(array('@context' => 'https://schema.org', '@type' => 'Service', '@id' => 'https://site.example/#service', 'name' => 'Custom service'));
+$GLOBALS['tk_test']['theme'] = true;
+$GLOBALS['tk_test']['hooks'] = array('wp_head' => array('cst_seo' => 5));
+$docs = tk_geo_build_schema_documents();
+check_merge(count($docs) === 1 && !isset($docs[0]['@graph']) && $docs[0]['@type'] === 'Service', 'Theme-managed SEO printed the Tool Kits graph without the override');
+tk_geo_maybe_replace_theme_schema();
+check_merge(has_action('wp_head', 'cst_seo') === 5, 'Theme JSON-LD was replaced without the override');
+
+$GLOBALS['tk_test']['options']['geo_schema_override_theme'] = 1;
+$docs = tk_geo_build_schema_documents();
+$ids = defined_ids($docs);
+check_merge(count($docs) === 1 && isset($docs[0]['@graph']) && ($ids['https://site.example/#service'] ?? 0) === 1 && max($ids) === 1, 'Override did not print one merged Tool Kits graph: ' . json_encode($ids));
+tk_geo_maybe_replace_theme_schema();
+check_merge(has_action('wp_head', 'cst_seo') === false && has_action('wp_head', 'tk_geo_render_theme_seo_without_schema') === 5, 'Theme callback was not swapped at its priority');
+ob_start();
+tk_geo_render_theme_seo_without_schema();
+$head = ob_get_clean();
+check_merge(strpos($head, 'ld+json') === false && strpos($head, 'og:title') !== false && strpos($head, 'twitter:card') !== false, 'Theme JSON-LD kept or theme meta tags lost: ' . $head);
+
+// No Tool Kits graph on this request (SEO schema off): the theme JSON-LD stays so the page is never left without schema.
+$GLOBALS['tk_test']['hooks'] = array('wp_head' => array('cst_seo' => 5));
+$GLOBALS['tk_test']['options']['seo_schema_enabled'] = 0;
+tk_geo_maybe_replace_theme_schema();
+check_merge(has_action('wp_head', 'cst_seo') === 5, 'Theme JSON-LD removed although Tool Kits prints no graph');
+$GLOBALS['tk_test']['options']['seo_schema_enabled'] = 1;
+$GLOBALS['tk_test']['theme'] = false;
+
+echo 'PASS: ' . $checks . " Custom JSON-LD merge, page-node scoping, admin preview, crawler fallback, page-over-global (SEO Content, FAQ GEO) and theme JSON-LD replacement checks\n";
