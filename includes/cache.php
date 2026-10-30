@@ -576,6 +576,10 @@ function tk_page_cache_callback($html, $phase = PHP_OUTPUT_HANDLER_FINAL) {
         if (headers_sent() || !tk_cache_response_allows_store()) {
             return $html;
         }
+        // An empty or truncated document (a failed output filter) would be served to every visitor until purge.
+        if (!is_string($html) || stripos($html, '</html>') === false) {
+            return $html;
+        }
         $headers = TK_Page_Cache_Runtime::header_templates(headers_list());
         $nonce = tk_page_cache_csp_nonce();
         $stored_html = TK_Page_Cache_Runtime::html_nonce($html);
@@ -817,7 +821,9 @@ function tk_cache_save() {
     tk_update_option('page_cache_enabled', $page_cache_enabled);
     tk_update_option('page_cache_ttl', max(0, (int) tk_post('page_cache_ttl', 3600)));
     tk_update_option('page_cache_exclude_paths', (string) tk_post('page_cache_exclude_paths', "/wp-login.php\n/wp-admin\n"));
-    tk_update_option('page_cache_preload_urls', (string) tk_post('page_cache_preload_urls', ''));
+    if (isset($_POST['page_cache_preload_urls'])) {
+        tk_update_option('page_cache_preload_urls', (string) tk_post('page_cache_preload_urls', ''));
+    }
     tk_update_option('page_cache_auto_preload_after_purge', !empty($_POST['page_cache_auto_preload_after_purge']) ? 1 : 0);
     tk_page_cache_early_sync();
 

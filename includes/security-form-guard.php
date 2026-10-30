@@ -25,6 +25,17 @@ function tk_form_guard_request_uri(): string {
     return isset($_SERVER['REQUEST_URI']) ? (string) wp_unslash($_SERVER['REQUEST_URI']) : '';
 }
 
+/** REST route of the current request ("/wp/v2/posts/1"), or '' when it is not a REST request. */
+function tk_form_guard_rest_route(): string {
+    if (isset($_GET['rest_route'])) {
+        return '/' . ltrim((string) wp_unslash($_GET['rest_route']), '/');
+    }
+    $path = (string) wp_parse_url(tk_form_guard_request_uri(), PHP_URL_PATH);
+    $prefix = '/' . trim(function_exists('rest_get_url_prefix') ? rest_get_url_prefix() : 'wp-json', '/') . '/';
+    $pos = strpos($path, $prefix);
+    return $pos === false ? '' : '/' . ltrim(substr($path, $pos + strlen($prefix)), '/');
+}
+
 function tk_form_guard_request_context(): string {
     if (isset($_POST['comment_post_ID'], $_POST['comment'])) {
         return 'comment';
@@ -42,6 +53,10 @@ function tk_form_guard_request_context(): string {
         return 'rest';
     }
 
+    if (isset($_GET['wc-ajax'])) {
+        return 'ajax';
+    }
+
     return 'frontend';
 }
 
@@ -57,6 +72,19 @@ function tk_form_guard_is_public_post(): bool {
     // REST_REQUEST is not set yet during init. Authenticate this endpoint before
     // treating its server-to-server POST as a public form submission.
     if (function_exists('tk_heartbeat_recheck_is_authenticated_request') && tk_heartbeat_recheck_is_authenticated_request()) {
+        return false;
+    }
+
+    // wp-admin form posts (post.php, options.php, ...) already require an authenticated session.
+    if (is_admin() && !(function_exists('wp_doing_ajax') && wp_doing_ajax()) && is_user_logged_in()) {
+        return false;
+    }
+
+    // REST_REQUEST is defined only after parse_request, later than this guard runs on init.
+    // Logged-in REST writes (block editor autosave/save) and the WooCommerce Store API (cart/checkout)
+    // are application traffic, not public form posts. Anonymous REST posts stay guarded.
+    $rest_route = tk_form_guard_rest_route();
+    if ($rest_route !== '' && (is_user_logged_in() || strpos($rest_route, '/wc/store/') === 0)) {
         return false;
     }
 

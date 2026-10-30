@@ -22,6 +22,10 @@ class RecheckRequest {
     public function get_header($name) { return $name === 'x-auth-signature' ? $this->signature : ''; }
 }
 function is_wp_error($value) { return $value instanceof WP_Error; }
+function is_admin() { return false; }
+function is_user_logged_in() { return false; }
+function wp_unslash($value) { return is_string($value) ? stripslashes($value) : $value; }
+function wp_parse_url($url, $component = -1) { return parse_url($url, $component); }
 function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?? $default; }
 function add_option($key, $value, $deprecated = '', $autoload = null) {
     if (isset($GLOBALS['options'][$key])) { return false; }

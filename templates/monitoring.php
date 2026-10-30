@@ -517,8 +517,8 @@ if (!defined('ABSPATH')) { exit; }
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
                     <h2 style="margin:0;"><?php _e('404 Monitor', 'tool-kits'); ?></h2>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0;">
-                        <?php tk_nonce_field('tk_404_clear'); ?>
-                        <input type="hidden" name="action" value="tk_404_clear">
+                        <?php tk_nonce_field('tk_404_monitoring_clear'); ?>
+                        <input type="hidden" name="action" value="tk_404_monitoring_clear">
                         <button class="button button-secondary" data-confirm="Clear 404 log?"><?php _e('Clear Log', 'tool-kits'); ?></button>
                     </form>
                 </div>

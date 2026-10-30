@@ -33,6 +33,10 @@ function tk_otp_maybe_require_challenge($user, $username, $password) {
     if (tk_otp_is_noninteractive_request() || tk_otp_trusted_cookie_valid($user)) {
         return $user;
     }
+    // XML-RPC/REST cannot show the OTP form; accept application passwords there, never the account password alone.
+    if ((defined('XMLRPC_REQUEST') && XMLRPC_REQUEST) || (defined('REST_REQUEST') && REST_REQUEST)) {
+        return new WP_Error('tk_otp_required', __('This account requires a one-time code. Use an application password for API access.', 'tool-kits'));
+    }
 
     $remember = !empty($_POST['rememberme']);
     $redirect_to = isset($_REQUEST['redirect_to']) ? esc_url_raw((string) wp_unslash($_REQUEST['redirect_to'])) : admin_url();
@@ -52,14 +56,12 @@ function tk_otp_maybe_require_challenge($user, $username, $password) {
 }
 
 function tk_otp_is_noninteractive_request(): bool {
-    if ((defined('WP_CLI') && WP_CLI) || (defined('XMLRPC_REQUEST') && XMLRPC_REQUEST) || (defined('REST_REQUEST') && REST_REQUEST)) {
+    if ((defined('WP_CLI') && WP_CLI) || wp_doing_cron()) {
         return true;
     }
-    if (wp_doing_cron()) {
-        return true;
-    }
-    $action = isset($_REQUEST['action']) ? sanitize_key((string) wp_unslash($_REQUEST['action'])) : '';
-    return $action === 'tk_otp';
+    // Application passwords authenticate at priority 20, before this filter (60).
+    // The OTP form itself never runs authenticate, so no request parameter may skip the challenge.
+    return did_action('application_password_did_authenticate') > 0;
 }
 
 function tk_otp_create_challenge(int $user_id, bool $remember, string $redirect_to): array {

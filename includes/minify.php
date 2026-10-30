@@ -87,6 +87,8 @@ function tk_minify_buffer_callback($html) {
     if (!is_string($html) || $html === '' || stripos($html, '<html') === false) {
         return $html;
     }
+    // preg_* returns null on backtrack/JIT limits (large inline JSON, scripts or <pre>); never emit an empty page.
+    $original = $html;
 
     $minify_inline_css = tk_get_option('minify_inline_css', 1);
     $minify_inline_js = tk_get_option('minify_inline_js', 1);
@@ -101,6 +103,9 @@ function tk_minify_buffer_callback($html) {
         },
         $html
     );
+    if (!is_string($html)) {
+        return $original;
+    }
     $html = preg_replace_callback(
         '#<(pre|textarea)\b[^>]*>.*?</\1>#is',
         function($m) use (&$placeholders) {
@@ -110,6 +115,9 @@ function tk_minify_buffer_callback($html) {
         },
         $html
     );
+    if (!is_string($html)) {
+        return $original;
+    }
 
     if ($minify_inline_css) {
         $html = preg_replace_callback(
@@ -118,10 +126,16 @@ function tk_minify_buffer_callback($html) {
                 $attrs = $m[1];
                 $content = $m[2];
                 $minified = tk_minify_inline_css($content);
+                if (!is_string($minified) || (trim($minified) === '' && trim($content) !== '')) {
+                    return $m[0];
+                }
                 return '<style' . $attrs . '>' . $minified . '</style>';
             },
             $html
         );
+        if (!is_string($html)) {
+            return $original;
+        }
     }
 
     if ($minify_inline_js) {
@@ -164,10 +178,16 @@ function tk_minify_buffer_callback($html) {
                     }
                 }
                 $minified = tk_minify_inline_js($content);
+                if (!is_string($minified) || (trim($minified) === '' && trim($content) !== '')) {
+                    return $m[0];
+                }
                 return '<script' . $attrs . '>' . $minified . '</script>';
             },
             $html
         );
+        if (!is_string($html)) {
+            return $original;
+        }
     }
 
     $html = preg_replace_callback(
@@ -179,6 +199,9 @@ function tk_minify_buffer_callback($html) {
         },
         $html
     );
+    if (!is_string($html)) {
+        return $original;
+    }
 
     $html = preg_replace_callback('/<!--(.*?)-->/s', function($m) {
         $content = $m[1];
@@ -187,15 +210,31 @@ function tk_minify_buffer_callback($html) {
         }
         return '';
     }, $html);
+    if (!is_string($html)) {
+        return $original;
+    }
 
     // Normalize indentation/newlines without merging attribute or text tokens.
     $html = preg_replace('/[\r\n\t]+/', ' ', $html);
+    if (!is_string($html)) {
+        return $original;
+    }
     $html = preg_replace('/\s{2,}/', ' ', $html);
-    $html = preg_replace('/>\s+</', '><', $html);
+    if (!is_string($html)) {
+        return $original;
+    }
+    // Keep one space between tags: it is significant between inline elements ("<b>Price:</b> <em>10</em>").
+    $html = preg_replace('/>\s+</', '> <', $html);
+    if (!is_string($html)) {
+        return $original;
+    }
     $html = trim($html);
 
     if (!empty($placeholders)) {
         $html = strtr($html, $placeholders);
+    }
+    if ($html === '' || stripos($html, '<html') === false) {
+        return $original;
     }
 
     return $html;

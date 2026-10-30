@@ -1133,7 +1133,7 @@ function tk_captcha_save() {
 
     tk_update_option('captcha_enabled', !empty($_POST['enabled']) ? 1 : 0);
     tk_update_option('captcha_on_login', !empty($_POST['on_login']) ? 1 : 0);
-    tk_update_option('captcha_on_comments', !empty($_POST['on_comments']) ? 1 : 0);
+    tk_update_posted_flag('captcha_on_comments', 'on_comments');
     if (isset($_POST['captcha_type'])) {
         tk_update_option('captcha_type', tk_captcha_normalize_type(tk_captcha_scalar($_POST, 'captcha_type')));
     }

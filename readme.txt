@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.72
+Stable tag: 2.7.73
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,19 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.73 =
+- Security, visitor IP: forwarded IP headers (CF-Connecting-IP, X-Forwarded-For, X-Real-IP) are trusted only from Cloudflare's published ranges and from local/private proxies. Visitors can no longer spoof their IP to bypass login rate limits, use a whitelisted IP, or get another IP blocked. Proxies or load balancers with a public IP can be added with define('TK_TRUSTED_PROXIES', '...') in wp-config.php; Brute Force Protection shows the detected IP and when this is needed.
+- Security, login: typing a common username such as "admin" now applies a temporary progressive lock (15/60/360/1440 minutes) instead of blocking the IP permanently. Login guard locks apply even when the rate limiter is off.
+- Security, OTP: a request parameter can no longer skip the one-time code. Over XML-RPC/REST, OTP-protected accounts sign in with application passwords only.
+- Security, Form Guard: block editor saves by logged-in users, the WooCommerce Store API and wc-ajax are no longer rate limited as public form posts. Anonymous REST posts, including Contact Form 7, stay guarded.
+- Security, Hide Login: opening /wp-admin/ while logged out redirects home instead of revealing the custom login URL.
+- Settings saves no longer reset options that have no control on the submitted form. Saving Access kept wiping the collector URL/token (locking Tool Kits pages); saving General Hardening turned off HSTS, server signature hiding, CSP sources and other options and rewrote DISABLE_WP_CRON in wp-config.php. The same applied to disposable email domains (Anti-spam), CAPTCHA on comments, WAF allow regex and log limits, cache preload URLs and delayed JS handles. The Owner-Only switch on the Access tab now saves.
+- Performance: HTML minify returns the original page when a regex hits the PCRE limit (large inline scripts or JSON) instead of an empty page, and the page cache refuses to store incomplete documents. Whitespace between inline elements is kept ("Price: 10").
+- Monitoring: the 404 Monitor "Clear Log" button works instead of showing a blank page.
+- Hardening: the XML-RPC rate limit switch can be turned on.
+- Database: .sql files can be imported (they were rejected as an invalid file type). Changing the table prefix only matches this install's tables and only renames prefix-based keys, leaving core options such as wp_page_for_privacy_policy and other installs in the same database untouched.
+- Duplicate: editors can duplicate posts and pages, and backslashes in block content and JSON meta (for example Elementor data) are preserved.
+
 = 2.7.72 =
 - Page cache: the admin bar "Purge Page Cache" link no longer opens a blank page on screens whose URL has an action parameter, such as the post editor (post.php?post=98&action=edit). The return URL is now encoded, so its "&action=edit" no longer overrides action=tk_cache_purge; the cache is purged and the editor reopens.
 

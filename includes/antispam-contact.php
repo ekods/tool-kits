@@ -1280,8 +1280,10 @@ function tk_antispam_save_settings() {
     tk_update_option('antispam_block_links', !empty($_POST['block_links']) ? 1 : 0);
     tk_update_option('antispam_max_links', max(0, (int) tk_post('max_links', 0)));
     tk_update_option('antispam_block_disposable_email', !empty($_POST['block_disposable_email']) ? 1 : 0);
-    $disposable_domains = isset($_POST['disposable_domains']) ? trim((string) wp_unslash($_POST['disposable_domains'])) : '';
-    tk_update_option('antispam_disposable_domains', $disposable_domains);
+    // The domain list has no form control; overwriting it with '' disabled disposable-email blocking.
+    if (isset($_POST['disposable_domains'])) {
+        tk_update_option('antispam_disposable_domains', trim((string) wp_unslash($_POST['disposable_domains'])));
+    }
     $block_keywords = isset($_POST['block_keywords']) ? trim((string) wp_unslash($_POST['block_keywords'])) : '';
     tk_update_option('antispam_block_keywords', $block_keywords);
     tk_update_option('antispam_message_min_chars', max(0, (int) tk_post('message_min_chars', 20)));

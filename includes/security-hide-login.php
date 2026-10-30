@@ -9,6 +9,8 @@ function tk_hide_login_init() {
     add_action('init', 'tk_hide_login_rewrite');
     add_action('login_init', 'tk_hide_login_block_login');
     add_action('admin_init', 'tk_hide_login_block_admin', 1);
+    // wp-admin/admin.php calls auth_redirect() before admin_init, which would redirect to the secret slug.
+    add_action('init', 'tk_hide_login_block_admin_early', 0);
     add_action('template_redirect', 'tk_hide_login_block');
     add_action('admin_post_tk_hide_login_save', 'tk_hide_login_save');
     add_filter('login_url', 'tk_hide_login_filter_login_url', 10, 3);
@@ -210,11 +212,17 @@ function tk_hide_login_block_admin() {
         return;
     }
     $path = strtok($path, '?');
-    if (strpos($path, '/wp-admin/admin-ajax.php') === 0 || strpos($path, '/wp-admin/admin-post.php') === 0) {
+    if (in_array(basename((string) $path), array('admin-ajax.php', 'admin-post.php'), true)) {
         return;
     }
     wp_redirect(home_url());
     exit;
+}
+
+function tk_hide_login_block_admin_early() {
+    if (is_admin() && !(function_exists('wp_doing_ajax') && wp_doing_ajax())) {
+        tk_hide_login_block_admin();
+    }
 }
 
 function tk_hide_login_flush_rewrite($enable = true) {

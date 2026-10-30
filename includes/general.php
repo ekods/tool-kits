@@ -51,8 +51,10 @@ function tk_general_duplicate_post(int $post_id) {
         return new WP_Error('tk_duplicate_invalid_post', __('The selected content cannot be duplicated.', 'tool-kits'));
     }
 
+    // wp_insert_post() and add_post_meta() unslash their input; raw DB values must be slashed first
+    // or backslashes in block attributes and JSON meta (e.g. _elementor_data) are lost.
     $duplicate_id = wp_insert_post(
-        array(
+        wp_slash(array(
             'post_author' => (int) $source->post_author,
             'post_content' => $source->post_content,
             'post_content_filtered' => $source->post_content_filtered,
@@ -65,7 +67,7 @@ function tk_general_duplicate_post(int $post_id) {
             'post_password' => $source->post_password,
             'post_parent' => (int) $source->post_parent,
             'menu_order' => (int) $source->menu_order,
-        ),
+        )),
         true
     );
     if (is_wp_error($duplicate_id)) {
@@ -89,7 +91,7 @@ function tk_general_duplicate_post(int $post_id) {
             continue;
         }
         foreach ((array) $values as $value) {
-            add_post_meta($duplicate_id, $meta_key, maybe_unserialize($value));
+            add_post_meta($duplicate_id, $meta_key, wp_slash(maybe_unserialize($value)));
         }
     }
 

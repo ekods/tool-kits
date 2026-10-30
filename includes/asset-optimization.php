@@ -1167,8 +1167,10 @@ function tk_assets_opt_save() {
     tk_update_option('assets_dimensions_enabled', !empty($_POST['assets_dimensions_enabled']) ? 1 : 0);
     tk_update_option('assets_lcp_bg_preload_enabled', !empty($_POST['assets_lcp_bg_preload_enabled']) ? 1 : 0);
     tk_update_option('assets_preconnect_auto_enabled', !empty($_POST['assets_preconnect_auto_enabled']) ? 1 : 0);
-    tk_update_option('assets_js_delay_enabled', !empty($_POST['assets_js_delay_enabled']) ? 1 : 0);
-    tk_update_option('assets_js_delay_handles', sanitize_text_field((string) tk_post('assets_js_delay_handles', '')));
+    tk_update_posted_flag('assets_js_delay_enabled', 'assets_js_delay_enabled');
+    if (isset($_POST['assets_js_delay_handles'])) {
+        tk_update_option('assets_js_delay_handles', sanitize_text_field((string) tk_post('assets_js_delay_handles', '')));
+    }
     tk_update_option('assets_disable_emojis', !empty($_POST['assets_disable_emojis']) ? 1 : 0);
     tk_update_option('assets_disable_dashicons', !empty($_POST['assets_disable_dashicons']) ? 1 : 0);
     tk_update_option('assets_disable_embeds', !empty($_POST['assets_disable_embeds']) ? 1 : 0);

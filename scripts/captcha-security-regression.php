@@ -18,6 +18,7 @@ $_POST = array();
 function tk_get_option($key, $default = null) { return $GLOBALS['options'][$key] ?? $default; }
 function tk_update_option($key, $value) { $GLOBALS['options'][$key] = $value; }
 function tk_post($key, $default = '') { return $_POST[$key] ?? $default; }
+function tk_update_posted_flag($option, $field) { if (isset($_POST[$field]) || in_array($field, (array) ($_POST['tk_switches'] ?? array()), true)) { tk_update_option($option, !empty($_POST[$field]) ? 1 : 0); } }
 function get_transient($key) { return $GLOBALS['cache'][$key] ?? false; }
 function set_transient($key, $value, $ttl) { $GLOBALS['cache'][$key] = $value; }
 function delete_transient($key) { unset($GLOBALS['cache'][$key]); }

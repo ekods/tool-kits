@@ -3005,53 +3005,56 @@ function tk_hardening_save() {
         tk_update_option('hardening_csp_balanced_enabled', $csp_balanced);
         tk_update_option('hardening_csp_hardened_enabled', $csp_hardened);
         tk_update_option('hardening_csp_strict_enabled', $csp_strict);
-        $csp_script_sources = isset($_POST['csp_script_sources']) ? wp_unslash($_POST['csp_script_sources']) : '';
-        $csp_style_sources = isset($_POST['csp_style_sources']) ? wp_unslash($_POST['csp_style_sources']) : '';
-        $csp_connect_sources = isset($_POST['csp_connect_sources']) ? wp_unslash($_POST['csp_connect_sources']) : '';
-        $csp_frame_sources = isset($_POST['csp_frame_sources']) ? wp_unslash($_POST['csp_frame_sources']) : '';
-        $csp_img_sources = isset($_POST['csp_img_sources']) ? wp_unslash($_POST['csp_img_sources']) : '';
-        tk_update_option('hardening_csp_script_sources', tk_hardening_sanitize_csp_sources($csp_script_sources));
-        tk_update_option('hardening_csp_style_sources', tk_hardening_sanitize_csp_sources($csp_style_sources));
-        tk_update_option('hardening_csp_connect_sources', tk_hardening_sanitize_csp_sources($csp_connect_sources));
-        tk_update_option('hardening_csp_frame_sources', tk_hardening_sanitize_csp_sources($csp_frame_sources));
-        tk_update_option('hardening_csp_img_sources', tk_hardening_sanitize_csp_sources($csp_img_sources));
-        tk_update_option('hardening_hsts_enabled', !empty($_POST['hsts']) ? 1 : 0);
-        tk_update_option('hardening_hsts_preload', !empty($_POST['hsts_preload']) ? 1 : 0);
-        tk_update_option('hardening_server_signature_hide', !empty($_POST['server_signature_hide']) ? 1 : 0);
-        tk_update_option('hardening_cookie_httponly_force', !empty($_POST['cookie_httponly_force']) ? 1 : 0);
-        $disable_wp_cron = !empty($_POST['disable_wp_cron']) ? 1 : 0;
-        tk_update_option('hardening_disable_wp_cron', $disable_wp_cron);
-        tk_hardening_set_wp_config_constant('DISABLE_WP_CRON', (bool) $disable_wp_cron);
+        // Several of these settings have no control on the General form; only save what was submitted.
+        foreach (array('script', 'style', 'connect', 'frame', 'img') as $csp_kind) {
+            if (isset($_POST['csp_' . $csp_kind . '_sources'])) {
+                tk_update_option('hardening_csp_' . $csp_kind . '_sources', tk_hardening_sanitize_csp_sources(wp_unslash($_POST['csp_' . $csp_kind . '_sources'])));
+            }
+        }
+        tk_update_posted_flag('hardening_hsts_enabled', 'hsts');
+        tk_update_posted_flag('hardening_hsts_preload', 'hsts_preload');
+        tk_update_posted_flag('hardening_server_signature_hide', 'server_signature_hide');
+        tk_update_posted_flag('hardening_cookie_httponly_force', 'cookie_httponly_force');
+        if (tk_form_has_field('disable_wp_cron')) {
+            $disable_wp_cron = !empty($_POST['disable_wp_cron']) ? 1 : 0;
+            tk_update_option('hardening_disable_wp_cron', $disable_wp_cron);
+            tk_hardening_set_wp_config_constant('DISABLE_WP_CRON', (bool) $disable_wp_cron);
+        }
         if (function_exists('tk_page_cache_purge')) {
             tk_page_cache_purge();
         }
-        tk_update_option('hardening_url_param_guard_enabled', !empty($_POST['url_param_guard']) ? 1 : 0);
-        tk_update_option('hardening_http_methods_filter_enabled', !empty($_POST['http_methods_filter']) ? 1 : 0);
-        $http_methods_allowed = isset($_POST['http_methods_allowed']) ? wp_unslash($_POST['http_methods_allowed']) : 'GET, POST';
-        $http_methods_allowed = is_string($http_methods_allowed) ? trim(sanitize_text_field($http_methods_allowed)) : 'GET, POST';
-        tk_update_option('hardening_http_methods_allowed', $http_methods_allowed);
-        $http_methods_allow_paths = isset($_POST['http_methods_allow_paths']) ? wp_unslash($_POST['http_methods_allow_paths']) : '';
-        $http_methods_allow_paths = is_string($http_methods_allow_paths) ? trim($http_methods_allow_paths) : '';
-        tk_update_option('hardening_http_methods_allow_paths', $http_methods_allow_paths);
-        tk_update_option('hardening_block_dangerous_methods_enabled', !empty($_POST['block_dangerous_methods']) ? 1 : 0);
-        $dangerous_http_methods = isset($_POST['dangerous_http_methods']) ? wp_unslash($_POST['dangerous_http_methods']) : 'PUT, DELETE, TRACE, CONNECT';
-        $dangerous_http_methods = is_string($dangerous_http_methods) ? trim(sanitize_text_field($dangerous_http_methods)) : 'PUT, DELETE, TRACE, CONNECT';
-        tk_update_option('hardening_dangerous_http_methods', $dangerous_http_methods);
-        $dangerous_methods_allow_paths = isset($_POST['dangerous_methods_allow_paths']) ? wp_unslash($_POST['dangerous_methods_allow_paths']) : '';
-        $dangerous_methods_allow_paths = is_string($dangerous_methods_allow_paths) ? trim($dangerous_methods_allow_paths) : '';
-        tk_update_option('hardening_dangerous_methods_allow_paths', $dangerous_methods_allow_paths);
-        tk_update_option('hardening_robots_txt_hardened', !empty($_POST['robots_txt_hardened']) ? 1 : 0);
-        tk_update_option('hardening_block_unwanted_files_enabled', !empty($_POST['block_unwanted_files']) ? 1 : 0);
-        $unwanted_file_names = isset($_POST['unwanted_file_names']) ? wp_unslash($_POST['unwanted_file_names']) : '';
-        $unwanted_file_names = is_string($unwanted_file_names) ? trim(preg_replace('/[\r\n]+/', ', ', $unwanted_file_names)) : '';
-        tk_update_option('hardening_unwanted_file_names', $unwanted_file_names);
-        tk_update_option('hardening_mysql_exposure_check_enabled', !empty($_POST['mysql_exposure_check']) ? 1 : 0);
-        tk_update_option('hardening_mysql_allow_public_host', !empty($_POST['mysql_allow_public_host']) ? 1 : 0);
-        tk_update_option('hardening_server_aware_enabled', !empty($_POST['server_aware']) ? 1 : 0);
-        tk_update_option('hardening_block_uploads_php', !empty($_POST['block_uploads_php']) ? 1 : 0);
-        tk_update_option('hardening_block_plugin_installs', !empty($_POST['block_plugin_installs']) ? 1 : 0);
-        tk_update_option('hardening_browser_cache_enabled', !empty($_POST['browser_cache']) ? 1 : 0);
-        tk_update_option('hardening_disable_pingbacks', !empty($_POST['pingbacks']) ? 1 : 0);
+        tk_update_posted_flag('hardening_url_param_guard_enabled', 'url_param_guard');
+        tk_update_posted_flag('hardening_http_methods_filter_enabled', 'http_methods_filter');
+        if (isset($_POST['http_methods_allowed'])) {
+            $http_methods_allowed = wp_unslash($_POST['http_methods_allowed']);
+            tk_update_option('hardening_http_methods_allowed', is_string($http_methods_allowed) ? trim(sanitize_text_field($http_methods_allowed)) : 'GET, POST');
+        }
+        if (isset($_POST['http_methods_allow_paths'])) {
+            $http_methods_allow_paths = wp_unslash($_POST['http_methods_allow_paths']);
+            tk_update_option('hardening_http_methods_allow_paths', is_string($http_methods_allow_paths) ? trim($http_methods_allow_paths) : '');
+        }
+        tk_update_posted_flag('hardening_block_dangerous_methods_enabled', 'block_dangerous_methods');
+        if (isset($_POST['dangerous_http_methods'])) {
+            $dangerous_http_methods = wp_unslash($_POST['dangerous_http_methods']);
+            tk_update_option('hardening_dangerous_http_methods', is_string($dangerous_http_methods) ? trim(sanitize_text_field($dangerous_http_methods)) : 'PUT, DELETE, TRACE, CONNECT');
+        }
+        if (isset($_POST['dangerous_methods_allow_paths'])) {
+            $dangerous_methods_allow_paths = wp_unslash($_POST['dangerous_methods_allow_paths']);
+            tk_update_option('hardening_dangerous_methods_allow_paths', is_string($dangerous_methods_allow_paths) ? trim($dangerous_methods_allow_paths) : '');
+        }
+        tk_update_posted_flag('hardening_robots_txt_hardened', 'robots_txt_hardened');
+        tk_update_posted_flag('hardening_block_unwanted_files_enabled', 'block_unwanted_files');
+        if (isset($_POST['unwanted_file_names'])) {
+            $unwanted_file_names = wp_unslash($_POST['unwanted_file_names']);
+            tk_update_option('hardening_unwanted_file_names', is_string($unwanted_file_names) ? trim(preg_replace('/[\r\n]+/', ', ', $unwanted_file_names)) : '');
+        }
+        tk_update_posted_flag('hardening_mysql_exposure_check_enabled', 'mysql_exposure_check');
+        tk_update_posted_flag('hardening_mysql_allow_public_host', 'mysql_allow_public_host');
+        tk_update_posted_flag('hardening_server_aware_enabled', 'server_aware');
+        tk_update_posted_flag('hardening_block_uploads_php', 'block_uploads_php');
+        tk_update_posted_flag('hardening_block_plugin_installs', 'block_plugin_installs');
+        tk_update_posted_flag('hardening_browser_cache_enabled', 'browser_cache');
+        tk_update_posted_flag('hardening_disable_pingbacks', 'pingbacks');
         tk_hardening_apply_root_server_rules();
     } elseif ($tab === 'xmlrpc') {
         tk_update_option('hardening_disable_xmlrpc', !empty($_POST['xmlrpc']) ? 1 : 0);
@@ -3059,7 +3062,7 @@ function tk_hardening_save() {
         $blocked = isset($_POST['xmlrpc_blocked_methods']) ? wp_unslash($_POST['xmlrpc_blocked_methods']) : '';
         $blocked = is_string($blocked) ? trim($blocked) : '';
         tk_update_option('hardening_xmlrpc_blocked_methods', $blocked);
-        tk_update_option('hardening_xmlrpc_rate_limit_enabled', !empty($_POST['xmlrpc_rate_limit']) ? 1 : 0);
+        tk_update_option('hardening_xmlrpc_rate_limit_enabled', !empty($_POST['xmlrpc_rate_limit_enabled']) ? 1 : 0);
         tk_update_option('hardening_xmlrpc_rate_limit_window_minutes', isset($_POST['xmlrpc_rate_limit_window']) ? (int) $_POST['xmlrpc_rate_limit_window'] : 10);
         tk_update_option('hardening_xmlrpc_rate_limit_max_attempts', isset($_POST['xmlrpc_rate_limit_max']) ? (int) $_POST['xmlrpc_rate_limit_max'] : 20);
         tk_update_option('hardening_xmlrpc_rate_limit_lockout_minutes', isset($_POST['xmlrpc_rate_limit_lock']) ? (int) $_POST['xmlrpc_rate_limit_lock'] : 30);
@@ -3071,16 +3074,19 @@ function tk_hardening_save() {
         $allow_paths = isset($_POST['waf_allow_paths']) ? wp_unslash($_POST['waf_allow_paths']) : '';
         $allow_paths = is_string($allow_paths) ? trim($allow_paths) : '';
         tk_update_option('hardening_waf_allow_paths', $allow_paths);
-        $allow_regex = isset($_POST['waf_allow_regex']) ? wp_unslash($_POST['waf_allow_regex']) : '';
-        $allow_regex = is_string($allow_regex) ? trim($allow_regex) : '';
-        tk_update_option('hardening_waf_allow_regex', $allow_regex);
+        if (isset($_POST['waf_allow_regex'])) {
+            $allow_regex = wp_unslash($_POST['waf_allow_regex']);
+            tk_update_option('hardening_waf_allow_regex', is_string($allow_regex) ? trim($allow_regex) : '');
+        }
         $log_to_file = !empty($_POST['waf_log_to_file']) ? 1 : 0;
         tk_update_option('hardening_waf_log_to_file', $log_to_file);
-        tk_update_option('hardening_waf_log_max_kb', isset($_POST['waf_log_max_kb']) ? (int) $_POST['waf_log_max_kb'] : 1024);
-        tk_update_option('hardening_waf_log_max_files', isset($_POST['waf_log_max_files']) ? (int) $_POST['waf_log_max_files'] : 3);
+        // Size/retention limits have no form control yet; keep stored values unless posted.
+        foreach (array('max_kb', 'max_files', 'compress_min_kb', 'keep_days') as $waf_log_key) {
+            if (isset($_POST['waf_log_' . $waf_log_key])) {
+                tk_update_option('hardening_waf_log_' . $waf_log_key, (int) $_POST['waf_log_' . $waf_log_key]);
+            }
+        }
         tk_update_option('hardening_waf_log_compress', !empty($_POST['waf_log_compress']) ? 1 : 0);
-        tk_update_option('hardening_waf_log_compress_min_kb', isset($_POST['waf_log_compress_min_kb']) ? (int) $_POST['waf_log_compress_min_kb'] : 256);
-        tk_update_option('hardening_waf_log_keep_days', isset($_POST['waf_log_keep_days']) ? (int) $_POST['waf_log_keep_days'] : 14);
         $schedule = isset($_POST['waf_log_schedule']) ? sanitize_key($_POST['waf_log_schedule']) : 'daily';
         if (!in_array($schedule, array('hourly', 'twice_daily', 'daily'), true)) {
             $schedule = 'daily';

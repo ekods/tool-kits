@@ -1166,8 +1166,9 @@ function tk_db_import_handler() {
         exit;
     }
 
+    // finfo reports SQL dumps as text/plain; WordPress rejects text/plain files mapped to any other type.
     $mimes = array(
-        'sql' => 'application/sql',
+        'sql' => 'text/plain',
         'gz' => 'application/gzip',
     );
     $uploaded = wp_handle_upload($file, array(
@@ -1412,7 +1413,8 @@ function tk_db_change_prefix_handler() {
 
     @set_time_limit(0);
 
-    $tables = $wpdb->get_col("SHOW TABLES LIKE '{$old}%'");
+    // "_" is a LIKE wildcard: an unescaped "wp_%" also matches another install's "wp2_options".
+    $tables = $wpdb->get_col($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($old) . '%'));
     if (empty($tables)) {
         wp_safe_redirect(add_query_arg(array('page'=>'tool-kits-db','tk_err'=>'no_tables','tk_tab'=>'change-prefix'), admin_url('admin.php')));
         exit;
@@ -1450,35 +1452,35 @@ function tk_db_change_prefix_handler() {
     }
 
     if (empty($errors)) {
-        $db_name = $wpdb->dbname;
-        $columns = $wpdb->get_results(
-            $wpdb->prepare(
-                "SELECT TABLE_NAME, COLUMN_NAME
-                 FROM information_schema.COLUMNS
-                 WHERE TABLE_SCHEMA = %s
-                   AND COLUMN_NAME IN ('option_name','meta_key')
-                   AND DATA_TYPE IN ('char','varchar','text','mediumtext','longtext')",
-                $db_name
-            ),
-            ARRAY_A
-        );
-        foreach ($columns as $column) {
-            $table = $column['TABLE_NAME'];
-            $col = $column['COLUMN_NAME'];
-            if (!preg_match('/^[A-Za-z0-9_]+$/', $table)) {
-                continue;
+        // Only prefix-derived keys move: "{prefix}user_roles" (per site) and usermeta keys such as
+        // "{prefix}capabilities". Core options like wp_page_for_privacy_policy merely start with "wp_".
+        $old_len = strlen($old);
+        foreach ($renamed as $pair) {
+            $suffix = substr($pair['new'], strlen($new));
+            $res = null;
+            if ($suffix === 'options' || preg_match('/^[0-9]+_options$/', $suffix)) {
+                $site_part = $suffix === 'options' ? '' : substr($suffix, 0, -strlen('options'));
+                $res = $wpdb->query($wpdb->prepare(
+                    "UPDATE `{$pair['new']}` SET option_name = CONCAT(%s, SUBSTRING(option_name, %d)) WHERE option_name = %s",
+                    $new,
+                    $old_len + 1,
+                    $old . $site_part . 'user_roles'
+                ));
+            } elseif ($suffix === 'usermeta') {
+                $res = $wpdb->query($wpdb->prepare(
+                    "UPDATE `{$pair['new']}` SET meta_key = CONCAT(%s, SUBSTRING(meta_key, %d)) WHERE meta_key LIKE %s",
+                    $new,
+                    $old_len + 1,
+                    $wpdb->esc_like($old) . '%'
+                ));
             }
-            $res = $wpdb->query($wpdb->prepare(
-                "UPDATE `$table` SET `$col` = REPLACE(`$col`, %s, %s) WHERE `$col` LIKE %s",
-                $old,
-                $new,
-                $wpdb->esc_like($old) . '%'
-            ));
             if ($res === false) {
                 $errors[] = $wpdb->last_error;
                 break;
             }
-            $updated_columns++;
+            if ($res !== null) {
+                $updated_columns++;
+            }
         }
     }
 

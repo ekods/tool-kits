@@ -414,6 +414,35 @@ function tk_render_rate_limit_page($title = null, $description = null) {
                             <textarea name="whitelist" rows="4" class="large-text"><?php echo esc_textarea((string) tk_get_option('rate_limit_whitelist', '')); ?></textarea>
                         </p>
 
+                        <?php
+                        $tk_remote_addr = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
+                        $tk_has_forwarded = !empty($_SERVER['HTTP_X_FORWARDED_FOR']) || !empty($_SERVER['HTTP_X_REAL_IP']) || !empty($_SERVER['HTTP_CF_CONNECTING_IP']);
+                        $tk_untrusted_proxy = $tk_has_forwarded && tk_get_ip() === $tk_remote_addr;
+                        ?>
+                        <div class="description" style="padding:10px 12px; border-left:3px solid <?php echo $tk_untrusted_proxy ? '#dba617' : '#c3c4c7'; ?>; background:#f6f7f7;">
+                            <p style="margin:0 0 6px;">
+                                <strong><?php esc_html_e('Visitor IP detection', 'tool-kits'); ?></strong><br>
+                                <?php
+                                printf(
+                                    /* translators: 1: IP used by Tool Kits, 2: REMOTE_ADDR */
+                                    esc_html__('Your IP as seen by Tool Kits: %1$s (connection from %2$s).', 'tool-kits'),
+                                    '<code>' . esc_html(tk_get_ip()) . '</code>',
+                                    '<code>' . esc_html($tk_remote_addr !== '' ? $tk_remote_addr : '-') . '</code>'
+                                );
+                                ?>
+                            </p>
+                            <?php if ($tk_untrusted_proxy) : ?>
+                                <p style="margin:0 0 6px;"><strong><?php esc_html_e('This request came through a proxy that is not trusted yet, so every visitor may share the proxy IP above. If that IP belongs to your load balancer or CDN, add it as shown below.', 'tool-kits'); ?></strong></p>
+                            <?php endif; ?>
+                            <p style="margin:0 0 6px;"><?php esc_html_e('Forwarded client IP headers are only trusted from Cloudflare and from local or private networks (127.0.0.1, 10.x, 172.16-31.x, 192.168.x). If the site sits behind another proxy or load balancer with a public IP (Sucuri, another CDN, a hosting load balancer), add its IPs or CIDR ranges to wp-config.php:', 'tool-kits'); ?></p>
+                            <code style="display:block; padding:6px 8px;">define('TK_TRUSTED_PROXIES', '203.0.113.10, 198.51.100.0/24');</code>
+                            <p style="margin:6px 0 0;"><?php esc_html_e('Only add proxies you control: a trusted proxy can set any visitor IP, which affects lockouts, the whitelist and IP blocks.', 'tool-kits'); ?>
+                            <?php if (defined('TK_TRUSTED_PROXIES')) : ?>
+                                <?php printf(esc_html__('Currently set: %s', 'tool-kits'), '<code>' . esc_html((string) TK_TRUSTED_PROXIES) . '</code>'); ?>
+                            <?php endif; ?>
+                            </p>
+                        </div>
+
                         <hr>
 
                         <h3><?php esc_html_e('Auto Block Rules', 'tool-kits'); ?></h3>

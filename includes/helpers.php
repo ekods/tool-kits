@@ -1761,20 +1761,90 @@ function tk_sanitize_slug($slug) {
     return $slug ?: 'secure-login';
 }
 
-function tk_get_ip() {
-    // Best-effort IP detection; still trustable enough for rate limiting/logging.
-    $keys = array('HTTP_CF_CONNECTING_IP','HTTP_X_FORWARDED_FOR','HTTP_X_REAL_IP','REMOTE_ADDR');
-    foreach ($keys as $k) {
-        if (!empty($_SERVER[$k])) {
-            $ip = sanitize_text_field(wp_unslash($_SERVER[$k]));
-            if ($k === 'HTTP_X_FORWARDED_FOR') {
-                $parts = explode(',', $ip);
-                $ip = trim($parts[0]);
-            }
-            return $ip;
+/** Whether $ip falls inside any of the CIDR ranges (or exact IPs) in $ranges. */
+function tk_ip_in_ranges(string $ip, array $ranges): bool {
+    $ip_bin = @inet_pton($ip);
+    if ($ip_bin === false) {
+        return false;
+    }
+    foreach ($ranges as $range) {
+        $range = trim((string) $range);
+        if ($range === '') {
+            continue;
+        }
+        list($net, $bits) = array_pad(explode('/', $range, 2), 2, null);
+        $net_bin = @inet_pton($net);
+        if ($net_bin === false || strlen($net_bin) !== strlen($ip_bin)) {
+            continue;
+        }
+        $bits = $bits === null ? strlen($ip_bin) * 8 : (int) $bits;
+        $bytes = intdiv($bits, 8);
+        if ($bytes > 0 && substr($ip_bin, 0, $bytes) !== substr($net_bin, 0, $bytes)) {
+            continue;
+        }
+        $rest = $bits % 8;
+        if ($rest === 0 || ((ord($ip_bin[$bytes]) ^ ord($net_bin[$bytes])) & (0xFF << (8 - $rest)) & 0xFF) === 0) {
+            return true;
         }
     }
-    return '0.0.0.0';
+    return false;
+}
+
+/** Published Cloudflare edge ranges (https://www.cloudflare.com/ips/). */
+function tk_cloudflare_ip_ranges(): array {
+    return array(
+        '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22', '141.101.64.0/18',
+        '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20', '197.234.240.0/22', '198.41.128.0/17',
+        '162.158.0.0/15', '104.16.0.0/13', '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+        '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32', '2405:8100::/32',
+        '2a06:98c0::/29', '2c0f:f248::/32',
+    );
+}
+
+/** Reverse proxies whose forwarding headers are trusted: loopback, private networks and TK_TRUSTED_PROXIES. */
+function tk_trusted_proxy_ranges(): array {
+    $ranges = array('127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '::1/128', 'fc00::/7');
+    if (defined('TK_TRUSTED_PROXIES')) {
+        $ranges = array_merge($ranges, preg_split('/[\s,]+/', (string) TK_TRUSTED_PROXIES));
+    }
+    return (array) apply_filters('tk_trusted_proxies', array_filter($ranges));
+}
+
+/**
+ * Client IP for rate limiting, blocking and logging. Forwarding headers are client-controlled,
+ * so they are only read when the connecting peer is Cloudflare or a trusted proxy.
+ */
+function tk_get_ip() {
+    $remote = isset($_SERVER['REMOTE_ADDR']) ? trim((string) $_SERVER['REMOTE_ADDR']) : '';
+    if (!filter_var($remote, FILTER_VALIDATE_IP)) {
+        return '0.0.0.0';
+    }
+    $ip = $remote;
+    if (!empty($_SERVER['HTTP_CF_CONNECTING_IP']) && tk_ip_in_ranges($remote, tk_cloudflare_ip_ranges())) {
+        $cf = trim((string) $_SERVER['HTTP_CF_CONNECTING_IP']);
+        if (filter_var($cf, FILTER_VALIDATE_IP)) {
+            $ip = $cf;
+        }
+    } elseif (tk_ip_in_ranges($remote, tk_trusted_proxy_ranges())) {
+        $trusted = array_merge(tk_trusted_proxy_ranges(), tk_cloudflare_ip_ranges());
+        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            // Right-most hop that is not one of our proxies; earlier hops are client-supplied.
+            $hops = array_reverse(array_map('trim', explode(',', (string) $_SERVER['HTTP_X_FORWARDED_FOR'])));
+            foreach ($hops as $hop) {
+                if (!filter_var($hop, FILTER_VALIDATE_IP)) {
+                    break;
+                }
+                $ip = $hop;
+                if (!tk_ip_in_ranges($hop, $trusted)) {
+                    break;
+                }
+            }
+        } elseif (!empty($_SERVER['HTTP_X_REAL_IP']) && filter_var(trim((string) $_SERVER['HTTP_X_REAL_IP']), FILTER_VALIDATE_IP)) {
+            $ip = trim((string) $_SERVER['HTTP_X_REAL_IP']);
+        }
+    }
+    $ip = (string) apply_filters('tk_client_ip', $ip, $remote);
+    return filter_var($ip, FILTER_VALIDATE_IP) ? $ip : $remote;
 }
 
 function tk_security_events_table(): string {
@@ -2725,6 +2795,10 @@ function tk_toolkits_guard(): void {
         exit;
     }
     $action = isset($_REQUEST['action']) ? sanitize_key($_REQUEST['action']) : '';
+    // Editor-facing actions check their own nonce and edit_post capability.
+    if (in_array($action, array('tk_duplicate_content'), true)) {
+        return;
+    }
     $is_toolkits_page = $page !== '' && strpos($page, 'tool-kits') === 0;
     $is_toolkits_action = $action !== '' && strpos($action, 'tk_') === 0;
     $license_exempt_pages = array('tool-kits-db');
@@ -3121,6 +3195,25 @@ function tk_get_template($template_name, $args = array()) {
 /**
  * Renders a consistent UI switch for settings.
  */
+/**
+ * Whether the submitted form contained a field. Unchecked switches are not posted,
+ * so tk_render_switch() adds a tk_switches[] marker for every switch it renders.
+ */
+function tk_form_has_field(string $name): bool {
+    if (isset($_POST[$name])) {
+        return true;
+    }
+    $switches = isset($_POST['tk_switches']) ? (array) wp_unslash($_POST['tk_switches']) : array();
+    return in_array($name, $switches, true);
+}
+
+/** Saves a checkbox option only when its field was part of the submitted form. */
+function tk_update_posted_flag(string $option, string $field): void {
+    if (tk_form_has_field($field)) {
+        tk_update_option($option, !empty($_POST[$field]) ? 1 : 0);
+    }
+}
+
 function tk_render_switch($name, $label, $description, $checked, $confirm = '') {
     ?>
     <div class="tk-control-row" id="section-<?php echo esc_attr($name); ?>">
@@ -3129,6 +3222,7 @@ function tk_render_switch($name, $label, $description, $checked, $confirm = '') 
             <p class="description"><?php echo esc_html($description); ?></p>
         </div>
         <label class="tk-switch">
+            <input type="hidden" name="tk_switches[]" value="<?php echo esc_attr($name); ?>">
             <input type="checkbox" id="tk-sw-<?php echo esc_attr($name); ?>" name="<?php echo esc_attr($name); ?>" value="1" <?php checked(1, $checked); ?> <?php echo $confirm ? 'data-confirm="' . esc_attr($confirm) . '"' : ''; ?>>
             <span class="tk-slider"></span>
         </label>

@@ -1667,10 +1667,21 @@ function tk_toolkits_access_save() {
         tk_update_option('license_last_checked', 0);
     }
     if ($tab === 'access') {
-        $collector_url = isset($_POST['heartbeat_collector_url']) ? esc_url_raw(wp_unslash($_POST['heartbeat_collector_url'])) : '';
-        tk_update_option('heartbeat_collector_url', $collector_url);
-        $collector_key = isset($_POST['heartbeat_auth_key']) ? trim(wp_unslash($_POST['heartbeat_auth_key'])) : '';
-        tk_update_option('heartbeat_auth_key', $collector_key);
+        // The collector fields live on the License Status form; only touch them when posted.
+        if (isset($_POST['heartbeat_collector_url'])) {
+            tk_update_option('heartbeat_collector_url', esc_url_raw(wp_unslash($_POST['heartbeat_collector_url'])));
+        }
+        if (isset($_POST['heartbeat_auth_key'])) {
+            tk_update_option('heartbeat_auth_key', trim(wp_unslash($_POST['heartbeat_auth_key'])));
+        }
+        $owner_only = !empty($_POST['toolkits_owner_only_enabled']) ? 1 : 0;
+        if ($owner_only) {
+            $owner_user = get_user_by('id', (int) tk_get_option('toolkits_owner_user_id', 1));
+            if (!$owner_user || !in_array('administrator', (array) $owner_user->roles, true)) {
+                tk_update_option('toolkits_owner_user_id', get_current_user_id());
+            }
+        }
+        tk_update_option('toolkits_owner_only_enabled', $owner_only);
         $roles = isset($_POST['toolkits_allowed_roles']) ? (array) $_POST['toolkits_allowed_roles'] : array();
         $roles = array_filter(array_map('sanitize_key', $roles));
         if (empty($roles)) {

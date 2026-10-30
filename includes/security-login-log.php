@@ -170,8 +170,9 @@ function tk_login_security_guard_authenticate($user, $username, $password) {
         && function_exists('username_exists')
         && !username_exists($username)
     ) {
-        if (function_exists('tk_rate_limit_block_ip')) {
-            tk_rate_limit_block_ip(function_exists('tk_get_ip') ? tk_get_ip() : '');
+        // One typo of "admin" (or a shared office IP) must not block an IP forever; use a progressive lock.
+        if (function_exists('tk_rate_limit_lock_current_ip') && function_exists('tk_rate_limit_next_lock_minutes')) {
+            tk_rate_limit_lock_current_ip(tk_rate_limit_next_lock_minutes(), 'bad_username');
         }
         tk_login_security_record_block('blocked_bad_username', $username);
         return new WP_Error('tk_blocked_bad_username', __('Login failed.', 'tool-kits'));
@@ -300,6 +301,10 @@ function tk_login_log_auto_block_authenticate($user, $username, $password) {
     }
     if (function_exists('tk_rate_limit_is_blocked') && tk_rate_limit_is_blocked($ip)) {
         return new WP_Error('tk_auto_blocked_ip', __('Your IP is blocked. Please contact the site administrator.', 'tool-kits'));
+    }
+    // Temporary locks set by the login guards apply even when the rate limiter itself is off.
+    if (function_exists('tk_rate_limit_lock_key') && get_transient(tk_rate_limit_lock_key())) {
+        return new WP_Error('tk_rate_limited', __('Too many login attempts. Please try again later.', 'tool-kits'));
     }
 
     $agent = strtolower(tk_user_agent());
