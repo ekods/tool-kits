@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PLUGIN_FILE="$ROOT_DIR/tool-kits.php"
 README_FILE="$ROOT_DIR/readme.txt"
+EXPECTED_TAG="${1:-}"
 
 if [[ ! -f "$PLUGIN_FILE" ]]; then
   echo "Main plugin file not found: $PLUGIN_FILE" >&2
@@ -59,4 +60,14 @@ if [[ "$plugin_header_php" != "$plugin_constant_php" || "$plugin_header_php" != 
   exit 1
 fi
 
-echo "Release metadata looks consistent: version $plugin_header_version, PHP >= $plugin_header_php"
+if [[ -n "$EXPECTED_TAG" && "$EXPECTED_TAG" != "v$plugin_header_version" ]]; then
+  echo "Tag mismatch: expected v$plugin_header_version, got $EXPECTED_TAG" >&2
+  exit 1
+fi
+
+if ! grep -Fqx "= $plugin_header_version =" "$README_FILE"; then
+  echo "Missing readme.txt changelog entry for $plugin_header_version." >&2
+  exit 1
+fi
+
+echo "Release metadata looks consistent: version $plugin_header_version, PHP >= $plugin_header_php${EXPECTED_TAG:+, tag $EXPECTED_TAG}"

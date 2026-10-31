@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+      - name: Setup PHP 7.4 (minimum supported)
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.4'
+          coverage: none
+      - name: Validate tag and plugin versions
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: bash scripts/check-release-metadata.sh "$RELEASE_TAG"
+      - name: Lint plugin PHP on PHP 7.4
+        run: |
+          find tool-kits.php uninstall.php includes templates drop-ins -name '*.php' -print0 2>/dev/null \
+            | xargs -0 -n1 php -l > /dev/null
+      - name: Setup PHP 8.3 for regression tests
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - name: Run regression tests
+        run: node scripts/regression-tests.cjs
+      - name: Build and validate ZIP
+        env:
+          RELEASE_SKIP_SYNC: '1'
+        run: bash scripts/build-release-zip.sh "$RUNNER_TEMP/tool-kits.zip"
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          awk -v version="${RELEASE_TAG#v}" '
+            $0 == "= " version " =" { active = 1; next }
+            active && /^=/ { exit }
+            active { print }
+          ' readme.txt > "$RUNNER_TEMP/release-notes.md"
+          gh release create "$RELEASE_TAG" "$RUNNER_TEMP/tool-kits.zip" \
+            --verify-tag --title "Tool Kits $RELEASE_TAG" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
