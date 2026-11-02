@@ -296,7 +296,7 @@ function tk_seo_generate_description() {
 function tk_seo_og_image_url(?int $post_id = null, bool $use_custom = true) {
     if ($post_id === null) { $post_id = is_singular() ? (int) get_queried_object_id() : 0; }
     if ($post_id > 0) {
-        $custom = $use_custom ? tk_seo_custom_social_image_url($post_id) : '';
+        $custom = tk_seo_post_social_image_url($post_id, $use_custom);
         if ($custom !== '') { return $custom; }
     }
     if (tk_seo_global_enabled()) {

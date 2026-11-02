@@ -52,8 +52,33 @@ function tk_seo_custom_social_image_url(int $post_id): string {
     return esc_url_raw((string) wp_get_attachment_image_url($image_id, 'full'), array('http', 'https'));
 }
 
-function tk_seo_social_preview_image(int $post_id, bool $use_custom = true): string {
+/** Bilingual pages may share one upload: borrow a linked Polylang translation's custom image. */
+function tk_seo_translated_social_image_url(int $post_id): string {
+    if ($post_id <= 0 || !function_exists('pll_get_post_translations')) { return ''; }
+    $translations = pll_get_post_translations($post_id);
+    if (!is_array($translations)) { return ''; }
+    $default = function_exists('pll_default_language') ? pll_default_language('slug') : '';
+    if (is_string($default) && isset($translations[$default])) {
+        $translations = array($default => $translations[$default]) + $translations;
+    }
+    $post_type = get_post_type($post_id);
+    foreach ($translations as $id) {
+        $id = (int) $id;
+        if ($id <= 0 || $id === $post_id || get_post_type($id) !== $post_type) { continue; }
+        $url = tk_seo_custom_social_image_url($id);
+        if ($url !== '') { return $url; }
+    }
+    return '';
+}
+
+/** The page's own custom image (unless $use_custom is false), then a translation's. */
+function tk_seo_post_social_image_url(int $post_id, bool $use_custom = true): string {
     $custom = $use_custom ? tk_seo_custom_social_image_url($post_id) : '';
+    return $custom !== '' ? $custom : tk_seo_translated_social_image_url($post_id);
+}
+
+function tk_seo_social_preview_image(int $post_id, bool $use_custom = true): string {
+    $custom = tk_seo_post_social_image_url($post_id, $use_custom);
     if ($custom !== '') { return $custom; }
     if (tk_seo_global_enabled()) {
         $global = tk_seo_global_content();
@@ -93,6 +118,9 @@ function tk_seo_render_content_meta_box($post): void {
     $social_custom_image = tk_seo_custom_social_image_url($post_id);
     $social_image_id = $social_custom_image !== '' ? (int) get_post_meta($post_id, '_tk_seo_social_image_id', true) : 0;
     $social_fallback_image = tk_seo_social_preview_image($post_id, false);
+    $social_fallback_label = tk_seo_translated_social_image_url($post_id) !== ''
+        ? 'Using the Open Graph image from a linked translation.'
+        : 'Using the Featured Image (thumbnail), with the site image as a fallback.';
     wp_nonce_field('tk_seo_content_meta_box', 'tk_seo_content_meta_nonce');
     ?>
     <div class="tk-seo-post-editor" data-site-name="<?php echo esc_attr($site_name); ?>" data-page-title="<?php echo esc_attr($page_title); ?>" data-separator="<?php echo esc_attr($separator); ?>" data-variables="<?php echo esc_attr(wp_json_encode($variables)); ?>" data-default-title="<?php echo esc_attr($default_title); ?>" data-default-description="<?php echo esc_attr($defaults['description']); ?>" data-social-default-image="<?php echo esc_url($social_default_image); ?>" data-homepage="<?php echo (int) get_option('page_on_front') === $post_id ? '1' : '0'; ?>" data-url="<?php echo esc_url($url); ?>" data-slug="<?php echo esc_attr((string) $post->post_name); ?>">
@@ -150,9 +178,9 @@ function tk_seo_render_content_meta_box($post): void {
         <section class="tk-seo-editor-section" id="tk-seo-panel-social" role="tabpanel" aria-labelledby="tk-seo-tab-social" data-seo-tab="social">
             <h3 class="tk-seo-editor-heading">Social media preview</h3>
             <div class="tk-seo-editor-body">
-                <p class="description">Uses your SEO title and meta description. Upload or choose a custom Open Graph image, or leave it unset to use the Featured Image (thumbnail), with the site's social image as a fallback.</p>
+                <p class="description">Uses your SEO title and meta description. Upload or choose a custom Open Graph image, or leave it unset to use the image set on a linked translation, then the Featured Image (thumbnail), with the site's social image as a fallback.</p>
                 <p id="tk-seo-social-image-label"><strong>SEO Social Image</strong></p>
-                <input type="hidden" id="tk-seo-social-image-id" name="tk_seo_social_image_id" value="<?php echo esc_attr((string) $social_image_id); ?>" data-custom-url="<?php echo esc_url($social_custom_image); ?>" data-fallback-url="<?php echo esc_url($social_fallback_image); ?>">
+                <input type="hidden" id="tk-seo-social-image-id" name="tk_seo_social_image_id" value="<?php echo esc_attr((string) $social_image_id); ?>" data-custom-url="<?php echo esc_url($social_custom_image); ?>" data-fallback-url="<?php echo esc_url($social_fallback_image); ?>" data-fallback-label="<?php echo esc_attr($social_fallback_label); ?>">
                 <div class="tk-seo-social-image-controls" role="group" aria-labelledby="tk-seo-social-image-label" aria-describedby="tk-seo-social-image-help">
                     <?php if (current_user_can('upload_files')) : ?><button type="button" class="button tk-seo-social-image-select" hidden>Upload / choose image</button><?php endif; ?>
                     <button type="button" class="button tk-seo-social-image-reset" hidden>Use thumbnail</button>
@@ -160,7 +188,7 @@ function tk_seo_render_content_meta_box($post): void {
                     <a class="button tk-seo-social-image-open" target="_blank" rel="noopener noreferrer" hidden>Open image</a>
                 </div>
                 <p class="description" id="tk-seo-social-image-help">Recommended size: <strong>1200 &times; 630 px</strong> (approximately 1.91:1). Use JPG or PNG, ideally under 1 MB. Keep important text and logos near the centre to allow for cropping.</p>
-                <p class="description tk-seo-social-image-status" role="status" aria-live="polite"><?php echo $social_image_id > 0 ? 'Using a custom Open Graph image.' : 'Using the Featured Image (thumbnail), with the site image as a fallback.'; ?></p>
+                <p class="description tk-seo-social-image-status" role="status" aria-live="polite"><?php echo esc_html($social_image_id > 0 ? 'Using a custom Open Graph image.' : $social_fallback_label); ?></p>
                 <div class="tk-seo-social-preview">
                     <input class="tk-seo-device-choice tk-seo-social-choice" type="radio" id="tk-seo-social-facebook" name="tk_seo_social_network" value="facebook" checked>
                     <input class="tk-seo-device-choice tk-seo-social-choice" type="radio" id="tk-seo-social-linkedin" name="tk_seo_social_network" value="linkedin">

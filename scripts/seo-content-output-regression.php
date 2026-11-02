@@ -147,6 +147,18 @@ $_POST['tk_seo_social_image_id'] = '0'; tk_seo_save_content_meta_box(42, $post);
 verify_output($meta['_tk_seo_social_image_id'] === 0 && tk_seo_social_preview_image(42) === $featured[42]
     && tk_seo_og_image_url(42) === $featured[42], 'Use thumbnail must clear the custom selection and restore the Featured Image');
 verify_output(render_output_fixture($image_only_html) === $image_only_html, 'Clearing the custom image must restore theme metadata ownership');
+$attachment_urls[91] = 'https://brandkraft.id/translated-og.jpg';
+$pll_translations = array('en' => 42, 'id' => 43); $translation_meta = array(43 => array('_tk_seo_social_image_id' => 91));
+verify_output(tk_seo_social_preview_image(42) === $attachment_urls[91] && tk_seo_og_image_url(42) === $attachment_urls[91]
+    && strpos(render_output_fixture($image_only_html), 'property="og:image" content="' . $attachment_urls[91] . '"') !== false, 'A page without its own image must use the image set on a linked translation');
+$post->post_status = 'auto-draft';
+ob_start(); tk_seo_render_content_meta_box($post); $translated_panel = ob_get_clean();
+$post->post_status = 'publish';
+verify_output(strpos($translated_panel, 'name="tk_seo_social_image_id" value="0"') !== false
+    && strpos($translated_panel, 'Using the Open Graph image from a linked translation.') !== false, 'The editor must show the borrowed image without saving it as this page\'s own');
+$meta['_tk_seo_social_image_id'] = 90;
+verify_output(tk_seo_og_image_url(42) === $attachment_urls[90], 'A page\'s own image must take priority over a translation\'s image');
+$meta['_tk_seo_social_image_id'] = 0; $pll_translations = array(); $translation_meta = array();
 define('REST_REQUEST', true);
 verify_output(render_output_fixture($html) === $html, 'REST request overridden');
 echo 'PASS: ' . $output_checks . " saved-content/public-output checks, including theme/plugin conflicts, duplicate removal, audit mismatches, escaping, full descriptions and request guards\n";

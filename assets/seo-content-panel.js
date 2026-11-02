@@ -264,7 +264,7 @@
             function updateSocialImageChoice() {
                 var custom = Number(socialImageId.value) > 0;
                 socialImageReset.hidden = !custom;
-                socialImageStatus.textContent = custom ? 'Using a custom Open Graph image.' : 'Using the Featured Image (thumbnail), with the site image as a fallback.';
+                socialImageStatus.textContent = custom ? 'Using a custom Open Graph image.' : (socialImageId.dataset.fallbackLabel || 'Using the Featured Image (thumbnail), with the site image as a fallback.');
                 setSocialImage(fallbackImage, fallbackLoading);
             }
             if (socialImageSelect && window.wp && typeof window.wp.media === 'function') {

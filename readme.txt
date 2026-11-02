@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.75
+Stable tag: 2.7.76
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,9 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+= 2.7.76 =
+- SEO Content: on bilingual (Polylang) sites the Open Graph image only needs to be uploaded on one language. A translation without its own SEO Social Image now uses the image set on a linked translation (default language first) before the Featured Image and site image. The image is shared, not copied, and a page's own upload still takes priority. The editor's Social tab shows when the image comes from a linked translation.
+
 = 2.7.75 =
 - Releases are now published automatically: pushing a version tag validates the tag against the plugin version, lints every PHP file on PHP 7.4, runs the regression suite and attaches tool-kits.zip to the GitHub release used by the updater.
 - This is the first published release since 2.7.71 and includes all fixes from 2.7.72, 2.7.73 and 2.7.74: no more blank page when purging the cache from the post editor; trusted client IP detection behind Cloudflare and proxies (see Brute Force Protection for TK_TRUSTED_PROXIES); settings saves that no longer reset options missing from the form; safer login, OTP, Form Guard and Hide Login behaviour; fixed .sql import, table prefix change, 404 log clearing and post duplication; and safe JavaScript minify, image lazy loading, delayed scripts, deferred CSS, CAPTCHA on cached pages, WebP and anti-spam matching. See the 2.7.72-2.7.74 entries below for details.

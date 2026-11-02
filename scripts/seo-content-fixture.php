@@ -13,7 +13,9 @@ function tk_get_option($key, $default = null) { return $GLOBALS['options'][$key]
 function get_option($key) { return $GLOBALS['options'][$key] ?? 0; }
 function get_post($id = null) { return $GLOBALS['post']; }
 function get_post_type($id) { return $GLOBALS['post']->post_type; }
-function get_post_meta($id, $key, $single) { return $GLOBALS['meta'][$key] ?? ''; }
+function get_post_meta($id, $key, $single) { return $GLOBALS['translation_meta'][$id][$key] ?? $GLOBALS['meta'][$key] ?? ''; }
+function pll_get_post_translations($id) { return $GLOBALS['pll_translations'] ?? array(); }
+function pll_default_language($field) { return 'id'; }
 function get_the_terms($id, $taxonomy) { return $GLOBALS['categories'] ?? array(); }
 function get_query_var($key) { return $GLOBALS['query'][$key] ?? 0; }
 function wp_json_encode($value) { return json_encode($value); }

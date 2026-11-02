@@ -15,7 +15,7 @@ function tk_seo_content_output_values(int $post_id): array {
         if ($value !== '') { $values[$field] = $value; }
     }
     if ((int) tk_get_option('seo_og_enabled', 1) === 1) {
-        $image = tk_seo_custom_social_image_url($post_id);
+        $image = tk_seo_post_social_image_url($post_id);
         if ($image !== '') { $values['image'] = $image; }
     }
     return $values;
