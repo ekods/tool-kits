@@ -1,6 +1,6 @@
 # Shared Tool Kits admin layout
 
-The admin uses the existing white surfaces and blue accent consistently across
+The admin uses white and mint surfaces with a teal accent consistently across
 Overview, monitoring, security, performance, SEO/GEO, database and system tools.
 Common typography, borders, spacing, controls, tabs and responsive rules live in
 `assets/tool-kits-admin-ui.css`; individual modules keep their own content styles.
@@ -11,6 +11,11 @@ overrides actually apply. Diagnostics and Health Center use the common page
 heading. Health Center's WordPress dashboard widget retains its own styling.
 Footer adjustments use the `tk-admin-screen` body class and do not affect other
 WordPress admin screens.
+
+Report lists use WordPress `widefat striped` tables. Table colors, header padding,
+borders and list controls come from core. SMTP attempts use `WP_List_Table` with
+server-side search, sorting and pagination. Its row POST forms retain their nonces;
+the separate search form also owns the native page-number input.
 
 ## Components
 
@@ -26,8 +31,8 @@ WordPress admin screens.
 `assets/admin-layout.js` loads only on Tool Kits admin screens. It gives top-level
 data tables a keyboard-focusable, named scroll region while preserving the actual
 table node, form ownership and attached event handlers. Existing scroll containers
-and accessible labels are reused. Nested tables and native WordPress form tables
-are excluded. A child-list observer handles tables returned by AJAX; the script
+and accessible labels are reused. Nested tables, form tables and native
+`WP_List_Table` tables are excluded. A child-list observer handles tables returned by AJAX; the script
 does not request data or change settings. Reinitialization is safe.
 
 ## Verification

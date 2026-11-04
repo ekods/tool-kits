@@ -18,6 +18,7 @@ function esc_attr($value) { return esc_html($value); }
 function esc_url($value) { return esc_html($value); }
 function esc_textarea($value) { return esc_html($value); }
 function selected($a, $b, $echo = true) { $out = (string) $a === (string) $b ? 'selected' : ''; if ($echo) echo $out; return $out; }
+function tk_heartbeat_interval() { return 900; }
 function is_admin() { return true; }
 function is_user_logged_in() { return true; }
 function current_user_can($capability) { return true; }

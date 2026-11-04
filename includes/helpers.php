@@ -1648,7 +1648,7 @@ function tk_notice($message, $type = 'success') {
         return;
     }
     $type = in_array($type, array('success','info','warning','error'), true) ? $type : 'success';
-    printf('<div class="notice notice-%s is-dismissible"><p>%s</p></div>', esc_attr($type), wp_kses_post($message));
+    printf('<div class="notice notice-%s is-dismissible tk-feedback" role="%s"><p>%s</p></div>', esc_attr($type), $type === 'error' ? 'alert' : 'status', wp_kses_post($message));
 }
 
 function tk_csp_nonce_enabled(): bool {

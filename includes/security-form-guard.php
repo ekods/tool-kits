@@ -246,7 +246,7 @@ function tk_render_form_guard_rate_limit_tools(): void {
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                 <?php tk_nonce_field('tk_form_guard_clear_rate_limits'); ?>
                 <input type="hidden" name="action" value="tk_form_guard_clear_rate_limits">
-                <table class="widefat striped tk-table">
+                <table class="widefat striped">
                     <thead>
                         <tr>
                             <th>Unblock</th>

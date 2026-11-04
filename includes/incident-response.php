@@ -291,7 +291,7 @@ function tk_incident_response_render_page(): void {
                 <div class="tk-card">
                     <h2><?php esc_html_e('Investigation Snapshot', 'tool-kits'); ?></h2>
                     <p class="description"><?php esc_html_e('Capture current site facts before and after cleanup for support handoff and audit notes.', 'tool-kits'); ?></p>
-                    <table class="widefat striped tk-table">
+                    <table class="widefat striped">
                         <tbody>
                             <?php if (empty($snapshot)) : ?>
                                 <tr><td><?php esc_html_e('No snapshot captured yet.', 'tool-kits'); ?></td></tr>

@@ -47,5 +47,5 @@ jobs:
             active { print }
           ' readme.txt > "$RUNNER_TEMP/release-notes.md"
           gh release create "$RELEASE_TAG" "$RUNNER_TEMP/tool-kits.zip" \
-            --verify-tag --title "Tool Kits $RELEASE_TAG" \
+            --verify-tag --latest --title "Tool Kits $RELEASE_TAG" \
             --notes-file "$RUNNER_TEMP/release-notes.md"

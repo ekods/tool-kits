@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.76
+Stable tag: 2.7.79
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,24 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.79 =
+- Refresh admin headers, cards, controls, editor dialogs, SEO panels and Health Center with a consistent teal and mint palette.
+- Use native WordPress report tables and WP_List_Table for SMTP search, sorting, pagination and responsive details; preserve nonce-protected resend actions.
+- Clarify success, information, warning and error feedback with accessible status and alert roles.
+- Show at most five countries and five blocked IPs per time range in the Total Attacks Blocked dashboard widget, including previously cached results.
+
+= 2.7.78 =
+- Align Health Center, SEO panels, editor dialogs, language controls and overview icons with the teal admin palette.
+- Give success, information, warning and error feedback consistent surfaces and accessible status or alert roles.
+- Retain native WordPress table styling, search and responsive details.
+
+
+= 2.7.77 =
+- Refresh admin headers, cards, controls and status accents with a calm teal and mint palette.
+- Use WordPress widefat/striped styles for report and security lists, retaining accessible horizontal scrolling for wide reports.
+- Replace the custom SMTP data table with WP_List_Table search, sorting, pagination and responsive row details; preserve nonce-protected resend actions.
+
 = 2.7.76 =
 - SEO Content: on bilingual (Polylang) sites the Open Graph image only needs to be uploaded on one language. A translation without its own SEO Social Image now uses the image set on a linked translation (default language first) before the Featured Image and site image. The image is shared, not copied, and a page's own upload still takes priority. The editor's Social tab shows when the image comes from a linked translation.
 

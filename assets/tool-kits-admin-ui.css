@@ -1,19 +1,19 @@
 /* Shared admin layout. Keep common components here; module CSS owns its content. */
 :is(.tk-wrap, .tk-overview-wrap) {
-    --tk-text: #1d2939;
-    --tk-muted: #586779;
-    --tk-border: #d7dee8;
-    --tk-border-soft: #e9edf3;
-    --tk-bg-soft: #f7f9fc;
+    --tk-text: #183b3a;
+    --tk-muted: #526d6b;
+    --tk-border: #d4e3e0;
+    --tk-border-soft: #e9f0ee;
+    --tk-bg-soft: #f3f8f6;
     --tk-surface: #fff;
-    --tk-primary: #2457e6;
-    --tk-primary-dark: #183fae;
+    --tk-primary: #087f75;
+    --tk-primary-dark: #06665e;
     --wp-admin-theme-color: var(--tk-primary);
     --wp-admin-theme-color-darker-10: var(--tk-primary-dark);
-    --tk-radius-lg: 12px;
+    --tk-radius-lg: 16px;
     --tk-radius-md: 8px;
-    --tk-shadow-sm: 0 1px 2px #10182804;
-    --tk-shadow-md: 0 3px 12px #10182808;
+    --tk-shadow-sm: 0 2px 6px #183b3a06;
+    --tk-shadow-md: 0 6px 20px #183b3a0a;
     --tk-shadow-lg: none;
     color: var(--tk-text);
     letter-spacing: 0;
@@ -50,7 +50,7 @@
 :is(.tk-wrap, .tk-overview-wrap) .tk-status-dot { animation: none; box-shadow: none; width: 6px; height: 6px; flex: 0 0 6px; }
 :is(.tk-wrap, .tk-overview-wrap) .tk-header-version { border-radius: 4px; padding: 2px 6px; font-weight: 500; }
 .tk-overview-wrap .tk-overview-hero {
-    background: #fff;
+    background: linear-gradient(110deg, #edf9f3, #fff 72%);
     color: var(--tk-text);
     border: 1px solid var(--tk-border);
     border-radius: var(--tk-radius-lg);
@@ -62,7 +62,7 @@
 .tk-wrap .tk-hero.tk-page-heading.tk-card {
     display: block;
     width: 100%;
-    background: #fff !important;
+    background: linear-gradient(110deg, #edf9f3, #fff 72%) !important;
     color: var(--tk-text);
     border: 1px solid var(--tk-border) !important;
     border-radius: var(--tk-radius-lg) !important;
@@ -88,7 +88,7 @@
 .tk-rt-chart-stat { min-width: 0; padding: 0 14px; border-left: 1px solid var(--tk-border-soft); }
 .tk-rt-chart-stat:first-child { border-left: 0; }
 .tk-rt-chart-stat strong { display: block; color: var(--tk-text); font-size: 21px; line-height: 1.2; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.tk-rt-chart-stat:first-child strong { color: #2457e6; }
+.tk-rt-chart-stat:first-child strong { color: #087f75; }
 .tk-rt-chart-stat span { display: block; margin-top: 3px; color: var(--tk-muted); font-size: 11px; line-height: 1.3; }
 .tk-rt-plot { position: relative; width: 100%; height: 230px; min-width: 0; overflow: hidden; }
 .tk-rt-plot canvas { display: block; width: 100% !important; height: 100% !important; }
@@ -135,7 +135,7 @@
 .tk-heading-summary { display: grid; gap: 2px; padding-inline-start: 20px; border-inline-start: 1px solid var(--tk-border); text-align: end; }
 .tk-heading-summary strong { font-size: 24px; line-height: 1.25; font-variant-numeric: tabular-nums; }
 .tk-heading-summary span { font-size: 12px; color: var(--tk-muted); }
-.tk-page-heading .tk-hero-content .tk-page-icon { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px; color: var(--tk-primary); background: #eaf0fd; border-radius: 8px; box-shadow: none !important; }
+.tk-page-heading .tk-hero-content .tk-page-icon { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px; color: var(--tk-primary); background: #def4ed; border-radius: 8px; box-shadow: none !important; }
 .tk-page-icon .dashicons { width: 24px; height: 24px; font-size: 24px; }
 .tk-wrap .tk-hero-title,
 .tk-overview-wrap .tk-overview-hero-title { color: var(--tk-text) !important; font-size: 26px !important; font-weight: 650 !important; line-height: 1.25 !important; }
@@ -182,7 +182,7 @@
 :is(.tk-wrap, .tk-overview-wrap) .tk-tabs-nav-button.is-active { background: transparent; border-bottom-color: var(--tk-primary); box-shadow: none; }
 :is(.tk-wrap, .tk-overview-wrap) .tk-tabs-nav-button:hover { background: transparent; color: var(--tk-primary); }
 :is(.tk-wrap, .tk-overview-wrap) .tk-tabs-nav-button:focus-visible { outline: 2px solid var(--tk-primary); outline-offset: -4px; }
-:is(.tk-wrap, .tk-overview-wrap) .button {
+:is(.tk-wrap, .tk-overview-wrap) .button:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     display: inline-flex; align-items: center; justify-content: center; gap: 7px;
     min-height: 38px; height: auto; padding: 7px 14px; margin: 0;
     font-size: 13px; font-weight: 500; line-height: 1.5; text-align: center;
@@ -199,13 +199,13 @@
 :is(.tk-wrap, .tk-overview-wrap) .button .dashicons { width: 16px; height: 16px; font-size: 16px; flex: 0 0 16px; }
 :is(.tk-wrap, .tk-overview-wrap) .button.tk-icon-button { width: 36px; min-width: 36px; height: 36px; padding: 0; }
 .tk-overview-wrap .tk-overview-hero-actions .button-hero { min-height: 36px !important; height: auto !important; line-height: 1.5 !important; padding: 7px 12px !important; border-radius: 6px !important; transform: none; }
-:is(.tk-wrap, .tk-overview-wrap) :is(input[type="text"], input[type="number"], input[type="email"], input[type="url"], input[type="password"], input[type="search"], textarea, select) { border-radius: var(--tk-radius-md); min-height: 38px; border-color: var(--tk-border); box-shadow: none; max-width: 100%; padding: 7px 10px; font-size: 13px; line-height: 1.6; }
+:is(.tk-wrap, .tk-overview-wrap) :is(input[type="text"], input[type="number"], input[type="email"], input[type="url"], input[type="password"], input[type="search"], textarea, select):not(:where(.tablenav *, .search-box *, .wp-list-table *)) { border-radius: var(--tk-radius-md); min-height: 38px; border-color: var(--tk-border); box-shadow: none; max-width: 100%; padding: 7px 10px; font-size: 13px; line-height: 1.6; }
 :is(.tk-wrap, .tk-overview-wrap) textarea { resize: vertical; }
 :is(.tk-wrap, .tk-overview-wrap) select { padding-inline-end: 30px; }
 :is(.tk-wrap, .tk-overview-wrap) :is(input, select, textarea, button, a):focus-visible { outline: 2px solid var(--tk-primary); outline-offset: 2px; }
 .tk-wrap .tk-switch input:focus-visible + .tk-slider { outline: 2px solid var(--tk-primary); outline-offset: 3px; }
-.tk-wrap .tk-table-scroll { position: relative; max-width: 100%; min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; border: 1px solid var(--tk-border); border-radius: var(--tk-radius-md); }
-.tk-wrap .tk-table-scroll > :is(.widefat, .tk-table) { border: 0; margin: 0; min-width: 600px; width: 100%; }
+.tk-wrap .tk-table-scroll { position: relative; max-width: 100%; min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+.tk-wrap .tk-table-scroll > :is(.widefat, .tk-table) { margin: 0; min-width: 600px; width: 100%; }
 .tk-wrap .tk-table-scroll:focus-visible { outline: 2px solid var(--tk-primary); outline-offset: 3px; }
 /* GEO reports scroll sideways instead of squeezing columns until words break letter by letter. */
 .tk-wrap .tk-geo-tabs .tk-table-scroll > :is(.widefat, .tk-table) { min-width: 760px; }
@@ -232,12 +232,8 @@
 .tk-wrap .tk-geo-fix-prompt { margin-top: 14px; }
 .tk-wrap .tk-geo-fix-prompt > summary { cursor: pointer; }
 .tk-wrap .tk-geo-fix-prompt textarea { width: 100%; max-width: 100%; margin-top: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.55; }
-.tk-wrap .tk-table { box-shadow: none; border-radius: 0; }
-.tk-wrap :is(.tk-table, .widefat) th { font-size: 12px; font-weight: 600; background: var(--tk-bg-soft); color: var(--tk-muted); }
-.tk-wrap :is(.tk-table, .widefat):not(.form-table) :is(th, td) { padding: 13px 16px; text-align: start; line-height: 1.6; overflow-wrap: anywhere; }
-.tk-wrap :is(.tk-table, .widefat) tbody td { border-bottom: 1px solid var(--tk-border-soft); }
-.tk-wrap :is(.tk-table, .widefat) tbody tr:last-child td { border-bottom: 0; }
-.tk-wrap :is(.tk-table, .widefat) tbody tr:hover > td { background-color: #f8faff; }
+/* Core widefat/striped rules own table colors, spacing and borders. */
+.tk-wrap .widefat td { overflow-wrap: anywhere; }
 .tk-wrap .tk-badge { border: 0; border-radius: 4px; padding: 3px 7px; font-size: 11px; font-weight: 500; letter-spacing: 0; }
 
 /* Common content rhythm, including legacy screens using native WordPress forms. */
@@ -294,7 +290,7 @@
 .tk-wrap .tk-health-full { max-width: 100%; width: 100%; margin-top: 0; padding: 24px; border: 1px solid var(--tk-border); border-radius: var(--tk-radius-lg); }
 .tk-wrap .tk-tool-card { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 .tk-wrap .tk-tool-card :is(h2, p) { margin: 0; }
-.tk-wrap .tk-tool-card:hover { border-color: #a9bceb; background: #fcfdff; }
+.tk-wrap .tk-tool-card:hover { border-color: #9bcfc3; background: #f6fcf9; }
 .tk-wrap .tk-tool-card::after { display: none; }
 .tk-overview-wrap { padding: 0 0 32px; }
 .tk-overview-wrap .tk-overview-grid { gap: 24px; grid-template-columns: minmax(0, 1fr) minmax(260px, 310px); }
@@ -329,8 +325,8 @@
     .tk-wrap .tk-hero-action { width: 100%; }
     .tk-wrap .tk-heading-summary { border: 0; padding: 0; display: flex; align-items: baseline; gap: 10px; text-align: start; }
     :is(.tk-wrap, .tk-overview-wrap) .tk-tabs-nav { padding-inline: 12px; gap: 0 18px; }
-    :is(.tk-wrap, .tk-overview-wrap) .button { min-height: 42px; }
-    :is(.tk-wrap, .tk-overview-wrap) :is(input[type="text"], input[type="number"], input[type="email"], input[type="url"], input[type="password"], input[type="search"], select) { min-height: 42px; }
+    :is(.tk-wrap, .tk-overview-wrap) .button:not(:where(.tablenav *, .search-box *, .wp-list-table *)) { min-height: 42px; }
+    :is(.tk-wrap, .tk-overview-wrap) :is(input[type="text"], input[type="number"], input[type="email"], input[type="url"], input[type="password"], input[type="search"], select):not(:where(.tablenav *, .search-box *, .wp-list-table *)) { min-height: 42px; }
     .tk-wrap .tk-responsive-grid,
     .tk-wrap .tk-geo-faq-row,
     .tk-wrap .tk-geo-llms-section-row { grid-template-columns: minmax(0, 1fr) !important; }
@@ -474,22 +470,6 @@
     :is(.tk-wrap, .tk-overview-wrap) *, :is(.tk-wrap, .tk-overview-wrap) *::before { animation: none !important; transition: none !important; }
 }
 
-/* Data tables (opt-in with data-tk-datatable): search, sort, paging and horizontal scroll. */
-.tk-dt-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; }
-.tk-dt-toolbar label { display: inline-flex; align-items: center; gap: 6px; color: var(--tk-muted); }
-.tk-dt-toolbar input[type="search"] { min-width: 220px; min-height: 32px; padding: 0 10px; border: 1px solid var(--tk-border); border-radius: var(--tk-radius-md); }
-.tk-dt-toolbar select { min-width: 72px; min-height: 32px; border-color: var(--tk-border); border-radius: var(--tk-radius-md); }
-.tk-dt-scroll { overflow-x: auto; border: 1px solid var(--tk-border-soft); border-radius: var(--tk-radius-lg); }
-.tk-dt-scroll > table { margin: 0; border: 0; }
-table[data-tk-datatable] th[data-tk-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
-table[data-tk-datatable] th[data-tk-sort]::after { content: "\2195"; margin-left: 6px; color: #98a2b3; font-size: 11px; }
-table[data-tk-datatable] th[aria-sort="ascending"]::after { content: "\2191"; color: var(--tk-primary); }
-table[data-tk-datatable] th[aria-sort="descending"]::after { content: "\2193"; color: var(--tk-primary); }
-.tk-dt-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--tk-muted); }
-.tk-dt-pages { display: flex; flex-wrap: wrap; gap: 4px; }
-.tk-dt-pages .button[aria-current="page"] { background: var(--tk-primary); border-color: var(--tk-primary); color: #fff; }
-.tk-dt-empty td { text-align: center; color: var(--tk-muted); padding: 20px !important; }
-
 /* A wide data table scrolls inside its card instead of stretching the card past the page. */
 .tk-wrap :is(.tk-tabs, .tk-tabs-content, .tk-tab-panel, .tk-card) { min-width: 0; max-width: 100%; }
 
@@ -513,5 +493,21 @@ table[data-tk-datatable] th[aria-sort="descending"]::after { content: "\2193"; c
 @media (max-width: 782px) {
     .tk-wrap { margin-right: 10px; }
     .tk-dns-form { grid-template-columns: 1fr; }
-    .tk-dt-toolbar input[type="search"] { min-width: 0; width: 100%; }
 }
+
+/* Native list controls use core dimensions, including compact pagination buttons. */
+.tk-wrap .tablenav .tablenav-pages { margin-block: 0 9px; }
+.tk-wrap .tk-module-header { background: var(--tk-bg-soft); }
+.tk-overview-wrap .tk-module-header .dashicons { color: var(--tk-primary); }
+.tk-overview-wrap .tk-overview-mini-score-icon { color: var(--tk-primary); background: #def4ed; }
+.tk-wrap .tk-badge.tk-on, .tk-overview-wrap .tk-badge.tk-on { background: #def4e8; color: #17623d; }
+.tk-wrap .tk-badge.tk-warn, .tk-overview-wrap .tk-badge.tk-warn { background: #fff1d6; color: #875000; }
+
+/* Consistent feedback and empty states within Tool Kits only. */
+:is(.tk-wrap, .tk-overview-wrap) .tk-feedback { margin: 0 0 18px; border-radius: 8px; box-shadow: none; }
+:is(.tk-wrap, .tk-overview-wrap) .tk-feedback.notice-success { border-left-color: #20824f; background: #edf8f0; color: #225b3b; }
+:is(.tk-wrap, .tk-overview-wrap) .tk-feedback.notice-info { border-left-color: var(--tk-primary); background: #edf8f4; color: #236157; }
+:is(.tk-wrap, .tk-overview-wrap) .tk-feedback.notice-warning { border-left-color: #ad740b; background: #fff8e8; color: #79520d; }
+:is(.tk-wrap, .tk-overview-wrap) .tk-feedback.notice-error { border-left-color: #b42318; background: #fff1ef; color: #92251b; }
+.tk-wrap .tk-image-empty { border: 1px dashed var(--tk-border); border-radius: 12px; background: var(--tk-bg-soft); }
+.tk-wrap .tk-image-empty > .dashicons { color: var(--tk-primary); }

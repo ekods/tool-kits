@@ -6,8 +6,8 @@
     --tk-muted: #667085;
     --tk-bg-soft: #f6f8fb;
     --tk-surface: #ffffff;
-    --tk-primary: #2457e6;
-    --tk-primary-dark: #183fae;
+    --tk-primary: #087f75;
+    --tk-primary-dark: #06665e;
     --tk-accent: #0891b2;
     --tk-success-bg: #e6f4ea;
     --tk-success-text: #0b6b2f;
@@ -19,7 +19,7 @@
 
 .tk-hero {
     background:
-        linear-gradient(135deg, rgba(36, 87, 230, 0.18), transparent 42%),
+        linear-gradient(135deg, rgba(8, 127, 117, 0.18), transparent 42%),
         linear-gradient(135deg, #111827 0%, #1f2937 100%);
     padding: 42px 36px;
     border-radius: 16px;
@@ -176,7 +176,7 @@
 .tk-tool-card:focus {
     color: var(--tk-text);
     border-color: #b9c9f7;
-    box-shadow: 0 16px 34px rgba(36, 87, 230, 0.12);
+    box-shadow: 0 16px 34px rgba(8, 127, 117, 0.12);
     transform: translateY(-1px);
     outline: none;
 }
@@ -212,29 +212,29 @@
     font-weight: 500;
 }
 
-.tk-card input.regular-text,
-.tk-card input[type="text"],
-.tk-card input[type="email"],
-.tk-card input[type="url"],
-.tk-card input[type="number"],
-.tk-card input[type="password"],
-.tk-card textarea,
-.tk-card select {
+.tk-card input.regular-text:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card input[type="text"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card input[type="email"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card input[type="url"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card input[type="number"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card input[type="password"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card textarea:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card select:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     width: 100%;
     max-width: 620px;
 }
 
-.tk-card input.small-text {
+.tk-card input.small-text:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     width: 120px;
 }
 
-.tk-card textarea {
+.tk-card textarea:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     min-height: 84px;
 }
 
-.tk-card .button,
-.tk-card .button-primary,
-.tk-card .button-secondary {
+.tk-card .button:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card .button-primary:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card .button-secondary:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     margin-right: 6px;
 }
 
@@ -486,17 +486,17 @@
     word-break: normal;
 }
 
-.tk-wrap .select2-container {
+.tk-wrap .select2-container:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     max-width: 100%;
 }
 
-.tk-wrap .select2-container--default .select2-selection--multiple {
+.tk-wrap .select2-container--default .select2-selection--multiple:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     border-color: var(--tk-border);
     border-radius: 8px;
     min-height: 42px;
 }
 
-.tk-wrap .select2-container--default.select2-container--focus .select2-selection--multiple {
+.tk-wrap .select2-container--default.select2-container--focus .select2-selection--multiple:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     border-color: var(--tk-primary);
 }
 
@@ -791,7 +791,7 @@
     z-index: 100;
 }
 
-.tk-wrap .wp-picker-container .wp-color-result.button {
+.tk-wrap .wp-picker-container .wp-color-result.button:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     min-height: 40px;
     margin: 0;
     border-color: #c5d4f4;
@@ -807,17 +807,17 @@
     line-height: 38px;
 }
 
-.tk-wrap .wp-picker-input-wrap {
+.tk-wrap .wp-picker-input-wrap:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     display: inline-flex;
     align-items: center;
     gap: 8px;
 }
 
-.tk-wrap .wp-picker-input-wrap label {
+.tk-wrap .wp-picker-input-wrap label:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     margin: 0;
 }
 
-.tk-wrap .wp-picker-container input[type="text"].wp-color-picker {
+.tk-wrap .wp-picker-container input[type="text"].wp-color-picker:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     width: 94px !important;
     height: 40px;
     margin: 0;
@@ -825,8 +825,8 @@
     border-radius: 8px;
 }
 
-.tk-wrap .wp-picker-container .button.wp-picker-default,
-.tk-wrap .wp-picker-container .button.wp-picker-clear {
+.tk-wrap .wp-picker-container .button.wp-picker-default:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap .wp-picker-container .button.wp-picker-clear:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     height: 40px;
     min-height: 40px;
     margin: 0;
@@ -1168,14 +1168,14 @@
         padding: 8px;
     }
 
-    .tk-card input.regular-text,
-    .tk-card input[type="text"],
-    .tk-card input[type="email"],
-    .tk-card input[type="url"],
-    .tk-card input[type="number"],
-    .tk-card input[type="password"],
-    .tk-card textarea,
-    .tk-card select {
+    .tk-card input.regular-text:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+    .tk-card input[type="text"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+    .tk-card input[type="email"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+    .tk-card input[type="url"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+    .tk-card input[type="number"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+    .tk-card input[type="password"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+    .tk-card textarea:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+    .tk-card select:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
         max-width: 100%;
     }
 }
@@ -1528,7 +1528,7 @@
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
 }
 
-.tk-wrap .button {
+.tk-wrap .button:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     border-radius: 8px;
     font-weight: 500;
     border-color: #cbd5e1;
@@ -1536,20 +1536,20 @@
     box-shadow: none;
 }
 
-.tk-wrap .button:hover {
+.tk-wrap .button:hover:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     border-color: var(--tk-primary);
     color: var(--tk-primary);
 }
 
-.tk-wrap .button-primary,
-.tk-wrap .button.button-primary {
+.tk-wrap .button-primary:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap .button.button-primary:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     background: var(--tk-primary);
     border-color: var(--tk-primary);
     color: #fff;
 }
 
-.tk-wrap .button-primary:hover,
-.tk-wrap .button.button-primary:hover {
+.tk-wrap .button-primary:hover:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap .button.button-primary:hover:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     background: var(--tk-primary-dark);
     border-color: var(--tk-primary-dark);
     color: #fff;
@@ -1603,28 +1603,28 @@ input:checked+.tk-slider:before {
 }
 
 /* Global Visual Refresh */
-.tk-wrap input[type="text"],
-.tk-wrap input[type="email"],
-.tk-wrap input[type="url"],
-.tk-wrap input[type="number"],
-.tk-wrap input[type="password"],
-.tk-wrap textarea,
-.tk-wrap select {
+.tk-wrap input[type="text"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap input[type="email"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap input[type="url"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap input[type="number"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap input[type="password"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap textarea:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap select:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     border-color: #cbd5e1;
     border-radius: 8px;
     color: var(--tk-text);
     box-shadow: none;
 }
 
-.tk-wrap input[type="text"]:focus,
-.tk-wrap input[type="email"]:focus,
-.tk-wrap input[type="url"]:focus,
-.tk-wrap input[type="number"]:focus,
-.tk-wrap input[type="password"]:focus,
-.tk-wrap textarea:focus,
-.tk-wrap select:focus {
+.tk-wrap input[type="text"]:focus:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap input[type="email"]:focus:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap input[type="url"]:focus:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap input[type="number"]:focus:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap input[type="password"]:focus:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap textarea:focus:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap select:focus:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     border-color: var(--tk-primary);
-    box-shadow: 0 0 0 3px rgba(36, 87, 230, 0.12);
+    box-shadow: 0 0 0 3px rgba(8, 127, 117, 0.12);
     outline: none;
 }
 
@@ -1883,7 +1883,7 @@ input:checked+.tk-slider:before {
     align-items: center;
     justify-content: center;
     border-radius: 8px;
-    background: #eff6ff;
+    background: #f1f8f4;
     color: var(--tk-primary);
     font-size: 18px;
 }
@@ -2034,14 +2034,14 @@ input:checked+.tk-slider:before {
     height: 220px;
     pointer-events: none;
     background:
-        linear-gradient(135deg, rgba(36, 87, 230, 0.06), transparent 38%),
+        linear-gradient(135deg, rgba(8, 127, 117, 0.06), transparent 38%),
         linear-gradient(90deg, rgba(8, 145, 178, 0.06), transparent 48%);
     z-index: -1;
 }
 
 .tk-hero {
     background:
-        linear-gradient(135deg, rgba(36, 87, 230, 0.2), transparent 38%),
+        linear-gradient(135deg, rgba(8, 127, 117, 0.2), transparent 38%),
         linear-gradient(120deg, #101827 0%, #182235 58%, #203242 100%);
     border-radius: 18px;
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -2099,7 +2099,7 @@ input:checked+.tk-slider:before {
     width: 44px;
     height: 44px;
     border-radius: 50%;
-    background: rgba(36, 87, 230, 0.07);
+    background: rgba(8, 127, 117, 0.07);
     transform: scale(0.8);
     transition: transform .2s ease, opacity .2s ease;
     opacity: 0;
@@ -2113,14 +2113,14 @@ input:checked+.tk-slider:before {
 
 .tk-tool-card:hover,
 .tk-tool-card:focus {
-    border-color: rgba(36, 87, 230, 0.34);
+    border-color: rgba(8, 127, 117, 0.34);
     box-shadow: var(--tk-shadow-md);
 }
 
 .tk-tool-card .dashicons {
     width: 42px;
     height: 42px;
-    border: 1px solid rgba(36, 87, 230, 0.12);
+    border: 1px solid rgba(8, 127, 117, 0.12);
     border-radius: 12px;
     background: linear-gradient(180deg, #eef4ff, #e8f7fb);
 }
@@ -2156,7 +2156,7 @@ input:checked+.tk-slider:before {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: #2457e6;
+    color: #087f75;
     background: #eef4ff;
     border-radius: 8px;
     font-size: 20px;
@@ -2216,9 +2216,9 @@ input:checked+.tk-slider:before {
     box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
-.tk-wrap .button,
-.tk-wrap .button-secondary,
-.tk-wrap .button-primary,
+.tk-wrap .button:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap .button-secondary:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-wrap .button-primary:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
 .tk-overview-wrap .button,
 .tk-overview-wrap .button-secondary,
 .tk-overview-wrap .button-primary {
@@ -2228,39 +2228,39 @@ input:checked+.tk-slider:before {
     font-weight: 700;
 }
 
-.tk-wrap .button-primary,
+.tk-wrap .button-primary:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
 .tk-overview-wrap .button-primary {
     border-color: var(--tk-primary);
-    background: linear-gradient(180deg, #2f63f0, #2457e6);
-    box-shadow: 0 10px 20px rgba(36, 87, 230, 0.2);
+    background: linear-gradient(180deg, #159487, #087f75);
+    box-shadow: 0 10px 20px rgba(8, 127, 117, 0.2);
 }
 
-.tk-wrap .button-primary:hover,
+.tk-wrap .button-primary:hover:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
 .tk-overview-wrap .button-primary:hover {
     border-color: var(--tk-primary-dark);
-    background: linear-gradient(180deg, #2457e6, #1f4ed0);
+    background: linear-gradient(180deg, #087f75, #06665e);
     transform: translateY(-1px);
 }
 
-.tk-card input.regular-text,
-.tk-card input[type="text"],
-.tk-card input[type="email"],
-.tk-card input[type="url"],
-.tk-card input[type="number"],
-.tk-card input[type="password"],
-.tk-card textarea,
-.tk-card select {
+.tk-card input.regular-text:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card input[type="text"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card input[type="email"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card input[type="url"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card input[type="number"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card input[type="password"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card textarea:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card select:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     min-height: 40px;
     border-color: #cbd5e1;
     border-radius: 10px;
     box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
-.tk-card input:focus,
-.tk-card textarea:focus,
-.tk-card select:focus {
+.tk-card input:focus:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card textarea:focus:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+.tk-card select:focus:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     border-color: var(--tk-primary);
-    box-shadow: 0 0 0 3px rgba(36, 87, 230, 0.12);
+    box-shadow: 0 0 0 3px rgba(8, 127, 117, 0.12);
 }
 
 .tk-table {

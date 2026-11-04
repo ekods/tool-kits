@@ -418,7 +418,7 @@ function tk_render_login_log_page() {
         </div>
         <div class="tk-card no-padding">
             <div class="tk-table-scroll">
-            <table class="widefat striped tk-table">
+            <table class="widefat striped">
                 <thead>
                     <tr>
                         <th>Time</th>

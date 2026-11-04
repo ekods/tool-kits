@@ -704,7 +704,7 @@ function tk_render_diagnostics_page() {
         <div class="tk-card" style="margin-top:24px;">
             <h2>Connection Status</h2>
             <p class="description">Review collector, heartbeat, and license configuration before troubleshooting access or monitoring issues.</p>
-            <table class="widefat striped tk-table">
+            <table class="widefat striped">
                 <tbody>
                     <tr>
                         <th>Collector URL</th>
@@ -768,7 +768,7 @@ function tk_render_diagnostics_page() {
                 <a class="button button-secondary" href="<?php echo esc_url($clear_status_url); ?>">Clear Stored Status</a>
             </p>
 
-            <table class="widefat striped tk-table">
+            <table class="widefat striped">
                 <tbody>
                     <tr>
                         <th>Installed version</th>
@@ -839,7 +839,7 @@ function tk_render_diagnostics_page() {
         <div class="tk-card" style="margin-top:24px;">
             <h2>Readiness Checks</h2>
             <?php if (!empty($checks)) : ?>
-                <table class="widefat striped tk-table">
+                <table class="widefat striped">
                     <tbody>
                     <?php foreach ($checks as $check) : ?>
                         <?php
@@ -880,7 +880,7 @@ function tk_render_diagnostics_page() {
                 <p><small>Recorded at <?php echo esc_html(date_i18n('Y-m-d H:i:s', (int) $status['timestamp'])); ?></small></p>
             <?php endif; ?>
             <?php if (!empty($status_context)) : ?>
-                <table class="widefat striped tk-table">
+                <table class="widefat striped">
                     <tbody>
                     <?php foreach ($status_context as $key => $value) : ?>
                         <tr>
@@ -1512,7 +1512,7 @@ function tk_render_toolkits_access_page() {
                         <p class="tk-empty">No activity recorded yet.</p>
                     <?php else : ?>
                         <div class="tk-table-scroll">
-                            <table class="widefat striped tk-table">
+                            <table class="widefat striped">
                                 <thead>
                                     <tr>
                                         <th>Time</th>

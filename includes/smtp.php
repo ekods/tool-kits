@@ -274,7 +274,7 @@ function tk_smtp_render_dns_panel(array $report): void {
                 <span class="description"><?php echo esc_html((string) ($report['domain'] ?? '')); ?><?php if (!empty($report['selector'])) : ?> · DKIM selector <code><?php echo esc_html((string) $report['selector']); ?></code><?php endif; ?><?php if (!empty($report['scanned_at'])) : ?> · <?php echo esc_html(date_i18n('M d, Y H:i', (int) $report['scanned_at'])); ?><?php endif; ?></span>
             </div>
             <div class="tk-table-scroll">
-                <table class="widefat striped tk-table tk-dns-table"><thead><tr><th>Check</th><th>Status</th><th>DNS result</th></tr></thead><tbody>
+                <table class="widefat striped tk-dns-table"><thead><tr><th>Check</th><th>Status</th><th>DNS result</th></tr></thead><tbody>
                 <?php foreach (($report['checks'] ?? array()) as $check) : ?><tr><td><?php echo esc_html((string) ($check['label'] ?? '')); ?></td><td><span class="tk-badge <?php echo !empty($check['ok']) ? 'tk-on' : 'tk-warn'; ?>"><?php echo !empty($check['ok']) ? 'Found' : 'Review'; ?></span></td><td><?php echo esc_html((string) ($check['detail'] ?? '')); ?></td></tr><?php endforeach; ?>
                 </tbody></table>
             </div>
@@ -1102,88 +1102,12 @@ Mail Service</textarea>
                     <p><small>Recent test attempts (successes/failures) are recorded here.</small></p>
                     <p><small><strong>Success</strong> means the SMTP server accepted the message. Gmail, Outlook, or another provider can still spam-filter, defer, or reject the message later.</small></p>
                     <?php if (!empty($smtp_test_log)) : ?>
-                        <div class="tk-table-scroll tk-dt-scroll">
-                        <table class="widefat striped tk-table" data-tk-datatable data-tk-page-size="10" style="min-width:1180px;">
-                            <thead>
-                                <tr>
-                                    <th data-tk-sort style="width:120px;">Time</th>
-                                    <th data-tk-sort style="width:230px;">Sender &amp; Recipient</th>
-                                    <th data-tk-sort style="width:100px;">Status</th>
-                                    <th data-tk-sort style="min-width:320px;">Reason / Message</th>
-                                    <th style="min-width:300px;">Technical Details</th>
-                                    <th style="width:90px;">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($smtp_test_log as $entry) :
-                                    $entry_time = isset($entry['time']) ? (int) $entry['time'] : 0;
-                                    $entry_status = isset($entry['status']) ? (string) $entry['status'] : 'unknown';
-                                    $entry_sender = isset($entry['sender']) ? (string) $entry['sender'] : '';
-                                    $entry_recipient = isset($entry['recipient']) ? (string) $entry['recipient'] : '';
-                                    $entry_message = isset($entry['message']) ? (string) $entry['message'] : '';
-                                    $entry_reason = isset($entry['reason']) ? (string) $entry['reason'] : '';
-                                    $entry_details = isset($entry['details']) && is_array($entry['details']) ? $entry['details'] : array();
-                                    $status_class = $entry_status === 'success' ? 'tk-on' : ($entry_status === 'fail' ? 'tk-warn' : '');
-                                    $status_label = ucfirst($entry_status);
-                                ?>
-                                    <tr>
-                                        <td data-tk-sort-value="<?php echo esc_attr((string) $entry_time); ?>" style="white-space:nowrap;">
-                                            <div style="font-weight:500; font-size:13px;"><?php echo esc_html(date_i18n('M d, Y', $entry_time)); ?></div>
-                                            <div style="font-size:11px; color:var(--tk-muted);"><?php echo esc_html(date_i18n('H:i:s', $entry_time)); ?></div>
-                                        </td>
-                                        <td>
-                                            <div style="font-size:12px;"><span style="color:var(--tk-muted);">From:</span> <code><?php echo esc_html($entry_sender); ?></code></div>
-                                            <div style="font-size:12px; margin-top:4px;"><span style="color:var(--tk-muted);">To:</span> <code><?php echo esc_html($entry_recipient); ?></code></div>
-                                        </td>
-                                        <td><span class="tk-badge <?php echo esc_attr($status_class); ?>"><?php echo esc_html($status_label); ?></span></td>
-                                        <td>
-                                            <?php if ($entry_reason !== '') : ?>
-                                                <div style="color:#e74c3c; font-weight:600; font-size:11px; margin-bottom:4px;"><?php echo esc_html($entry_reason); ?></div>
-                                            <?php endif; ?>
-                                            <div style="font-size:11px; color:var(--tk-muted); font-style:italic;"><?php echo esc_html(wp_trim_words($entry_message, 15, '...')); ?></div>
-                                        </td>
-                                        <td>
-                                            <?php
-                                            $details_formatted = tk_smtp_test_log_get_details_array($entry_details);
-                                            $details_summary = trim(implode(' · ', array_filter(array(
-                                                trim((string) ($entry_details['smtp_host'] ?? '') . (!empty($entry_details['smtp_port']) ? ':' . $entry_details['smtp_port'] : ''), ':'),
-                                                strtoupper((string) ($entry_details['smtp_secure'] ?? '')),
-                                                (string) ($entry_details['smtp_auth_method'] ?? ''),
-                                                !empty($entry_details['smtp_user']) ? (string) $entry_details['smtp_user'] : ((($entry_details['smtp_auth'] ?? '') === 'on') ? 'no user' : ''),
-                                            ))));
-                                            ?>
-                                            <?php if (!empty($details_formatted)) : ?>
-                                                <div class="tk-smtp-log-summary"><?php echo esc_html($details_summary !== '' ? $details_summary : '—'); ?></div>
-                                                <details class="tk-smtp-log-details">
-                                                    <summary>All details</summary>
-                                                    <dl>
-                                                        <?php foreach ($details_formatted as $label => $val) : ?>
-                                                            <dt><?php echo esc_html($label); ?></dt><dd><?php echo esc_html($val !== '' ? (string) $val : '—'); ?></dd>
-                                                        <?php endforeach; ?>
-                                                    </dl>
-                                                </details>
-                                            <?php else : ?>
-                                                <span style="color:#94a3b8;">&mdash;</span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td>
-                                            <?php if ($entry_recipient !== '') : ?>
-                                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0;">
-                                                    <?php tk_nonce_field('tk_smtp_test'); ?>
-                                                    <input type="hidden" name="action" value="tk_smtp_test">
-                                                    <input type="hidden" name="smtp_test_email" value="<?php echo esc_attr($entry_recipient); ?>">
-                                                    <input type="hidden" name="smtp_test_message" value="<?php echo esc_attr($entry_message); ?>">
-                                                    <button type="submit" class="button button-secondary button-small" style="font-size:11px;">Resend</button>
-                                                </form>
-                                            <?php else : ?>
-                                                &mdash;
-                                            <?php endif; ?>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                        </div>
+                        <?php
+                        require_once __DIR__ . '/class-smtp-log-list-table.php';
+                        $log_table = new TK_SMTP_Log_List_Table($smtp_test_log);
+                        $log_table->prepare_items();
+                        $log_table->render();
+                        ?>
                     <?php else : ?>
                         <p><small>No SMTP test log entries yet.</small></p>
                     <?php endif; ?>
@@ -1282,7 +1206,7 @@ Mail Service</textarea>
         });
         function initialPanel() {
             var hash = window.location.hash ? window.location.hash.replace('#','') : '';
-            return hash || 'settings';
+            return hash || <?php echo wp_json_encode(isset($_GET['smtp_log']) || isset($_GET['orderby']) || isset($_GET['paged']) ? 'log' : 'settings'); ?>;
         }
         activate(initialPanel());
     })();

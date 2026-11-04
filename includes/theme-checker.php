@@ -112,7 +112,7 @@ function tk_render_theme_checker_page() {
                 </div>
                 <div class="tk-card tk-tab-panel" data-panel-id="summary">
                     <h2>Theme Summary</h2>
-                    <table class="widefat striped tk-table">
+                    <table class="widefat striped">
                         <thead><tr><th>Scope</th><th>Total size</th><th>Files</th><th>CSS</th><th>JS</th><th>CSS @import</th></tr></thead>
                         <tbody>
                             <?php if (is_array($child_summary)) : ?>

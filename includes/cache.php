@@ -1148,7 +1148,7 @@ function tk_cache_render_status_rows() {
     $fragment_count = is_array($fragment_keys) ? count($fragment_keys) : 0;
     $hook_requirements = tk_page_cache_early_hook_requirements();
     ?>
-    <table class="widefat striped tk-table">
+    <table class="widefat striped">
         <thead><tr><th>Cache</th><th>Status</th><th>Detail</th></tr></thead>
         <tbody>
             <tr>
@@ -1223,7 +1223,7 @@ function tk_cache_render_debug_headers(array $server_cache) {
             </form>
         </div>
         <p class="description">Homepage response headers used to detect reverse proxy, CDN, and server cache layers. Result is cached for 5 minutes.</p>
-        <table class="widefat striped tk-table" style="margin-top:12px;">
+        <table class="widefat striped" style="margin-top:12px;">
             <thead><tr><th>Header</th><th>Value</th></tr></thead>
             <tbody>
                 <?php foreach ($interesting as $header) : ?>

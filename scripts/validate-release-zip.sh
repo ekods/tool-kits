@@ -37,6 +37,11 @@ if ! grep -qx 'tool-kits/tool-kits.php' <<<"$LISTING"; then
   exit 1
 fi
 
+if ! grep -qx 'tool-kits/includes/class-smtp-log-list-table.php' <<<"$LISTING"; then
+  echo "Missing required include: tool-kits/includes/class-smtp-log-list-table.php" >&2
+  exit 1
+fi
+
 if ! grep -qx 'tool-kits/includes/classic-editor.php' <<<"$LISTING"; then
   echo "Missing required include: tool-kits/includes/classic-editor.php" >&2
   exit 1

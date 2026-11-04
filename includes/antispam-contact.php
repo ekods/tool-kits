@@ -1222,7 +1222,7 @@ function tk_render_antispam_block_notes(): void {
     <div class="tk-card">
         <h2>Block Reason Notes</h2>
         <p class="description">These notes map anti-spam log reasons and Contact Form 7 response messages to the setting that caused the block.</p>
-        <table class="widefat striped tk-table">
+        <table class="widefat striped">
             <thead>
                 <tr>
                     <th style="width:18%;">Type</th>

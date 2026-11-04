@@ -1,3 +1,20 @@
+## Tool Kits 2.7.79
+
+- Limit Top Countries and each Top IPs Blocked range (24 Hours, 7 Days, 30 Days) to five items in the Total Attacks Blocked dashboard widget.
+- Apply the limit immediately to cached results.
+
+## Tool Kits 2.7.78
+
+- Align Health Center, SEO panels, editor dialogs, language controls and overview icons with the teal admin palette.
+- Give success, information, warning and error feedback consistent surfaces and accessible status or alert roles.
+- Retain native WordPress table styling, search and responsive details.
+
+## Tool Kits 2.7.77
+
+- Refresh admin headers, cards, controls and status accents with a calm teal and mint palette.
+- Use WordPress widefat/striped styles for report and security lists, retaining accessible horizontal scrolling for wide reports.
+- Replace the custom SMTP data table with WP_List_Table search, sorting, pagination and responsive row details; preserve nonce-protected resend actions.
+
 # Tool Kits Release Notes
 
 Versioned historical notes are consolidated here. Current release history is maintained in `../readme.txt`.

@@ -2844,7 +2844,7 @@ function tk_render_geo_panel(): void {
                             <h4>What to fix</h4>
                             <p class="description"><?php echo esc_html(sprintf('%d issue type%s across %d URL%s, most urgent first. Auto = Tool Kits can apply a fallback with Bulk Fix All; fixing the source is preferred.', count($geo_fix_summary), count($geo_fix_summary) === 1 ? '' : 's', $geo_fix_url_count, $geo_fix_url_count === 1 ? '' : 's')); ?></p>
                             <div class="tk-table-scroll">
-                                <table class="widefat striped tk-table">
+                                <table class="widefat striped">
                                     <thead><tr><th>Issue</th><th>Priority</th><th>URLs</th><th>Fix</th><th>Solution</th></tr></thead>
                                     <tbody>
                                     <?php foreach ($geo_fix_summary as $fix_row) : ?>
@@ -2876,7 +2876,7 @@ function tk_render_geo_panel(): void {
                         <p class="description tk-geo-scroll-hint">Scroll the table sideways to see Schema, Semantic, Freshness and Issues.</p>
                         <div class="tk-table-scroll">
                         <?php if (!empty($geo_report['incomplete'])) : ?><p>Audit belum lengkap: pemeriksaan berhenti karena batas waktu atau kegagalan koneksi. Jalankan ulang setelah konektivitas server diperiksa.</p><?php endif; ?>
-                        <table class="widefat striped tk-table">
+                        <table class="widefat striped">
                             <thead><tr><th><input type="checkbox" class="tk-geo-report-all" aria-label="Select all report URLs"></th><th>URL</th><th>Status</th><th>Grade</th><th>Score</th><th>Schema</th><th>Semantic</th><th>Freshness</th><th>Issues</th></tr></thead>
                             <tbody>
                             <?php foreach ($geo_items as $item) : ?>
@@ -3004,7 +3004,7 @@ function tk_render_geo_panel(): void {
                         <div class="tk-card"><strong>Schema Types</strong><br><?php echo tk_geo_render_schema_type_badges($visibility_schema['types'] ?? array()); ?></div>
                     </div>
                     <div class="tk-table-scroll">
-                    <table class="widefat striped tk-table">
+                    <table class="widefat striped">
                         <tbody>
                             <tr><th>URL</th><td><a href="<?php echo esc_url((string) ($visibility_report['url'] ?? '')); ?>" target="_blank" rel="noopener"><?php echo esc_html((string) ($visibility_report['url'] ?? '')); ?></a></td></tr>
                             <tr><th>Title</th><td><?php echo esc_html((string) ($visibility_snapshot['title'] ?? '')); ?></td></tr>
@@ -3017,7 +3017,7 @@ function tk_render_geo_panel(): void {
                     </div>
                     <h4 style="margin-top:18px;">Checks</h4>
                     <div class="tk-table-scroll">
-                    <table class="widefat striped tk-table">
+                    <table class="widefat striped">
                         <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
                         <tbody>
                         <?php foreach ($visibility_checks as $check) : ?>
@@ -3033,7 +3033,7 @@ function tk_render_geo_panel(): void {
                     </div>
                     <h4 style="margin-top:18px;">AI Crawler Visibility</h4>
                     <div class="tk-table-scroll">
-                    <table class="widefat striped tk-table">
+                    <table class="widefat striped">
                         <thead><tr><th>Visible</th><th>User Agent</th><th>Robots</th><th>HTTP</th><th>HTML</th><th>Error</th></tr></thead>
                         <tbody>
                         <?php foreach ($visibility_agents as $row) : ?>
@@ -3084,7 +3084,7 @@ function tk_render_geo_panel(): void {
                         <p style="font-size:16px; line-height:1.6;"><?php echo esc_html((string) ($prompt_preview_report['summary'] ?? '')); ?></p>
                     </div>
                     <div class="tk-table-scroll" style="margin-top:14px;">
-                    <table class="widefat striped tk-table">
+                    <table class="widefat striped">
                         <tbody>
                             <tr><th>URL</th><td><a href="<?php echo esc_url((string) ($prompt_preview_report['url'] ?? '')); ?>" target="_blank" rel="noopener"><?php echo esc_html((string) ($prompt_preview_report['url'] ?? '')); ?></a></td></tr>
                             <tr><th>HTTP</th><td><?php echo esc_html((string) ((int) ($prompt_preview_report['status'] ?? 0))); ?></td></tr>
@@ -3155,7 +3155,7 @@ function tk_render_geo_panel(): void {
                 <?php if ((int) ($schema_duplicate_report['analysis_version'] ?? 0) !== 2) : ?>
                     <p class="description">This saved report used type counts. Run Duplicate Detector again for entity-based findings.</p>
                 <?php endif; ?>
-                <table class="widefat striped tk-table">
+                <table class="widefat striped">
                     <thead><tr><th>URL</th><th>Status</th><th>JSON-LD</th><th>Schema Types</th><th>Potential Duplicates</th><th>Issue</th></tr></thead>
                     <tbody>
                     <?php foreach ($duplicate_items as $item) : ?>
@@ -3202,7 +3202,7 @@ function tk_render_geo_panel(): void {
                 <?php if (!empty($preview_agents)) : ?>
                     <h4>Visible User Agents</h4>
                     <div class="tk-table-scroll">
-                    <table class="widefat striped tk-table">
+                    <table class="widefat striped">
                         <thead><tr><th>Visible</th><th>User Agent</th><th>HTTP</th><th>Title</th><th>Canonical</th><th>Schema</th><th>HTML</th><th>Issues / Fix</th></tr></thead>
                         <tbody>
                         <?php foreach ($preview_agents as $row) : ?>
@@ -3228,7 +3228,7 @@ function tk_render_geo_panel(): void {
                 <?php endif; ?>
                 <h4 style="margin-top:18px;">First Visible Fetch Summary</h4>
                 <div class="tk-table-scroll">
-                <table class="widefat striped tk-table">
+                <table class="widefat striped">
                     <tbody>
                         <tr><th>User Agent</th><td><code><?php echo esc_html((string) ($crawler_preview['agent'] ?? '')); ?></code></td></tr>
                         <tr><th>Status</th><td><?php echo esc_html((string) ($crawler_preview['status'] ?? 0)); ?> <?php echo !empty($crawler_preview['ok']) ? '<span class="tk-badge tk-on">OK</span>' : '<span class="tk-badge">Check</span>'; ?></td></tr>
@@ -3289,7 +3289,7 @@ function tk_render_geo_panel(): void {
                 <?php endif; ?>
 
                 <div class="tk-table-scroll">
-                <table class="widefat striped tk-table" style="margin-top:14px;">
+                <table class="widefat striped" style="margin-top:14px;">
                     <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
                     <tbody>
                     <?php foreach ($checks as $check) : ?>
@@ -3310,7 +3310,7 @@ function tk_render_geo_panel(): void {
                 <?php if (!empty($crawler_fetch_results)) : ?>
                     <h4 style="margin-top:18px;">Crawler Eligibility Checklist</h4>
                     <div class="tk-table-scroll">
-                    <table class="widefat striped tk-table">
+                    <table class="widefat striped">
                         <thead><tr><th>Eligibility</th><th>Crawler</th><th>HTTP</th><th>HTML</th><th>Structured Data</th><th>Detail</th></tr></thead>
                         <tbody>
                         <?php foreach ($crawler_fetch_results as $result) : ?>
@@ -3336,7 +3336,7 @@ function tk_render_geo_panel(): void {
                 <?php if (!empty($robots_results)) : ?>
                     <h4 style="margin-top:18px;">AI Crawler robots.txt Access</h4>
                     <div class="tk-table-scroll">
-                    <table class="widefat striped tk-table">
+                    <table class="widefat striped">
                         <thead><tr><th>Crawler</th><th>Purpose</th><th>Access</th><th>Matched Rule</th></tr></thead>
                         <tbody>
                         <?php foreach ($robots_results as $result) : ?>

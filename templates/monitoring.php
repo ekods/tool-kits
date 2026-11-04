@@ -230,7 +230,7 @@ if (!defined('ABSPATH')) { exit; }
             <div class="tk-card tk-tab-panel" data-panel-id="checks">
                 <h2><?php _e('Configuration Checks', 'tool-kits'); ?></h2>
                 <p><?php _e('Quick scan for common misconfigurations that can expose sensitive files or data.', 'tool-kits'); ?></p>
-                <table class="tk-table">
+                <table class="widefat striped">
                     <tbody>
                     <?php foreach ($checks as $check) :
                         $status = isset($check['status']) ? $check['status'] : 'unknown';
@@ -563,7 +563,7 @@ if (!defined('ABSPATH')) { exit; }
                     <p><em><?php _e('No 404 errors recorded yet.', 'tool-kits'); ?></em></p>
                 <?php else : ?>
                     <div class="tk-table-scroll">
-                        <table class="widefat striped tk-table">
+                        <table class="widefat striped">
                             <thead>
                                 <tr>
                                     <th>Path</th>

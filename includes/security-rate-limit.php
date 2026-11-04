@@ -584,7 +584,7 @@ function tk_render_rate_limit_page($title = null, $description = null) {
                         <form method="post" action="<?php echo admin_url('admin-post.php'); ?>">
                             <?php tk_nonce_field('tk_rate_limit_unblock'); ?>
                             <input type="hidden" name="action" value="tk_rate_limit_unblock">
-                            <table class="tk-table">
+                            <table class="widefat striped">
                                 <thead>
                                     <tr>
                                         <th>Unblock</th>

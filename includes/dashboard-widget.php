@@ -648,11 +648,11 @@ function tk_render_attacks_blocked_dashboard_widget() {
             'summary' => $summary,
             'series_24h' => tk_dashboard_widget_attack_chart_series(1),
             'series_30d' => tk_dashboard_widget_attack_chart_series(30),
-            'top_countries' => tk_dashboard_widget_top_countries($ranges['week']),
+            'top_countries' => tk_dashboard_widget_top_countries($ranges['week'], 5),
             'top_ips' => array(
-                '24h' => tk_dashboard_widget_top_ips($now - DAY_IN_SECONDS),
-                '7d' => tk_dashboard_widget_top_ips($ranges['week']),
-                '30d' => tk_dashboard_widget_top_ips($ranges['month']),
+                '24h' => tk_dashboard_widget_top_ips($now - DAY_IN_SECONDS, 5),
+                '7d' => tk_dashboard_widget_top_ips($ranges['week'], 5),
+                '30d' => tk_dashboard_widget_top_ips($ranges['month'], 5),
             ),
         );
         set_transient('tk_dashboard_attacks_summary', $cached, 5 * MINUTE_IN_SECONDS);
@@ -660,8 +660,11 @@ function tk_render_attacks_blocked_dashboard_widget() {
     $summary = $cached['summary'];
     $series_24h = $cached['series_24h'];
     $series_30d = $cached['series_30d'];
-    $top_countries = $cached['top_countries'];
-    $top_ips = $cached['top_ips'];
+    // Apply the limit to existing cached results as well, without waiting for cache expiry.
+    $top_countries = array_slice($cached['top_countries'], 0, 5);
+    $top_ips = array_map(static function(array $rows): array {
+        return array_slice($rows, 0, 5);
+    }, $cached['top_ips']);
     $last_event_time = 0;
     foreach (tk_dashboard_widget_firewall_events() as $event) {
         $last_event_time = max($last_event_time, isset($event['time']) ? (int) $event['time'] : 0);
@@ -704,7 +707,7 @@ function tk_render_attacks_blocked_dashboard_widget() {
             <strong>Firewall Summary:</strong> Attacks Blocked for <?php echo esc_html(wp_parse_url(home_url('/'), PHP_URL_HOST) ?: get_bloginfo('name')); ?>
             <span class="tk-attacks-summary-note">Blocklist includes active blocked IP/rule entries.</span>
         </div>
-        <table class="tk-attacks-summary">
+        <div class="tk-attacks-table-scroll" role="region" tabindex="0" aria-label="Firewall summary"><table class="widefat striped">
             <thead>
                 <tr>
                     <th>Block Type</th>
@@ -725,10 +728,10 @@ function tk_render_attacks_blocked_dashboard_widget() {
                     </tr>
                 <?php endforeach; ?>
             </tbody>
-        </table>
+        </table></div>
 
         <div class="tk-attacks-country-title">Top Countries by Number of Attacks - Last 7 Days</div>
-        <table class="tk-attacks-country-table">
+        <div class="tk-attacks-table-scroll" role="region" tabindex="0" aria-label="Top countries"><table class="widefat striped">
             <thead>
                 <tr>
                     <th>Country</th>
@@ -749,7 +752,7 @@ function tk_render_attacks_blocked_dashboard_widget() {
                     <?php endforeach; ?>
                 <?php endif; ?>
             </tbody>
-        </table>
+        </table></div>
 
         <div class="tk-attacks-top-ip-title">Top IPs Blocked</div>
         <div class="tk-attacks-tabs tk-attacks-ip-tabs" role="tablist" aria-label="Top blocked IP range">
@@ -762,7 +765,7 @@ function tk_render_attacks_blocked_dashboard_widget() {
                 <?php if (empty($rows)) : ?>
                     <p class="tk-attacks-empty">No blocks have been recorded.</p>
                 <?php else : ?>
-                    <table class="tk-attacks-ip-table">
+                    <div class="tk-attacks-table-scroll" role="region" tabindex="0" aria-label="Top blocked IPs"><table class="widefat striped">
                         <thead><tr><th>IP</th><th>Block Count</th></tr></thead>
                         <tbody>
                             <?php foreach ($rows as $row) : ?>
@@ -772,7 +775,7 @@ function tk_render_attacks_blocked_dashboard_widget() {
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
-                    </table>
+                    </table></div>
                 <?php endif; ?>
             </div>
         <?php endforeach; ?>
@@ -885,42 +888,6 @@ function tk_render_attacks_blocked_dashboard_widget() {
             font-size: 12px;
             font-weight: 500;
         }
-        .tk-attacks-summary {
-            width: 100%;
-            border-collapse: collapse;
-            table-layout: fixed;
-            text-align: center;
-            margin-bottom: 14px;
-        }
-        .tk-attacks-summary th,
-        .tk-attacks-summary td {
-            padding: 6px 5px;
-            font-size: 14px;
-            border: 0;
-        }
-        .tk-attacks-summary thead th {
-            font-weight: 700;
-        }
-        .tk-attacks-summary tbody th {
-            font-weight: 700;
-            text-align: right;
-        }
-        .tk-attacks-summary td {
-            font-size: 16px;
-        }
-        .tk-attacks-summary th:nth-child(4),
-        .tk-attacks-summary td:nth-child(4) {
-            border-left: 3px solid #1d7fa9;
-            border-right: 3px solid #1d7fa9;
-            color: #999;
-        }
-        .tk-attacks-summary thead th:nth-child(4) {
-            border-top: 3px solid #1d7fa9;
-            border-radius: 8px 8px 0 0;
-        }
-        .tk-attacks-summary tbody tr:last-child td:nth-child(4) {
-            border-bottom: 3px solid #1d7fa9;
-        }
         .tk-attacks-country-title,
         .tk-attacks-top-ip-title {
             border-top: 1px solid #e2e8f0;
@@ -930,33 +897,9 @@ function tk_render_attacks_blocked_dashboard_widget() {
             margin-top: 16px;
             padding-top: 16px;
         }
-        .tk-attacks-country-table,
-        .tk-attacks-ip-table {
-            border-collapse: collapse;
-            margin: 12px 0 16px;
-            width: 100%;
-        }
-        .tk-attacks-country-table th,
-        .tk-attacks-country-table td,
-        .tk-attacks-ip-table th,
-        .tk-attacks-ip-table td {
-            border-bottom: 1px solid #d7d7d7;
-            color: #2f343b;
-            font-size: 14px;
-            padding: 9px 10px;
-            text-align: left;
-        }
-        .tk-attacks-country-table thead th,
-        .tk-attacks-ip-table thead th {
-            border-bottom: 2px solid #d0d0d0;
-            font-weight: 700;
-        }
-        .tk-attacks-country-table th:last-child,
-        .tk-attacks-country-table td:last-child,
-        .tk-attacks-ip-table th:last-child,
-        .tk-attacks-ip-table td:last-child {
-            text-align: right;
-        }
+        .tk-attacks-table-scroll { overflow-x: auto; margin: 12px 0 16px; }
+        .tk-attacks-table-scroll:focus-visible { outline: 2px solid #087f75; outline-offset: 2px; }
+        .tk-attacks-table-scroll > table { min-width: 360px; }
         .tk-attacks-flag {
             text-align: center !important;
             width: 52px;
@@ -986,11 +929,6 @@ function tk_render_attacks_blocked_dashboard_widget() {
             text-align: center;
         }
         @media (max-width: 782px) {
-            .tk-attacks-summary th,
-            .tk-attacks-summary td {
-                font-size: 12px;
-                padding-inline: 3px;
-            }
             .tk-attacks-actions {
                 flex-direction: column;
             }
