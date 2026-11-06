@@ -162,7 +162,7 @@ Definition of done:
 
 ## v2.8.0
 
-Priority: test coverage for security modules that run on every request.
+Priority: test coverage for security modules that run on every request. Detailed plan: `TEST_PLAN.md`.
 
 - Add regression tests for `security-hardening.php`: default application, option normalization, WP-Cron and XML-RPC request blocking.
 - Add regression tests for the firewall: IP/CIDR allow and block lists, blocked user agents, allowlist precedence.

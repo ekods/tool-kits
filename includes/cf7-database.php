@@ -5,12 +5,25 @@ function tk_cf7_database_init(): void {
     add_action('admin_post_tk_cf7_database_save', 'tk_cf7_database_save');
     add_action('admin_init', 'tk_cf7_database_handle_actions');
     add_action('admin_enqueue_scripts', 'tk_cf7_database_assets');
+    add_action('admin_menu', 'tk_cf7_database_register_menu');
     // Run after every plugin has loaded, regardless of plugin load order.
     add_action('init', 'tk_cf7_database_register_capture');
 }
 
 function tk_cf7_database_enabled(): bool {
     return (int) tk_get_option('cf7_database_enabled', 0) === 1;
+}
+
+/** Slug of the stand-alone message pages; Tool Kits itself only keeps the on/off switch. */
+function tk_cf7_database_collection_slug(): string {
+    return 'tool-kits-cf7-collection';
+}
+
+/** Top-level "CF7 Database" menu, right below Contact Form 7's "Contact" (position 30), only while enabled. */
+function tk_cf7_database_register_menu(): void {
+    if (!tk_cf7_database_enabled() || !tk_cf7_database_can_manage()) { return; }
+    add_menu_page(__('CF7 Database', 'tool-kits'), __('CF7 Database', 'tool-kits'), tk_toolkits_capability(),
+        tk_cf7_database_collection_slug(), 'tk_render_cf7_database_collection_page', 'dashicons-feedback', 31);
 }
 
 function tk_cf7_database_can_manage(): bool {
@@ -54,12 +67,12 @@ function tk_cf7_database_save(): void {
 }
 
 function tk_cf7_database_assets(): void {
-    if (($_GET['page'] ?? '') !== 'tool-kits-cf7-database' || !tk_cf7_database_can_manage()) { return; }
+    if (($_GET['page'] ?? '') !== tk_cf7_database_collection_slug() || !tk_cf7_database_can_manage()) { return; }
     wp_enqueue_style('tk-cf7-database', TK_URL . 'assets/cf7-database.css', array(), tk_asset_version('assets/cf7-database.css'));
 }
 
 function tk_cf7_database_handle_actions(): void {
-    if (($_GET['page'] ?? '') !== 'tool-kits-cf7-database' || !tk_cf7_database_can_manage()) { return; }
+    if (($_GET['page'] ?? '') !== tk_cf7_database_collection_slug() || !tk_cf7_database_enabled() || !tk_cf7_database_can_manage()) { return; }
     if (!isset($_GET['tk_cf7dbc_export']) && !isset($_GET['tk_cf7dbc_delete'])) { return; }
     if (!get_option('cf7dbc_schema_version')) { return; }
     tk_cf7_database_load();
@@ -69,7 +82,7 @@ function tk_cf7_database_handle_actions(): void {
         check_admin_referer('tk_cf7dbc_delete_' . $id);
         global $wpdb;
         $wpdb->delete(tk_cf7dbc_table_name(), array('id' => $id), array('%d'));
-        $url = add_query_arg(array('deleted' => 1, 'form_id' => absint($_GET['form_id'] ?? 0)), admin_url('admin.php?page=tool-kits-cf7-database'));
+        $url = add_query_arg(array('deleted' => 1, 'form_id' => absint($_GET['form_id'] ?? 0)), admin_url('admin.php?page=' . tk_cf7_database_collection_slug()));
         wp_safe_redirect($url);
         exit;
     }
@@ -92,26 +105,28 @@ function tk_render_cf7_database_page(): void {
                 <?php tk_nonce_field('tk_cf7_database_save'); ?>
                 <input type="hidden" name="action" value="tk_cf7_database_save">
                 <p><label for="tk-cf7-database-enabled"><input type="checkbox" id="tk-cf7-database-enabled" name="cf7_database_enabled" value="1" aria-describedby="tk-cf7-database-help" <?php checked($enabled); ?>> Enable CF7 Database Collection</label></p>
-                <p class="description" id="tk-cf7-database-help">Save new submissions after email is sent successfully. Disabling storage keeps existing messages available for viewing and export.</p>
+                <p class="description" id="tk-cf7-database-help">Save new submissions after email is sent successfully, and show the CF7 Database menu for browsing and exporting them. Disabling stops collection and hides the menu; stored messages are kept and return when enabled again.</p>
                 <?php if (!defined('WPCF7_VERSION') && !class_exists('WPCF7_ContactForm')) : ?>
                     <p class="description">Contact Form 7 is inactive. Install and activate it to collect new submissions.</p>
                 <?php endif; ?>
                 <?php if (function_exists('cf7dbc_save_submission')) : ?>
                     <p class="description">The standalone CF7 Database Collection plugin is active. After saving these settings, this switch controls collection while Tool Kits is active and licensed. Both use the same stored messages.</p>
                 <?php endif; ?>
-                <p class="tk-action-row"><button class="button button-primary" type="submit">Save Settings</button></p>
+                <p class="tk-action-row">
+                    <button class="button button-primary" type="submit">Save Settings</button>
+                    <?php if ($enabled) : ?>
+                        <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=' . tk_cf7_database_collection_slug())); ?>">Open CF7 Database</a>
+                    <?php endif; ?>
+                </p>
             </form>
         </div>
-        <p class="tk-action-row">
-            <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=tool-kits-cf7-database')); ?>">Dashboard</a>
-            <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=tool-kits-cf7-database&view=forms')); ?>">Form List</a>
-        </p>
     </div>
     <?php
-    if (!$enabled && !get_option('cf7dbc_schema_version')) {
-        echo '<div class="wrap tk-wrap"><p>Enable collection to start saving submissions.</p></div>';
-        return;
-    }
+}
+
+/** The stand-alone CF7 Database pages: dashboard, form list, messages and export. */
+function tk_render_cf7_database_collection_page(): void {
+    if (!tk_cf7_database_enabled() || !tk_cf7_database_can_manage()) { return; }
     tk_cf7_database_load();
     tk_cf7dbc_maybe_upgrade_schema();
     tk_cf7dbc_render_admin_page();

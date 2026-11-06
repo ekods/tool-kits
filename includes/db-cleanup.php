@@ -4,6 +4,7 @@ require_once __DIR__ . '/db-cleanup-job.php';
 
 function tk_db_cleanup_init() {
     add_action('admin_post_tk_db_cleanup_run', 'tk_db_cleanup_run_handler');
+    add_action('admin_post_tk_db_autoload_disable', 'tk_db_autoload_disable_handler');
     add_action('wp_ajax_tk_db_cleanup_job', 'tk_db_cleanup_job_ajax');
     add_filter('wp_revisions_to_keep', 'tk_db_cleanup_revision_limit', 99, 2);
 }
@@ -508,7 +509,105 @@ function tk_render_db_cleanup_panel() {
         </div>
     </div>
     <?php
+    tk_render_db_autoload_panel();
     wp_enqueue_script('tool-kits-db-cleanup', TK_URL . 'assets/db-cleanup.js', array(), tk_asset_version('assets/db-cleanup.js'), true);
+}
+
+/** autoload values WordPress loads on every request (WP 6.6 added on/auto-on/auto next to yes). */
+function tk_db_autoload_values(): array {
+    return function_exists('wp_autoload_values_to_autoload') ? (array) wp_autoload_values_to_autoload() : array('yes');
+}
+
+/**
+ * Options WordPress reads on (nearly) every page anyway. Not autoloading them only adds a query, so the audit
+ * lists them without offering the action.
+ */
+function tk_db_autoload_is_core(string $name): bool {
+    global $wpdb;
+    $core = array('siteurl', 'home', 'blogname', 'blogdescription', 'active_plugins', 'template', 'stylesheet', 'cron',
+        'rewrite_rules', 'sidebars_widgets', 'permalink_structure', 'WPLANG', 'timezone_string', 'gmt_offset', 'date_format',
+        'time_format', 'start_of_week', 'show_on_front', 'page_on_front', 'page_for_posts', 'posts_per_page', 'db_version',
+        'blog_charset', 'upload_path', 'upload_url_path', 'uploads_use_yearmonth_folders', 'can_compress_scripts',
+        $wpdb->prefix . 'user_roles', 'theme_mods_' . get_option('stylesheet'));
+    return in_array($name, $core, true) || strpos($name, 'widget_') === 0;
+}
+
+function tk_db_autoload_report(int $limit = 20): array {
+    global $wpdb;
+    $values = tk_db_autoload_values();
+    $in = implode(',', array_fill(0, count($values), '%s'));
+    $totals = $wpdb->get_row($wpdb->prepare("SELECT COUNT(*) AS options, COALESCE(SUM(LENGTH(option_value)), 0) AS bytes FROM {$wpdb->options} WHERE autoload IN ($in)", $values));
+    $top = $wpdb->get_results($wpdb->prepare("SELECT option_name, LENGTH(option_value) AS bytes FROM {$wpdb->options} WHERE autoload IN ($in) ORDER BY bytes DESC LIMIT %d", array_merge($values, array($limit))));
+    return array(
+        'options' => (int) ($totals->options ?? 0),
+        'bytes' => (int) ($totals->bytes ?? 0),
+        // Same threshold as Site Health's "Autoloaded options could affect performance" check.
+        'limit' => (int) apply_filters('site_status_autoloaded_options_size_limit', 800000),
+        'top' => is_array($top) ? $top : array(),
+    );
+}
+
+function tk_render_db_autoload_panel(): void {
+    $report = tk_db_autoload_report();
+    $over = $report['bytes'] > $report['limit'];
+    if (isset($_GET['tk_autoload_done'])) {
+        tk_notice('Stopped autoloading ' . sanitize_text_field(wp_unslash((string) $_GET['tk_autoload_done'])) . '. It now loads only when a plugin asks for it.', 'success');
+    }
+    ?>
+    <div class="tk-card" style="margin-top:24px;">
+        <div class="tk-section-heading">
+            <h3 style="margin:0; font-size:16px;">Autoloaded Options</h3>
+            <span class="tk-badge <?php echo $over ? 'tk-warn' : 'tk-on'; ?>"><?php echo esc_html(size_format($report['bytes']) . ' in ' . number_format($report['options']) . ' options'); ?></span>
+        </div>
+        <p class="description">WordPress loads every autoloaded option on every request. <?php echo $over
+            ? esc_html('This is above the ' . size_format($report['limit']) . ' that Site Health recommends.')
+            : esc_html('This is within the ' . size_format($report['limit']) . ' that Site Health recommends.'); ?>
+            Stopping autoload never breaks a plugin: the option is then read with its own query only when it is needed.</p>
+        <table class="widefat striped" style="margin-top:12px;">
+            <thead><tr><th scope="col">Option</th><th scope="col">Size</th><th scope="col"><span class="screen-reader-text">Action</span></th></tr></thead>
+            <tbody>
+            <?php foreach ($report['top'] as $row) : $name = (string) $row->option_name; ?>
+                <tr>
+                    <td><code><?php echo esc_html($name); ?></code></td>
+                    <td><?php echo esc_html(size_format((int) $row->bytes)); ?></td>
+                    <td>
+                        <?php if (tk_db_autoload_is_core($name)) : ?>
+                            <span class="description">WordPress core, used on every page</span>
+                        <?php else : ?>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                <?php tk_nonce_field('tk_db_autoload_disable'); ?>
+                                <input type="hidden" name="action" value="tk_db_autoload_disable">
+                                <input type="hidden" name="option_name" value="<?php echo esc_attr($name); ?>">
+                                <button class="button button-small" type="submit">Stop autoloading</button>
+                            </form>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php
+}
+
+function tk_db_autoload_disable_handler(): void {
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { wp_die('Forbidden'); }
+    tk_require_admin_post('tk_db_autoload_disable');
+    if (tk_toolkits_is_locked()) { wp_die('Tool Kits settings are locked.'); }
+    global $wpdb;
+    $name = isset($_POST['option_name']) ? (string) wp_unslash($_POST['option_name']) : '';
+    $values = tk_db_autoload_values();
+    $in = implode(',', array_fill(0, count($values), '%s'));
+    $autoloaded = $name !== '' && (bool) $wpdb->get_var($wpdb->prepare("SELECT 1 FROM {$wpdb->options} WHERE option_name = %s AND autoload IN ($in)", array_merge(array($name), $values)));
+    if (!$autoloaded || tk_db_autoload_is_core($name)) { wp_die('This option is not an autoloaded plugin option.'); }
+    if (function_exists('wp_set_option_autoload')) {
+        wp_set_option_autoload($name, false);
+    } else {
+        $wpdb->update($wpdb->options, array('autoload' => 'no'), array('option_name' => $name));
+        wp_cache_delete('alloptions', 'options');
+    }
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-db', 'tk_tab' => 'db-cleanup', 'tk_autoload_done' => rawurlencode($name)), admin_url('admin.php')));
+    exit;
 }
 
 function tk_db_cleanup_run_handler() {

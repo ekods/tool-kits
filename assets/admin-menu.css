@@ -1,3 +1,15 @@
+/* Custom Dashicons-compatible glyph; currentColor follows WordPress menu states. */
+.dashicons-tool-kits::before {
+    content: "";
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    background-color: currentColor;
+    -webkit-mask: url("tool-kits-dashicon.svg") center / 20px 20px no-repeat;
+    mask: url("tool-kits-dashicon.svg") center / 20px 20px no-repeat;
+}
+.tk-header-brand .dashicons-tool-kits::before { padding: 0; }
+
 /* Compact 3-level flyout inside the native WordPress .wp-submenu. */
 #adminmenu #toplevel_page_tool-kits.tk-nested-menu-ready .wp-submenu {
     overflow: visible;

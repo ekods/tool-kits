@@ -1400,6 +1400,7 @@ function tk_render_cache_page() {
                         <input type="hidden" name="action" value="tk_cache_object_flush">
                         <button class="button button-secondary">Flush object cache</button>
                     </form>
+                    <?php tk_object_cache_render_section(); ?>
                 </div>
                 <div class="tk-card tk-tab-panel" data-panel-id="opcode">
                     <h2>Opcode Cache (PHP)</h2>

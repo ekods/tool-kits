@@ -69,7 +69,7 @@ function tk_register_admin_menus() {
             tk_toolkits_capability(),
             'tool-kits',
             'tk_render_overview_page',
-            'dashicons-admin-tools',
+            'dashicons-tool-kits',
             3
         );
         add_submenu_page('tool-kits', __('Overview', 'tool-kits'), __('Overview', 'tool-kits'), tk_toolkits_capability(), 'tool-kits', 'tk_render_overview_page');
@@ -120,7 +120,7 @@ function tk_register_admin_menus() {
             tk_toolkits_capability(),
             'tool-kits',
             'tk_render_toolkits_access_page',
-            'dashicons-admin-tools',
+            'dashicons-tool-kits',
             3
         );
         add_submenu_page('tool-kits', __('Access & License', 'tool-kits'), __('Access & License', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-access', 'tk_render_toolkits_access_page');
@@ -648,7 +648,7 @@ function tk_render_system_tools_page() {
             <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-cf7-database')); ?>">
                 <span class="dashicons dashicons-feedback"></span>
                 <h2>CF7 Database Collection</h2>
-                <p class="description">Enable or disable submission storage, browse saved form messages, and export Excel files.</p>
+                <p class="description">Turn submission storage on or off. While on, messages and Excel export are in the CF7 Database menu.</p>
             </a>
             <?php if ($allow_full) : ?>
                 <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-role-management')); ?>">

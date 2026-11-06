@@ -1,3 +1,16 @@
+## Tool Kits 2.7.82
+
+Opt-in Redis object cache, server-load controls and a stand-alone CF7 Database menu. See `readme.txt` for the complete list.
+
+Upgrade notes:
+- The object cache installs `wp-content/object-cache.php` only when you enable it after a passing connection test. Tool Kits removes it on deactivation and uninstall, and never replaces another plugin's drop-in.
+- Redis needs the phpredis extension. `TK_REDIS_HOST`, `TK_REDIS_PORT`, `TK_REDIS_PASSWORD` and `TK_REDIS_DATABASE` in wp-config override the saved settings.
+- After a Redis outage the drop-in clears this site's keys when Redis returns, so deletes made during the outage cannot leave stale data.
+- `incr`/`decr` are not atomic; concurrent increments can be lost. A lapsed license does not remove an installed drop-in (Disable stays available without a license).
+- CF7 Database messages moved from `page=tool-kits-cf7-database` to the new `CF7 Database` menu (`page=tool-kits-cf7-collection`).
+
+Validation: PHP 7.4.33 and 8.4 lint, regression suite 80/80 on both, object-cache checks 106 on both, plus a real Redis 7 server on both PHP versions for the drop-in API, flushing, outage fallback, the 30-second pause and recovery flush.
+
 ## Tool Kits 2.7.81
 
 - Bundle CF7 Database Collection under System Tools with an enable/disable checkbox; new submissions are saved only after successful Contact Form 7 email delivery.

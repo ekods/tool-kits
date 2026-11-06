@@ -63,7 +63,18 @@ function tk_uninstall_delete_directory(string $dir): void {
     @rmdir($dir);
 }
 
+// The Redis object-cache drop-in and its config are runtime files, not data: always removed (ours only).
+function tk_uninstall_remove_object_cache(): void {
+    $dropin = rtrim(WP_CONTENT_DIR, '/\\') . '/object-cache.php';
+    if (is_file($dropin) && strpos((string) @file_get_contents($dropin), "<?php\n// Tool Kits object-cache v1.") === 0) {
+        @unlink($dropin);
+    }
+    @unlink(rtrim(WP_CONTENT_DIR, '/\\') . '/cache/tool-kits/object-cache-config.php');
+    @unlink(rtrim(WP_CONTENT_DIR, '/\\') . '/cache/tool-kits/object-cache-down');
+}
+
 function tk_uninstall_run(): void {
+    tk_uninstall_remove_object_cache();
     if ((int) get_option('tk_uninstall_delete_data', 0) !== 1) {
         return;
     }

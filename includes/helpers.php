@@ -4,7 +4,7 @@ require_once __DIR__ . '/license-client.php';
 
 
 
-function tk_render_page_hero($title, $description, $icon = 'dashicons-admin-tools', $action_html = '') {
+function tk_render_page_hero($title, $description, $icon = 'dashicons-tool-kits', $action_html = '') {
     ?>
     <div class="tk-hero tk-page-heading tk-card">
         <div class="tk-hero-content">
@@ -31,7 +31,7 @@ function tk_render_header_branding() {
     ?>
     <div class="tk-header-branding">
         <div class="tk-header-brand">
-            <img class="tk-brand-logo" src="<?php echo esc_url(TK_URL . 'assets/icon-128x128.png'); ?>" width="32" height="32" alt="">
+            <span class="dashicons dashicons-tool-kits tk-brand-icon" aria-hidden="true"></span>
             <span>Tool Kits Pro</span>
             <span class="tk-header-version">v<?php echo TK_VERSION; ?></span>
         </div>

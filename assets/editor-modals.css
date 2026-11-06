@@ -1,11 +1,11 @@
-.tk-editor-modal { --tk-primary: #146b60; --tk-border: #d7dee8; box-sizing: border-box; width: 760px; max-width: calc(100vw - 40px); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); padding: 0; overflow: hidden; border: 1px solid var(--tk-border); border-radius: 10px; background: #fff; color: #203432; font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; box-shadow: 0 24px 80px rgba(0,0,0,.2); }
+.tk-editor-modal { --tk-primary: #2271b1; --tk-border: #8c8f94; box-sizing: border-box; width: 760px; max-width: calc(100vw - 40px); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); padding: 0; overflow: hidden; border: 1px solid var(--tk-border); border-radius: 10px; background: #fff; color: #1d2327; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif; box-shadow: 0 24px 80px rgba(0,0,0,.2); }
 .tk-editor-modal[open] { display: flex; flex-direction: column; }
 .tk-editor-modal-wide { width: 1080px; }
 .tk-editor-modal-wide[open] { height: min(840px, calc(100vh - 64px)); height: min(840px, calc(100dvh - 64px)); }
 .tk-editor-modal::backdrop { background: rgba(15,23,42,.52); }
 .tk-editor-modal-header { flex: 0 0 auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 22px 28px; border-bottom: 1px solid #e5e7eb; }
 .tk-editor-modal-header > div { min-width: 0; }
-.tk-editor-modal .tk-editor-modal-header h2 { margin: 0; padding: 0; font-size: 20px; line-height: 1.4; font-weight: 600; }
+.tk-editor-modal .tk-editor-modal-header h2 { margin: 0; padding: 0; font-size: 1.3em; line-height: 1.4; font-weight: 600; }
 .tk-editor-modal-header p { margin: 5px 0 0; color: #646970; font-size: 13px; }
 .tk-editor-modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 24px 28px; }
 .tk-editor-modal-cross { flex-shrink: 0; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 6px; background: #f6f7f7; color: #50575e; font-size: 26px; cursor: pointer; }
@@ -14,10 +14,10 @@
 .tk-editor-modal-cross:disabled { opacity: .5; cursor: wait; }
 .tk-editor-modal-footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 16px 28px; background: #f9fafb; border-top: 1px solid #e5e7eb; }
 .tk-editor-modal .button { display: inline-flex; justify-content: center; align-items: center; gap: 7px; white-space: normal; min-height: 38px; padding: 7px 14px; border-radius: 8px; line-height: 1.5; }
-.tk-editor-modal .button.button-primary { background: var(--tk-primary); border-color: var(--tk-primary); }
-.tk-editor-modal .button.button-primary:hover { background: #10584f; border-color: #10584f; }
+.tk-editor-modal .button.button-primary { background: #dbeafe; border-color: #6482a0; color: #1d4f7c; }
+.tk-editor-modal .button.button-primary:hover { background: #c8dff9; border-color: #2271b1; color: #1d4f7c; }
 .tk-editor-modal :is(button, input, textarea, select):focus-visible { outline: 2px solid var(--tk-primary); outline-offset: 2px; }
-.tk-editor-modal textarea, .tk-editor-modal input, .tk-editor-modal select { box-sizing: border-box; max-width: 100%; width: 100%; margin-top: 7px; padding: 8px 10px; border-color: var(--tk-border); border-radius: 8px; font-size: 13px; font-weight: 400; line-height: 1.5; }
+.tk-editor-modal textarea, .tk-editor-modal input, .tk-editor-modal select { box-sizing: border-box; max-width: 100%; width: 100%; margin-top: 7px; padding: 8px 10px; border-color: var(--tk-border); border-radius: 8px; font-size: 14px; font-weight: 400; line-height: 1.5; }
 .tk-editor-modal textarea { resize: vertical; }
 .tk-editor-modal label { display: block; font-weight: 600; font-size: 13px; }
 .tk-editor-modal p { margin: 0 0 16px; overflow-wrap: anywhere; }
@@ -32,8 +32,8 @@
 .tk-editor-modal .tk-seo-content-status:not(:empty) { margin: 20px 0 0; padding: 12px 16px; border-radius: 6px; background: #f0f0f1; font-size: 13px; line-height: 1.6; }
 .tk-modal-tabs { display: flex; gap: 4px; padding: 4px; margin-bottom: 20px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f6f7f7; }
 .tk-modal-tabs button { flex: 1; padding: 9px 12px; border: 0; border-radius: 5px; background: transparent; color: #50575e; font-size: 13px; font-weight: 600; cursor: pointer; }
-.tk-modal-tabs button[aria-selected="true"] { background: #fff; color: #10584f; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
-.tk-modal-tabs button:focus-visible { outline: 2px solid #146b60; outline-offset: 1px; }
+.tk-modal-tabs button[aria-selected="true"] { background: #fff; color: #135e96; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+.tk-modal-tabs button:focus-visible { outline: 2px solid #2271b1; outline-offset: 1px; }
 .tk-seo-content-panel[hidden] { display: none !important; }
 .tk-content-audit-issues { margin: 0 0 24px; padding: 14px 16px 14px 34px; border: 1px solid #edc2c2; border-radius: 7px; background: #fff7f7; color: #8a2424; }
 .tk-content-audit-issues li + li { margin-top: 6px; }
@@ -47,7 +47,7 @@
 .tk-content-check-warning { border-color: #edc2c2; background: #fff7f7; }
 .tk-content-check-warning .tk-content-check-badge { background: #fbe2e2; color: #b32d2e; }
 .tk-content-check-pass .tk-content-check-badge { background: #e5f4e9; color: #116329; }
-.tk-content-check-review .tk-content-check-badge { background: #edf8f2; color: #10584f; }
+.tk-content-check-review .tk-content-check-badge { background: #eaf3ff; color: #135e96; }
 .tk-content-check p { font-size: 13px; line-height: 1.6; }
 .tk-content-check .tk-content-check-info p { margin: 0; color: #50575e; }
 .tk-content-check-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -63,7 +63,7 @@
 .tk-content-score-card { display: flex; align-items: center; gap: 20px; padding: 16px; margin-bottom: 20px; border: 1px solid #dcdcde; border-radius: 8px; background: #f9fafb; }
 .tk-content-score-number { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
 .tk-content-score-number span { color: #646970; font-size: 12px; }
-.tk-content-score-number strong { font-size: 28px; line-height: 1.2; }
+.tk-content-score-number strong { font-size: 23px; line-height: 1.2; }
 .tk-content-score-info { flex: 1; min-width: 0; }
 .tk-content-score-info > strong { font-size: 14px; overflow-wrap: anywhere; }
 .tk-editor-modal .tk-content-score-info p { margin: 5px 0 10px; font-size: 12px; }
@@ -77,7 +77,7 @@
 .tk-content-check-badge.tk-content-score-good { background: #e5f4e9; color: #116329; }
 .tk-content-check-badge.tk-content-score-fair { background: #fff4d6; color: #805500; }
 .tk-content-check-badge.tk-content-score-poor { background: #fbe2e2; color: #b32d2e; }
-.tk-content-check-badge.tk-content-score-pending { background: #edf8f2; color: #10584f; }
+.tk-content-check-badge.tk-content-score-pending { background: #eaf3ff; color: #135e96; }
 .tk-content-check-not-applicable .tk-content-check-badge { background: #f0f0f1; color: #646970; }
 .tk-content-audit-checks > summary .tk-content-check-badge { margin-left: 8px; }
 .tk-content-audit-checks .tk-content-check-grid { margin: 12px 0; padding: 0; list-style: none; }
@@ -118,14 +118,20 @@
 .tk-sv-props tr.is-warning > th { color: #c2410c; font-weight: 600; box-shadow: inset 3px 0 #ea8a3a; }
 .tk-sv-value { overflow-wrap: anywhere; }
 .tk-sv-value + .tk-sv-value, .tk-sv-nested + .tk-sv-nested, .tk-sv-value + .tk-sv-nested, .tk-sv-nested + .tk-sv-value { margin-top: 6px; }
-.tk-sv-ref { color: #146b60; }
+.tk-sv-ref { color: #2271b1; }
 .tk-sv-nested { padding: 6px 0 0 10px; border-left: 2px solid #dcdcde; }
 .tk-sv-nested-type { margin-bottom: 4px; font-weight: 600; }
 .tk-sv-msg { margin: 6px 0 2px; padding: 6px 8px; border-radius: 4px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .tk-sv-msg.is-error { background: #fcf0f1; color: #8a2424; }
 .tk-sv-msg.is-warning { background: #fff4e5; color: #8a4b0f; }
-.tk-sv-msg.is-notice { background: #edf8f2; color: #10584f; }
-.tk-sv-counts .is-notice { color: #146b60; }
+.tk-sv-msg.is-notice { background: #eaf3ff; color: #135e96; }
+.tk-sv-counts .is-notice { color: #2271b1; }
 .tk-sv-props tr.is-notice > th { box-shadow: inset 3px 0 #72aee6; }
 @media (max-width: 760px) { .tk-schema-edit-layout, .tk-content-check-grid { grid-template-columns: 1fr; } .tk-sv-report { max-height: none; } .tk-sv-props th { width: 40%; } }
-@media (max-width: 600px) { .tk-editor-modal { max-width: calc(100vw - 20px); max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); border-radius: 8px; } .tk-editor-modal-header { padding: 16px; gap: 12px; } .tk-editor-modal .tk-editor-modal-header h2 { font-size: 17px; } .tk-editor-modal-body { padding: 18px 16px; } .tk-editor-modal-footer { padding: 12px 16px; } .tk-editor-modal-footer .button { flex: 1 1 40%; text-align: center; } .tk-modal-grid { grid-template-columns: 1fr; } .tk-modal-tabs button { padding: 8px 5px; font-size: 12px; } }
+@media (max-width: 600px) { .tk-editor-modal { max-width: calc(100vw - 20px); max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); border-radius: 8px; } .tk-editor-modal-header { padding: 16px; gap: 12px; } .tk-editor-modal .tk-editor-modal-header h2 { font-size: 1.3em; } .tk-editor-modal-body { padding: 18px 16px; } .tk-editor-modal-footer { padding: 12px 16px; } .tk-editor-modal-footer .button { flex: 1 1 40%; text-align: center; } .tk-modal-grid { grid-template-columns: 1fr; } .tk-modal-tabs button { padding: 8px 5px; font-size: 12px; } }
+
+/* Core responsive admin type sizes. */
+@media (max-width: 782px) {
+    .tk-editor-modal :is(input, textarea, select) { font-size: 16px; }
+    .tk-editor-modal .button { font-size: 14px; }
+}

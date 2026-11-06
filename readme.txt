@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.81
+Stable tag: 2.7.82
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,17 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.82 =
+New
+- Redis object cache (Cache → Object Cache): keeps WordPress query and option caches in Redis between requests, which speeds up logged-in users, WooCommerce cart and checkout, and admin pages that the page cache cannot serve. Off by default; you can enable it only after a successful connection test. Needs the PHP Redis extension and a Redis server. Each site has its own key prefix, flushing only removes that site's keys, and if Redis becomes unreachable the site falls back to WordPress's normal cache and pauses Redis for 30 seconds instead of slowing every request. Another plugin's object-cache.php is never overwritten.
+- Assets → Server load: slow the WordPress Heartbeat in wp-admin (60 or 120 seconds), switch it off on the front end, and stop WooCommerce cart fragments outside shop, cart, checkout and account pages.
+- Database Tools → Cleanup: an Autoloaded Options audit lists the largest options WordPress loads on every request, compares the total with Site Health's limit, and lets you stop autoloading plugin options (core options are protected).
+
+Changes
+- CF7 Database Collection has its own CF7 Database menu next to Contact Form 7 while it is enabled. The Tool Kits page keeps only the on/off switch. Stored messages are kept when it is disabled. Bookmarks to old message pages open the switch page.
+- Page headings across Tool Kits sit on a soft tinted card with comfortable padding.
+- A Tool Kits icon replaces the generic tools icon in the admin menu and page headings; the Overview page gains screen-reader labels and larger status badges, and the editor dialogs, Health Center, SEO panel and CF7 Database screens get refined styling.
 
 = 2.7.81 =
 - Bundle CF7 Database Collection under System Tools with an enable/disable checkbox; new submissions are saved only after successful Contact Form 7 email delivery.

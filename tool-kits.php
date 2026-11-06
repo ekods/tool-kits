@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.7.81
+ * Version: 2.7.82
  * Requires PHP: 7.4
  * GitHub Plugin URI: https://github.com/ekods/tool-kits
  * Update URI: https://github.com/ekods/tool-kits
@@ -31,7 +31,7 @@ if (version_compare(PHP_VERSION, TK_MINIMUM_PHP, '<')) {
     return;
 }
 
-define('TK_VERSION', '2.7.81');
+define('TK_VERSION', '2.7.82');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
@@ -105,6 +105,7 @@ $tk_modules = array(
     'operations-health.php'     => 'tk_operations_health_init',
     'minify.php'                => 'tk_minify_init',
     'cache.php'                 => 'tk_cache_init',
+    'object-cache.php'          => 'tk_object_cache_init',
     'webp.php'                  => 'tk_webp_init',
     'image-optimizer.php'       => 'tk_image_opt_init',
     'seo-optimization.php'      => 'tk_seo_opt_init',
@@ -195,6 +196,7 @@ register_activation_hook(__FILE__, 'tk_activate');
 function tk_deactivate() {
     $GLOBALS['tk_page_cache_early_deactivated'] = true;
     tk_page_cache_early_remove();
+    tk_object_cache_remove();
     // Flush rewrite rules so custom login slug is removed cleanly
     tk_hide_login_flush_rewrite(false);
     tk_security_events_clear_maintenance();

@@ -62,6 +62,8 @@ function wp_nonce_url($url, $action) { return $url . '&_wpnonce=valid'; }
 function wp_tempnam($filename) { return tempnam(sys_get_temp_dir(), 'tk-cf7-xlsx-'); }
 function tk_asset_version($path) { return 'fixture'; }
 function wp_enqueue_style(...$args) { $GLOBALS['styles'][] = $args; }
+function tk_toolkits_capability() { return 'manage_options'; }
+function add_menu_page(...$args) { $GLOBALS['menus'][] = $args; }
 
 // Exercise the real Tool Kits permission/nonce helpers without bootstrapping unrelated modules.
 $helpers = file_get_contents(dirname(__DIR__) . '/includes/helpers.php');
@@ -94,6 +96,12 @@ check_database(strpos($off_html, 'Enable CF7 Database Collection') !== false && 
 check_database($wpdb->queries === 0 && !function_exists('tk_cf7dbc_save_submission'), 'Disabled module loaded its engine or queried the collection');
 tk_cf7_database_register_capture();
 check_database(empty($GLOBALS['hooks']['wpcf7_mail_sent']), 'Default-off registered capture');
+tk_cf7_database_register_menu();
+check_database(empty($GLOBALS['menus']), 'Disabled module added the CF7 Database admin menu');
+check_database(strpos($off_html, 'Open CF7 Database') === false && strpos($off_html, 'Export Excel') === false, 'Disabled Tool Kits page showed message tools');
+$_GET['page'] = 'tool-kits-cf7-database'; tk_cf7_database_assets();
+check_database(empty($GLOBALS['styles']), 'Collection stylesheet loaded on the Tool Kits switch page');
+$_GET['page'] = 'tool-kits-cf7-collection';
 tk_cf7_database_assets();
 check_database(count($GLOBALS['styles']) === 1, 'Collection stylesheet missing');
 $_GET['page'] = 'other'; tk_cf7_database_assets();
@@ -165,16 +173,24 @@ check_database(count($wpdb->rows) === 2 && empty($GLOBALS['standalone_captures']
 $_POST['cf7_database_enabled'] = '1';
 try { tk_cf7_database_save(); } catch (DatabaseRedirect $e) {}
 check_database(tk_cf7_database_enabled(), 'Checked save did not enable collection');
+tk_cf7_database_register_menu();
+check_database(count($GLOBALS['menus']) === 1 && $GLOBALS['menus'][0][3] === 'tool-kits-cf7-collection' && $GLOBALS['menus'][0][4] === 'tk_render_cf7_database_collection_page' && $GLOBALS['menus'][0][6] === 31, 'Enabled module did not add its own top-level CF7 Database menu');
+$_GET = array('page' => 'tool-kits-cf7-database');
+ob_start(); tk_render_cf7_database_page(); $on_html = ob_get_clean();
+check_database(strpos($on_html, 'Open CF7 Database') !== false && strpos($on_html, 'page=tool-kits-cf7-collection') !== false && strpos($on_html, 'Export Excel') === false, 'Tool Kits page must only hold the switch and a link to CF7 Database');
 
-// Views, read state, export escaping and deletion still work while disabled.
+// Disabling hides the message pages but keeps stored messages; they return when enabled again.
 $GLOBALS['tk']['cf7_database_enabled'] = 0;
-$_GET = array('page' => 'tool-kits-cf7-database', 'view' => 'forms');
-ob_start(); tk_render_cf7_database_page(); $forms_html = ob_get_clean();
-check_database(strpos($forms_html, 'Export Excel') !== false && strpos($forms_html, 'form_id=7') !== false, 'Old forms/export unavailable while disabled');
+$_GET = array('page' => 'tool-kits-cf7-collection', 'view' => 'forms');
+ob_start(); tk_render_cf7_database_collection_page(); $hidden_html = ob_get_clean();
+check_database($hidden_html === '' && count($wpdb->rows) === 2, 'Disabled CF7 Database page rendered, or messages were removed');
+$GLOBALS['tk']['cf7_database_enabled'] = 1;
+ob_start(); tk_render_cf7_database_collection_page(); $forms_html = ob_get_clean();
+check_database(strpos($forms_html, 'Export Excel') !== false && strpos($forms_html, 'form_id=7') !== false && strpos($forms_html, 'page=tool-kits-cf7-collection') !== false, 'Stored forms/export unavailable on the CF7 Database page');
 check_database(strpos($forms_html, 'page=cf7dbc') === false, 'View linked to standalone plugin');
-$_GET = array('page' => 'tool-kits-cf7-database', 'submission_id' => 1);
+$_GET = array('page' => 'tool-kits-cf7-collection', 'submission_id' => 1);
 $wpdb->rows[0]['data'] = json_encode(array('message' => '<script>alert(1)</script>'));
-ob_start(); tk_render_cf7_database_page(); $detail_html = ob_get_clean();
+ob_start(); tk_render_cf7_database_collection_page(); $detail_html = ob_get_clean();
 check_database(strpos($detail_html, '<script>') === false && strpos($detail_html, '&lt;script&gt;') !== false, 'Message detail is not XSS-safe');
 check_database($wpdb->rows[0]['read_status'] === 'read' && $wpdb->updates === 1, 'Opening a message did not mark it read');
 check_database(tk_cf7dbc_escape_excel_cell('=HYPERLINK("bad")') === '\'=HYPERLINK("bad")', 'Excel formula protection was lost');
@@ -187,9 +203,9 @@ check_database(simplexml_load_string($sheet) !== false && strpos($sheet, "'=1+1"
 check_database($archive->locateName('xl/workbook.xml') !== false, 'Excel workbook is missing');
 $archive->close(); unlink($excel);
 $GLOBALS['manager'] = false;
-ob_start(); tk_render_cf7_database_page(); $denied_html = ob_get_clean();
+ob_start(); tk_render_cf7_database_collection_page(); $denied_html = ob_get_clean();
 check_database($denied_html === '', 'Unauthorized manager viewed messages');
-$_GET = array('page' => 'tool-kits-cf7-database', 'tk_cf7dbc_delete' => 1, '_wpnonce' => 'valid');
+$_GET = array('page' => 'tool-kits-cf7-collection', 'tk_cf7dbc_delete' => 1, '_wpnonce' => 'valid');
 tk_cf7_database_handle_actions();
 check_database(count($wpdb->rows) === 2, 'Unauthorized manager deleted messages');
 $GLOBALS['manager'] = true;
@@ -204,4 +220,4 @@ if (in_array('--render', $argv, true)) {
     echo $forms_html;
     exit;
 }
-echo 'PASS: ' . $GLOBALS['checks'] . " CF7 database checks (switch, capture, coexistence, schema reuse, access, saved messages and export safety)\n";
+echo 'PASS: ' . $GLOBALS['checks'] . " CF7 database checks (switch, own admin menu, capture, coexistence, schema reuse, access, saved messages and export safety)\n";

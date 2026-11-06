@@ -20,6 +20,20 @@ function tk_assets_opt_init() {
     add_action('template_redirect', 'tk_assets_start_perf_buffer', 2);
     add_action('wp_enqueue_scripts', 'tk_assets_cleanup_bloat', 99);
     add_action('wp_footer', 'tk_assets_instant_page', 99);
+    add_filter('heartbeat_settings', 'tk_assets_heartbeat_settings');
+}
+
+/**
+ * Slow down the WordPress Heartbeat API in wp-admin. Each tick is an uncached admin-ajax.php request, so open
+ * admin tabs keep the server busy. 120 s stays below the 150 s post-lock window, so editing locks still hold.
+ */
+function tk_assets_heartbeat_settings($settings) {
+    $interval = (int) tk_get_option('assets_heartbeat_interval', 0);
+    if (!is_array($settings) || !in_array($interval, array(60, 120), true) || !tk_license_features_enabled()) {
+        return $settings;
+    }
+    $settings['interval'] = $interval;
+    return $settings;
 }
 
 function tk_assets_theme_asset_version($src) {
@@ -415,6 +429,18 @@ function tk_assets_cleanup_bloat() {
 
     if ((int) tk_get_option('assets_disable_embeds', 0) === 1) {
         wp_deregister_script('wp-embed');
+    }
+
+    // Front-end Heartbeat only serves front-end editors and similar tools; visitors never need it.
+    if ((int) tk_get_option('assets_heartbeat_frontend_disabled', 0) === 1) {
+        wp_deregister_script('heartbeat');
+    }
+
+    // Cart fragments send an uncacheable ?wc-ajax=get_refreshed_fragments request on every page view.
+    // Shop, cart, checkout and account pages keep them so the cart stays correct where it matters.
+    if ((int) tk_get_option('assets_disable_cart_fragments', 0) === 1 && function_exists('is_woocommerce')
+        && !(is_woocommerce() || is_cart() || is_checkout() || is_account_page())) {
+        wp_dequeue_script('wc-cart-fragments');
     }
 }
 
@@ -1162,6 +1188,31 @@ function tk_render_assets_panel() {
                 </label>
             </p>
             </fieldset>
+            <fieldset class="tk-settings-group">
+                <legend>Server load</legend>
+            <p>
+                <label for="tk-assets-heartbeat-interval">WordPress Heartbeat in admin</label>
+                <select id="tk-assets-heartbeat-interval" name="assets_heartbeat_interval" aria-describedby="tk-assets-heartbeat-help">
+                    <?php $heartbeat_interval = (int) tk_get_option('assets_heartbeat_interval', 0); ?>
+                    <option value="0" <?php selected(0, $heartbeat_interval); ?>>WordPress default (every 15–60 seconds)</option>
+                    <option value="60" <?php selected(60, $heartbeat_interval); ?>>Every 60 seconds</option>
+                    <option value="120" <?php selected(120, $heartbeat_interval); ?>>Every 120 seconds</option>
+                </select>
+            </p>
+            <p class="description" id="tk-assets-heartbeat-help">Each Heartbeat tick is an uncached admin-ajax.php request from every open admin tab. A slower pace lowers server load; autosave and post locking keep working.</p>
+            <p>
+                <label>
+                    <input type="checkbox" name="assets_heartbeat_frontend_disabled" value="1" <?php checked(1, (int) tk_get_option('assets_heartbeat_frontend_disabled', 0)); ?>>
+                    Disable Heartbeat on the front end (keep it on if you use a front-end editor or page builder preview)
+                </label>
+            </p>
+            <p>
+                <label>
+                    <input type="checkbox" name="assets_disable_cart_fragments" value="1" <?php checked(1, (int) tk_get_option('assets_disable_cart_fragments', 0)); ?>>
+                    Disable WooCommerce cart fragments outside shop, cart, checkout and account pages (a header mini-cart may show the count from the last shop page until the next one)
+                </label>
+            </p>
+            </fieldset>
             </div>
             <p class="description">Preview important pages after changing asset settings, including navigation and forms.</p>
             <p class="tk-action-row"><button class="button button-primary">Save Settings</button></p>
@@ -1198,6 +1249,10 @@ function tk_assets_opt_save() {
     tk_update_option('assets_disable_dashicons', !empty($_POST['assets_disable_dashicons']) ? 1 : 0);
     tk_update_option('assets_disable_embeds', !empty($_POST['assets_disable_embeds']) ? 1 : 0);
     tk_update_option('assets_instant_page_enabled', !empty($_POST['assets_instant_page_enabled']) ? 1 : 0);
+    $heartbeat_interval = (int) tk_post('assets_heartbeat_interval', 0);
+    tk_update_option('assets_heartbeat_interval', in_array($heartbeat_interval, array(60, 120), true) ? $heartbeat_interval : 0);
+    tk_update_option('assets_heartbeat_frontend_disabled', !empty($_POST['assets_heartbeat_frontend_disabled']) ? 1 : 0);
+    tk_update_option('assets_disable_cart_fragments', !empty($_POST['assets_disable_cart_fragments']) ? 1 : 0);
     tk_update_option('assets_cls_guard_enabled', 1);
     tk_update_option('assets_lcp_boost_enabled', !empty($_POST['assets_lcp_boost_enabled']) ? 1 : 0);
     tk_update_option('assets_theme_version_enabled', !empty($_POST['assets_theme_version_enabled']) ? 1 : 0);
