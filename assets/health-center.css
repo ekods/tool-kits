@@ -1,5 +1,5 @@
 .tk-health-center {
-    --tk-health-accent: #4f46e5;
+    --tk-health-accent: #146b60;
     --tk-health-border: #e2e4e7;
     --tk-health-muted: #646970;
     color: #1d2327;
@@ -33,7 +33,7 @@
 .tk-health-warning { color: #855900; }
 .tk-health-passed { color: #147038; }
 .tk-health-unknown { color: #646970; }
-.tk-health-info { color: #4f46e5; }
+.tk-health-info { color: #146b60; }
 .tk-health-panels { display: grid; gap: 8px; }
 .tk-health-panel { min-width: 0; border: 1px solid var(--tk-health-border); border-radius: 6px; }
 .tk-health-panel > summary { display: flex; align-items: center; gap: 8px; padding: 12px; cursor: pointer; list-style: none; font-weight: 600; }
@@ -111,7 +111,7 @@
 .tk-health-history-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 12px 0; padding: 0; list-style: none; }
 .tk-health-history-counts li { margin: 0; padding: 8px; background: #f6f7f7; border-radius: 4px; font-size: 12px; }
 .tk-health-history-counts strong { display: block; font-size: 18px; }
-.tk-health-history-note { padding: 8px 10px; border-left: 3px solid #4f46e5; background: #edf8f2; font-size: 12px; }
+.tk-health-history-note { padding: 8px 10px; border-left: 3px solid #146b60; background: #edf8f2; font-size: 12px; }
 .tk-health-table-wrap .tk-health-setting { margin: 8px 0 0; font-size: 12px; }
 .tk-health-setting a:focus-visible { outline: 2px solid var(--tk-health-accent); outline-offset: 2px; }
 @media (max-width: 782px) {

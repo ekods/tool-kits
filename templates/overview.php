@@ -16,51 +16,39 @@ $geo_score = (int) ($geo_score_data['score'] ?? 0);
 
     <div class="tk-overview-hero">
         <div class="tk-overview-hero-content">
-            <h1 class="tk-overview-hero-title"><?php _e('Welcome to Tool Kits', 'tool-kits'); ?></h1>
-            <p class="tk-overview-hero-subtitle"><?php _e('Site health, security, and optimization.', 'tool-kits'); ?></p>
+            <h1 class="tk-overview-hero-title"><?php _e('Site overview', 'tool-kits'); ?></h1>
+            <p class="tk-overview-hero-subtitle"><?php _e('Review your protection, search visibility, and site performance.', 'tool-kits'); ?></p>
             
             <div class="tk-overview-hero-actions">
                 <a href="<?php echo esc_url(tk_admin_url('tool-kits-monitoring') . '#realtime'); ?>" class="button button-primary button-hero">
-                    <?php _e('View Live Monitor', 'tool-kits'); ?>
+                    <?php _e('Open live monitor', 'tool-kits'); ?>
                 </a>
                 <a href="<?php echo esc_url(tk_admin_url(tk_hardening_page_slug())); ?>" class="button button-hero">
-                    <?php _e('Security Settings', 'tool-kits'); ?>
+                    <?php _e('Review security settings', 'tool-kits'); ?>
                 </a>
             </div>
         </div>
 
-        <div class="tk-overview-score-box">
-            <div class="tk-overview-score-circle">
-                <svg viewBox="0 0 36 36">
-                    <circle class="bg" cx="18" cy="18" r="15.9155" />
-                    <circle class="fg" cx="18" cy="18" r="15.9155" 
-                            stroke="<?php echo $score_color; ?>" 
-                            stroke-dasharray="<?php echo $score; ?>, 100" />
-                </svg>
-                <div class="tk-overview-score-value"><?php echo $score; ?>%</div>
-            </div>
-            <div class="tk-overview-score-label"><?php _e('Security Score', 'tool-kits'); ?></div>
-        </div>
     </div>
 
-    <div class="tk-overview-score-widgets">
-        <a class="tk-card tk-overview-mini-score" href="<?php echo esc_url((string) ($seo_score_data['link'] ?? '#')); ?>">
-            <span class="dashicons dashicons-search"></span>
-            <span class="tk-overview-mini-score-body">
-                <strong><?php _e('SEO Score', 'tool-kits'); ?></strong>
-                <span><?php _e('Metadata, sitemap, canonical, and indexability.', 'tool-kits'); ?></span>
-            </span>
-            <span class="tk-overview-mini-score-value" style="color:<?php echo esc_attr((string) ($seo_score_data['color'] ?? '#e74c3c')); ?>;"><?php echo esc_html((string) $seo_score); ?>%</span>
-        </a>
-        <a class="tk-card tk-overview-mini-score" href="<?php echo esc_url((string) ($geo_score_data['link'] ?? '#')); ?>">
-            <span class="dashicons dashicons-editor-code"></span>
-            <span class="tk-overview-mini-score-body">
-                <strong><?php _e('GEO Score', 'tool-kits'); ?></strong>
-                <span><?php _e('JSON-LD, FAQPage, ItemList, llms.txt, and crawler access.', 'tool-kits'); ?></span>
-            </span>
-            <span class="tk-overview-mini-score-value" style="color:<?php echo esc_attr((string) ($geo_score_data['color'] ?? '#e74c3c')); ?>;"><?php echo esc_html((string) $geo_score); ?>%</span>
-        </a>
-    </div>
+    <section class="tk-readiness-board" aria-label="<?php echo esc_attr(__('Site readiness scores', 'tool-kits')); ?>">
+        <?php
+        $readiness = array(
+            array('label' => __('Security score', 'tool-kits'), 'description' => __('Login protection, firewall, and hardening checks.', 'tool-kits'), 'score' => $score, 'color' => $score_color, 'icon' => 'dashicons-shield', 'link' => tk_admin_url(tk_hardening_page_slug())),
+            array('label' => __('SEO score', 'tool-kits'), 'description' => __('Metadata, sitemap, canonical URLs, and indexability.', 'tool-kits'), 'score' => $seo_score, 'color' => $seo_score_data['color'] ?? '#e74c3c', 'icon' => 'dashicons-search', 'link' => $seo_score_data['link'] ?? '#'),
+            array('label' => __('GEO score', 'tool-kits'), 'description' => __('Structured content and access for AI search crawlers.', 'tool-kits'), 'score' => $geo_score, 'color' => $geo_score_data['color'] ?? '#e74c3c', 'icon' => 'dashicons-editor-code', 'link' => $geo_score_data['link'] ?? '#'),
+        );
+        foreach ($readiness as $item) :
+            $value = max(0, min(100, (int) $item['score']));
+        ?>
+            <a class="tk-readiness-item" href="<?php echo esc_url((string) $item['link']); ?>">
+                <span class="tk-readiness-heading"><span class="dashicons <?php echo esc_attr($item['icon']); ?>" aria-hidden="true"></span><?php echo esc_html($item['label']); ?></span>
+                <strong class="tk-readiness-value"><?php echo esc_html((string) $value); ?><small>%</small></strong>
+                <p><?php echo esc_html($item['description']); ?></p>
+                <span class="tk-readiness-meter" aria-hidden="true" style="--tk-score:<?php echo esc_attr((string) $value); ?>%;--tk-score-color:<?php echo esc_attr((string) $item['color']); ?>;"><span></span></span>
+            </a>
+        <?php endforeach; ?>
+    </section>
 
     <?php if (isset($_GET['tk_waf_reset']) && sanitize_key((string) $_GET['tk_waf_reset']) === '1') : ?>
         <?php tk_notice(__('WAF settings reset to safe defaults.', 'tool-kits'), 'success'); ?>
@@ -72,15 +60,15 @@ $geo_score = (int) ($geo_score_data['score'] ?? 0);
 
     <div class="tk-overview-grid">
         <div class="tk-overview-main">
-            <h2 class="tk-overview-section-title"><?php _e('Security Modules', 'tool-kits'); ?></h2>
+            <h2 class="tk-overview-section-title"><?php _e('Protection settings', 'tool-kits'); ?></h2>
             <p class="tk-overview-section-desc"><?php _e('Quick overview of your active protection layers.', 'tool-kits'); ?></p>
             
             <?php tk_render_security_table(); ?>
 
             <?php tk_analytics_render_gtm_form(); ?>
 
-            <div class="tk-card" style="margin-top: 40px; border-radius: 16px;">
-                <h2 style="margin-top: 0;"><?php _e('Confidence Guide', 'tool-kits'); ?></h2>
+            <div class="tk-card">
+                <h2><?php _e('Recommended actions', 'tool-kits'); ?></h2>
                 <p class="description" style="margin-bottom: 24px;"><?php _e('Recommended actions to boost your site performance and security score.', 'tool-kits'); ?></p>
                 
                 <div class="tk-reco-list">
@@ -200,15 +188,15 @@ $geo_score = (int) ($geo_score_data['score'] ?? 0);
                         $link = isset($links[$key]) ? $links[$key] : '#';
                     ?>
                         <a href="<?php echo esc_url($link); ?>" class="tk-stat-row" style="border-bottom: 1px solid #f1f5f9; padding: 8px 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; text-decoration: none; transition: all 0.2s ease;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='transparent';">
-                            <span style="font-size: 12px; color: <?php echo $is_active ? '#1e293b' : '#94a3b8'; ?>; display: flex; align-items: center;">
+                            <span style="font-size: 12px; color: <?php echo $is_active ? '#1e293b' : '#526861'; ?>; display: flex; align-items: center;">
                                 <?php if ($is_active) : ?>
-                                    <span class="dashicons dashicons-yes" style="color: #22c55e; font-size: 16px; width: 16px; height: 16px; margin-right: 5px;"></span>
+                                    <span class="dashicons dashicons-yes" style="color: #17623d; font-size: 16px; width: 16px; height: 16px; margin-right: 5px;"></span>
                                 <?php else : ?>
                                     <span class="dashicons dashicons-no-alt" style="color: #e2e8f0; font-size: 16px; width: 16px; height: 16px; margin-right: 5px;"></span>
                                 <?php endif; ?>
                                 <?php echo esc_html($label); ?>
                             </span>
-                            <span style="font-size: 10px; font-weight: 700; color: <?php echo $is_active ? '#22c55e' : '#cbd5e1'; ?>;">
+                            <span style="font-size: 10px; font-weight: 700; color: <?php echo $is_active ? '#17623d' : '#526861'; ?>;">
                                 <?php echo $is_active ? '+' . $weight . '%' : '0%'; ?>
                             </span>
                         </a>
@@ -225,15 +213,15 @@ $geo_score = (int) ($geo_score_data['score'] ?? 0);
                     <?php foreach (array_merge((array) ($seo_score_data['checks'] ?? array()), (array) ($geo_score_data['checks'] ?? array())) as $check) : ?>
                         <?php $is_active = !empty($check['ok']); ?>
                         <a href="<?php echo esc_url((string) ($check['link'] ?? '#')); ?>" class="tk-stat-row" style="border-bottom: 1px solid #f1f5f9; padding: 8px 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; text-decoration: none; transition: all 0.2s ease;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='transparent';">
-                            <span style="font-size: 12px; color: <?php echo $is_active ? '#1e293b' : '#94a3b8'; ?>; display: flex; align-items: center;">
+                            <span style="font-size: 12px; color: <?php echo $is_active ? '#1e293b' : '#526861'; ?>; display: flex; align-items: center;">
                                 <?php if ($is_active) : ?>
-                                    <span class="dashicons dashicons-yes" style="color: #22c55e; font-size: 16px; width: 16px; height: 16px; margin-right: 5px;"></span>
+                                    <span class="dashicons dashicons-yes" style="color: #17623d; font-size: 16px; width: 16px; height: 16px; margin-right: 5px;"></span>
                                 <?php else : ?>
                                     <span class="dashicons dashicons-no-alt" style="color: #e2e8f0; font-size: 16px; width: 16px; height: 16px; margin-right: 5px;"></span>
                                 <?php endif; ?>
                                 <?php echo esc_html((string) ($check['label'] ?? '')); ?>
                             </span>
-                            <span style="font-size: 10px; font-weight: 700; color: <?php echo $is_active ? '#22c55e' : '#cbd5e1'; ?>;">
+                            <span style="font-size: 10px; font-weight: 700; color: <?php echo $is_active ? '#17623d' : '#526861'; ?>;">
                                 <?php echo $is_active ? '+' . esc_html((string) ((int) ($check['weight'] ?? 0))) . '%' : '0%'; ?>
                             </span>
                         </a>
@@ -258,7 +246,7 @@ $geo_score = (int) ($geo_score_data['score'] ?? 0);
                     </div>
                     <div class="tk-stat-row">
                         <span class="tk-stat-label"><?php _e('WAF Status', 'tool-kits'); ?></span>
-                        <span class="tk-stat-value" style="color: <?php echo tk_get_option('waf_enabled',0) ? '#22c55e' : '#94a3b8'; ?>;">
+                        <span class="tk-stat-value" style="color: <?php echo tk_get_option('waf_enabled',0) ? '#17623d' : '#526861'; ?>;">
                             <?php echo tk_get_option('waf_enabled',0) ? __('Active', 'tool-kits') : __('Disabled', 'tool-kits'); ?>
                         </span>
                     </div>

@@ -69,10 +69,6 @@ function tk_render_header_branding() {
                 <span><?php echo esc_html($hb_text); ?></span>
             </div>
 
-            <div class="tk-header-status">
-                <div class="tk-status-dot"></div>
-                <span>System Operational</span>
-            </div>
         </div>
     </div>
     <div class="tk-external-notices is-empty" data-tk-external-notices></div>
@@ -1312,6 +1308,8 @@ function tk_option_init_defaults() {
         // Asset optimization
         'cf7_assets_mode' => 'off',
         'cf7_assets_always_load' => '',
+        'cf7_database_enabled' => 0,
+        'cf7_database_managed' => 0,
         'assets_critical_css_enabled' => 0,
         'assets_critical_css' => '',
         'assets_defer_css_handles' => '',
@@ -3331,7 +3329,7 @@ function tk_toolkits_nested_admin_menu_script(): void {
             'tool-kits-security': ['tool-kits-guard', 'tool-kits-firewall', 'tool-kits-security-hide-login', 'tool-kits-security-spam', 'tool-kits-security-rate-limit', 'tool-kits-security-otp', 'tool-kits-brute-force', 'tool-kits-security-login-log', 'tool-kits-malware-scanner', 'tool-kits-html-scanner', 'tool-kits-vulnerability-scanner', 'tool-kits-incident-response'],
             'tool-kits-performance': ['tool-kits-cache', 'tool-kits-optimization', 'tool-kits-minify', 'tool-kits-webp', 'tool-kits-image-opt', 'tool-kits-lazy-load', 'tool-kits-assets'],
             'tool-kits-seo': [],
-            'tool-kits-system': ['tool-kits-health-center', 'tool-kits-db', 'tool-kits-role-management', 'tool-kits-user-id', 'tool-kits-smtp', 'tool-kits-theme-checker', 'tool-kits-diagnostics']
+            'tool-kits-system': ['tool-kits-health-center', 'tool-kits-db', 'tool-kits-cf7-database', 'tool-kits-role-management', 'tool-kits-user-id', 'tool-kits-smtp', 'tool-kits-theme-checker', 'tool-kits-diagnostics']
         };
         var closeTimer = null;
 

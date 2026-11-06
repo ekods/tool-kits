@@ -106,6 +106,7 @@ function tk_register_admin_menus() {
 
         add_submenu_page('tool-kits', __('System Tools', 'tool-kits'), __('System Tools', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-system', 'tk_render_system_tools_page');
         add_submenu_page('tool-kits', __('Database Tools', 'tool-kits'), __('Database Tools', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
+        add_submenu_page('tool-kits', __('CF7 Database Collection', 'tool-kits'), __('CF7 Database', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-cf7-database', 'tk_render_cf7_database_page');
         add_submenu_page('tool-kits', __('SMTP Delivery', 'tool-kits'), __('SMTP Delivery', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-smtp', 'tk_render_smtp_page');
         if ($allow_full) {
             add_submenu_page('tool-kits', __('User ID', 'tool-kits'), __('User ID', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-user-id', 'tk_render_user_id_change_page');
@@ -644,6 +645,11 @@ function tk_render_system_tools_page() {
                 <h2>SMTP Delivery</h2>
                 <p class="description">Configure mail delivery, OAuth transport, and test outbound email.</p>
             </a>
+            <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-cf7-database')); ?>">
+                <span class="dashicons dashicons-feedback"></span>
+                <h2>CF7 Database Collection</h2>
+                <p class="description">Enable or disable submission storage, browse saved form messages, and export Excel files.</p>
+            </a>
             <?php if ($allow_full) : ?>
                 <a class="tk-card tk-tool-card" href="<?php echo esc_url(tk_admin_url('tool-kits-role-management')); ?>">
                     <span class="dashicons dashicons-groups"></span>
@@ -926,7 +932,7 @@ function tk_render_security_table() {
                     <span class="dashicons dashicons-lock"></span>
                     <h3>Hide Login</h3>
                 </div>
-                <?php echo tk_get_option('hide_login_enabled',0) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?>
+                <?php echo tk_get_option('hide_login_enabled',0) ? '<span class="tk-badge tk-on">Enabled</span>' : '<span class="tk-badge">Disabled</span>'; ?>
             </div>
             <div class="tk-module-body">
                 <?php if (tk_get_option('hide_login_enabled',0)) : ?>
@@ -949,7 +955,7 @@ function tk_render_security_table() {
                     <span class="dashicons dashicons-shield"></span>
                     <h3>Captcha</h3>
                 </div>
-                <?php echo tk_get_option('captcha_enabled',0) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?>
+                <?php echo tk_get_option('captcha_enabled',0) ? '<span class="tk-badge tk-on">Enabled</span>' : '<span class="tk-badge">Disabled</span>'; ?>
             </div>
             <div class="tk-module-body">
                 <?php if (tk_get_option('captcha_enabled',0)) : ?>
@@ -973,7 +979,7 @@ function tk_render_security_table() {
                     <span class="dashicons dashicons-no-alt"></span>
                     <h3>Anti-spam</h3>
                 </div>
-                <?php echo tk_get_option('antispam_cf7_enabled',0) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?>
+                <?php echo tk_get_option('antispam_cf7_enabled',0) ? '<span class="tk-badge tk-on">Enabled</span>' : '<span class="tk-badge">Disabled</span>'; ?>
             </div>
             <div class="tk-module-body">
                 <?php if (tk_get_option('antispam_cf7_enabled',0)) : ?>
@@ -997,7 +1003,7 @@ function tk_render_security_table() {
                     <span class="dashicons dashicons-clock"></span>
                     <h3>Rate Limit</h3>
                 </div>
-                <?php echo tk_get_option('rate_limit_enabled',0) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?>
+                <?php echo tk_get_option('rate_limit_enabled',0) ? '<span class="tk-badge tk-on">Enabled</span>' : '<span class="tk-badge">Disabled</span>'; ?>
             </div>
             <div class="tk-module-body">
                 <?php if (tk_get_option('rate_limit_enabled',0)) : 
@@ -1023,7 +1029,7 @@ function tk_render_security_table() {
                     <span class="dashicons dashicons-list-view"></span>
                     <h3>Login Log</h3>
                 </div>
-                <?php echo tk_get_option('login_log_enabled',1) ? '<span class="tk-badge tk-on">ON</span>' : '<span class="tk-badge">OFF</span>'; ?>
+                <?php echo tk_get_option('login_log_enabled',1) ? '<span class="tk-badge tk-on">Enabled</span>' : '<span class="tk-badge">Disabled</span>'; ?>
             </div>
             <div class="tk-module-body">
                 <?php if (tk_get_option('login_log_enabled',1)) : ?>
@@ -1049,7 +1055,7 @@ function tk_render_security_table() {
                 </div>
                 <?php 
                 $hardening_items = tk_hardening_active_items();
-                echo !empty($hardening_items) ? '<span class="tk-badge tk-on">ACTIVE</span>' : '<span class="tk-badge">OFF</span>'; 
+                echo !empty($hardening_items) ? '<span class="tk-badge tk-on">Active</span>' : '<span class="tk-badge">Disabled</span>';
                 ?>
             </div>
             <div class="tk-module-body">

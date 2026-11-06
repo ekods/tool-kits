@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.80
+Stable tag: 2.7.81
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,17 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.81 =
+- Bundle CF7 Database Collection under System Tools with an enable/disable checkbox; new submissions are saved only after successful Contact Form 7 email delivery.
+- Preserve existing submissions while collection is disabled, with per-form browsing, read/unread tracking, deletion and Excel export. Reuse the standalone plugin table and prevent duplicate capture when both plugins are active.
+- Refresh the admin workspace with teal actions, clearer task headings, underlined tabs, consistent forms and editor dialogs, and responsive CF7 collection panels.
+- Group security, SEO and GEO scores in one readiness board and present protection settings as a compact list.
+- Preserve native WordPress table controls, keyboard focus and reduced-motion support.
+
+After updating: open Tool Kits > System Tools > CF7 Database, choose Enable CF7 Database Collection and save. Collection is off by default. Disabling it keeps saved messages. Contact Form 7 and an active Tool Kits license are required for new collection.
+
+Validation: 34 CF7 collection checks, 26 request-loading checks, 75 Tool Kits layout/form checks across ten views, 128 native-table checks, and isolated WordPress save/resend and desktop/mobile review.
 
 = 2.7.80 =
 Security

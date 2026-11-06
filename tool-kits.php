@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Tool Kits
  * Description: Admin toolkit: DB migrate/export, DB cleanup, and security modules (hide login, captcha, antispam contact, rate limit, login log, hardening).
- * Version: 2.7.80
+ * Version: 2.7.81
  * Requires PHP: 7.4
  * GitHub Plugin URI: https://github.com/ekods/tool-kits
  * Update URI: https://github.com/ekods/tool-kits
@@ -31,7 +31,7 @@ if (version_compare(PHP_VERSION, TK_MINIMUM_PHP, '<')) {
     return;
 }
 
-define('TK_VERSION', '2.7.80');
+define('TK_VERSION', '2.7.81');
 define('TK_PATH', plugin_dir_path(__FILE__));
 define('TK_URL', plugin_dir_url(__FILE__));
 define('TK_SLUG', 'tool-kits');
@@ -119,6 +119,7 @@ $tk_modules = array(
     'general.php'               => 'tk_general_init',
     'asset-optimization.php'    => 'tk_assets_opt_init',
     'cf7-assets.php'            => 'tk_cf7_assets_init',
+    'cf7-database.php'          => 'tk_cf7_database_init',
     'upload-limits.php'         => 'tk_upload_limits_init',
     'theme-checker.php'         => false,
     'security-alerts.php'       => 'tk_security_alerts_init',

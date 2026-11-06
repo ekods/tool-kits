@@ -2,6 +2,12 @@
 
 WordPress admin toolkit for database work, security, optimization, monitoring, cache, and operational utilities in one dashboard.
 
+### CF7 Database Collection
+
+Open **Tool Kits → System Tools → CF7 Database** and check **Enable CF7 Database Collection**, then save. Collection is off by default and stores submissions only after Contact Form 7 sends the email successfully. Uncheck and save to stop new entries; existing messages remain available for per-form browsing, read/unread tracking, deletion and Excel export.
+
+The module bundles the collection engine, so the standalone CF7 Database Collection plugin is optional. It reuses the existing `cf7dbc_submissions` table. If the standalone plugin is active, saving the Tool Kits switch gives Tool Kits control of its capture hook while Tool Kits is active and licensed, preventing duplicate entries. Deactivating Tool Kits restores the standalone plugin's normal behavior. Tool Kits does not delete the shared submission table on uninstall.
+
 ---
 
 ## Section 1: Overview
