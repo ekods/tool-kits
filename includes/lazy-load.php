@@ -11,6 +11,14 @@ function tk_lazy_load_init() {
     add_filter('wp_video_shortcode', 'tk_lazy_video_shortcode', 10, 5);
     add_filter('script_loader_tag', 'tk_lazy_script_loader_tag', 10, 3);
     add_action('wp_enqueue_scripts', 'tk_lazy_frontend_script');
+    add_filter('tk_html_scan_first_party_scripts', 'tk_lazy_first_party_script');
+}
+
+/** Lets the HTML Injection Scanner recognise this plugin's own bootstrap instead of reporting it as a dynamic loader. */
+function tk_lazy_first_party_script($sources) {
+    $sources = (array) $sources;
+    $sources[] = tk_lazy_frontend_script_source();
+    return $sources;
 }
 
 function tk_lazy_load_enabled(): bool {
@@ -161,7 +169,18 @@ function tk_lazy_frontend_script() {
     }
     wp_register_script('tool-kits-lazy', '', array(), TK_VERSION, true);
     wp_enqueue_script('tool-kits-lazy');
-    $script = <<<'JS'
+    wp_add_inline_script('tool-kits-lazy', tk_lazy_frontend_script_source());
+    add_filter('script_loader_tag', function($tag, $handle, $src) {
+        if ($handle !== 'tool-kits-lazy') {
+            return $tag;
+        }
+        return tk_csp_add_nonce_to_tag($tag, 'script');
+    }, 1000, 3);
+}
+
+/** Exact source of the lazy-media bootstrap; the HTML Injection Scanner compares scripts against it. */
+function tk_lazy_frontend_script_source(): string {
+    return <<<'JS'
 (function(){
     var nonce = document.currentScript ? (document.currentScript.nonce || document.currentScript.getAttribute('nonce') || '') : '';
     if (window.tkLazyMediaInitialized) { return; }
@@ -266,13 +285,6 @@ function tk_lazy_frontend_script() {
     else { initialize(); }
 })();
 JS;
-    wp_add_inline_script('tool-kits-lazy', $script);
-    add_filter('script_loader_tag', function($tag, $handle, $src) {
-        if ($handle !== 'tool-kits-lazy') {
-            return $tag;
-        }
-        return tk_csp_add_nonce_to_tag($tag, 'script');
-    }, 1000, 3);
 }
 
 function tk_render_lazy_load_panel() {

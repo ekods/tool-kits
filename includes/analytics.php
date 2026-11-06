@@ -10,6 +10,17 @@ function tk_analytics_init(): void {
     add_action('wp_head', 'tk_analytics_render_gtag', 1);
     add_action('admin_post_tk_analytics_save', 'tk_analytics_save');
     add_action('admin_enqueue_scripts', 'tk_analytics_enqueue_editor');
+    add_filter('tk_html_scan_first_party_scripts', 'tk_analytics_first_party_script');
+}
+
+/** Lets the HTML Injection Scanner recognise the gtag loader for the saved Measurement ID, and only that one. */
+function tk_analytics_first_party_script($sources) {
+    $sources = (array) $sources;
+    $gtag_id = (string) tk_get_option('google_analytics_gtag_id', '');
+    if ($gtag_id !== '' && preg_match('/^(G|UA|AW|DC)-[A-Z0-9]+$/i', $gtag_id)) {
+        $sources[] = tk_analytics_gtag_script($gtag_id);
+    }
+    return $sources;
 }
 
 function tk_analytics_enqueue_editor($hook): void {
@@ -85,15 +96,21 @@ function tk_analytics_render_gtm_form(): void {
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="tk-analytics-form">
                 <?php tk_nonce_field('tk_analytics_save'); ?>
                 <input type="hidden" name="action" value="tk_analytics_save">
-                <div class="tk-analytics-field">
-                    <label for="tk-google-tag-manager-head"><strong>Head code</strong> <code>&lt;head&gt;</code></label>
-                    <p class="description" id="tk-gtm-head-help">Paste the complete script snippet, including its &lt;script&gt; tags. It will appear near the start of the page head.</p>
-                    <textarea id="tk-google-tag-manager-head" name="google_tag_manager_head" class="large-text code" rows="12" spellcheck="false" aria-describedby="tk-gtm-head-help" data-tk-analytics-code><?php echo esc_textarea((string) tk_get_option('google_tag_manager_head', '')); ?></textarea>
-                </div>
-                <div class="tk-analytics-field">
-                    <label for="tk-google-tag-manager-body"><strong>Body code</strong> <code>&lt;body&gt;</code></label>
-                    <p class="description" id="tk-gtm-body-help">Paste the complete noscript snippet. It will appear immediately after the opening body tag on supported themes.</p>
-                    <textarea id="tk-google-tag-manager-body" name="google_tag_manager_body" class="large-text code" rows="7" spellcheck="false" aria-describedby="tk-gtm-body-help" data-tk-analytics-code><?php echo esc_textarea((string) tk_get_option('google_tag_manager_body', '')); ?></textarea>
+                <div class="tk-analytics-tabs" data-tk-analytics-tabs>
+                    <div class="tk-analytics-tablist" role="tablist" aria-label="Google Tag Manager snippets">
+                        <button type="button" role="tab" class="tk-analytics-tab" id="tk-gtm-tab-head" aria-controls="tk-gtm-panel-head" aria-selected="true" tabindex="0">Head code</button>
+                        <button type="button" role="tab" class="tk-analytics-tab" id="tk-gtm-tab-body" aria-controls="tk-gtm-panel-body" aria-selected="false" tabindex="-1">Body code</button>
+                    </div>
+                    <div class="tk-analytics-field" role="tabpanel" id="tk-gtm-panel-head" aria-labelledby="tk-gtm-tab-head">
+                        <label for="tk-google-tag-manager-head" class="screen-reader-text">Head code &lt;head&gt;</label>
+                        <p class="description" id="tk-gtm-head-help">Paste the complete script snippet, including its &lt;script&gt; tags. It will appear near the start of the page head.</p>
+                        <textarea id="tk-google-tag-manager-head" name="google_tag_manager_head" class="large-text code" rows="12" spellcheck="false" aria-describedby="tk-gtm-head-help" data-tk-analytics-code><?php echo esc_textarea((string) tk_get_option('google_tag_manager_head', '')); ?></textarea>
+                    </div>
+                    <div class="tk-analytics-field" role="tabpanel" id="tk-gtm-panel-body" aria-labelledby="tk-gtm-tab-body">
+                        <label for="tk-google-tag-manager-body" class="screen-reader-text">Body code &lt;body&gt;</label>
+                        <p class="description" id="tk-gtm-body-help">Paste the complete noscript snippet. It will appear immediately after the opening body tag on supported themes.</p>
+                        <textarea id="tk-google-tag-manager-body" name="google_tag_manager_body" class="large-text code" rows="7" spellcheck="false" aria-describedby="tk-gtm-body-help" data-tk-analytics-code><?php echo esc_textarea((string) tk_get_option('google_tag_manager_body', '')); ?></textarea>
+                    </div>
                 </div>
                 <p class="description">If this container also installs Google Analytics, use it as your single Analytics installation to avoid duplicate tracking.</p>
                 <p><button type="submit" class="button button-primary">Save Google Tag Manager</button> <a href="https://support.google.com/tagmanager/answer/14847097" target="_blank" rel="noopener noreferrer">Installation guide</a></p>
@@ -166,11 +183,15 @@ function tk_analytics_render_gtag(): void {
         return;
     }
 
-    ?>
-    <!-- Tool Kits - Optimized Google Analytics -->
-    <script>
+    echo "    <!-- Tool Kits - Optimized Google Analytics -->\n    <script>\n" . tk_analytics_gtag_script($gtag_id) . "\n    </script>\n    ";
+}
+
+/** Exact source of the delayed gtag loader for one Measurement ID; the HTML Injection Scanner compares scripts against it. */
+function tk_analytics_gtag_script(string $gtag_id): string {
+    $id_js = esc_js($gtag_id);
+    return <<<JS
         (function() {
-            var gtagId = '<?php echo esc_js($gtag_id); ?>';
+            var gtagId = '{$id_js}';
             var loaded = false;
             var timer = 0;
             var events = ['mousedown', 'mousemove', 'touchstart', 'scroll', 'keydown'];
@@ -220,6 +241,5 @@ function tk_analytics_render_gtag(): void {
             // 3.5s is usually enough to clear the initial LCP/FID window
             timer = window.setTimeout(loadGA, 3500);
         })();
-    </script>
-    <?php
+JS;
 }

@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.82
+Stable tag: 2.7.83
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,15 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.83 =
+Fixes
+- The HTML Injection Scanner no longer reports Tool Kits' own scripts (the delayed Google Analytics loader, the lazy-media bootstrap and the delayed-script replay) as unverified dynamic loaders. A script is approved only when it matches the current Tool Kits source exactly, and the analytics loader only for the saved Measurement ID, so edited, extended or foreign copies are still reported. Run the scan again to clear earlier results.
+
+Changes
+- Google Tag Manager: Head code and Body code are now two tabs with keyboard support. Both snippets still save together, and without JavaScript both fields stay visible.
+- Overview and page headings have a new header: a blue-to-mint background, an accent edge and a filled icon tile. Buttons in the header are WordPress's standard buttons.
+- The third level of the Tool Kits admin menu uses WordPress's own submenu markup and open state, so it follows the admin color scheme. Escape closes an open group.
 
 = 2.7.82 =
 New

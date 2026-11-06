@@ -3352,20 +3352,24 @@ function tk_toolkits_nested_admin_menu_script(): void {
             }
         });
 
+        // WordPress has no third menu level, so each group reuses core's own flyout markup (ul.wp-submenu.wp-submenu-wrap)
+        // and its "opensub" state on the group item, the same class core sets on a hovered top-level item.
+        function setOpen(item, open) {
+            item.classList.toggle('opensub', open);
+            var link = item.querySelector(':scope > a');
+            if (link) { link.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+        }
+
         Object.keys(groups).forEach(function(groupPage){
             var groupItem = byPage[groupPage];
             if (!groupItem) { return; }
 
-            groupItem.classList.add('tk-submenu-group');
             var nested = document.createElement('ul');
-            nested.className = 'wp-submenu tk-submenu-flyout';
-            nested.setAttribute('aria-label', groupItem.textContent.trim());
-            nested.setAttribute('role', 'menu');
+            nested.className = 'wp-submenu wp-submenu-wrap';
 
             groups[groupPage].forEach(function(childPage){
                 var childItem = byPage[childPage];
                 if (!childItem || childItem === groupItem) { return; }
-                childItem.classList.add('tk-submenu-child');
                 if (childItem.classList.contains('current')) {
                     groupItem.classList.add('tk-submenu-current');
                 }
@@ -3374,34 +3378,37 @@ function tk_toolkits_nested_admin_menu_script(): void {
 
             if (nested.children.length) {
                 groupItem.appendChild(nested);
-                groupItem.classList.add('has-tk-submenu');
+                groupItem.classList.add('wp-has-submenu');
+                var groupLink = groupItem.querySelector(':scope > a');
+                if (groupLink) { groupLink.setAttribute('aria-haspopup', 'true'); groupLink.setAttribute('aria-expanded', 'false'); }
 
                 groupItem.addEventListener('mouseenter', function(){
                     window.clearTimeout(closeTimer);
-                    root.querySelectorAll('.tk-submenu-group.is-open').forEach(function(item){
-                        if (item !== groupItem) {
-                            item.classList.remove('is-open');
-                        }
+                    root.querySelectorAll('.wp-submenu > li.opensub').forEach(function(item){
+                        if (item !== groupItem) { setOpen(item, false); }
                     });
-                    groupItem.classList.add('is-open');
+                    setOpen(groupItem, true);
                 });
 
                 groupItem.addEventListener('mouseleave', function(){
-                    closeTimer = window.setTimeout(function(){
-                        groupItem.classList.remove('is-open');
-                    }, 140);
+                    closeTimer = window.setTimeout(function(){ setOpen(groupItem, false); }, 140);
                 });
 
                 groupItem.addEventListener('focusin', function(){
                     window.clearTimeout(closeTimer);
-                    groupItem.classList.add('is-open');
+                    setOpen(groupItem, true);
                 });
 
                 groupItem.addEventListener('focusout', function(event){
                     if (!groupItem.contains(event.relatedTarget)) {
-                        closeTimer = window.setTimeout(function(){
-                            groupItem.classList.remove('is-open');
-                        }, 140);
+                        closeTimer = window.setTimeout(function(){ setOpen(groupItem, false); }, 140);
+                    }
+                });
+
+                groupItem.addEventListener('keydown', function(event){
+                    if (event.key === 'Escape' && groupItem.classList.contains('opensub')) {
+                        setOpen(groupItem, false);
+                        if (groupLink) { groupLink.focus(); }
                     }
                 });
             }

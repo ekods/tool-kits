@@ -89,20 +89,6 @@
     gap: 12px;
 }
 
-.tk-overview-hero-actions .button-hero {
-    height: 46px !important;
-    line-height: 44px !important;
-    padding: 0 24px !important;
-    border-radius: 10px !important;
-    font-weight: 400 !important;
-    transition: background-color .15s ease, border-color .15s ease, color .15s ease !important;
-}
-
-.tk-overview-hero-actions .button-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-}
-
 /* Score Box */
 .tk-overview-score-box {
     background: rgba(255, 255, 255, 0.08);

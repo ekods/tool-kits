@@ -1,3 +1,14 @@
+## Tool Kits 2.7.83
+
+Scanner false-positive fix, Google Tag Manager tabs, a new header design and a native third menu level. See `readme.txt` for the complete list.
+
+Upgrade notes:
+- Run the HTML Injection Scanner again; findings recorded for Tool Kits' own scripts before this update stay in the saved report until then.
+- Header buttons on the Overview and page headings are plain WordPress buttons; their colors follow the admin color scheme.
+- The Tool Kits submenu flyout no longer has its own navy panel: it uses the admin color scheme like WordPress's own submenus.
+
+Validation: PHP 7.4.33 and 8.4 lint, regression suite 81/81 on both, browser checks for the menu flyout (39 checks) and the Google Tag Manager tabs with a real CodeMirror editor, and the header rendered over WordPress's own button and menu styles. Mobile menu behavior and admin color schemes other than "modern" were not tested.
+
 ## Tool Kits 2.7.82
 
 Opt-in Redis object cache, server-load controls and a stand-alone CF7 Database menu. See `readme.txt` for the complete list.

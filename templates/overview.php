@@ -15,20 +15,23 @@ $geo_score = (int) ($geo_score_data['score'] ?? 0);
     <div class="tk-overview-external-notices is-empty" data-tk-overview-external-notices></div>
 
     <div class="tk-overview-hero">
-        <div class="tk-overview-hero-content">
-            <h1 class="tk-overview-hero-title"><?php _e('Site overview', 'tool-kits'); ?></h1>
-            <p class="tk-overview-hero-subtitle"><?php _e('Review your protection, search visibility, and site performance.', 'tool-kits'); ?></p>
-            
-            <div class="tk-overview-hero-actions">
-                <a href="<?php echo esc_url(tk_admin_url('tool-kits-monitoring') . '#realtime'); ?>" class="button button-primary button-hero">
-                    <?php _e('Open live monitor', 'tool-kits'); ?>
-                </a>
-                <a href="<?php echo esc_url(tk_admin_url(tk_hardening_page_slug())); ?>" class="button button-hero">
-                    <?php _e('Review security settings', 'tool-kits'); ?>
-                </a>
+        <div class="tk-overview-hero-main">
+            <div class="tk-page-icon">
+                <span class="dashicons dashicons-tool-kits" aria-hidden="true"></span>
+            </div>
+            <div class="tk-overview-hero-content">
+                <h1 class="tk-overview-hero-title"><?php _e('Site overview', 'tool-kits'); ?></h1>
+                <p class="tk-overview-hero-subtitle"><?php _e('Review your protection, search visibility, and site performance.', 'tool-kits'); ?></p>
             </div>
         </div>
-
+        <div class="tk-overview-hero-actions">
+            <a href="<?php echo esc_url(tk_admin_url('tool-kits-monitoring') . '#realtime'); ?>" class="button button-primary">
+                <?php _e('Open live monitor', 'tool-kits'); ?>
+            </a>
+            <a href="<?php echo esc_url(tk_admin_url(tk_hardening_page_slug())); ?>" class="button">
+                <?php _e('Review security settings', 'tool-kits'); ?>
+            </a>
+        </div>
     </div>
 
     <section class="tk-readiness-board" aria-label="<?php echo esc_attr(__('Site readiness scores', 'tool-kits')); ?>">

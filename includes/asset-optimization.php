@@ -21,6 +21,14 @@ function tk_assets_opt_init() {
     add_action('wp_enqueue_scripts', 'tk_assets_cleanup_bloat', 99);
     add_action('wp_footer', 'tk_assets_instant_page', 99);
     add_filter('heartbeat_settings', 'tk_assets_heartbeat_settings');
+    add_filter('tk_html_scan_first_party_scripts', 'tk_assets_first_party_script');
+}
+
+/** Lets the HTML Injection Scanner recognise this plugin's own delayed-script bootstrap. */
+function tk_assets_first_party_script($sources) {
+    $sources = (array) $sources;
+    $sources[] = tk_assets_delay_js_source();
+    return $sources;
 }
 
 /**
@@ -376,7 +384,12 @@ function tk_assets_delay_js_bootstrap() {
     if (empty($targets)) {
         return;
     }
-    $script = "(function(){
+    tk_csp_print_inline_script(tk_assets_delay_js_source(), array('id' => 'tk-assets-delay-js'));
+}
+
+/** Exact source of the delayed-script replay bootstrap; the HTML Injection Scanner compares scripts against it. */
+function tk_assets_delay_js_source(): string {
+    return "(function(){
         var nonce = document.currentScript ? (document.currentScript.nonce || document.currentScript.getAttribute('nonce') || '') : '';
         var delayEvents = ['keydown', 'mousedown', 'mousemove', 'touchmove', 'touchstart', 'touchend', 'scroll'];
         var triggered = false;
@@ -407,7 +420,6 @@ function tk_assets_delay_js_bootstrap() {
         }
         delayEvents.forEach(function(e){ window.addEventListener(e, trigger, {passive:true}); });
     })();";
-    tk_csp_print_inline_script($script, array('id' => 'tk-assets-delay-js'));
 }
 
 function tk_assets_cleanup_bloat() {

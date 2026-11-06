@@ -165,8 +165,26 @@ final class TK_HTML_Injection_Context {
         return true;
     }
 
+    /**
+     * Inline scripts Tool Kits prints itself (lazy media, delayed script replay, delayed gtag). A script is approved only
+     * when its token stream is identical to the current source, so renaming, editing or extending one makes it an
+     * ordinary finding again. The gtag loader is bound to the saved Measurement ID, so a copy with another ID is not approved.
+     */
+    private static function first_party(array $tokens): string {
+        static $known = array();
+        foreach ((array) (function_exists('apply_filters') ? apply_filters('tk_html_scan_first_party_scripts', array()) : array()) as $source) {
+            if (!is_string($source) || $source === '') { continue; }
+            $key = md5($source);
+            if (!array_key_exists($key, $known)) { $known[$key] = self::tokens($source); }
+            if ($known[$key] !== null && $known[$key] === $tokens) { return 'Tool Kits'; }
+        }
+        return '';
+    }
+
     /** Only entire approved token streams are suppressible. Unknown extra statements always fail. */
     public static function safe_loader(?array $tokens, string $origin, array $providers): string {
+        // Before the size cap below: the lazy-media bootstrap is larger than any vendor snippet.
+        if ($tokens) { $first_party = self::first_party($tokens); if ($first_party !== '') { return $first_party; } }
         if ($tokens === null || !$tokens || count($tokens) > 600) { return ''; }
         $urls = array(); $ids = array();
         foreach ($tokens as $token) {

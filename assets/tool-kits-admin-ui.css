@@ -137,9 +137,6 @@
     .tk-rt-plot[aria-busy="true"] .tk-rt-chart-state, #tk-rt-pulse { animation: none; }
     .tk-rt-grid .tk-progress-bar { transition: none !important; }
 }
-.tk-wrap .tk-page-heading::before,
-.tk-overview-wrap .tk-overview-hero::before,
-.tk-overview-wrap .tk-overview-hero::after { display: none; }
 .tk-page-heading .tk-hero-content { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .tk-page-heading-main { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .tk-page-heading-main > :last-child { min-width: 0; }
@@ -194,23 +191,22 @@
 :is(.tk-wrap, .tk-overview-wrap) .tk-tabs-nav-button.is-active { background: transparent; border-bottom-color: var(--tk-primary); box-shadow: none; }
 :is(.tk-wrap, .tk-overview-wrap) .tk-tabs-nav-button:hover { background: transparent; color: var(--tk-primary); }
 :is(.tk-wrap, .tk-overview-wrap) .tk-tabs-nav-button:focus-visible { outline: 2px solid var(--tk-primary); outline-offset: -4px; }
-:is(.tk-wrap, .tk-overview-wrap) .button:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
+:is(.tk-wrap, .tk-overview-wrap) .button:not(:where(.tablenav *, .search-box *, .wp-list-table *, .tk-hero-action *, .tk-overview-hero-actions *)) {
     display: inline-flex; align-items: center; justify-content: center; gap: 7px;
     min-height: 38px; height: auto; padding: 7px 14px; margin: 0;
     font-size: var(--tk-button-size); font-weight: 400; line-height: 1.5; text-align: center;
     white-space: normal; border-radius: var(--tk-radius-md); box-shadow: none; transform: none; max-width: 100%;
     background: #fff; color: #353d49; border: 1px solid var(--tk-border);
 }
-:is(.tk-wrap, .tk-overview-wrap) .button.button-primary { background: var(--tk-action-bg); color: var(--tk-action-text); border-color: var(--tk-action-border); box-shadow: none; }
-:is(.tk-wrap, .tk-overview-wrap) .button:hover { transform: none; box-shadow: none; border-color: #9aa5b5; }
-:is(.tk-wrap, .tk-overview-wrap) .button.button-primary:hover { background: var(--tk-action-hover); border-color: var(--tk-primary); color: var(--tk-action-text); }
+:is(.tk-wrap, .tk-overview-wrap) .button.button-primary:not(:where(.tk-hero-action *, .tk-overview-hero-actions *)) { background: var(--tk-action-bg); color: var(--tk-action-text); border-color: var(--tk-action-border); box-shadow: none; }
+:is(.tk-wrap, .tk-overview-wrap) .button:not(:where(.tk-hero-action *, .tk-overview-hero-actions *)):hover { transform: none; box-shadow: none; border-color: #9aa5b5; }
+:is(.tk-wrap, .tk-overview-wrap) .button.button-primary:not(:where(.tk-hero-action *, .tk-overview-hero-actions *)):hover { background: var(--tk-action-hover); border-color: var(--tk-primary); color: var(--tk-action-text); }
 :is(.tk-wrap, .tk-overview-wrap) .button:disabled,
 :is(.tk-wrap, .tk-overview-wrap) .button[aria-disabled="true"] { opacity: .55; cursor: default; }
 :is(.tk-wrap, .tk-overview-wrap) .button.button-link-delete,
 :is(.tk-wrap, .tk-overview-wrap) .button.tk-button-danger { color: #b42318; background: #fff; border-color: #f0c8c4; }
 :is(.tk-wrap, .tk-overview-wrap) .button .dashicons { width: 16px; height: 16px; font-size: 16px; flex: 0 0 16px; }
 :is(.tk-wrap, .tk-overview-wrap) .button.tk-icon-button { width: 36px; min-width: 36px; height: 36px; padding: 0; }
-.tk-overview-wrap .tk-overview-hero-actions .button-hero { min-height: 36px !important; height: auto !important; font-size: var(--tk-button-size) !important; line-height: 1.5 !important; padding: 7px 12px !important; border-radius: 6px !important; transform: none; }
 :is(.tk-wrap, .tk-overview-wrap) :is(input[type="text"], input[type="number"], input[type="email"], input[type="url"], input[type="password"], input[type="search"], textarea, select):not(:where(.tablenav *, .search-box *, .wp-list-table *)) { border-radius: var(--tk-radius-md); min-height: 38px; border-color: var(--tk-control-border); box-shadow: none; max-width: 100%; padding: 7px 10px; font-size: var(--tk-control-size); line-height: 1.6; }
 :is(.tk-wrap, .tk-overview-wrap) textarea { resize: vertical; }
 :is(.tk-wrap, .tk-overview-wrap) select { padding-inline-end: 30px; }
@@ -338,7 +334,7 @@
     .tk-wrap .tk-hero-action { width: 100%; }
     .tk-wrap .tk-heading-summary { border: 0; padding: 0; display: flex; align-items: baseline; gap: 10px; text-align: start; }
     :is(.tk-wrap, .tk-overview-wrap) .tk-tabs-nav { padding-inline: 12px; gap: 0 18px; }
-    :is(.tk-wrap, .tk-overview-wrap) .button:not(:where(.tablenav *, .search-box *, .wp-list-table *)) { min-height: 42px; }
+    :is(.tk-wrap, .tk-overview-wrap) .button:not(:where(.tablenav *, .search-box *, .wp-list-table *, .tk-hero-action *, .tk-overview-hero-actions *)) { min-height: 42px; }
     :is(.tk-wrap, .tk-overview-wrap) :is(input[type="text"], input[type="number"], input[type="email"], input[type="url"], input[type="password"], input[type="search"], select):not(:where(.tablenav *, .search-box *, .wp-list-table *)) { min-height: 42px; }
     .tk-wrap .tk-responsive-grid,
     .tk-wrap .tk-geo-faq-row,
@@ -538,13 +534,6 @@
     box-shadow: none !important;
     background: transparent !important;
 }
-/* Page headings sit on a soft tinted card instead of the transparent workbench strip. */
-.tk-wrap .tk-hero.tk-page-heading.tk-card {
-    padding: 24px 28px;
-    background: var(--tk-primary-soft) !important;
-    border: 1px solid var(--tk-border) !important;
-    border-radius: var(--tk-radius-lg) !important;
-}
 .tk-overview-wrap .tk-overview-hero { margin-bottom: 24px; }
 .tk-overview-wrap .tk-overview-hero-content { max-width: none; flex: 1; }
 .tk-overview-wrap .tk-overview-hero-actions { margin-top: 20px; }
@@ -599,11 +588,9 @@
 .tk-overview-wrap .tk-module-body :is(ul, p) { margin: 0; font-size: 13px; line-height: 1.6; color: var(--tk-muted); font-style: normal; }
 .tk-overview-wrap .tk-module-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 14px 18px; border: 0; background: transparent; }
 @media (max-width: 782px) {
-    .tk-wrap .tk-hero.tk-page-heading.tk-card { padding: 18px 16px; }
     :is(.tk-wrap, .tk-overview-wrap) { --tk-control-size: 16px; --tk-button-size: 14px; }
-    :is(.tk-wrap, .tk-overview-wrap) .button:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
+    :is(.tk-wrap, .tk-overview-wrap) .button:not(:where(.tablenav *, .search-box *, .wp-list-table *, .tk-hero-action *, .tk-overview-hero-actions *)),
     .tk-overview-wrap .tk-module-footer .button { min-height: 44px; }
-    .tk-overview-wrap .tk-overview-hero-actions .button-hero { min-height: 44px !important; }
     :is(.tk-wrap, .tk-overview-wrap) .button.tk-icon-button { width: 44px; height: 44px; }
     .tk-overview-wrap .tk-overview-hero { padding: 8px 0 22px; }
     .tk-readiness-board { grid-template-columns: minmax(0, 1fr); }
@@ -616,4 +603,106 @@
     .tk-overview-wrap .tk-module-header { grid-column: 1 / -1; padding: 16px 16px 10px; }
     .tk-overview-wrap .tk-module-body { padding: 0 12px 16px 16px; }
     .tk-overview-wrap .tk-module-footer { padding: 0 16px 16px 0; max-width: 160px; }
+}
+
+/* Hero cards. Page headings and the Overview header share one softly lit surface: a blue-to-mint wash, an accent edge,
+   faint rings and a filled icon tile. Declared last so it replaces the plain workbench strip above. */
+.tk-wrap .tk-hero.tk-page-heading.tk-card,
+.tk-overview-wrap .tk-overview-hero {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    margin: 0 0 24px;
+    padding: 28px 32px 28px 36px;
+    color: var(--tk-text);
+    background:
+        radial-gradient(circle at 94% -30%, rgba(255, 255, 255, .8) 0, rgba(255, 255, 255, 0) 48%),
+        radial-gradient(circle at 2% 140%, rgba(46, 165, 139, .17) 0, rgba(46, 165, 139, 0) 46%),
+        linear-gradient(135deg, #f3f8ff 0%, #e6f0fc 55%, #e1f2ee 100%) !important;
+    border: 1px solid #cddff2 !important;
+    border-radius: 14px !important;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 12px 28px -16px rgba(34, 113, 177, .4) !important;
+}
+.tk-wrap .tk-hero.tk-page-heading.tk-card::before,
+.tk-overview-wrap .tk-overview-hero::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 5px;
+    height: auto;
+    border-radius: 0;
+    background: linear-gradient(180deg, var(--tk-primary) 0%, #2ea58b 100%);
+    box-shadow: none;
+    pointer-events: none;
+}
+.tk-wrap .tk-hero.tk-page-heading.tk-card::after,
+.tk-overview-wrap .tk-overview-hero::after {
+    content: "";
+    position: absolute;
+    inset: -70px -50px auto auto;
+    z-index: -1;
+    width: 240px;
+    height: 240px;
+    border: 1px solid rgba(34, 113, 177, .14);
+    border-radius: 50%;
+    background: none;
+    box-shadow: 0 0 0 30px rgba(34, 113, 177, .045), 0 0 0 62px rgba(34, 113, 177, .03);
+    opacity: 1;
+    pointer-events: none;
+}
+.tk-wrap .tk-page-heading .tk-hero-content { gap: 24px; }
+.tk-wrap .tk-page-heading-main,
+.tk-overview-wrap .tk-overview-hero-main { gap: 18px; }
+.tk-wrap .tk-page-heading .tk-hero-content .tk-page-icon,
+.tk-overview-wrap .tk-overview-hero .tk-page-icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 54px;
+    width: 54px;
+    height: 54px;
+    color: #fff;
+    border: 0;
+    border-radius: 15px;
+    background: linear-gradient(145deg, var(--tk-primary) 0%, var(--tk-primary-dark) 100%);
+    box-shadow: 0 10px 18px -10px rgba(19, 94, 150, .7), inset 0 1px 0 rgba(255, 255, 255, .28) !important;
+}
+.tk-wrap .tk-page-icon .dashicons,
+.tk-overview-wrap .tk-page-icon .dashicons { width: 26px; height: 26px; font-size: 26px; color: #fff; }
+.tk-wrap .tk-page-icon .dashicons-tool-kits::before,
+.tk-overview-wrap .tk-page-icon .dashicons-tool-kits::before { width: 26px; height: 26px; -webkit-mask-size: 26px 26px; mask-size: 26px 26px; }
+.tk-wrap .tk-page-heading .tk-hero-title,
+.tk-overview-wrap .tk-overview-hero .tk-overview-hero-title {
+    margin: 0 !important;
+    color: #0f2540 !important;
+    font-size: 27px !important;
+    font-weight: 600 !important;
+    letter-spacing: -.015em;
+    line-height: 1.2 !important;
+}
+.tk-wrap .tk-page-heading .tk-hero-subtitle,
+.tk-overview-wrap .tk-overview-hero .tk-overview-hero-subtitle {
+    max-width: 70ch !important;
+    margin: 8px 0 0 !important;
+    color: #46586d !important;
+    font-size: 14px !important;
+    line-height: 1.55 !important;
+}
+.tk-overview-wrap .tk-overview-hero { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px 28px; }
+.tk-overview-wrap .tk-overview-hero-main { display: flex; flex: 1 1 420px; align-items: center; min-width: 0; }
+.tk-overview-wrap .tk-overview-hero-content { flex: 1; min-width: 0; max-width: none; }
+.tk-overview-wrap .tk-overview-hero-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 10px; margin: 0; }
+@media (max-width: 782px) {
+    .tk-wrap .tk-hero.tk-page-heading.tk-card,
+    .tk-overview-wrap .tk-overview-hero { padding: 20px 18px 20px 24px; border-radius: 12px !important; }
+    .tk-wrap .tk-page-heading-main,
+    .tk-overview-wrap .tk-overview-hero-main { gap: 14px; }
+    .tk-wrap .tk-page-heading .tk-hero-content .tk-page-icon,
+    .tk-overview-wrap .tk-overview-hero .tk-page-icon { flex-basis: 44px; width: 44px; height: 44px; border-radius: 12px; }
+    .tk-wrap .tk-page-icon .dashicons,
+    .tk-overview-wrap .tk-page-icon .dashicons { width: 22px; height: 22px; font-size: 22px; }
+    .tk-wrap .tk-page-icon .dashicons-tool-kits::before,
+    .tk-overview-wrap .tk-page-icon .dashicons-tool-kits::before { width: 22px; height: 22px; -webkit-mask-size: 22px 22px; mask-size: 22px 22px; }
+    .tk-wrap .tk-page-heading .tk-hero-title,
+    .tk-overview-wrap .tk-overview-hero .tk-overview-hero-title { font-size: 22px !important; }
+    .tk-overview-wrap .tk-overview-hero-actions { width: 100%; }
 }

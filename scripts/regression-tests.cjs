@@ -4,6 +4,8 @@ const { spawnSync } = require('node:child_process');
 const cases = [
   { "name": "cf7-database", "runtime": "php", "source": ["<?php", "require __DIR__ . '/cf7-database-regression.php';"] },
   { "name": "server-load", "runtime": "php", "source": ["<?php", "require __DIR__ . '/server-load-regression.php';"] },
+  { "name": "html-injection-first-party", "runtime": "php", "source": ["<?php", "require __DIR__ . '/html-injection-first-party-regression.php';"] },
+  { "name": "admin-menu-flyout-ui", "runtime": "node", "source": ["require(__dirname + '/admin-menu-flyout-ui-regression.cjs');"] },
   { "name": "object-cache", "runtime": "php", "source": ["<?php", "require __DIR__ . '/object-cache-regression.php';"] },
   { "name": "maintenance-jobs", "runtime": "php", "source": ["<?php", "require __DIR__ . '/maintenance-jobs-regression.php';"] },
   { "name": "cleanup-ui", "runtime": "node", "source": ["require(__dirname + '/db-cleanup-ui-regression.cjs');"] },
@@ -1353,9 +1355,9 @@ const cases = [
       "        assert.equal(await page.locator('#tk-rt-cpu-state').isVisible(), true);",
       "        const heading = await page.locator('.tk-page-heading').evaluate(el => {",
       "            const style = getComputedStyle(el);",
-      "            return { bg: style.backgroundColor, radius: style.borderRadius, border: style.borderTopWidth, cardClass: el.classList.contains('tk-card') };",
+      "            return { gradient: style.backgroundImage.includes('gradient'), radius: style.borderRadius, border: style.borderTopWidth, cardClass: el.classList.contains('tk-card') };",
       "        });",
-      "        assert.deepEqual(heading, { bg: 'rgb(255, 255, 255)', radius: '8px', border: '1px', cardClass: true });",
+      "        assert.deepEqual(heading, { gradient: true, radius: '14px', border: '1px', cardClass: true });",
       "        const height = (await page.locator('.tk-rt-charts').boundingBox()).height;",
       "        await page.screenshot({ path: '/tmp/toolkits-monitoring-loading.png', fullPage: true });",
       "        await page.waitForTimeout(5500);",
@@ -1670,7 +1672,7 @@ if (requested === '--list') {
     cases.forEach(test => console.log(test.name));
     process.exit(0);
 }
-const optional = new Set(['cleanup-browser', 'request-options', 'performance-core', 'cf7-assets', 'admin-layout-ui', 'image-optimizer', 'image-optimizer-no-imagick', 'monitoring-ui']);
+const optional = new Set(['cleanup-browser', 'request-options', 'performance-core', 'cf7-assets', 'admin-layout-ui', 'image-optimizer', 'image-optimizer-no-imagick', 'monitoring-ui', 'admin-menu-flyout-ui']);
 const selected = requested ? cases.filter(test => test.name === requested) : cases.filter(test => !optional.has(test.name));
 if (!selected.length) { console.error('Unknown test: ' + requested); process.exit(1); }
 let failures = 0;
