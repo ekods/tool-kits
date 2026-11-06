@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.84
+Stable tag: 2.7.85
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,13 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.85 =
+Changes
+- Every button now uses WordPress's standard button styles (primary, secondary, small, hero); overrides for colour, radius, height and shadow were removed and layout rules kept.
+- Readiness board and tool card icons get a drop shadow in the card's own colour.
+- CF7 Database message detail is laid out as an email (sender, recipient, subject, message) with other fields below; internal Tool Kits fields are hidden, and keyboard focus covers expandable sections in the popup.
+- SEO Content WhatsApp preview is restyled as a chat link card with the site favicon.
 
 = 2.7.84 =
 Changes

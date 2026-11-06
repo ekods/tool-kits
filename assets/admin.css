@@ -755,13 +755,6 @@
     z-index: 100;
 }
 
-.tk-wrap .wp-picker-container .wp-color-result.button:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
-    min-height: 40px;
-    margin: 0;
-    border-color: #c5d4f4;
-    border-radius: 8px;
-    box-shadow: none;
-}
 
 .tk-wrap .wp-picker-container .wp-color-result-text {
     min-height: 38px;
@@ -789,13 +782,6 @@
     border-radius: 8px;
 }
 
-.tk-wrap .wp-picker-container .button.wp-picker-default:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
-.tk-wrap .wp-picker-container .button.wp-picker-clear:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
-    height: 40px;
-    min-height: 40px;
-    margin: 0;
-    border-radius: 8px;
-}
 
 .tk-wrap .wp-picker-holder {
     position: absolute;
@@ -1464,20 +1450,8 @@
     padding: 12px;
 }
 
-.tk-dashboard-widget .button-primary {
-    background: var(--tk-action-bg) !important;
-    border-color: var(--tk-action-border) !important;
-    color: var(--tk-action-text);
-    box-shadow: none !important;
-    font-weight: 400 !important;
-    height: 36px !important;
-    line-height: 34px !important;
-}
 
-.tk-dashboard-widget .button-primary:hover {
-    background: var(--tk-action-hover) !important;
-    transform: none;
-}
+
 
 /* UI Polish */
 .tk-card {
@@ -1488,32 +1462,12 @@
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
 }
 
-.tk-wrap .button:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
-    border-radius: 8px;
-    font-weight: 500;
-    border-color: #cbd5e1;
-    color: #24405f;
-    box-shadow: none;
-}
 
-.tk-wrap .button:hover:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
-    border-color: var(--tk-primary);
-    color: var(--tk-primary);
-}
 
-.tk-wrap .button-primary:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
-.tk-wrap .button.button-primary:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
-    background: var(--tk-primary);
-    border-color: var(--tk-primary);
-    color: #fff;
-}
 
-.tk-wrap .button-primary:hover:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
-.tk-wrap .button.button-primary:hover:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
-    background: var(--tk-primary-dark);
-    border-color: var(--tk-primary-dark);
-    color: #fff;
-}
+
+
+
 
 .tk-switch {
     position: relative;
@@ -1704,10 +1658,6 @@ input:checked+.tk-slider:before {
     margin-top: 14px;
 }
 
-.tk-tab-panel[data-panel-id="login-page"] .tk-media-control .button {
-    min-height: 34px;
-    padding: 0 14px;
-}
 
 .tk-tab-panel[data-panel-id="login-page"] .tk-login-branding-settings {
     grid-column: 1;
@@ -1735,10 +1685,6 @@ input:checked+.tk-slider:before {
     max-width: 100%;
 }
 
-.tk-tab-panel[data-panel-id="login-page"] .wp-picker-container .wp-color-result.button {
-    min-height: 34px;
-    margin: 0;
-}
 
 .tk-tab-panel[data-panel-id="login-page"] .wp-picker-container .wp-picker-input-wrap {
     margin-top: 8px;
@@ -1859,10 +1805,6 @@ input:checked+.tk-slider:before {
     margin-top: 16px;
 }
 
-.tk-tab-panel[data-panel-id="maintenance"] .tk-maintenance-panel .button {
-    min-height: 34px;
-    padding: 0 14px;
-}
 
 .tk-file-input {
     width: 100%;
@@ -1935,9 +1877,6 @@ input:checked+.tk-slider:before {
     margin-top: auto;
 }
 
-.tk-preset-card-actions .button {
-    min-height: 34px;
-}
 
 @media (max-width: 1320px) {
     .tk-tab-panel[data-panel-id="maintenance"] .tk-maintenance-grid {
@@ -2176,31 +2115,10 @@ input:checked+.tk-slider:before {
     box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
-.tk-wrap .button:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
-.tk-wrap .button-secondary:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
-.tk-wrap .button-primary:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
-.tk-overview-wrap .button,
-.tk-overview-wrap .button-secondary,
-.tk-overview-wrap .button-primary {
-    min-height: 38px;
-    padding: 3px 16px;
-    border-radius: 10px;
-    font-weight: 700;
-}
 
-.tk-wrap .button-primary:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
-.tk-overview-wrap .button-primary {
-    border-color: var(--tk-primary);
-    background: linear-gradient(180deg, #6366f1, #2271b1);
-    box-shadow: 0 10px 20px rgba(79, 70, 229, 0.2);
-}
 
-.tk-wrap .button-primary:hover:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
-.tk-overview-wrap .button-primary:hover {
-    border-color: var(--tk-primary-dark);
-    background: linear-gradient(180deg, #2271b1, #135e96);
-    transform: translateY(-1px);
-}
+
+
 
 .tk-card input.regular-text:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
 .tk-card input[type="text"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),

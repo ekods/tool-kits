@@ -638,7 +638,7 @@ function tk_render_cache_dashboard_widget() {
             <?php tk_nonce_field('tk_cache_purge'); ?>
             <input type="hidden" name="action" value="tk_cache_purge">
             <input type="hidden" name="redirect_to" value="<?php echo esc_url(admin_url('index.php')); ?>">
-            <button type="submit" class="button button-primary" style="width: 100%; text-align: center;"<?php disabled($files, 0); ?>>Clear Page Cache</button>
+            <button type="submit" class="button button-primary" style="width: 100%; text-align: center"<?php disabled($files, 0); ?>>Clear Page Cache</button>
         </form>
 
         <a href="<?php echo esc_url($cache_url); ?>" class="button button-secondary" style="width: 100%; text-align: center;">Open Cache Settings</a>

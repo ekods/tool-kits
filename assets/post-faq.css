@@ -6,7 +6,7 @@
 .tk-faq-header, .tk-faq-footer { display: flex; align-items: center; gap: 12px; }
 .tk-faq-header { flex: 0 0 auto; justify-content: space-between; padding: 18px 24px; border-bottom: 1px solid #e5e7eb; }
 .tk-faq-header h2 { margin: 0 !important; padding: 0 !important; font-size: 18px !important; }
-.tk-faq-header .button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; min-height: 32px; padding: 0; }
+.tk-faq-header .button { display: inline-flex; align-items: center; justify-content: center; }
 .tk-faq-body { min-height: 0; overflow: auto; padding: 20px 24px; overscroll-behavior: contain; }
 
 /* The shared language picker (language-picker.css) stays visible while the FAQ list scrolls. */

@@ -318,14 +318,6 @@
     border-top: 1px solid #f1f5f9;
 }
 
-.tk-module-footer .button {
-    border-radius: 8px !important;
-    font-weight: 400 !important;
-    font-size: var(--tk-button-size, 13px) !important;
-    padding: 0 16px !important;
-    height: 32px !important;
-    line-height: 30px !important;
-}
 
 /* Sidebar Widgets */
 .tk-sidebar-widget {

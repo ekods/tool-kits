@@ -238,7 +238,11 @@ ob_start(); tk_render_cf7_database_collection_page(); $forms_html = ob_get_clean
 check_database(strpos($forms_html, 'Export Excel') !== false && strpos($forms_html, 'form_id=7') !== false && strpos($forms_html, 'page=tool-kits-cf7-collection') !== false, 'Stored forms/export unavailable on the CF7 Database page');
 check_database(strpos($forms_html, 'page=cf7dbc') === false, 'View linked to standalone plugin');
 $_GET = array('page' => 'tool-kits-cf7-collection', 'submission_id' => 1);
-$wpdb->rows[0]['data'] = json_encode(array('message' => '<script>alert(1)</script>'));
+$wpdb->rows[0]['data'] = json_encode(array('your-name' => 'Customer <img src=x onerror=alert(1)>', 'your-email' => 'customer@example.test',
+    'your-subject' => 'Project enquiry', 'message' => "First line\n<script>alert(1)</script> Please review tk_feature.",
+    'company-name' => 'Example Company', 'preferences' => array('Choice A', 'tk_nested_secret' => 'nested-secret-value'),
+    'tk_captcha_token' => 'private-captcha-value', 'TK_tracking' => 'private-tracking-value', '_tk_form_ts' => 'private-timestamp-value'));
+$stored_data = $wpdb->rows[0]['data'];
 ob_start(); tk_render_cf7_database_collection_page(); $detail_html = ob_get_clean();
 check_database(strpos($detail_html, 'data-open-id="1"') !== false && $wpdb->updates === 0, 'Legacy detail URL must open the modal without reading messages during list rendering');
 $_POST = array('submission_id' => 1, 'nonce' => 'invalid');
@@ -263,6 +267,15 @@ catch (DatabaseJson $e) { check_database($e->status === 404 && $wpdb->updates ==
 $_POST['submission_id'] = 1;
 try { tk_cf7_database_detail(); } catch (DatabaseJson $e) { $detail_html = $e->data['html']; }
 check_database(strpos($detail_html, '<script>') === false && strpos($detail_html, '&lt;script&gt;') !== false, 'Message detail is not XSS-safe');
+check_database(strpos($detail_html, 'class="cf7dbc-email"') !== false && strpos($detail_html, 'id="cf7dbc-email-subject">Project enquiry') !== false, 'Message content must render as an email reader with its subject');
+check_database(strpos($detail_html, 'customer@example.test') !== false && strpos($detail_html, 'Customer &lt;img') !== false && strpos($detail_html, '<img') === false, 'Sender fields must be visible and escaped');
+check_database(strpos($detail_html, 'Example Company') !== false && strpos($detail_html, 'Choice A') !== false && strpos($detail_html, 'Company Name') !== false, 'Additional customer fields were lost');
+check_database(strpos($detail_html, 'private-captcha-value') === false && strpos($detail_html, 'private-tracking-value') === false && strpos($detail_html, 'private-timestamp-value') === false && strpos($detail_html, 'nested-secret-value') === false, 'Internal tk_ fields leaked into the modal response');
+check_database(strpos($detail_html, 'tk_feature') !== false && $wpdb->rows[0]['data'] === $stored_data, 'Hiding internal field names must not redact customer text or change stored data');
+check_database(strpos($detail_html, 'cf7dbc-email-message') < strpos($detail_html, 'cf7dbc-technical-details') && strpos($detail_html, '<details class="cf7dbc-technical-details" open') === false, 'Email body must precede collapsed technical metadata');
+$alternate = tk_cf7dbc_inbox_data(array('full_name' => 'Ayu', 'email_address' => 'ayu@example.test', 'subjek' => 'Pertanyaan', 'pesan' => 'Halo', 'phone' => '123'));
+check_database($alternate['name'] === 'Ayu' && $alternate['email'] === 'ayu@example.test' && $alternate['subject'] === 'Pertanyaan' && $alternate['message'] === 'Halo' && $alternate['fields'] === array('phone' => '123'), 'Common alternative field names must map to the inbox without losing custom fields');
+check_database(tk_cf7dbc_inbox_data(array('tk_only' => 'secret'))['fields'] === array() && tk_cf7dbc_inbox_data(null)['message'] === '', 'Internal-only and invalid message data must have a safe empty state');
 check_database($wpdb->rows[0]['read_status'] === 'read' && $wpdb->updates === 1, 'Opening a message did not mark it read');
 try { tk_cf7_database_detail(); } catch (DatabaseJson $e) {}
 check_database($wpdb->updates === 1, 'Reopening a message changed its read timestamp');

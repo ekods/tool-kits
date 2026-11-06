@@ -2938,8 +2938,8 @@ function tk_render_geo_panel(): void {
                                                         <span class="tk-badge tk-priority-<?php echo esc_attr((string) $issue_data['priority']); ?>"><?php echo esc_html(strtoupper((string) $issue_data['priority'])); ?></span>
                                                         <span class="tk-badge">-<?php echo esc_html((string) ((int) $issue_data['penalty'])); ?></span><br>
                                                         <span class="description"><strong>Solution:</strong> <?php echo esc_html($solution); ?></span><br>
-                                                        <?php if (!empty($fix_status)) : ?><span class="tk-badge tk-on" style="margin-top:5px;">Applied to Database</span> <a class="button button-small" style="margin-top:5px;" href="<?php echo esc_url($fix_url); ?>">Apply Again</a><?php elseif ($fix_url !== '') : ?><a class="button button-small" style="margin-top:5px;" href="<?php echo esc_url($fix_url); ?>">Fix in Database</a><?php else : ?><span class="tk-badge tk-warn" style="margin-top:5px;">Needs Review</span><?php endif; ?>
-                                                        <a class="button button-small" style="margin-top:5px;" href="<?php echo esc_url($remove_url); ?>">Remove URL Fix</a>
+                                                        <?php if (!empty($fix_status)) : ?><span class="tk-badge tk-on" style="margin-top:5px;">Applied to Database</span> <a class="button button-small" style="margin-top:5px" href="<?php echo esc_url($fix_url); ?>">Apply Again</a><?php elseif ($fix_url !== '') : ?><a class="button button-small" style="margin-top:5px" href="<?php echo esc_url($fix_url); ?>">Fix in Database</a><?php else : ?><span class="tk-badge tk-warn" style="margin-top:5px;">Needs Review</span><?php endif; ?>
+                                                        <a class="button button-small" style="margin-top:5px" href="<?php echo esc_url($remove_url); ?>">Remove URL Fix</a>
                                                     </li>
                                                 <?php endforeach; ?>
                                             </ul>

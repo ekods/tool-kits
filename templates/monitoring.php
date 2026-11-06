@@ -207,7 +207,7 @@ if (!defined('ABSPATH')) { exit; }
                         <p class="description" style="margin-bottom:16px;"><?php echo $fim_last > 0 ? __('Last scan:', 'tool-kits') . ' ' . date_i18n('Y-m-d H:i', $fim_last) : __('Not scanned yet', 'tool-kits'); ?></p>
                         <div style="display:flex; gap:8px; width:100%;">
                             <span class="tk-badge <?php echo $fim_badge; ?>" style="flex:1; display:flex; align-items:center; justify-content:center;"><?php echo esc_html($fim_status); ?></span>
-                            <button type="button" class="button" style="border-radius:8px;" onclick="document.querySelector('[data-panel=integrity]').click();"><?php _e('Scan', 'tool-kits'); ?></button>
+                            <button type="button" class="button" onclick="document.querySelector('[data-panel=integrity]').click();"><?php _e('Scan', 'tool-kits'); ?></button>
                         </div>
                     </div>
 
@@ -281,7 +281,7 @@ if (!defined('ABSPATH')) { exit; }
                         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                             <?php tk_nonce_field('tk_clear_cache'); ?>
                             <input type="hidden" name="action" value="tk_clear_cache">
-                            <button class="button button-primary button-hero" style="width: 100%; border-radius:10px;"><?php _e('Clear All Caches', 'tool-kits'); ?></button>
+                            <button class="button button-primary button-hero" style="width: 100%"><?php _e('Clear All Caches', 'tool-kits'); ?></button>
                         </form>
                     </div>
 
@@ -293,13 +293,13 @@ if (!defined('ABSPATH')) { exit; }
                                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                                     <?php tk_nonce_field('tk_set_wpconfig_readonly'); ?>
                                     <input type="hidden" name="action" value="tk_set_wpconfig_readonly">
-                                    <button class="button button-primary button-hero" style="width: 100%; border-radius:10px;"><?php _e('Set to Read-Only', 'tool-kits'); ?></button>
+                                    <button class="button button-primary button-hero" style="width: 100%"><?php _e('Set to Read-Only', 'tool-kits'); ?></button>
                                 </form>
                             <?php else : ?>
                                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                                     <?php tk_nonce_field('tk_set_wpconfig_writable'); ?>
                                     <input type="hidden" name="action" value="tk_set_wpconfig_writable">
-                                    <button class="button button-hero" style="width: 100%; border-radius:10px;"><?php _e('Make Writable', 'tool-kits'); ?></button>
+                                    <button class="button button-hero" style="width: 100%"><?php _e('Make Writable', 'tool-kits'); ?></button>
                                 </form>
                             <?php endif; ?>
                         </div>
@@ -405,7 +405,7 @@ if (!defined('ABSPATH')) { exit; }
                             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                                 <?php tk_nonce_field('tk_remove_ds_store'); ?>
                                 <input type="hidden" name="action" value="tk_remove_ds_store">
-                                <button class="button button-secondary" style="width:100%;"><?php _e('Remove .DS_Store & __MACOSX', 'tool-kits'); ?></button>
+                                <button class="button button-secondary" style="width:100%"><?php _e('Remove .DS_Store & __MACOSX', 'tool-kits'); ?></button>
                             </form>
                         </div>
                     </div>

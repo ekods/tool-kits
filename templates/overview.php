@@ -44,7 +44,7 @@ $geo_score = (int) ($geo_score_data['score'] ?? 0);
         foreach ($readiness as $item) :
             $value = max(0, min(100, (int) $item['score']));
         ?>
-            <a class="tk-readiness-item" href="<?php echo esc_url((string) $item['link']); ?>">
+            <a class="tk-readiness-item" href="<?php echo esc_url((string) $item['link']); ?>" style="--tk-icon-color:<?php echo esc_attr((string) $item['color']); ?>;">
                 <span class="tk-readiness-heading"><span class="dashicons <?php echo esc_attr($item['icon']); ?>" aria-hidden="true"></span><?php echo esc_html($item['label']); ?></span>
                 <strong class="tk-readiness-value"><?php echo esc_html((string) $value); ?><small>%</small></strong>
                 <p><?php echo esc_html($item['description']); ?></p>
@@ -170,7 +170,7 @@ $geo_score = (int) ($geo_score_data['score'] ?? 0);
                                value="<?php echo esc_attr($gtag_id); ?>" 
                                style="flex-grow:1; border-radius:8px;" 
                                placeholder="G-XXXXXXXXXX">
-                        <button class="button button-primary" style="border-radius:8px;"><?php _e('Save', 'tool-kits'); ?></button>
+                        <button class="button button-primary"><?php _e('Save', 'tool-kits'); ?></button>
                     </div>
                 </form>
             </div>

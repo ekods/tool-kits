@@ -765,9 +765,45 @@ function tk_cf7dbc_render_form_submissions($form_id, $paged, $per_page, $offset,
     <?php
 }
 
-/** Escaped message content; the WordPress Thickbox supplies the dialog chrome. */
+/** Keep internal Tool Kits fields out of the reader, including nested field groups. */
+function tk_cf7dbc_visible_message_fields($data) {
+    $fields = array();
+    foreach (is_array($data) ? $data : array() as $key => $value) {
+        if (strpos(strtolower(ltrim(trim((string) $key), '_')), 'tk_') === 0) { continue; }
+        $fields[$key] = is_array($value) ? tk_cf7dbc_visible_message_fields($value) : $value;
+    }
+    return $fields;
+}
+
+/** Recognize common CF7 field names; preserve every other visible field below the message. */
+function tk_cf7dbc_inbox_data($data) {
+    $fields = tk_cf7dbc_visible_message_fields($data);
+    $inbox = array('name' => '', 'email' => '', 'subject' => '', 'message' => '');
+    $aliases = array(
+        'name' => array('your-name', 'name', 'full-name', 'fullname', 'sender-name', 'nama', 'nama-lengkap'),
+        'email' => array('your-email', 'email', 'email-address', 'sender-email'),
+        'subject' => array('your-subject', 'subject', 'email-subject', 'subjek'),
+        'message' => array('your-message', 'message', 'message-body', 'comments', 'comment', 'pesan', 'komentar'),
+    );
+    foreach ($aliases as $part => $names) {
+        foreach ($names as $name) {
+            foreach ($fields as $key => $value) {
+                if (strtolower(str_replace('_', '-', trim((string) $key))) === $name) {
+                    $inbox[$part] = tk_cf7dbc_format_submission_value($value);
+                    unset($fields[$key]);
+                    break 2;
+                }
+            }
+        }
+    }
+    $inbox['fields'] = $fields;
+    return $inbox;
+}
+
+/** Escaped email-style reader; the WordPress Thickbox supplies the dialog chrome. */
 function tk_cf7dbc_render_submission_detail($row) {
-    $data = json_decode($row->data, true);
+    $inbox = tk_cf7dbc_inbox_data(json_decode($row->data, true));
+    $subject = trim($inbox['subject']) !== '' ? $inbox['subject'] : ($row->form_title ?: __('Message Content', 'tool-kits'));
     $metadata = array(
         __('Submission ID', 'tool-kits') => esc_html($row->id),
         __('Date', 'tool-kits') => esc_html($row->submitted_at),
@@ -782,24 +818,46 @@ function tk_cf7dbc_render_submission_detail($row) {
     );
     ?>
     <div class="cf7dbc-message-detail">
-        <h2><?php echo esc_html($row->form_title ?: __('Untitled', 'tool-kits')); ?></h2>
-        <table class="widefat striped">
-            <tbody>
+        <article class="cf7dbc-email" aria-labelledby="cf7dbc-email-subject">
+            <header class="cf7dbc-email-header">
+                <h2 id="cf7dbc-email-subject"><?php echo esc_html($subject); ?></h2>
+                <dl class="cf7dbc-email-envelope">
+                    <div><dt><?php esc_html_e('From', 'tool-kits'); ?></dt><dd>
+                        <?php if (trim($inbox['name']) !== '') : ?><strong class="cf7dbc-email-sender"><?php echo esc_html($inbox['name']); ?></strong><?php endif; ?>
+                        <?php if (trim($inbox['email']) !== '') : ?><span class="cf7dbc-email-address">&lt;<?php echo esc_html($inbox['email']); ?>&gt;</span><?php endif; ?>
+                        <?php if (trim($inbox['name'] . $inbox['email']) === '') : ?><?php esc_html_e('Unknown sender', 'tool-kits'); ?><?php endif; ?>
+                    </dd></div>
+                    <div><dt><?php esc_html_e('Date', 'tool-kits'); ?></dt><dd><?php echo esc_html($row->submitted_at); ?></dd></div>
+                    <div><dt><?php esc_html_e('Form', 'tool-kits'); ?></dt><dd><?php echo esc_html($row->form_title ?: __('Untitled', 'tool-kits')); ?></dd></div>
+                </dl>
+            </header>
+            <div class="cf7dbc-email-body">
+                <h3 class="screen-reader-text"><?php esc_html_e('Message Content', 'tool-kits'); ?></h3>
+                <?php if (trim($inbox['message']) !== '') : ?>
+                    <div class="cf7dbc-email-message"><?php echo esc_html($inbox['message']); ?></div>
+                <?php elseif (!$inbox['fields']) : ?>
+                    <p><?php esc_html_e('No message content.', 'tool-kits'); ?></p>
+                <?php endif; ?>
+                <?php if ($inbox['fields']) : ?>
+                    <div class="cf7dbc-email-additional">
+                        <?php if (trim($inbox['message']) !== '') : ?><h3><?php esc_html_e('Additional details', 'tool-kits'); ?></h3><?php endif; ?>
+                        <dl class="cf7dbc-email-fields">
+                        <?php foreach ($inbox['fields'] as $key => $value) : ?>
+                            <div><dt><?php echo esc_html(ucwords(str_replace(array('-', '_'), ' ', preg_replace('/^your[-_]/i', '', (string) $key)))); ?></dt><dd><?php echo esc_html(tk_cf7dbc_format_submission_value($value)); ?></dd></div>
+                        <?php endforeach; ?>
+                        </dl>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </article>
+        <details class="cf7dbc-technical-details">
+            <summary><?php esc_html_e('Submission details', 'tool-kits'); ?></summary>
+            <table class="widefat striped"><tbody>
             <?php foreach ($metadata as $label => $value) : ?>
                 <tr><th scope="row"><?php echo esc_html($label); ?></th><td><?php echo wp_kses_post($value); ?></td></tr>
             <?php endforeach; ?>
-            </tbody>
-        </table>
-        <h2><?php esc_html_e('Message Content', 'tool-kits'); ?></h2>
-        <?php if (is_array($data) && $data) : ?>
-            <table class="widefat striped"><tbody>
-            <?php foreach ($data as $key => $value) : ?>
-                <tr><th scope="row"><?php echo esc_html($key); ?></th><td><?php echo nl2br(esc_html(tk_cf7dbc_format_submission_value($value))); ?></td></tr>
-            <?php endforeach; ?>
             </tbody></table>
-        <?php else : ?>
-            <p><?php esc_html_e('Message data is empty or invalid.', 'tool-kits'); ?></p>
-        <?php endif; ?>
+        </details>
     </div>
     <?php
 }

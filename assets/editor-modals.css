@@ -13,9 +13,8 @@
 .tk-editor-modal-cross:focus-visible { outline: 2px solid var(--tk-primary); outline-offset: 2px; }
 .tk-editor-modal-cross:disabled { opacity: .5; cursor: wait; }
 .tk-editor-modal-footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 16px 28px; background: #f9fafb; border-top: 1px solid #e5e7eb; }
-.tk-editor-modal .button { display: inline-flex; justify-content: center; align-items: center; gap: 7px; white-space: normal; min-height: 38px; padding: 7px 14px; border-radius: 8px; line-height: 1.5; }
-.tk-editor-modal .button.button-primary { background: #dbeafe; border-color: #6482a0; color: #1d4f7c; }
-.tk-editor-modal .button.button-primary:hover { background: #c8dff9; border-color: #2271b1; color: #1d4f7c; }
+.tk-editor-modal .button { display: inline-flex; justify-content: center; align-items: center; gap: 7px; white-space: normal; }
+
 .tk-editor-modal :is(button, input, textarea, select):focus-visible { outline: 2px solid var(--tk-primary); outline-offset: 2px; }
 .tk-editor-modal textarea, .tk-editor-modal input, .tk-editor-modal select { box-sizing: border-box; max-width: 100%; width: 100%; margin-top: 7px; padding: 8px 10px; border-color: var(--tk-border); border-radius: 8px; font-size: 14px; font-weight: 400; line-height: 1.5; }
 .tk-editor-modal textarea { resize: vertical; }
@@ -133,5 +132,4 @@
 /* Core responsive admin type sizes. */
 @media (max-width: 782px) {
     .tk-editor-modal :is(input, textarea, select) { font-size: 16px; }
-    .tk-editor-modal .button { font-size: 14px; }
 }

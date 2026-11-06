@@ -62,13 +62,14 @@
 .tk-seo-social-title { display: block; font-size: 18px; line-height: 1.4; }
 .tk-seo-social-copy .tk-seo-social-description { margin: 8px 0 0; color: #50575e; font-size: 13px; line-height: 1.6; }
 .tk-seo-social-url { display: block; margin-top: 10px; color: #646970; font-size: 11px; }
+.tk-seo-social-favicon { display: none; width: 24px; height: 24px; object-fit: contain; }
 /* Illustrative WhatsApp link card, sharing the same Open Graph content and image. */
-#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card { display: grid; grid-template-columns: 96px minmax(0, 1fr); max-width: 440px; border-radius: 8px; border-color: #bdd7c2; background: #e7f5e8; }
-#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-visual { aspect-ratio: auto; min-height: 112px; background: #d7e8d9; }
-#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 12px; }
-#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-title { font-size: 14px; }
-#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-description { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin: 0; color: #47574b; }
-#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-domain { order: 1; margin: 0; color: #47574b; text-transform: none; }
+#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card { max-width: 440px; border-radius: 12px; border-color: #dde4df; background: #dcefc8; color: #17282c; }
+#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-copy { display: grid; grid-template-columns: minmax(0, 1fr) 24px; gap: 12px; padding: 16px; }
+#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-title { grid-column: 1 / -1; grid-row: 1; font-size: 18px; }
+#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-description { grid-column: 1 / -1; grid-row: 2; margin: 0; color: #5f6c57; font-size: 16px; line-height: 1.4; }
+#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-domain { grid-column: 1; grid-row: 3; align-self: center; margin: 0; color: #5f6c57; font-size: 14px; text-transform: none; }
+#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-favicon:not([hidden]) { display: block; grid-column: 2; grid-row: 3; justify-self: end; }
 #tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-url { display: none; }
 .tk-seo-analysis-issues { padding-left: 20px; list-style: disc; }
 .tk-seo-template-field { position: relative; margin-top: 20px; }

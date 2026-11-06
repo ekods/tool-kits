@@ -1055,7 +1055,7 @@ function tk_render_smtp_page() {
                         </div>
 
                         <div style="margin-top:40px; padding-top:20px; border-top:1px solid var(--tk-border-soft); display:flex; justify-content:flex-end;">
-                            <button class="button button-primary button-hero" style="height:44px; padding:0 30px;">Save SMTP Configuration</button>
+                            <button class="button button-primary button-hero">Save SMTP Configuration</button>
                         </div>
                     </form>
                 </div>

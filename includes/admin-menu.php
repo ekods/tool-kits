@@ -1073,7 +1073,7 @@ function tk_render_security_table() {
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;">
                     <?php tk_nonce_field('tk_hardening_waf_reset'); ?>
                     <input type="hidden" name="action" value="tk_hardening_waf_reset">
-                    <button class="button button-link-delete button-small" style="font-size:11px;" data-confirm="Reset WAF settings?">Reset</button>
+                    <button class="button button-link-delete button-small" data-confirm="Reset WAF settings?">Reset</button>
                 </form>
             </div>
         </div>

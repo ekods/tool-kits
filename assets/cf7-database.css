@@ -15,6 +15,28 @@
 .cf7dbc-message-detail .widefat th[scope="row"] { width: 28%; }
 .cf7dbc-message-detail .widefat :is(th, td) { overflow-wrap: anywhere; }
 .cf7dbc-modal-loading .spinner { float: none; margin: 0 8px 0 0; }
+.cf7dbc-email { margin: 16px 0; border: 1px solid #d6e2f0; border-radius: 6px; background: #fff; overflow-wrap: anywhere; }
+.cf7dbc-email-header { padding: 20px; border-bottom: 1px solid #e8eff7; background: #f5f8fc; border-radius: 6px 6px 0 0; }
+.cf7dbc-email-header h2 { margin: 0 0 16px; line-height: 1.4; }
+.cf7dbc-email-envelope, .cf7dbc-email-fields { margin: 0; }
+.cf7dbc-email-envelope > div { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 8px; margin-top: 6px; }
+.cf7dbc-email-envelope :is(dt, dd), .cf7dbc-email-fields :is(dt, dd) { margin: 0; }
+.cf7dbc-email-envelope dt { color: #646970; }
+.cf7dbc-email-address { color: #50575e; }
+.cf7dbc-email-body { padding: 24px 20px; line-height: 1.65; }
+.cf7dbc-email-message, .cf7dbc-email-fields dd { white-space: pre-wrap; }
+.cf7dbc-email-message + .cf7dbc-email-additional { margin-top: 24px; padding-top: 16px; border-top: 1px solid #e8eff7; }
+.cf7dbc-email-additional h3 { margin: 0 0 12px; }
+.cf7dbc-email-fields > div { display: grid; grid-template-columns: minmax(0, 140px) minmax(0, 1fr); gap: 8px 16px; margin-top: 12px; }
+.cf7dbc-email-fields dt { font-weight: 600; }
+.cf7dbc-technical-details { margin: 20px 0 16px; }
+.cf7dbc-technical-details summary { padding: 8px 0; font-weight: 600; cursor: pointer; }
+.cf7dbc-technical-details summary:focus-visible { outline: 2px solid #2271b1; outline-offset: 2px; }
+.cf7dbc-technical-details .widefat { margin-top: 8px; }
+@media (max-width: 600px) {
+    .cf7dbc-email-header, .cf7dbc-email-body { padding: 16px; }
+    .cf7dbc-email-fields > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
 .cf7dbc-badge { display: inline-block; max-width: 100%; padding: 3px 8px; border-radius: 4px; font-size: 13px; font-weight: 500; line-height: 1.5; white-space: nowrap; }
 .cf7dbc-badge-unread { background: var(--tk-primary-soft, #eaf3ff); color: var(--tk-primary-dark); }
 .cf7dbc-badge-read { background: var(--tk-bg-soft); color: var(--tk-muted); }

@@ -877,7 +877,7 @@ function tk_render_db_tools_page() {
                         <?php tk_nonce_field('tk_db_export'); ?>
                         <input type="hidden" name="action" value="tk_db_export">
                         <input type="hidden" name="tk_tab" value="export-db">
-                        <button class="button button-primary button-hero" style="min-width:200px; border-radius:10px;">Download SQL Dump</button>
+                        <button class="button button-primary button-hero" style="min-width:200px">Download SQL Dump</button>
                     </form>
                     <div style="margin-top:24px; padding:16px; background:rgba(243,156,18,0.05); border:1px solid rgba(243,156,18,0.2); border-radius:12px;">
                         <p class="description" style="margin:0; color:#d35400;"><strong>Note:</strong> SQL files can be large. If your host limits execution, use phpMyAdmin or WP-CLI instead.</p>
@@ -1001,7 +1001,7 @@ function tk_render_db_tools_page() {
                             <p class="description"><?php _e('Supported formats: .sql, .sql.gz (Max file size: ', 'tool-kits'); ?><?php echo size_format(wp_max_upload_size()); ?>)</p>
                         </div>
 
-                        <button class="button button-primary button-hero" style="width:100%; border-radius:10px;" data-confirm="Importing will overwrite data in the database. Continue?">Start Database Import</button>
+                        <button class="button button-primary button-hero" style="width:100%" data-confirm="Importing will overwrite data in the database. Continue?">Start Database Import</button>
                     </form>
                 </div>
                 <div class="tk-card tk-tab-panel<?php echo $active_tab === 'change-prefix' ? ' is-active' : ''; ?>" data-panel-id="change-prefix">
@@ -1044,7 +1044,7 @@ function tk_render_db_tools_page() {
                                     <label style="display:block; font-size:12px; font-weight:600; margin-bottom:8px;">New Database Prefix</label>
                                     <input type="text" id="tk-prefix-input" name="new_prefix" value="<?php echo esc_attr($new_prefix); ?>" placeholder="abc_" required style="width:100%; border-radius:10px;">
                                 </div>
-                                <button class="button button-primary button-hero" style="width:100%; border-radius:10px;" data-confirm="This is a risky operation. Backup first, then proceed with renaming the prefix?">Start Renaming</button>
+                                <button class="button button-primary button-hero" style="width:100%" data-confirm="This is a risky operation. Backup first, then proceed with renaming the prefix?">Start Renaming</button>
                             </form>
                         </div>
                         <div style="background:var(--tk-bg-soft); padding:20px; border-radius:16px; border:1px dashed var(--tk-border-soft);">

@@ -492,7 +492,7 @@ function tk_render_db_cleanup_panel() {
                     ?>
                 </div>
 
-                <button class="button button-primary button-hero" style="width:100%;">Run Database Pruning</button>
+                <button class="button button-primary button-hero" style="width:100%">Run Database Pruning</button>
                 <p class="description">Deletes are permanent. Back up the database first. Processing runs in small batches while this page is open; you can pause and resume.</p>
             </form>
             <?php $job = get_option('tk_jobs_cleanup', array()); ?>

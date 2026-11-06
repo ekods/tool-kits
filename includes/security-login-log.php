@@ -407,13 +407,13 @@ function tk_render_login_log_page() {
                     <div style="flex:1;">
                         <?php tk_render_switch('enabled', 'Enable Login Activity Logging', 'Monitor all successful and failed authentication attempts.', $enabled); ?>
                     </div>
-                    <button class="button button-primary button-hero" style="height:40px; padding:0 20px;">Save Changes</button>
+                    <button class="button button-primary button-hero">Save Changes</button>
                 </form>
                 <div style="display:flex; gap:10px;">
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0;">
                         <?php tk_nonce_field('tk_login_log_clear'); ?>
                         <input type="hidden" name="action" value="tk_login_log_clear">
-                        <button class="button button-secondary button-hero" style="height:40px; padding:0 20px;" onclick="return confirm('Clear all logs?')">Clear Log</button>
+                        <button class="button button-secondary button-hero" onclick="return confirm('Clear all logs?')">Clear Log</button>
                     </form>
                 </div>
             </div>

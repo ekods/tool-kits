@@ -70,7 +70,15 @@
         // Keep Tab within this dialog; the core close button remains the first target.
         $(document).on('keydown.tkCf7Database', function (event) {
             if (!active || event.key !== 'Tab') return;
-            var controls = $('#TB_window').find('a[href], button:not(:disabled), [tabindex="0"]').filter(':visible');
+            var controls = $('#TB_window').find('a[href], button:not(:disabled), summary, [tabindex="0"]').filter(function () {
+                if (!$(this).is(':visible')) return false;
+                var control = this;
+                // jQuery may count links inside a closed details element as visible.
+                return $(this).parents('details:not([open])').toArray().every(function (disclosure) {
+                    var summary = disclosure.querySelector('summary');
+                    return summary && summary.contains(control);
+                });
+            });
             var first = controls[0], last = controls[controls.length - 1];
             if (event.shiftKey && (document.activeElement === first || !$.contains($('#TB_window')[0], document.activeElement))) {
                 event.preventDefault(); last.focus();

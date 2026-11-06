@@ -2668,7 +2668,7 @@ function tk_render_seo_opt_panel() {
         <p>Scan homepage and recent content for missing or duplicate canonical tags.</p>
         <div class="tk-seo-audit-actions">
             <?php if (!empty($audit_report['items'])) : ?>
-                <button type="button" class="button button-primary" id="tk-seo-fix-all" style="margin-right:8px;">Fix All</button>
+                <button type="button" class="button button-primary" id="tk-seo-fix-all" style="margin-right:8px">Fix All</button>
                 <p class="description">Fill missing excerpts from existing content and restore image alt from attachment metadata. Existing text and custom fields are preserved. Keywords, links, client outcomes and content length require editorial review.</p>
                 <p id="tk-seo-fix-status" role="status" aria-live="polite"></p>
             <?php endif; ?>

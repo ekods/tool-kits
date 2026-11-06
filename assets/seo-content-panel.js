@@ -364,6 +364,15 @@
                     } catch (error) { /* Keep the site initial when there is no usable icon. */ }
                 }
             }
+            var socialFavicon = root.querySelector('.tk-seo-social-favicon');
+            if (socialFavicon) {
+                socialFavicon.addEventListener('error', function () { socialFavicon.hidden = true; });
+                if (!socialFavicon.getAttribute('src') && favicon.getAttribute('src')) {
+                    socialFavicon.src = favicon.getAttribute('src');
+                    socialFavicon.hidden = false;
+                }
+                if (socialFavicon.complete && socialFavicon.getAttribute('src') && !socialFavicon.naturalWidth) socialFavicon.hidden = true;
+            }
             root.querySelectorAll('.tk-seo-device-preview .tk-seo-device-choice').forEach(function (choice) {
                 choice.addEventListener('change', function () {
                     if (choice.checked) preview.dataset.device = choice.value;

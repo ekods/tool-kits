@@ -99,7 +99,7 @@ class TK_SMTP_Log_List_Table extends WP_List_Table {
                         <input type="hidden" name="action" value="tk_smtp_test">
                         <input type="hidden" name="smtp_test_email" value="<?php echo esc_attr($entry_recipient); ?>">
                         <input type="hidden" name="smtp_test_message" value="<?php echo esc_attr($entry_message); ?>">
-                        <button type="submit" class="button button-secondary button-small" style="font-size:11px;">Resend</button>
+                        <button type="submit" class="button button-secondary button-small">Resend</button>
                     </form>
                 <?php else : ?>
                     &mdash;
