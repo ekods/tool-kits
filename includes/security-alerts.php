@@ -126,6 +126,8 @@ function tk_security_alert_user_register($user_id) {
     if (!$user || !in_array('administrator', (array) $user->roles, true)) {
         return;
     }
+    // This alert covers the role assignment wp_insert_user() made just before.
+    unset($GLOBALS['tk_security_alert_pending_roles'][(int) $user_id]);
     $ip = tk_get_ip();
     $site = tk_security_alert_site_context();
     $location = tk_security_alert_ip_location($ip, false);
@@ -166,6 +168,16 @@ function tk_security_alert_set_user_role($user_id, $new_role, $old_roles) {
     if ($new_role !== 'administrator' && !in_array('administrator', $old_roles, true)) {
         return;
     }
+    if (!$old_roles && !doing_action('shutdown')) {
+        // wp_insert_user() sets the role before firing user_register, so a new admin would
+        // alert twice. Defer to shutdown; tk_security_alert_user_register() drops it if it ran.
+        // A role-less existing user promoted to admin still alerts.
+        $GLOBALS['tk_security_alert_pending_roles'][(int) $user_id] = array($new_role, $old_roles);
+        if (!has_action('shutdown', 'tk_security_alert_flush_pending_roles')) {
+            add_action('shutdown', 'tk_security_alert_flush_pending_roles');
+        }
+        return;
+    }
     $user = get_userdata($user_id);
     if (!$user) {
         return;
@@ -179,6 +191,14 @@ function tk_security_alert_set_user_role($user_id, $new_role, $old_roles) {
     $message .= 'IP: ' . tk_get_ip() . "\n";
     $message .= 'Time: ' . date('Y-m-d H:i:s') . "\n";
     tk_security_alert_send($subject, $message);
+}
+
+function tk_security_alert_flush_pending_roles(): void {
+    $pending = $GLOBALS['tk_security_alert_pending_roles'] ?? array();
+    $GLOBALS['tk_security_alert_pending_roles'] = array();
+    foreach ((array) $pending as $user_id => $args) {
+        tk_security_alert_set_user_role($user_id, $args[0], $args[1]);
+    }
 }
 
 function tk_security_alert_login($user_login, $user) {

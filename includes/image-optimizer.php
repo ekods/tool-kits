@@ -152,7 +152,31 @@ function tk_image_opt_start_output_rewrite() {
         return;
     }
     if (!apply_filters('tk_image_opt_html_rewrite_enabled', true)) { return; }
+    $memo = &tk_image_opt_render_memo();
+    $memo = array();
     ob_start('tk_image_opt_rewrite_html_buffer');
+}
+
+/**
+ * Per-render memo: a page repeats the same image URLs (src, srcset, lazy attributes, the buffer re-reading
+ * URLs that wp_get_attachment_image_src already rewrote), and each lookup stats files, reads derivative
+ * reports and hashes signatures. Null outside a front-end render, so admin and batch code see file changes.
+ */
+function &tk_image_opt_render_memo() {
+    static $memo = null;
+    return $memo;
+}
+
+function tk_image_opt_dimensions(string $path) {
+    $memo = &tk_image_opt_render_memo();
+    if ($memo !== null && array_key_exists('size:' . $path, $memo)) {
+        return $memo['size:' . $path];
+    }
+    $size = $path !== '' ? @getimagesize($path) : false;
+    if ($memo !== null) {
+        $memo['size:' . $path] = $size;
+    }
+    return $size;
 }
 
 function tk_image_opt_rewrite_html_buffer($html) {
@@ -180,8 +204,7 @@ function tk_image_opt_rewrite_html_buffer($html) {
                 $parts = preg_split('/\\s+/', trim($candidate), 2);
                 $url = tk_image_opt_frontend_url($parts[0]);
                 if (tk_image_opt_original_only_srcset_enabled()) {
-                    $path = tk_image_opt_url_to_local_path($url);
-                    $size = $path !== '' ? @getimagesize($path) : false;
+                    $size = tk_image_opt_dimensions(tk_image_opt_url_to_local_path($url));
                     if ($size) {
                         $sources = array($url . ' ' . (int) $size[0] . 'w');
                         break;
@@ -196,10 +219,20 @@ function tk_image_opt_rewrite_html_buffer($html) {
 }
 
 function tk_image_opt_frontend_url(string $url): string {
-    if (tk_image_opt_original_only_srcset_enabled()) {
-        $url = tk_image_opt_original_url_for_intermediate_url($url);
+    $memo = &tk_image_opt_render_memo();
+    if ($memo !== null && isset($memo['url:' . $url])) {
+        return $memo['url:' . $url];
     }
-    return tk_image_opt_frontend_optimize_enabled() ? tk_image_opt_get_or_create_optimized_url($url) : $url;
+    $result = $url;
+    if (tk_image_opt_original_only_srcset_enabled()) {
+        $result = tk_image_opt_original_url_for_intermediate_url($result);
+    }
+    $result = tk_image_opt_frontend_optimize_enabled() ? tk_image_opt_get_or_create_optimized_url($result) : $result;
+    if ($memo !== null) {
+        // The result maps to itself, so URLs already rewritten earlier in the render are not resolved again.
+        $memo['url:' . $url] = $memo['url:' . $result] = $result;
+    }
+    return $result;
 }
 
 /**
@@ -245,8 +278,7 @@ function tk_image_opt_filter_image_src($image, $attachment_id, $size = null, $ic
         }
     }
     $image[0] = tk_image_opt_frontend_url($image[0]);
-    $path = tk_image_opt_url_to_local_path($image[0]);
-    $dimensions = $path !== '' ? @getimagesize($path) : false;
+    $dimensions = tk_image_opt_dimensions(tk_image_opt_url_to_local_path($image[0]));
     if ($dimensions) {
         $image[1] = (int) $dimensions[0];
         $image[2] = (int) $dimensions[1];
@@ -399,8 +431,14 @@ function tk_image_opt_get_or_create_optimized_url($url) {
     }
     $best = '';
     $bytes = filesize($path);
+    $signature = null;
     foreach ($candidates as $candidate) {
-        if ($candidate !== '' && tk_image_opt_valid_derivative($path, $candidate, $quality) && filesize($candidate) < $bytes) {
+        if ($candidate === '' || !is_file($candidate)) {
+            continue;
+        }
+        // One source signature serves every candidate and the cache revision below.
+        $signature = $signature ?? tk_image_opt_signature($path, $quality);
+        if (tk_image_opt_valid_derivative($path, $candidate, $quality, $signature) && filesize($candidate) < $bytes) {
             $best = $candidate;
             $bytes = filesize($candidate);
         }
@@ -408,7 +446,7 @@ function tk_image_opt_get_or_create_optimized_url($url) {
     if ($best === '') {
         return $url;
     }
-    return add_query_arg('tkopt', substr(tk_image_opt_signature($path, $quality), 0, 12), tk_image_opt_path_to_upload_url($best));
+    return add_query_arg('tkopt', substr($signature, 0, 12), tk_image_opt_path_to_upload_url($best));
 }
 
 function tk_image_opt_get_or_create_webp_url($url) {

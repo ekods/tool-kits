@@ -1,3 +1,17 @@
+## Tool Kits 2.7.80
+
+Security, correctness and performance fixes from a full runtime audit. See `readme.txt` for the complete list.
+
+Upgrade notes:
+- Prepared DB exports can be downloaded once; undownloaded ones (e.g. a prefix-change backup) are kept for a day.
+- IPs auto-blocked for failed logins before this update stay blocked until unblocked manually; new auto-blocks last 24 hours.
+- New WebP conversions are named `foo.jpg.webp`; existing `foo.webp` files stay on disk and are still served when unambiguous.
+- Post meta changed by visitors or cron no longer purges the page cache; those pages refresh on their TTL. WooCommerce stock changes still purge.
+- DB Cleanup stats, Theme Audit and Dashboard cache stats can be up to 5–10 minutes old.
+- Settings data moves out of `tk_options` on the first request after the update.
+
+Validation: PHP 7.4.33 and 8.4 lint, regression suite 77/77 on both, stub tests for every fix, browser tests for cookie consent and Instant Page. The new dashboard GROUP BY queries were not run against a real MySQL server.
+
 ## Tool Kits 2.7.79
 
 - Limit Top Countries and each Top IPs Blocked range (24 Hours, 7 Days, 30 Days) to five items in the Total Attacks Blocked dashboard widget.

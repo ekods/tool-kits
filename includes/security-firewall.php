@@ -57,7 +57,8 @@ function tk_firewall_blocked_ai_crawlers(?string $blocked_agents = null): array 
 }
 
 function tk_firewall_request_ip(): string {
-    $ip = isset($_SERVER['REMOTE_ADDR']) ? trim((string) $_SERVER['REMOTE_ADDR']) : '';
+    // Same client IP as the rest of the plugin: behind Cloudflare/trusted proxies REMOTE_ADDR is the edge, not the visitor.
+    $ip = tk_get_ip();
     $ip = (string) apply_filters('tk_firewall_request_ip', $ip);
     return filter_var($ip, FILTER_VALIDATE_IP) ? $ip : '';
 }
@@ -68,6 +69,12 @@ function tk_firewall_ip_matches_rule(string $ip, string $rule): bool {
         return false;
     }
     if (strpos($rule, '/') === false) {
+        // Binary compare so differently written IPv6 (2001:DB8:0::1 vs 2001:db8::1) still matches.
+        $ip_binary = @inet_pton($ip);
+        $rule_binary = @inet_pton($rule);
+        if ($ip_binary !== false && $rule_binary !== false) {
+            return hash_equals($rule_binary, $ip_binary);
+        }
         return hash_equals(strtolower($rule), strtolower($ip));
     }
 
@@ -115,6 +122,13 @@ function tk_firewall_event_log_save(array $events): void {
 }
 
 function tk_firewall_log_event(string $reason, string $ip): void {
+    // Record the first block per IP per minute; under a flood every blocked request would
+    // otherwise INSERT an event and rewrite the log. The 403 itself is unaffected.
+    $throttle_key = 'tk_fw_logged_' . md5($ip);
+    if (get_transient($throttle_key)) {
+        return;
+    }
+    set_transient($throttle_key, 1, MINUTE_IN_SECONDS);
     if (function_exists('tk_security_events_record')) {
         // Cached location only: a blocked request must not wait on geolocation APIs. The daily
         // security-events maintenance fills in 'Unknown' locations.

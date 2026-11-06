@@ -150,9 +150,11 @@ function tk_db_cleanup_job_step(array $job): array {
             }
             $done = $job['cursor'] >= count($job['tables']);
         } else {
-            if (strpos($task, 'acf_') === 0 && !function_exists('acf_get_field')) {
+            // The forced usage scan reads up to 5,000 files: run it once per job (again after a resume), not per batch.
+            if (strpos($task, 'acf_') === 0 && !function_exists('acf_get_field') && empty($job['acf_usage_safe'])) {
                 $usage = tk_db_cleanup_acf_usage_scan(true);
                 if (empty($usage['safe_to_remove'])) { throw new RuntimeException('ACF cleanup blocked: active usage found or source scan incomplete.'); }
+                $job['acf_usage_safe'] = true;
             }
             $rows = tk_db_cleanup_rows($job, $task);
             $deadline = microtime(true) + 3;
@@ -166,6 +168,7 @@ function tk_db_cleanup_job_step(array $job): array {
         if ($done) { $job['index']++; $job['cursor'] = 0; }
         if ($job['index'] >= count($job['tasks'])) {
             $job['status'] = 'completed';
+            delete_transient('tk_db_cleanup_panel_stats');
             if (in_array('revisions', $job['tasks'], true)) { update_option('tk_db_cleanup_revision_last_run', time(), false); }
             if (in_array('acf_postmeta', $job['tasks'], true)) {
                 $counts = $job['counts'];
@@ -195,8 +198,8 @@ function tk_db_cleanup_job_command(string $command, array $input, int $owner): a
         if (!isset($input['job_id']) || !hash_equals($job['id'], (string) $input['job_id'])) { throw new RuntimeException('Cleanup changed. Reload this page.'); }
         if ($command === 'step') { return tk_db_cleanup_job_step($job); }
         if ($command === 'pause' && $job['status'] === 'running') { $job['status'] = 'paused'; }
-        elseif ($command === 'resume' && $job['status'] === 'paused') { $job['status'] = 'running'; $job['error'] = ''; }
-        elseif ($command === 'cancel' && in_array($job['status'], array('running', 'paused'), true)) { $job['status'] = 'cancelled'; }
+        elseif ($command === 'resume' && $job['status'] === 'paused') { $job['status'] = 'running'; $job['error'] = ''; unset($job['acf_usage_safe']); }
+        elseif ($command === 'cancel' && in_array($job['status'], array('running', 'paused'), true)) { $job['status'] = 'cancelled'; delete_transient('tk_db_cleanup_panel_stats'); }
         update_option('tk_jobs_cleanup', $job, false);
         return $job;
     } finally { tk_job_unlock('cleanup', $lease); }

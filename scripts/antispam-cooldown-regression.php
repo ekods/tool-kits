@@ -15,6 +15,7 @@ $admin = $nonce = true;
 $checks = 0;
 function tk_get_option($key, $default = null) { return $GLOBALS['options'][$key] ?? $default; }
 function tk_update_option($key, $value) { $GLOBALS['options'][$key] = $value; $GLOBALS['writes'][] = $key; }
+function tk_update_options(array $values) { foreach ($values as $key => $value) { tk_update_option($key, $value); } }
 function get_option($key, $default = null) { return $GLOBALS['timeouts'][$key] ?? $default; }
 function get_transient($key) { return $GLOBALS['cache'][$key] ?? false; }
 function set_transient($key, $value, $ttl) { $GLOBALS['cache'][$key] = $value; $GLOBALS['timeouts']['_transient_timeout_' . $key] = time() + $ttl; }

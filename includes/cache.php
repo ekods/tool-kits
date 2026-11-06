@@ -33,13 +33,17 @@ function tk_cache_init() {
         add_action('template_redirect', 'tk_page_cache_maybe_serve', 0);
         add_action('template_redirect', 'tk_page_cache_start_buffer', 0);
     }
-    add_action('save_post', 'tk_page_cache_purge_once');
+    add_action('save_post', 'tk_page_cache_purge_on_post_change', 10, 2);
     add_action('deleted_post', 'tk_page_cache_purge_once');
     add_action('transition_comment_status', 'tk_page_cache_purge_once');
-    add_action('comment_post', 'tk_page_cache_purge_once');
+    add_action('comment_post', 'tk_page_cache_purge_on_new_comment', 10, 2);
     add_action('edit_comment', 'tk_page_cache_purge_once');
     add_action('deleted_comment', 'tk_page_cache_purge_once');
-    add_action('clean_post_cache', 'tk_page_cache_purge_on_content_change');
+    add_action('clean_post_cache', 'tk_page_cache_purge_on_post_change', 10, 2);
+    // Stock changes during anonymous checkouts must still refresh product pages (WooCommerce).
+    foreach (array('woocommerce_product_set_stock', 'woocommerce_variation_set_stock', 'woocommerce_product_set_stock_status', 'woocommerce_variation_set_stock_status') as $stock_hook) {
+        add_action($stock_hook, 'tk_page_cache_purge_on_content_change');
+    }
     add_action('added_post_meta', 'tk_page_cache_purge_on_meta_change', 10, 4);
     add_action('updated_post_meta', 'tk_page_cache_purge_on_meta_change', 10, 4);
     add_action('deleted_post_meta', 'tk_page_cache_purge_on_meta_change', 10, 4);
@@ -583,6 +587,9 @@ function tk_page_cache_callback($html, $phase = PHP_OUTPUT_HANDLER_FINAL) {
         $headers = TK_Page_Cache_Runtime::header_templates(headers_list());
         $nonce = tk_page_cache_csp_nonce();
         $stored_html = TK_Page_Cache_Runtime::html_nonce($html);
+        // On a PCRE failure (backtrack/JIT limit on a large page) html_nonce returns the page with this
+        // visitor's nonce still in it; storing that would break CSP for every later visitor.
+        if (preg_last_error() !== PREG_NO_ERROR) { return $html; }
         $state = $tk_page_cache_writer['state'];
         if (!flock($state, LOCK_SH)) { return $html; }
         rewind($state);
@@ -674,12 +681,34 @@ function tk_page_cache_purge_on_content_change() {
     tk_page_cache_purge_once();
 }
 
+// Revisions, autosaves (an open editor saves about every minute) and auto-drafts never change public pages.
+function tk_page_cache_post_is_internal($post_id): bool {
+    $post_id = (int) $post_id;
+    if ($post_id <= 0) { return false; }
+    if (function_exists('wp_is_post_revision') && (wp_is_post_revision($post_id) || wp_is_post_autosave($post_id))) { return true; }
+    return function_exists('get_post_status') && get_post_status($post_id) === 'auto-draft';
+}
+
+function tk_page_cache_purge_on_post_change($post_id = 0, $post = null) {
+    if (tk_page_cache_post_is_internal($post_id)) { return; }
+    tk_page_cache_purge_once();
+}
+
+// Spam and held comments are not shown; approving them later fires transition_comment_status.
+function tk_page_cache_purge_on_new_comment($comment_id, $approved = 1) {
+    if ($approved !== 1 && $approved !== '1') { return; }
+    tk_page_cache_purge_once();
+}
+
 function tk_page_cache_purge_on_meta_change($meta_id, $post_id, $meta_key, $value) {
     $ignored = apply_filters('tk_page_cache_ignored_post_meta_keys', array('_tk_seo_rendered_audit', '_edit_lock', '_edit_last'), $post_id);
     if (in_array($meta_key, (array) $ignored, true)) {
         return;
     }
-    if (!apply_filters('tk_page_cache_purge_for_meta_change', true, $meta_key, $post_id)) { return; }
+    if (tk_page_cache_post_is_internal($post_id)) { return; }
+    // Meta written during visitor requests or cron is bookkeeping (view counters, stats); purging on it emptied
+    // the cache on every uncached view. Cached pages still expire on their TTL.
+    if (!apply_filters('tk_page_cache_purge_for_meta_change', tk_page_cache_request_can_purge(), $meta_key, $post_id)) { return; }
     tk_page_cache_purge_once();
 }
 
@@ -749,16 +778,21 @@ function tk_page_cache_flush_pending() {
 // Option writes during visitor requests and cron are bookkeeping by other plugins (stats, sessions, queues,
 // remote-data caches) and must not empty the whole page cache; cached pages still expire on their TTL.
 function tk_page_cache_option_change_can_purge(string $option): bool {
+    return (bool) apply_filters('tk_page_cache_option_change_can_purge', tk_page_cache_request_can_purge(), $option);
+}
+
+// Whether the current request is made by someone who edits the site (shared by option and post meta changes).
+function tk_page_cache_request_can_purge(): bool {
     if (defined('WP_CLI') && WP_CLI) {
-        $allowed = true;
-    } elseif (wp_doing_cron()) {
-        $allowed = false;
-    } elseif (!did_action('set_current_user') || !function_exists('current_user_can')) {
-        $allowed = is_admin();
-    } else {
-        $allowed = current_user_can('edit_posts') || current_user_can('manage_options');
+        return true;
     }
-    return (bool) apply_filters('tk_page_cache_option_change_can_purge', $allowed, $option);
+    if (wp_doing_cron()) {
+        return false;
+    }
+    if (!did_action('set_current_user') || !function_exists('current_user_can')) {
+        return is_admin();
+    }
+    return current_user_can('edit_posts') || current_user_can('manage_options');
 }
 
 function tk_page_cache_should_ignore_option_change(string $option): bool {
@@ -1107,19 +1141,24 @@ function tk_fragment_cache_set($key, $value, $ttl = 300) {
     $cache_key = 'tk_frag_' . md5((string) $key);
     $ttl = max(1, (int) $ttl);
     set_transient($cache_key, $value, $ttl);
-    $keys = tk_get_option('fragment_cache_keys', array());
-    if (!is_array($keys)) {
-        $keys = array();
-    }
+    $keys = tk_fragment_cache_keys();
     if (!in_array($cache_key, $keys, true)) {
         $keys[] = $cache_key;
         if (count($keys) > 200) {
             $keys = array_slice($keys, -200);
         }
-        tk_update_option('fragment_cache_keys', $keys);
+        // Own option, not tk_options: rewriting the settings array from a front-end request could clobber an admin save.
+        update_option('tk_fragment_cache_keys', $keys, false);
     }
 
     return true;
+}
+
+/** Keys stored before the move to tk_fragment_cache_keys still live in tk_options until the next flush. */
+function tk_fragment_cache_keys(): array {
+    $keys = get_option('tk_fragment_cache_keys', array());
+    $legacy = tk_get_option('fragment_cache_keys', array());
+    return array_values(array_unique(array_merge(is_array($keys) ? $keys : array(), is_array($legacy) ? $legacy : array())));
 }
 
 function tk_fragment_cache_flush() {
@@ -1127,13 +1166,13 @@ function tk_fragment_cache_flush() {
         wp_die('Forbidden');
     }
     tk_check_nonce('tk_fragment_cache_flush');
-    $keys = tk_get_option('fragment_cache_keys', array());
-    if (is_array($keys)) {
-        foreach ($keys as $cache_key) {
-            delete_transient($cache_key);
-        }
+    foreach (tk_fragment_cache_keys() as $cache_key) {
+        delete_transient($cache_key);
     }
-    tk_update_option('fragment_cache_keys', array());
+    delete_option('tk_fragment_cache_keys');
+    if (tk_get_option('fragment_cache_keys', array())) {
+        tk_update_option('fragment_cache_keys', array());
+    }
     wp_redirect(admin_url('admin.php?page=tool-kits-cache&tk_fragment=ok'));
     exit;
 }
@@ -1144,8 +1183,7 @@ function tk_cache_render_status_rows() {
     $opcache = function_exists('opcache_get_status') && ini_get('opcache.enable');
     $page_stats = tk_page_cache_stats();
     $server_cache = tk_server_cache_status();
-    $fragment_keys = tk_get_option('fragment_cache_keys', array());
-    $fragment_count = is_array($fragment_keys) ? count($fragment_keys) : 0;
+    $fragment_count = count(tk_fragment_cache_keys());
     $hook_requirements = tk_page_cache_early_hook_requirements();
     ?>
     <table class="widefat striped">

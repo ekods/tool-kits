@@ -69,6 +69,12 @@ function tk_form_guard_is_public_post(): bool {
         return false;
     }
 
+    // Server-to-server callbacks, not forms: payment gateway IPNs (?wc-api=, often sent by Java/Go/OkHttp clients
+    // in bursts) and the WP-Cron loopback POST (about once a minute, above the 8-per-10-minutes limit).
+    if (isset($_GET['wc-api']) || substr((string) wp_parse_url(tk_form_guard_request_uri(), PHP_URL_PATH), -12) === '/wp-cron.php') {
+        return false;
+    }
+
     // REST_REQUEST is not set yet during init. Authenticate this endpoint before
     // treating its server-to-server POST as a public form submission.
     if (function_exists('tk_heartbeat_recheck_is_authenticated_request') && tk_heartbeat_recheck_is_authenticated_request()) {
@@ -351,25 +357,24 @@ function tk_form_guard_render_comment_fields(): void {
         return;
     }
 
-    $ts = time();
-    set_transient('tk_comment_form_' . md5(tk_get_ip() . '|' . tk_user_agent()), $ts, 30 * MINUTE_IN_SECONDS);
-
     echo '<p class="comment-form-tk-hp" style="position:absolute;left:-9999px;top:-9999px;height:1px;overflow:hidden;" aria-hidden="true">';
     echo '<label>' . esc_html__('Leave this field empty', 'tool-kits') . '<input type="text" name="tk_comment_hp" value="" tabindex="-1" autocomplete="off"></label>';
     echo '</p>';
-    echo '<input type="hidden" name="tk_comment_ts" value="' . esc_attr((string) $ts) . '">';
+    echo '<input type="hidden" name="tk_comment_ts" value="' . esc_attr(tk_antispam_form_ts_token('comment')) . '">';
 
     if (tk_get_option('captcha_enabled') && tk_get_option('captcha_on_comments')) {
         echo tk_captcha_render_markup();
     }
 }
 
-function tk_form_guard_comment_key(): string {
-    return 'tk_comment_form_' . md5(tk_get_ip() . '|' . tk_user_agent());
-}
-
 function tk_form_guard_validate_comment(array $commentdata): array {
     if (!tk_form_guard_enabled()) {
+        return $commentdata;
+    }
+
+    // Dashboard replies (admin-ajax replyto-comment) and authenticated REST comments reach preprocess_comment
+    // without the front-end form, so they never carry the honeypot, timestamp or CAPTCHA fields.
+    if (is_user_logged_in() && (current_user_can('moderate_comments') || (defined('REST_REQUEST') && REST_REQUEST))) {
         return $commentdata;
     }
 
@@ -378,9 +383,8 @@ function tk_form_guard_validate_comment(array $commentdata): array {
         tk_form_guard_deny('comment_honeypot');
     }
 
-    $posted = isset($_POST['tk_comment_ts']) ? (int) $_POST['tk_comment_ts'] : 0;
-    $stored = (int) get_transient(tk_form_guard_comment_key());
-    if ($posted > 0 && $stored > 0) {
+    $stored = tk_antispam_form_ts_verify(isset($_POST['tk_comment_ts']) ? (string) wp_unslash($_POST['tk_comment_ts']) : '', 'comment');
+    if ($stored > 0) {
         $elapsed = time() - $stored;
         $min = max(0, (int) tk_get_option('form_guard_comment_min_seconds', 4));
         if ($elapsed < $min) {

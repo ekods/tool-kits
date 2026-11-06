@@ -20,11 +20,7 @@ add_action('admin_post_tk_general_diagnostics_export', 'tk_general_diagnostics_e
         add_filter('page_row_actions', 'tk_general_duplicate_row_action', 10, 2);
         add_action('admin_post_tk_duplicate_content', 'tk_general_duplicate_content_handler');
     }
-    
-    $tz = (string) tk_get_option('tk_server_timezone', '');
-    if ($tz !== '') {
-        date_default_timezone_set($tz);
-    }
+    // WordPress requires PHP's default timezone to stay UTC; the site timezone lives in timezone_string.
 }
 
 function tk_general_duplicate_row_action(array $actions, $post): array {
@@ -91,7 +87,12 @@ function tk_general_duplicate_post(int $post_id) {
             continue;
         }
         foreach ((array) $values as $value) {
-            add_post_meta($duplicate_id, $meta_key, wp_slash(maybe_unserialize($value)));
+            // add_post_meta() unslashes with map_deep(), which also walks object properties; wp_slash() does not,
+            // so slash the same way to keep backslashes inside object-type meta.
+            $value = map_deep(maybe_unserialize($value), function ($item) {
+                return is_string($item) ? addslashes($item) : $item;
+            });
+            add_post_meta($duplicate_id, $meta_key, $value);
         }
     }
 
@@ -1291,8 +1292,8 @@ function tk_render_general_page(): void {
                 </div>
 
                 <div class="tk-card tk-tab-panel" data-panel-id="server-time">
-                    <h2>Server Timezone Override</h2>
-                    <p>Force a specific timezone for PHP functions (e.g. date_default_timezone_set) if your server time differs from your local time.</p>
+                    <h2>Site Timezone</h2>
+                    <p>Sets the WordPress site timezone (same as Settings &rarr; General). PHP's default timezone stays UTC, as WordPress requires.</p>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                         <?php tk_nonce_field('tk_general_save'); ?>
                         <input type="hidden" name="action" value="tk_general_save">
@@ -1301,13 +1302,13 @@ function tk_render_general_page(): void {
                         <div style="display:flex; flex-direction:column; gap:20px;">
                             <div class="tk-control-row">
                                 <div class="tk-control-info">
-                                    <label>PHP Timezone</label>
-                                    <p class="description">Select the timezone to enforce.</p>
+                                    <label>Timezone</label>
+                                    <p class="description">Select the site timezone.</p>
                                 </div>
                                 <select name="tk_server_timezone" style="width: 250px;">
-                                    <option value="">-- Default (Server) --</option>
-                                    <?php 
-                                    $current_tz = (string) tk_get_option('tk_server_timezone', '');
+                                    <option value="">-- Unchanged --</option>
+                                    <?php
+                                    $current_tz = (string) get_option('timezone_string', '');
                                     foreach (timezone_identifiers_list() as $tz) {
                                         echo '<option value="' . esc_attr($tz) . '" ' . selected($current_tz, $tz, false) . '>' . esc_html($tz) . '</option>';
                                     }
@@ -1558,10 +1559,11 @@ function tk_general_save(): void {
         tk_update_option('cookie_consent_expiry', absint(tk_post('cookie_consent_expiry', 365)));
     } elseif ($section === 'server-time') {
         $tz = sanitize_text_field((string) tk_post('tk_server_timezone', ''));
-        if ($tz !== '' && !in_array($tz, timezone_identifiers_list(), true)) {
-            $tz = '';
+        if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) {
+            update_option('timezone_string', $tz);
         }
-        tk_update_option('tk_server_timezone', $tz);
+        // Retire the old override so it is no longer applied to PHP's default timezone.
+        tk_update_option('tk_server_timezone', '');
     }
 
     wp_safe_redirect(admin_url('admin.php?page=tool-kits-general&tk_saved=1#' . $section));

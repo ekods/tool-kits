@@ -265,6 +265,11 @@ function tk_rate_limit_block_ip($ip) {
     $blocked = tk_rate_limit_blocked_ips();
     if (!isset($blocked[$ip])) {
         $blocked[$ip] = time();
+        // The whole list is read on every login POST; a botnet must not grow it without bound. Keep the newest.
+        if (count($blocked) > 5000) {
+            asort($blocked);
+            $blocked = array_slice($blocked, -5000, null, true);
+        }
         tk_rate_limit_save_blocked_ips($blocked);
     }
 }
@@ -652,38 +657,40 @@ function tk_render_brute_force_page(): void {
 function tk_rate_limit_save() {
     tk_require_admin_post('tk_rate_limit_save');
 
-    tk_update_option('rate_limit_enabled', !empty($_POST['enabled']) ? 1 : 0);
-    tk_update_option('rate_limit_window_minutes', (int) $_POST['window']);
-    tk_update_option('rate_limit_max_attempts', (int) $_POST['max']);
-    tk_update_option('rate_limit_lockout_minutes', (int) $_POST['lock']);
-    tk_update_option('rate_limit_progressive_enabled', !empty($_POST['progressive_enabled']) ? 1 : 0);
     $progressive_steps = isset($_POST['progressive_steps']) ? (string) wp_unslash($_POST['progressive_steps']) : '';
-    tk_update_option('rate_limit_progressive_steps', implode(', ', tk_rate_limit_parse_minutes_list($progressive_steps)));
-    tk_update_option('rate_limit_block_on_fail', !empty($_POST['block_on_fail']) ? 1 : 0);
-    tk_update_option('security_auto_block_enabled', !empty($_POST['auto_block_enabled']) ? 1 : 0);
-    tk_update_option('security_auto_block_threshold', max(2, (int) $_POST['auto_block_threshold']));
-    tk_update_option('security_auto_block_window_minutes', max(1, (int) $_POST['auto_block_window']));
     $auto_agents = isset($_POST['auto_block_user_agents']) ? (string) wp_unslash($_POST['auto_block_user_agents']) : '';
     $auto_agents = implode("\n", array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $auto_agents)))));
-    tk_update_option('security_auto_block_user_agents', $auto_agents);
-    tk_update_option('security_login_error_obfuscation_enabled', !empty($_POST['login_error_obfuscation_enabled']) ? 1 : 0);
-    tk_update_option('security_block_bad_usernames_enabled', !empty($_POST['block_bad_usernames_enabled']) ? 1 : 0);
     $bad_usernames = isset($_POST['bad_usernames']) ? (string) wp_unslash($_POST['bad_usernames']) : '';
-    tk_update_option('security_bad_usernames', implode("\n", tk_rate_limit_normalize_lines($bad_usernames, true)));
-    tk_update_option('security_login_origin_guard_enabled', !empty($_POST['login_origin_guard_enabled']) ? 1 : 0);
-    tk_update_option('security_login_origin_require_header', !empty($_POST['login_origin_require_header']) ? 1 : 0);
-    tk_update_option('rate_limit_honey_trap_enabled', !empty($_POST['honey_trap_enabled']) ? 1 : 0);
     $honey_paths = isset($_POST['honey_trap_paths']) ? (string) wp_unslash($_POST['honey_trap_paths']) : '';
     $honey_paths = implode("\n", tk_rate_limit_normalize_honey_trap_paths($honey_paths));
-    tk_update_option('rate_limit_honey_trap_paths', $honey_paths);
-    tk_update_option('security_404_scanner_trap_enabled', !empty($_POST['scanner_trap_enabled']) ? 1 : 0);
-    tk_update_option('security_404_scanner_threshold', max(1, (int) ($_POST['scanner_trap_threshold'] ?? 4)));
-    tk_update_option('security_404_scanner_window_minutes', max(1, (int) ($_POST['scanner_trap_window'] ?? 10)));
     $scanner_paths = isset($_POST['scanner_trap_paths']) ? (string) wp_unslash($_POST['scanner_trap_paths']) : '';
-    tk_update_option('security_404_scanner_paths', implode("\n", tk_rate_limit_normalize_honey_trap_paths($scanner_paths)));
     $whitelist_raw = isset($_POST['whitelist']) ? (string) wp_unslash($_POST['whitelist']) : '';
     $whitelist_ips = tk_rate_limit_parse_ip_list($whitelist_raw);
-    tk_update_option('rate_limit_whitelist', implode("\n", $whitelist_ips));
+    tk_update_options(array(
+        'rate_limit_enabled' => !empty($_POST['enabled']) ? 1 : 0,
+        'rate_limit_window_minutes' => (int) $_POST['window'],
+        'rate_limit_max_attempts' => (int) $_POST['max'],
+        'rate_limit_lockout_minutes' => (int) $_POST['lock'],
+        'rate_limit_progressive_enabled' => !empty($_POST['progressive_enabled']) ? 1 : 0,
+        'rate_limit_progressive_steps' => implode(', ', tk_rate_limit_parse_minutes_list($progressive_steps)),
+        'rate_limit_block_on_fail' => !empty($_POST['block_on_fail']) ? 1 : 0,
+        'security_auto_block_enabled' => !empty($_POST['auto_block_enabled']) ? 1 : 0,
+        'security_auto_block_threshold' => max(2, (int) $_POST['auto_block_threshold']),
+        'security_auto_block_window_minutes' => max(1, (int) $_POST['auto_block_window']),
+        'security_auto_block_user_agents' => $auto_agents,
+        'security_login_error_obfuscation_enabled' => !empty($_POST['login_error_obfuscation_enabled']) ? 1 : 0,
+        'security_block_bad_usernames_enabled' => !empty($_POST['block_bad_usernames_enabled']) ? 1 : 0,
+        'security_bad_usernames' => implode("\n", tk_rate_limit_normalize_lines($bad_usernames, true)),
+        'security_login_origin_guard_enabled' => !empty($_POST['login_origin_guard_enabled']) ? 1 : 0,
+        'security_login_origin_require_header' => !empty($_POST['login_origin_require_header']) ? 1 : 0,
+        'rate_limit_honey_trap_enabled' => !empty($_POST['honey_trap_enabled']) ? 1 : 0,
+        'rate_limit_honey_trap_paths' => $honey_paths,
+        'security_404_scanner_trap_enabled' => !empty($_POST['scanner_trap_enabled']) ? 1 : 0,
+        'security_404_scanner_threshold' => max(1, (int) ($_POST['scanner_trap_threshold'] ?? 4)),
+        'security_404_scanner_window_minutes' => max(1, (int) ($_POST['scanner_trap_window'] ?? 10)),
+        'security_404_scanner_paths' => implode("\n", tk_rate_limit_normalize_honey_trap_paths($scanner_paths)),
+        'rate_limit_whitelist' => implode("\n", $whitelist_ips),
+    ));
     if (!empty($whitelist_ips)) {
         $blocked = tk_rate_limit_blocked_ips();
         foreach ($whitelist_ips as $ip) {

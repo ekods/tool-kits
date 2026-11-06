@@ -124,6 +124,10 @@ function tk_user_id_change_save() {
             wp_cache_delete($cached_id, 'users');
             wp_cache_delete($cached_id, 'user_meta');
         }
+        // Owner-only mode compares against this ID; leaving it stale locks the owner out of Tool Kits.
+        if ((int) tk_get_option('toolkits_owner_user_id', 1) === $user_id) {
+            tk_update_option('toolkits_owner_user_id', $new_id);
+        }
         tk_toolkits_audit_log('user_id_change', array('from' => $user_id, 'to' => $new_id));
         tk_user_id_change_redirect('ok', 'User ' . $user->user_login . ' updated to ID ' . $new_id . '.');
     }

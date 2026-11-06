@@ -11,6 +11,10 @@ function apply_filters($hook, $value, ...$args) {
     return $value;
 }
 function is_admin() { return false; }
+// An editor saving content; tk_page_cache_purge_for_meta_change above still decides the outcome.
+function wp_doing_cron() { return false; }
+function did_action($hook) { return 1; }
+function current_user_can($cap) { return true; }
 function wp_parse_url($url) { $GLOBALS['parsed']++; return parse_url($url); }
 function get_stylesheet_directory_uri() { return 'https://example.test/wp-content/themes/theme'; }
 function get_template_directory_uri() { return get_stylesheet_directory_uri(); }

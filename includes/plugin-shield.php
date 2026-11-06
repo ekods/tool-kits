@@ -94,6 +94,10 @@ function tk_shield_verify_license_integrity() {
         tk_update_option('license_status', 'inactive');
         tk_update_option('license_message', function_exists('tk_license_integrity_violation_message') ? tk_license_integrity_violation_message() : 'License integrity violation detected. Please re-activate.');
         tk_update_option('license_signature', '');
+        // An expired but genuine receipt also lands here (often on heartbeat ajax, which never
+        // revalidates); clearing the timestamp makes the next validation ask the issuer instead
+        // of serving this cached 'inactive' for hours.
+        tk_update_option('license_last_checked', 0);
     }
 }
 

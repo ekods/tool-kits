@@ -36,8 +36,22 @@ function tk_antispam_enqueue_countdown(): void {
     ));
 }
 
-function tk_antispam_key() {
-    return 'tk_antispam_' . md5(tk_get_ip() . '|' . tk_user_agent());
+/**
+ * Signed render timestamp for "submitted too quickly" checks. Stored per-visitor transients cost a database
+ * write on every form view (crawlers included) and were reset by viewing any other form; the HMAC keeps the
+ * hidden value unforgeable without storing anything.
+ */
+function tk_antispam_form_ts_token(string $scope): string {
+    $ts = (string) time();
+    return $ts . '.' . hash_hmac('sha256', $scope . '|' . $ts, wp_salt('nonce'));
+}
+
+/** Render time from a token made by tk_antispam_form_ts_token(), or 0 when it is missing or not genuine. */
+function tk_antispam_form_ts_verify(string $token, string $scope): int {
+    if (!preg_match('/^([0-9]{1,12})\.([a-f0-9]{64})$/D', trim($token), $match)) {
+        return 0;
+    }
+    return hash_equals(hash_hmac('sha256', $scope . '|' . $match[1], wp_salt('nonce')), $match[2]) ? (int) $match[1] : 0;
 }
 
 function tk_antispam_scalar_post_values(): array {
@@ -432,7 +446,9 @@ function tk_antispam_contains_shortener(array $values): bool {
         }
         $haystack = strtolower($value);
         foreach ($domains as $domain) {
-            if (strpos($haystack, $domain) !== false) {
+            // Whole host only: a plain substring made "t.co" match microsoft.com, att.com and pinterest.com.
+            if (strpos($haystack, $domain) !== false
+                && preg_match('/(?<![a-z0-9.-])' . preg_quote($domain, '/') . '(?!\.?[a-z0-9-])/', $haystack) === 1) {
                 return true;
             }
         }
@@ -445,9 +461,10 @@ function tk_antispam_contains_non_latin(array $values): bool {
         if (!is_string($value) || $value === '') {
             continue;
         }
-        // Check for non-Latin scripts (Cyrillic, Arabic, Chinese, etc.)
-        // We use a regex that looks for characters outside the Latin/Extended Latin range
-        if (preg_match('/[^\x00-\x7F\x80-\xFF]/u', $value)) {
+        // Check for non-Latin scripts (Cyrillic, Arabic, Chinese, etc.). Allowed: Latin-1, Latin Extended-A/B
+        // (ł ş ő), spacing modifiers and combining accents, Latin Extended Additional (Vietnamese), general
+        // punctuation (’ “ ” – …), currency (€) and letterlike symbols (™), which ordinary Latin text uses.
+        if (preg_match('/[^\x{0000}-\x{024F}\x{02B0}-\x{036F}\x{1E00}-\x{1EFF}\x{2000}-\x{206F}\x{20A0}-\x{20CF}\x{2100}-\x{214F}]/u', $value)) {
             return true;
         }
     }
@@ -471,6 +488,7 @@ function tk_antispam_log_get(): array {
 
 function tk_antispam_log_record(string $reason, array $values = array()): void {
     $log = tk_antispam_log_get();
+    $sample = array();
     foreach ($values as $key => $value) {
         if (!is_string($value) || $value === '') {
             continue;
@@ -848,14 +866,11 @@ function tk_cf7_add_honeypot_and_time($form) {
     if (!tk_antispam_enabled()) return $form;
     if (!function_exists('wpcf7')) return $form;
 
-    $ts = time();
-    set_transient(tk_antispam_key(), $ts, 30 * MINUTE_IN_SECONDS);
-
     $honeypot = '<span class="tk-hp" style="display:none !important; visibility:hidden !important; position:absolute !important; left:-9999px !important; top:-9999px !important; height:1px !important; width:1px !important; overflow:hidden !important;" aria-hidden="true">'
         . '<label>Leave this field empty<input type="text" name="tk_hp_field" value="" tabindex="-1" autocomplete="off" style="display:none !important;"></label>'
         . '</span>';
 
-    $timefield = '<input type="hidden" name="tk_form_ts" value="' . esc_attr($ts) . '">';
+    $timefield = '<input type="hidden" name="tk_form_ts" value="' . esc_attr(tk_antispam_form_ts_token('cf7')) . '">';
 
     return $form . $honeypot . $timefield;
 }
@@ -874,11 +889,10 @@ function tk_cf7_validate_honeypot_and_time($result, $tags) {
     }
 
     $min = (int) tk_get_option('antispam_min_seconds', 3);
-    $posted = isset($_POST['tk_form_ts']) ? (int) $_POST['tk_form_ts'] : 0;
-    $stored = (int) get_transient(tk_antispam_key());
+    $stored = tk_antispam_form_ts_verify(isset($_POST['tk_form_ts']) ? (string) wp_unslash($_POST['tk_form_ts']) : '', 'cf7');
 
-    // If no timestamp, be strict but still allow (some caching might strip fields); we only enforce if both present.
-    if ($posted > 0 && $stored > 0) {
+    // If no timestamp, be strict but still allow (some caching might strip fields); we only enforce a genuine one.
+    if ($stored > 0) {
         $elapsed = time() - $stored;
         if ($elapsed < $min) {
             return tk_antispam_reject($result, __('Form submitted too quickly. Please try again.', 'tool-kits'), 'submitted_too_quickly', array(), $tags);
@@ -1274,11 +1288,11 @@ function tk_render_antispam_log_panel() {
                                     <?php 
                                     $sample = $entry['sample'] ?? array();
                                     if (!empty($sample) && is_array($sample)) : ?>
-                                        <table class="tk-mini-table" style="width:100%; border-collapse:collapse; font-size:11px;">
+                                        <table class="widefat striped tk-detail-table">
                                             <?php foreach ($sample as $k => $v) : ?>
                                                 <tr>
-                                                    <td style="font-weight:700; width:100px; padding:4px 0; color:#1e293b;"><?php echo esc_html($k); ?>:</td>
-                                                    <td style="padding:4px 0; color:#64748b;"><?php echo nl2br(esc_html($v)); ?></td>
+                                                    <th scope="row"><?php echo esc_html($k); ?>:</th>
+                                                    <td><?php echo nl2br(esc_html($v)); ?></td>
                                                 </tr>
                                             <?php endforeach; ?>
                                         </table>
@@ -1307,32 +1321,33 @@ function tk_antispam_save_settings() {
     if (!tk_is_admin_user()) wp_die('Forbidden');
     tk_check_nonce('tk_antispam_save');
 
-    tk_update_option('antispam_cf7_enabled', !empty($_POST['enabled']) ? 1 : 0);
-    tk_update_option('antispam_min_seconds', max(0, (int) tk_post('min_seconds', 5)));
-    tk_update_option('antispam_block_links', !empty($_POST['block_links']) ? 1 : 0);
-    tk_update_option('antispam_max_links', max(0, (int) tk_post('max_links', 0)));
-    tk_update_option('antispam_block_disposable_email', !empty($_POST['block_disposable_email']) ? 1 : 0);
+    $values = array(
+        'antispam_cf7_enabled' => !empty($_POST['enabled']) ? 1 : 0,
+        'antispam_min_seconds' => max(0, (int) tk_post('min_seconds', 5)),
+        'antispam_block_links' => !empty($_POST['block_links']) ? 1 : 0,
+        'antispam_max_links' => max(0, (int) tk_post('max_links', 0)),
+        'antispam_block_disposable_email' => !empty($_POST['block_disposable_email']) ? 1 : 0,
+    );
     // The domain list has no form control; overwriting it with '' disabled disposable-email blocking.
     if (isset($_POST['disposable_domains'])) {
-        tk_update_option('antispam_disposable_domains', trim((string) wp_unslash($_POST['disposable_domains'])));
+        $values['antispam_disposable_domains'] = trim((string) wp_unslash($_POST['disposable_domains']));
     }
-    $block_keywords = isset($_POST['block_keywords']) ? trim((string) wp_unslash($_POST['block_keywords'])) : '';
-    tk_update_option('antispam_block_keywords', $block_keywords);
-    tk_update_option('antispam_message_min_chars', max(0, (int) tk_post('message_min_chars', 20)));
-    tk_update_option('antispam_cooldown_enabled', !empty($_POST['cooldown_enabled']) ? 1 : 0);
-    tk_update_option('antispam_duplicate_window_minutes', max(0, (int) tk_post('duplicate_window_minutes', 5)));
-    tk_update_option('antispam_email_cooldown_minutes', max(0, (int) tk_post('email_cooldown_minutes', 15)));
-    tk_update_option('antispam_ip_cooldown_seconds', max(0, (int) tk_post('ip_cooldown_seconds', 60)));
-    $generic_phrases = isset($_POST['generic_phrases']) ? trim((string) wp_unslash($_POST['generic_phrases'])) : '';
-    tk_update_option('antispam_generic_phrases', $generic_phrases);
-    tk_update_option('antispam_block_html', !empty($_POST['block_html']) ? 1 : 0);
-    tk_update_option('antispam_block_shorteners', !empty($_POST['block_shorteners']) ? 1 : 0);
-    tk_update_option('antispam_rate_limit_enabled', !empty($_POST['rate_limit_enabled']) ? 1 : 0);
-    tk_update_option('antispam_rate_limit_window_minutes', max(1, (int) tk_post('rate_limit_window_minutes', 15)));
-    tk_update_option('antispam_rate_limit_max_attempts', max(1, (int) tk_post('rate_limit_max_attempts', 2)));
-    tk_update_option('antispam_block_non_latin', !empty($_POST['block_non_latin']) ? 1 : 0);
-    tk_update_option('antispam_block_randomness', !empty($_POST['block_randomness']) ? 1 : 0);
-    tk_update_option('antispam_require_referrer', !empty($_POST['require_referrer']) ? 1 : 0);
+    $values['antispam_block_keywords'] = isset($_POST['block_keywords']) ? trim((string) wp_unslash($_POST['block_keywords'])) : '';
+    $values['antispam_message_min_chars'] = max(0, (int) tk_post('message_min_chars', 20));
+    $values['antispam_cooldown_enabled'] = !empty($_POST['cooldown_enabled']) ? 1 : 0;
+    $values['antispam_duplicate_window_minutes'] = max(0, (int) tk_post('duplicate_window_minutes', 5));
+    $values['antispam_email_cooldown_minutes'] = max(0, (int) tk_post('email_cooldown_minutes', 15));
+    $values['antispam_ip_cooldown_seconds'] = max(0, (int) tk_post('ip_cooldown_seconds', 60));
+    $values['antispam_generic_phrases'] = isset($_POST['generic_phrases']) ? trim((string) wp_unslash($_POST['generic_phrases'])) : '';
+    $values['antispam_block_html'] = !empty($_POST['block_html']) ? 1 : 0;
+    $values['antispam_block_shorteners'] = !empty($_POST['block_shorteners']) ? 1 : 0;
+    $values['antispam_rate_limit_enabled'] = !empty($_POST['rate_limit_enabled']) ? 1 : 0;
+    $values['antispam_rate_limit_window_minutes'] = max(1, (int) tk_post('rate_limit_window_minutes', 15));
+    $values['antispam_rate_limit_max_attempts'] = max(1, (int) tk_post('rate_limit_max_attempts', 2));
+    $values['antispam_block_non_latin'] = !empty($_POST['block_non_latin']) ? 1 : 0;
+    $values['antispam_block_randomness'] = !empty($_POST['block_randomness']) ? 1 : 0;
+    $values['antispam_require_referrer'] = !empty($_POST['require_referrer']) ? 1 : 0;
+    tk_update_options($values);
 
     wp_redirect(add_query_arg(array('page'=>'tool-kits-security-spam','tk_tab'=>'antispam','tk_saved'=>1), admin_url('admin.php')));
     exit;

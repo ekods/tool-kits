@@ -1,5 +1,6 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
+require_once __DIR__ . '/cache-runtime.php';
 
 // Inspect actual tags, skipping comments and raw text so examples in scripts do
 // not count as metadata. Keep offsets to repair empty tags without rewriting HTML.
@@ -80,8 +81,9 @@ function tk_geo_crawler_fix_url(string $url): string {
         || strtolower($parts['scheme']) !== strtolower($home['scheme'] ?? '')
         || strcasecmp($parts['host'] ?? '', $home['host'] ?? '') !== 0
         || ($parts['port'] ?? null) !== ($home['port'] ?? null)) { return ''; }
-    // Query variants can be previews, searches or private views; repair public paths only.
-    if (!empty($parts['query'])) { return ''; }
+    // Query variants can be previews, searches or private views; repair public paths only. Tracking parameters
+    // are ignored exactly as the page-cache key ignores them, so a ?utm_ first visit caches the fixed page.
+    if (!empty($parts['query']) && TK_Page_Cache_Runtime::cache_uri('?' . $parts['query']) !== '') { return ''; }
     return esc_url_raw(strtolower($parts['scheme']) . '://' . strtolower($parts['host'])
         . (isset($parts['port']) ? ':' . $parts['port'] : '') . ($parts['path'] ?? '/'));
 }

@@ -238,9 +238,10 @@ function tk_captcha_scalar(array $source, string $key): string {
 }
 
 function tk_captcha_client(): string {
-    // REMOTE_ADDR cannot be forged by adding an arbitrary X-Forwarded-For header.
+    // tk_get_ip() trusts forwarded headers only from known proxies/Cloudflare, so it cannot be forged either,
+    // and behind a proxy it keeps visitors from sharing one REMOTE_ADDR identity.
     $cookie = tk_captcha_scalar($_COOKIE, 'tk_captcha_browser');
-    $peer = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
+    $peer = tk_get_ip();
     $agent = isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
     // The browser cookie remains stable when a mobile connection or reverse-proxy peer changes.
     $identity = preg_match('/^[a-f0-9]{64}$/D', $cookie) ? 'browser:' . $cookie : 'peer:' . $peer;
@@ -261,7 +262,7 @@ function tk_captcha_min_seconds(): int {
 function tk_captcha_rate_limited(string $bucket): bool {
     $max = max(5, min(100, (int) tk_get_option('captcha_max_attempts', 20)));
     foreach (array(tk_captcha_client() => $bucket === 'refresh' ? $max * 3 : $max,
-        'peer:' . ($_SERVER['REMOTE_ADDR'] ?? '') => 600) as $identity => $limit) {
+        'peer:' . tk_get_ip() => 600) as $identity => $limit) {
         $key = 'tk_captcha_rate_' . md5($bucket . '|' . $identity);
         $record = get_transient($key);
         if (!is_array($record) || ($record['expires_at'] ?? 0) <= time()) { $record = array('count' => 0, 'expires_at' => time() + 300); }
@@ -314,7 +315,7 @@ function tk_captcha_pow_valid(string $salt, string $token, string $nonce, int $b
 }
 
 function tk_captcha_failure_keys(): array {
-    return array('tk_captcha_fail_' . md5(tk_captcha_client()), 'tk_captcha_fail_' . md5('peer:' . ($_SERVER['REMOTE_ADDR'] ?? '')));
+    return array('tk_captcha_fail_' . md5(tk_captcha_client()), 'tk_captcha_fail_' . md5('peer:' . tk_get_ip()));
 }
 
 function tk_captcha_record_failure(): void {
@@ -1151,23 +1152,26 @@ function tk_captcha_save() {
     if (!tk_is_admin_user()) wp_die('Forbidden');
     tk_check_nonce('tk_captcha_save');
 
-    tk_update_option('captcha_enabled', !empty($_POST['enabled']) ? 1 : 0);
-    tk_update_option('captcha_on_login', !empty($_POST['on_login']) ? 1 : 0);
+    $values = array(
+        'captcha_enabled' => !empty($_POST['enabled']) ? 1 : 0,
+        'captcha_on_login' => !empty($_POST['on_login']) ? 1 : 0,
+    );
     tk_update_posted_flag('captcha_on_comments', 'on_comments');
     if (isset($_POST['captcha_type'])) {
-        tk_update_option('captcha_type', tk_captcha_normalize_type(tk_captcha_scalar($_POST, 'captcha_type')));
+        $values['captcha_type'] = tk_captcha_normalize_type(tk_captcha_scalar($_POST, 'captcha_type'));
     }
     $length = isset($_POST['length']) ? max(6, min(10, (int) $_POST['length'])) : tk_captcha_length();
     $strength = isset($_POST['strength']) ? sanitize_key($_POST['strength']) : tk_captcha_strength();
     if (!in_array($strength, array('easy','medium','hard'), true)) {
         $strength = 'medium';
     }
-    tk_update_option('captcha_length', $length);
-    tk_update_option('captcha_strength', $strength);
-    tk_update_option('captcha_min_seconds', max(1, min(10, (int) tk_post('min_seconds', 2))));
-    tk_update_option('captcha_max_attempts', max(5, min(100, (int) tk_post('max_attempts', 20))));
-    tk_update_option('captcha_pow_bits', max(14, min(22, (int) tk_post('pow_bits', 18))));
-    tk_update_option('captcha_adaptive_pow', (string) tk_post('adaptive_pow', '1') === '0' ? 0 : 1);
+    $values['captcha_length'] = $length;
+    $values['captcha_strength'] = $strength;
+    $values['captcha_min_seconds'] = max(1, min(10, (int) tk_post('min_seconds', 2)));
+    $values['captcha_max_attempts'] = max(5, min(100, (int) tk_post('max_attempts', 20)));
+    $values['captcha_pow_bits'] = max(14, min(22, (int) tk_post('pow_bits', 18)));
+    $values['captcha_adaptive_pow'] = (string) tk_post('adaptive_pow', '1') === '0' ? 0 : 1;
+    tk_update_options($values);
 
     wp_redirect(add_query_arg(array('page'=>'tool-kits-security-spam','tk_tab'=>'captcha','tk_saved'=>1), admin_url('admin.php')));
     exit;

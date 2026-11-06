@@ -256,6 +256,7 @@ function tk_report_option_keys(): array {
         'geo_crawler_preview', 'geo_ai_access_report', 'geo_ai_radar_report', 'geo_fix_history',
         'operations_health_report', 'smtp_dns_report', 'image_opt_compression_report', 'image_opt_cleanup_report', 'image_opt_queue',
         'malware_scan_report', 'tk_fim_last_scan_result', 'toolkits_audit_log', 'antispam_log', 'otp_login_audit_log',
+        'vulnerability_scan_report', 'smtp_test_log', 'smtp_last_transport', 'indexnow_queue', 'monitoring_tamper_hashes',
     );
 }
 
@@ -659,12 +660,25 @@ function tk_killswitch_maybe_recover(): void {
         tk_killswitch_clear_recovery_state();
         return;
     }
-    $opts = $snapshot['options'];
+    // Roll back only the hardening rules the snapshot guards. Restoring the whole snapshot also
+    // reverted unrelated settings (license state, other modules) saved since it was taken.
+    $snapshot_opts = $snapshot['options'];
+    $opts = tk_get_options();
+    foreach (array_keys($opts) as $opt_key) {
+        if (tk_killswitch_is_recoverable_key((string) $opt_key) && !array_key_exists($opt_key, $snapshot_opts)) {
+            unset($opts[$opt_key]);
+        }
+    }
+    foreach ($snapshot_opts as $opt_key => $opt_value) {
+        if (tk_killswitch_is_recoverable_key((string) $opt_key)) {
+            $opts[$opt_key] = $opt_value;
+        }
+    }
     $last_key = get_option('tk_killswitch_last_key', '');
     $last_context = get_option('tk_killswitch_last_context', '');
     $recovery_key = '';
     if (tk_killswitch_is_armed_context($last_context)) {
-        $last_key = tk_killswitch_normalize_recovery_key($last_key, $opts);
+        $last_key = tk_killswitch_normalize_recovery_key($last_key, $snapshot_opts);
         if ($last_key !== '') {
             $opts[$last_key] = 0;
             $recovery_key = $last_key;
@@ -767,6 +781,24 @@ function tk_tamper_detect_files(): array {
     );
 }
 
+// Updating Tool Kits replaces its files; without a fresh baseline every updated file stays
+// "changed" forever. An empty baseline is re-captured by the next scan.
+add_action('upgrader_process_complete', 'tk_tamper_reset_baseline_after_update', 10, 2);
+function tk_tamper_reset_baseline_after_update($upgrader, $hook_extra): void {
+    if (!is_array($hook_extra) || ($hook_extra['type'] ?? '') !== 'plugin' || !defined('TK_PATH')) {
+        return;
+    }
+    $plugin_file = plugin_basename(TK_PATH . 'tool-kits.php');
+    $plugins = isset($hook_extra['plugins']) && is_array($hook_extra['plugins']) ? $hook_extra['plugins'] : array();
+    if (!empty($hook_extra['plugin'])) {
+        $plugins[] = $hook_extra['plugin'];
+    }
+    // Zip-upload replacement reports action 'install' without naming the plugin.
+    if (in_array($plugin_file, $plugins, true) || ($hook_extra['action'] ?? '') === 'install') {
+        tk_update_option('monitoring_tamper_hashes', array());
+    }
+}
+
 function tk_tamper_detect_security(): array {
     $checks = array(
         'hardening_disable_file_editor' => 'File editor disabled',
@@ -819,6 +851,7 @@ function tk_tamper_maybe_alert(): void {
     $disabled = tk_tamper_detect_security();
     $has_file_changes = !empty($file_changes['added']) || !empty($file_changes['removed']) || !empty($file_changes['changed']);
     if (!$has_file_changes && empty($disabled)) {
+        delete_option('tk_tamper_last_alert_signature');
         return;
     }
     $lines = array();
@@ -838,7 +871,13 @@ function tk_tamper_maybe_alert(): void {
     }
     $subject = 'Tool Kits: Tamper detection alert';
     $body = implode("\n\n", $lines);
+    // Alert once per distinct change set instead of re-sending the same findings every day.
+    $signature = sha1($body);
+    if (get_option('tk_tamper_last_alert_signature', '') === $signature) {
+        return;
+    }
     wp_mail($email, $subject, $body);
+    update_option('tk_tamper_last_alert_signature', $signature, false);
     set_transient('tk_tamper_alerted', 1, DAY_IN_SECONDS);
 }
 
@@ -1380,7 +1419,8 @@ function tk_run_versioned_upgrades(): void {
     if ($stored_version !== '' && version_compare($stored_version, '2.7.66', '<')) {
         tk_upgrade_to_2766_split_runtime_logs();
     }
-    if ($stored_version !== '' && version_compare($stored_version, '2.7.67', '<')) {
+    if ($stored_version !== '') {
+        // Idempotent; runs on every version change so keys added to tk_report_option_keys() later move too.
         tk_upgrade_to_2767_split_reports();
     }
     update_option('tk_version', $current_version, false);
@@ -1777,6 +1817,10 @@ function tk_ip_in_ranges(string $ip, array $ranges): bool {
         if ($net_bin === false || strlen($net_bin) !== strlen($ip_bin)) {
             continue;
         }
+        // '10.0.0.5/', '/abc' or '/-1' used to cast to 0 and match every address.
+        if ($bits !== null && (!preg_match('/^\d{1,3}$/D', $bits) || (int) $bits > strlen($ip_bin) * 8)) {
+            continue;
+        }
         $bits = $bits === null ? strlen($ip_bin) * 8 : (int) $bits;
         $bytes = intdiv($bits, 8);
         if ($bytes > 0 && substr($ip_bin, 0, $bytes) !== substr($net_bin, 0, $bytes)) {
@@ -2147,8 +2191,8 @@ function tk_toolkits_ip_allowed(): bool {
     if (empty($allowlist)) {
         return true;
     }
-    $ip = tk_get_ip();
-    return in_array($ip, $allowlist, true);
+    // Exact match on binary form so differently written IPv6 addresses still match.
+    return tk_ip_in_ranges(tk_get_ip(), $allowlist);
 }
 
 function tk_toolkits_capability(): string {
@@ -2747,11 +2791,15 @@ function tk_toolkits_audit_log_option_change($key, $old, $new): void {
         'heartbeat_http_pass',
         'monitoring_healthcheck_key',
         'toolkits_ip_allowlist',
+        'firewall_ip_allowlist',
     );
+    // Passwords, client secrets, OAuth tokens and API/license keys must never reach the audit log in clear text.
+    $masked = in_array($key, $sensitive, true)
+        || preg_match('/(?:^|_)(?:pass|password|key)(?:_|$)|secret|token/', (string) $key) === 1;
     $detail = array(
         'key' => $key,
-        'from' => in_array($key, $sensitive, true) ? '***' : (is_scalar($old) ? (string) $old : gettype($old)),
-        'to' => in_array($key, $sensitive, true) ? '***' : (is_scalar($new) ? (string) $new : gettype($new)),
+        'from' => $masked ? '***' : (is_scalar($old) ? (string) $old : gettype($old)),
+        'to' => $masked ? '***' : (is_scalar($new) ? (string) $new : gettype($new)),
     );
     tk_toolkits_audit_log('option_update', $detail);
 }
@@ -3090,12 +3138,50 @@ function tk_maybe_unserialize_replace($find, $replace, $value) {
     $find = ($find === null) ? '' : (string) $find;
     $replace = ($replace === null) ? '' : (string) $replace;
 
-    $un = @unserialize($value);
+    // Untouched values stay byte-identical (re-serializing can reformat floats or drop references).
+    if ($find === '' || strpos($value, $find) === false) {
+        return $value;
+    }
+
+    // allowed_classes=false: never run __wakeup/__destruct of plugin classes during a migration.
+    $un = @unserialize($value, array('allowed_classes' => false));
     if ($un !== false || $value === 'b:0;') {
-        $un = tk_recursive_replace($find, $replace, $un);
-        return serialize($un);
+        return serialize(tk_serialized_data_replace($find, $replace, $un));
+    }
+    // Corrupt serialized data: a plain replace would only break the s:N: lengths further.
+    if (is_serialized($value)) {
+        return $value;
     }
     return str_replace($find, $replace, $value);
+}
+
+/**
+ * Replace inside an unserialized value. Strings go back through tk_maybe_unserialize_replace()
+ * so double-serialized data gets correct inner lengths.
+ */
+function tk_serialized_data_replace(string $find, string $replace, $data) {
+    if (is_string($data)) {
+        return tk_maybe_unserialize_replace($find, $replace, $data);
+    }
+    if (is_array($data)) {
+        foreach ($data as $k => $v) {
+            $data[$k] = tk_serialized_data_replace($find, $replace, $v);
+        }
+        return $data;
+    }
+    if ($data instanceof __PHP_Incomplete_Class) {
+        // Incomplete objects cannot be modified in place. Rebuild from the (array) cast, which keeps
+        // the mangled protected/private property names, and restore the original class name.
+        $props = (array) $data;
+        $class = (string) $props['__PHP_Incomplete_Class_Name'];
+        unset($props['__PHP_Incomplete_Class_Name']);
+        foreach ($props as $k => $v) {
+            $props[$k] = tk_serialized_data_replace($find, $replace, $v);
+        }
+        $rebuilt = @unserialize('O:' . strlen($class) . ':"' . $class . '"' . substr(serialize($props), 1), array('allowed_classes' => false));
+        return $rebuilt !== false ? $rebuilt : $data;
+    }
+    return $data;
 }
 
 /**

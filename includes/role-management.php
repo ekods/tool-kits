@@ -374,7 +374,7 @@ function tk_role_management_allowed_menus_for_current_user(): ?array {
 
     $rules = tk_role_management_menu_rules();
     $matched = false;
-    $allowed = array('index.php');
+    $allowed = array('index.php', 'profile.php');
     foreach ((array) $user->roles as $role_slug) {
         $role_slug = sanitize_key((string) $role_slug);
         if (!array_key_exists($role_slug, $rules)) {
@@ -491,7 +491,8 @@ function tk_role_management_request_menu_candidates(): array {
         'users.php' => 'users.php',
         'user-new.php' => 'users.php',
         'user-edit.php' => 'users.php',
-        'profile.php' => 'users.php',
+        // Every user's own profile, not the Users screen; restricted roles must still reach it.
+        'profile.php' => 'profile.php',
         'tools.php' => 'tools.php',
         'import.php' => 'tools.php',
         'export.php' => 'tools.php',
@@ -862,10 +863,8 @@ function tk_role_management_redirect(string $status, string $role_slug = ''): vo
 }
 
 function tk_role_management_save(): void {
-    if (!current_user_can('manage_options')) {
-        wp_die(esc_html__('Forbidden', 'tool-kits'), '', array('response' => 403));
-    }
-    tk_check_nonce('tk_role_management_save');
+    // Same gate as other Tool Kits handlers: owner-only mode and the IP allowlist apply here too.
+    tk_require_admin_post('tk_role_management_save');
 
     $original_slug = isset($_POST['original_role_slug'])
         ? sanitize_key(wp_unslash((string) $_POST['original_role_slug']))
@@ -996,10 +995,8 @@ function tk_role_management_save(): void {
 }
 
 function tk_role_management_delete(): void {
-    if (!current_user_can('manage_options')) {
-        wp_die(esc_html__('Forbidden', 'tool-kits'), '', array('response' => 403));
-    }
-    tk_check_nonce('tk_role_management_delete');
+    // Same gate as other Tool Kits handlers: owner-only mode and the IP allowlist apply here too.
+    tk_require_admin_post('tk_role_management_delete');
 
     $role_slug = isset($_POST['role_slug'])
         ? sanitize_key(wp_unslash((string) $_POST['role_slug']))

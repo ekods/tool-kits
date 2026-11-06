@@ -56,9 +56,10 @@ function tk_lazy_html_buffer($html) {
 }
 
 function tk_lazy_html_upsert_attr($tag, $attr, $value) {
+    // (?<![\w-]) keeps data-loading=, data-fetchpriority= etc. from matching as the real attribute.
     $attr = preg_quote($attr, '/');
-    if (preg_match('/\b' . $attr . '\s*=\s*("|\').*?\1/i', $tag)) {
-        return (string) preg_replace('/\b' . $attr . '\s*=\s*("|\').*?\1/i', $attr . '="' . esc_attr($value) . '"', $tag, 1);
+    if (preg_match('/(?<![\w-])' . $attr . '\s*=\s*("|\').*?\1/i', $tag)) {
+        return (string) preg_replace('/(?<![\w-])' . $attr . '\s*=\s*("|\').*?\1/i', $attr . '="' . esc_attr($value) . '"', $tag, 1);
     }
     return (string) preg_replace('/<img\b/i', '<img ' . $attr . '="' . esc_attr($value) . '"', $tag, 1);
 }

@@ -57,10 +57,14 @@ function tk_license_validate(bool $force = false): array {
     $message = (string) tk_get_option('license_message', '');
     $checked = (int) tk_get_option('license_last_checked', 0);
     $verified = tk_license_features_enabled();
+    // A genuine receipt whose features stay off for this request (e.g. www/apex alias or
+    // proxy port in HTTP_HOST) would otherwise trigger a blocking check on every load.
+    // The throttle only skips the network call; it never enables features.
+    $host_mismatch = !$verified && $status === 'valid' && tk_license_has_valid_signature();
     // An invalid/legacy receipt always triggers revalidation; changing the local
     // timestamp or status cannot extend the issuer's signed validity window.
-    if (!$force && ($status !== 'valid' || $verified) && $checked > 0 && $checked <= $now
-        && $now - $checked < ($verified && tk_get_option('license_last_error_message', '') !== '' ? 300 : 21600)) {
+    if (!$force && ($status !== 'valid' || $verified || $host_mismatch) && $checked > 0 && $checked <= $now
+        && $now - $checked < ($host_mismatch ? 600 : ($verified && tk_get_option('license_last_error_message', '') !== '' ? 300 : 21600))) {
         return array('status' => $status, 'message' => $message);
     }
     $key = trim((string) tk_get_option('license_key', ''));
@@ -84,17 +88,20 @@ function tk_license_validate(bool $force = false): array {
             $response = tk_toolkits_signed_post($url, $body, $now, array('timeout' => 10, 'license_request' => true));
             $network_error = is_wp_error($response);
             $code = $network_error ? 0 : (int) wp_remote_retrieve_response_code($response);
+            $raw = $network_error ? '' : (string) wp_remote_retrieve_body($response);
+            $data = strlen($raw) <= 65536 ? json_decode($raw, true, 16) : null;
+            // Only a parsed issuer denial (ok:false) is a verdict; a bare 4xx can be a CDN
+            // challenge or a 404 during deploy and is treated like an outage.
+            $unexpected_4xx = $code >= 400 && $code < 500 && !(is_array($data) && ($data['ok'] ?? null) === false);
             // A temporary outage may use an already verified receipt, but only
             // until its original signed deadline. Never renew it locally.
-            if (($network_error || $code >= 500 || $code === 429) && $verified && tk_license_features_enabled()) {
+            if (($network_error || $code >= 500 || $code === 429 || $unexpected_4xx) && $status === 'valid' && tk_license_has_valid_signature()) {
                 $result = array('status' => 'valid', 'message' => 'License server temporarily unavailable. Using the existing signed license until its original expiry.');
                 tk_update_options(array('license_last_checked' => $now, 'license_last_failure' => $now, 'license_last_error_message' => $result['message']));
                 return $result;
             }
             if ($network_error) { $failure = $response->get_error_message(); }
             else {
-                $raw = (string) wp_remote_retrieve_body($response);
-                $data = strlen($raw) <= 65536 ? json_decode($raw, true, 16) : null;
                 $claims = is_array($data) && ($data['ok'] ?? null) === true && ($data['status'] ?? '') === 'valid'
                     && $code >= 200 && $code < 300 ? tk_license_verified_claims($nonce, $data['receipt'] ?? array()) : false;
                 if ($claims !== false) {

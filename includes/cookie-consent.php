@@ -6,7 +6,32 @@ function tk_cookie_consent_init() {
         return;
     }
 
+    // Before Google Tag Manager (-100) and gtag (1), so tags start with storage denied until the visitor agrees.
+    add_action('wp_head', 'tk_cookie_consent_render_consent_mode', -101);
     add_action('wp_footer', 'tk_cookie_consent_render_banner', 100);
+}
+
+/**
+ * Google Consent Mode v2 defaults. Decided in the browser from the stored choice, so it stays correct on
+ * cached pages; GA4/GTM then honor "Reject" instead of setting analytics and advertising cookies.
+ */
+function tk_cookie_consent_render_consent_mode() {
+    ?>
+    <script>
+    (function() {
+        window.dataLayer = window.dataLayer || [];
+        window.gtag = window.gtag || function() { window.dataLayer.push(arguments); };
+        window.gtag('consent', 'default', {ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied', analytics_storage: 'denied', wait_for_update: 500});
+        var match = document.cookie.match(/(?:^|;\s*)tk_cookie_consent=([^;]*)/);
+        if (!match) { return; }
+        try {
+            var choice = JSON.parse(decodeURIComponent(match[1]));
+            var ads = choice.marketing ? 'granted' : 'denied';
+            window.gtag('consent', 'update', {ad_storage: ads, ad_user_data: ads, ad_personalization: ads, analytics_storage: choice.analytics ? 'granted' : 'denied'});
+        } catch (e) {}
+    })();
+    </script>
+    <?php
 }
 
 function tk_cookie_consent_enabled(): bool {
@@ -436,17 +461,37 @@ function tk_cookie_consent_render_banner() {
             return null;
         }
 
-        // Persistent floating button
+        function storedChoice() {
+            try { return JSON.parse(decodeURIComponent(getCookie(cookieName) || '')); } catch (e) { return null; }
+        }
+
+        // Store the choice and pass it to Google Consent Mode (GA4/GTM) for this page view.
+        function saveChoice(analytics, marketing) {
+            setCookie(cookieName, encodeURIComponent(JSON.stringify({analytics: analytics, marketing: marketing})), expiryDays);
+            if (typeof window.gtag === 'function') {
+                var ads = marketing ? 'granted' : 'denied';
+                window.gtag('consent', 'update', {ad_storage: ads, ad_user_data: ads, ad_personalization: ads, analytics_storage: analytics ? 'granted' : 'denied'});
+            }
+            banner.classList.remove('tk-show');
+            floatingBtn.classList.add('tk-show');
+        }
+
+        // Persistent floating button (hidden by CSS until .tk-show)
         var floatingBtn = document.createElement('button');
         floatingBtn.id = 'tk-cookie-floating-btn';
         floatingBtn.className = 'tk-cookie-floating-btn';
         floatingBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><path d="M8.5 8.5v.01"/><path d="M16 12.5v.01"/><path d="M12 16v.01"/><path d="M11 12.5v.01"/></svg>';
         floatingBtn.setAttribute('aria-label', 'Cookie Preferences');
         document.body.appendChild(floatingBtn);
-        floatingBtn.style.display = 'none';
 
         function openModal(e) {
             if (e) e.preventDefault();
+            // Show the current choice so visitors can change or withdraw it.
+            var choice = storedChoice();
+            if (choice) {
+                document.getElementById('tk-cookie-pref-analytics').checked = !!choice.analytics;
+                document.getElementById('tk-cookie-pref-marketing').checked = !!choice.marketing;
+            }
             modal.classList.add('tk-show');
             overlay.classList.add('tk-show');
         }
@@ -458,25 +503,19 @@ function tk_cookie_consent_render_banner() {
         if (getCookie(cookieName)) {
             // Already acted, show floating button instead of banner
             floatingBtn.classList.add('tk-show');
-            return;
+        } else {
+            banner.classList.add('tk-show');
         }
-
-        // Show banner, hide floating button initially
-        banner.classList.add('tk-show');
 
         // Banner Actions
         document.getElementById('tk-cookie-btn-accept').addEventListener('click', function(e) {
             e.preventDefault();
-            setCookie(cookieName, JSON.stringify({analytics: true, marketing: true}), expiryDays);
-            banner.classList.remove('tk-show');
-            floatingBtn.classList.add('tk-show');
+            saveChoice(true, true);
         });
 
         document.getElementById('tk-cookie-btn-reject').addEventListener('click', function(e) {
             e.preventDefault();
-            setCookie(cookieName, JSON.stringify({analytics: false, marketing: false}), expiryDays);
-            banner.classList.remove('tk-show');
-            floatingBtn.classList.add('tk-show');
+            saveChoice(false, false);
         });
 
         // Modal Actions
@@ -493,13 +532,11 @@ function tk_cookie_consent_render_banner() {
         document.getElementById('tk-cookie-btn-save-pref').addEventListener('click', function() {
             var allowAnalytics = document.getElementById('tk-cookie-pref-analytics').checked;
             var allowMarketing = document.getElementById('tk-cookie-pref-marketing').checked;
-            
-            setCookie(cookieName, JSON.stringify({analytics: allowAnalytics, marketing: allowMarketing}), expiryDays);
-            
+
+            saveChoice(allowAnalytics, allowMarketing);
+
             modal.classList.remove('tk-show');
             overlay.classList.remove('tk-show');
-            banner.classList.remove('tk-show');
-            floatingBtn.classList.add('tk-show');
         });
     });
     </script>

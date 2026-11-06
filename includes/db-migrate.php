@@ -181,7 +181,25 @@ function tk_db_export_temp_dir(): string {
     if (!file_exists($base)) {
         wp_mkdir_p($base);
     }
+    // Dumps contain the whole database: deny web access (Apache/LiteSpeed) and block directory listing.
+    if (!file_exists($base . '.htaccess')) {
+        @file_put_contents($base . '.htaccess', "Require all denied\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n");
+    }
+    if (!file_exists($base . 'index.php')) {
+        @file_put_contents($base . 'index.php', "<?php\n// Silence is golden.\n");
+    }
+    tk_db_export_prune_temp_dir($base);
     return $base;
+}
+
+// Prepared exports are downloadable for 10 minutes; keep undownloaded ones (e.g. a prefix-change backup)
+// for a day so they can still be fetched over FTP, then remove them.
+function tk_db_export_prune_temp_dir(string $base): void {
+    foreach ((array) glob($base . '*.sql*') as $file) {
+        if (is_string($file) && is_file($file) && time() - (int) @filemtime($file) > DAY_IN_SECONDS) {
+            @unlink($file);
+        }
+    }
 }
 
 function tk_db_escape_identifier(string $identifier): string {
@@ -298,7 +316,7 @@ function tk_db_list_export_objects(): array {
     foreach ($results as $row) {
         $name = isset($row[0]) ? (string) $row[0] : '';
         $type = strtoupper(isset($row[1]) ? (string) $row[1] : 'BASE TABLE');
-        if ($name === '') {
+        if ($name === '' || !tk_db_table_in_scope($name)) {
             continue;
         }
         if ($type === 'VIEW') {
@@ -309,6 +327,86 @@ function tk_db_list_export_objects(): array {
     }
 
     return $objects;
+}
+
+/**
+ * Export/replace may only touch this install's tables: a shared database can hold other apps,
+ * and on multisite only a super admin may reach network tables or other sites' tables.
+ */
+function tk_db_table_in_scope(string $name): bool {
+    global $wpdb;
+    if (!is_multisite()) {
+        return strpos($name, $wpdb->prefix) === 0;
+    }
+    if (is_super_admin()) {
+        return strpos($name, $wpdb->base_prefix) === 0;
+    }
+    if (strpos($name, $wpdb->prefix) !== 0) {
+        return false;
+    }
+    if ($wpdb->prefix !== $wpdb->base_prefix) {
+        return true;
+    }
+    // The main site shares its prefix with network tables and with other sites' "{prefix}{id}_" tables.
+    if (in_array($name, array_values($wpdb->tables('global', true)), true)) {
+        return false;
+    }
+    if (preg_match('/^' . preg_quote($wpdb->base_prefix, '/') . '(\d+)_/', $name, $m) && get_site((int) $m[1])) {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Primary key columns in index order (empty when the table has no primary key).
+ */
+function tk_db_primary_key_columns(string $table): array {
+    global $wpdb;
+    $keys = $wpdb->get_results("SHOW KEYS FROM `" . tk_db_escape_identifier($table) . "` WHERE Key_name = 'PRIMARY'", ARRAY_A);
+    $columns = array();
+    foreach ((array) $keys as $key) {
+        $columns[(int) $key['Seq_in_index']] = (string) $key['Column_name'];
+    }
+    ksort($columns);
+    return array_values($columns);
+}
+
+/**
+ * Yield a table's rows in bounded chunks so large tables never sit in memory at once.
+ * Single-column keys use keyset paging; other tables fall back to ordered LIMIT/OFFSET.
+ *
+ * @throws RuntimeException when a read fails.
+ */
+function tk_db_table_row_chunks(string $table, array $pk, int $size = 500) {
+    global $wpdb;
+    $from = '`' . tk_db_escape_identifier($table) . '`';
+    $order = empty($pk) ? '' : ' ORDER BY `' . implode('`, `', array_map('tk_db_escape_identifier', $pk)) . '`';
+    $keyset = count($pk) === 1;
+    $last = null;
+    $offset = 0;
+    while (true) {
+        if ($keyset) {
+            $where = $last === null ? '' : $wpdb->prepare(' WHERE `' . tk_db_escape_identifier($pk[0]) . '` > %s', $last);
+            $rows = $wpdb->get_results("SELECT * FROM $from$where$order LIMIT $size", ARRAY_A);
+        } else {
+            $rows = $wpdb->get_results("SELECT * FROM $from$order LIMIT $size OFFSET $offset", ARRAY_A);
+        }
+        if (!empty($wpdb->last_error)) {
+            throw new RuntimeException((string) $wpdb->last_error);
+        }
+        if (empty($rows)) {
+            return;
+        }
+        if ($keyset) {
+            $last = (string) $rows[count($rows) - 1][$pk[0]];
+        }
+        $offset += $size;
+        $count = count($rows);
+        yield $rows;
+        if ($count < $size) {
+            return;
+        }
+    }
 }
 
 function tk_db_normalize_create_statement(string $statement, string $type = 'table'): string {
@@ -407,7 +505,8 @@ function tk_db_export_with_pairs(array $pairs): array {
     tk_log(sprintf('Preparing preload export for %s (%d pairs).', $prefix, count($pairs)));
 
     $dir = tk_db_export_temp_dir();
-    $sql_path = $dir . $prefix . '-preload-' . date('dmY-His') . '.sql';
+    // Random suffix: on servers that ignore .htaccess (nginx) the name must not be guessable.
+    $sql_path = $dir . $prefix . '-preload-' . date('dmY-His') . '-' . wp_generate_password(20, false, false) . '.sql';
     $gz_path = $sql_path . '.gz';
 
     $fh = @fopen($sql_path, 'wb');
@@ -438,28 +537,30 @@ function tk_db_export_with_pairs(array $pairs): array {
             fwrite($fh, $create[1] . ";\n\n");
         }
 
-        $rows = $wpdb->get_results("SELECT * FROM `$table`", ARRAY_A);
-        if (!empty($wpdb->last_error)) {
+        $exported_rows = 0;
+        try {
+            foreach (tk_db_table_row_chunks($table, tk_db_primary_key_columns($table)) as $rows) {
+                foreach ($rows as $row) {
+                    $cols = array_keys($row);
+                    $vals = array();
+                    foreach ($row as $col => $v) {
+                        if (is_null($v)) {
+                            $vals[] = "NULL";
+                            continue;
+                        }
+                        $processed = is_string($v) ? tk_db_apply_pairs_to_value($v, $pairs, $col, $row) : $v;
+                        $vals[] = tk_db_quote_value((string) $processed);
+                    }
+                    fwrite($fh, "INSERT INTO `$table` (`" . implode("`,`", array_map('tk_db_escape_identifier', $cols)) . "`) VALUES (" . implode(",", $vals) . ");\n");
+                    $exported_rows++;
+                }
+            }
+        } catch (RuntimeException $e) {
             fclose($fh);
             @unlink($sql_path);
-            return ['ok' => false, 'message' => 'Failed reading rows for table `' . $table . '`: ' . $wpdb->last_error];
+            return ['ok' => false, 'message' => 'Failed reading rows for table `' . $table . '`: ' . $e->getMessage()];
         }
-        $exported_rows = 0;
-        if (!empty($rows)) {
-            foreach ($rows as $row) {
-                $cols = array_keys($row);
-                $vals = array();
-                foreach ($row as $col => $v) {
-                    if (is_null($v)) {
-                        $vals[] = "NULL";
-                        continue;
-                    }
-                    $processed = is_string($v) ? tk_db_apply_pairs_to_value($v, $pairs, $col, $row) : $v;
-                    $vals[] = tk_db_quote_value((string) $processed);
-                }
-                fwrite($fh, "INSERT INTO `$table` (`" . implode("`,`", array_map('tk_db_escape_identifier', $cols)) . "`) VALUES (" . implode(",", $vals) . ");\n");
-                $exported_rows++;
-            }
+        if ($exported_rows > 0) {
             fwrite($fh, "\n");
         }
         if ($expected_rows !== $exported_rows) {
@@ -485,8 +586,8 @@ function tk_db_export_with_pairs(array $pairs): array {
     fwrite($fh, "SET FOREIGN_KEY_CHECKS=1;\n");
     fclose($fh);
 
-    $raw = file_get_contents($sql_path);
-    if ($raw === false) {
+    $sql_handle = @fopen($sql_path, 'rb');
+    if (!$sql_handle) {
         @unlink($sql_path);
         return ['ok' => false, 'message' => 'Failed reading export file.'];
     }
@@ -495,16 +596,23 @@ function tk_db_export_with_pairs(array $pairs): array {
 
     $gz_handle = @gzopen($gz_path, 'wb6');
     if (!$gz_handle) {
+        fclose($sql_handle);
         @unlink($sql_path);
         return ['ok' => false, 'message' => 'Failed creating compressed export.'];
     }
 
-    if (@gzwrite($gz_handle, $raw) === false) {
-        @gzclose($gz_handle);
-        @unlink($sql_path);
-        @unlink($gz_path);
-        return ['ok' => false, 'message' => 'Failed writing compressed export.'];
+    // Compress in 1 MB pieces; the dump may be far larger than memory_limit.
+    while (!feof($sql_handle)) {
+        $piece = fread($sql_handle, 1048576);
+        if ($piece === false || ($piece !== '' && @gzwrite($gz_handle, $piece) === false)) {
+            fclose($sql_handle);
+            @gzclose($gz_handle);
+            @unlink($sql_path);
+            @unlink($gz_path);
+            return ['ok' => false, 'message' => $piece === false ? 'Failed reading export file.' : 'Failed writing compressed export.'];
+        }
     }
+    fclose($sql_handle);
 
     gzclose($gz_handle);
     @unlink($sql_path);
@@ -1081,52 +1189,65 @@ function tk_db_export_handler() {
         wp_die('No tables found.');
     }
 
-    $sql = "-- Tool Kits SQL Export\n";
-    $sql .= "-- Site: " . home_url('/') . "\n";
-    $sql .= "-- Date: " . gmdate('c') . " (UTC)\n\n";
-    $sql .= tk_db_export_additional_objects_notice(tk_db_get_additional_export_objects());
-    $sql .= "SET FOREIGN_KEY_CHECKS=0;\n\n";
+    // Stream the dump: building it as one string needs several times the database size in memory.
+    // The length is unknown up front, so no Content-Length header.
+    $filename = $prefix . '-export-' . date('Y-m-d-His') . '.sql';
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/sql; charset=utf-8');
+    header('Content-Disposition: attachment; filename=' . $filename);
+
+    echo "-- Tool Kits SQL Export\n";
+    echo "-- Site: " . home_url('/') . "\n";
+    echo "-- Date: " . gmdate('c') . " (UTC)\n\n";
+    echo tk_db_export_additional_objects_notice(tk_db_get_additional_export_objects());
+    echo "SET FOREIGN_KEY_CHECKS=0;\n\n";
 
     foreach ($tables as $table) {
         $create = $wpdb->get_row("SHOW CREATE TABLE `$table`", ARRAY_N);
         if (!empty($create[1])) {
-            $sql .= "DROP TABLE IF EXISTS `$table`;\n";
-            $sql .= $create[1] . ";\n\n";
+            echo "DROP TABLE IF EXISTS `$table`;\n";
+            echo $create[1] . ";\n\n";
         }
 
-        $rows = $wpdb->get_results("SELECT * FROM `$table`", ARRAY_A);
-        if (!empty($rows)) {
-            foreach ($rows as $row) {
-                $cols = array_keys($row);
-                $vals = array();
-                foreach ($row as $v) {
-                    if (is_null($v)) {
-                        $vals[] = "NULL";
-                    } else {
-                        $vals[] = tk_db_quote_value((string) $v);
+        $exported_rows = 0;
+        try {
+            foreach (tk_db_table_row_chunks($table, tk_db_primary_key_columns($table)) as $rows) {
+                foreach ($rows as $row) {
+                    $cols = array_keys($row);
+                    $vals = array();
+                    foreach ($row as $v) {
+                        if (is_null($v)) {
+                            $vals[] = "NULL";
+                        } else {
+                            $vals[] = tk_db_quote_value((string) $v);
+                        }
                     }
+                    echo "INSERT INTO `$table` (`" . implode("`,`", array_map('tk_db_escape_identifier', $cols)) . "`) VALUES (" . implode(",", $vals) . ");\n";
+                    $exported_rows++;
                 }
-                $sql .= "INSERT INTO `$table` (`" . implode("`,`", array_map('tk_db_escape_identifier', $cols)) . "`) VALUES (" . implode(",", $vals) . ");\n";
+                flush();
             }
-            $sql .= "\n";
+        } catch (RuntimeException $e) {
+            // Headers are already sent; end with a marker instead of a dump that looks complete.
+            echo "\n-- Export aborted: failed reading rows for table `$table`: " . str_replace(array("\r", "\n"), ' ', $e->getMessage()) . "\n";
+            exit;
+        }
+        if ($exported_rows > 0) {
+            echo "\n";
         }
     }
 
     foreach ($views as $view) {
         $create = $wpdb->get_row("SHOW CREATE TABLE `$view`", ARRAY_N);
         if (!empty($create[1])) {
-            $sql .= "DROP VIEW IF EXISTS `$view`;\n";
-            $sql .= tk_db_normalize_create_statement((string) $create[1], 'view') . ";\n\n";
+            echo "DROP VIEW IF EXISTS `$view`;\n";
+            echo tk_db_normalize_create_statement((string) $create[1], 'view') . ";\n\n";
         }
     }
 
-    $sql .= "SET FOREIGN_KEY_CHECKS=1;\n";
-
-    $filename = $prefix . '-export-' . date('Y-m-d-His') . '.sql';
-    header('Content-Type: application/sql; charset=utf-8');
-    header('Content-Disposition: attachment; filename=' . $filename);
-    header('Content-Length: ' . strlen($sql));
-    echo $sql;
+    echo "SET FOREIGN_KEY_CHECKS=1;\n";
     exit;
 }
 
@@ -1185,8 +1306,28 @@ function tk_db_import_handler() {
         exit;
     }
 
-    $path = isset($uploaded['file']) ? (string) $uploaded['file'] : '';
-    $file_name = $path !== '' ? basename($path) : '';
+    $uploaded_path = isset($uploaded['file']) ? (string) $uploaded['file'] : '';
+    $file_name = $uploaded_path !== '' ? basename($uploaded_path) : '';
+    // The dump must not stay in the public uploads/YYYY/MM folder while (or if) the import runs:
+    // move it into the protected export dir under an unguessable name, and delete it even on a fatal/timeout.
+    $path = tk_db_export_temp_dir() . 'import-' . wp_generate_password(20, false, false) . (substr($uploaded_path, -3) === '.gz' ? '.sql.gz' : '.sql');
+    if ($uploaded_path === '' || !@rename($uploaded_path, $path)) {
+        if ($uploaded_path !== '' && file_exists($uploaded_path)) {
+            @unlink($uploaded_path);
+        }
+        wp_safe_redirect(add_query_arg(array(
+            'page' => 'tool-kits-db',
+            'tk_tab' => 'import-db',
+            'tk_import_status' => 'fail',
+            'tk_import_msg' => 'Could not move the uploaded file to a protected folder.',
+        ), admin_url('admin.php')));
+        exit;
+    }
+    register_shutdown_function(static function () use ($path) {
+        if (file_exists($path)) {
+            @unlink($path);
+        }
+    });
     $result = tk_db_import_sql_file($path);
     if ($path !== '' && file_exists($path)) {
         @unlink($path);
@@ -1219,64 +1360,25 @@ function tk_db_import_sql_file(string $path): array {
         return array('ok' => false, 'message' => 'Failed to open import file.');
     }
 
-    $in_block_comment = false;
-    $buffer = '';
+    $state = tk_db_sql_scan_state();
     $queries = 0;
     $errors = 0;
     $last_error = '';
 
-    while (!($is_gz ? gzeof($handle) : feof($handle))) {
+    while (true) {
         $line = $is_gz ? gzgets($handle) : fgets($handle);
-        if ($line === false) {
-            break;
-        }
-        $line = trim($line);
-        if ($line === '') {
-            continue;
-        }
-        if ($in_block_comment) {
-            $end = strpos($line, '*/');
-            if ($end === false) {
-                continue;
-            }
-            $line = substr($line, $end + 2);
-            $in_block_comment = false;
-            if (trim($line) === '') {
-                continue;
-            }
-        }
-        if (strpos($line, '/*') === 0) {
-            if (strpos($line, '*/') === false) {
-                $in_block_comment = true;
-                continue;
-            }
-            $line = preg_replace('/\/\*.*?\*\//', '', $line);
-            if (trim($line) === '') {
-                continue;
-            }
-        }
-        if (strpos($line, '--') === 0 || strpos($line, '#') === 0) {
-            continue;
-        }
-        $buffer .= $line . "\n";
-        if (substr(rtrim($line), -1) === ';') {
-            $res = $wpdb->query($buffer);
+        $statements = $line === false ? tk_db_sql_scan_finish($state) : tk_db_sql_scan_line($line, $state);
+        foreach ($statements as $statement) {
+            $res = $wpdb->query($statement);
             if ($res === false) {
                 $errors++;
                 $last_error = $wpdb->last_error;
             } else {
                 $queries++;
             }
-            $buffer = '';
         }
-    }
-    if ($buffer !== '') {
-        $res = $wpdb->query($buffer);
-        if ($res === false) {
-            $errors++;
-            $last_error = $wpdb->last_error;
-        } else {
-            $queries++;
+        if ($line === false) {
+            break;
         }
     }
 
@@ -1293,6 +1395,98 @@ function tk_db_import_sql_file(string $path): array {
     return array('ok' => true, 'message' => 'Import completed. Queries: ' . $queries);
 }
 
+function tk_db_sql_scan_state(): array {
+    // quote: open ' " or ` literal; comment: '' | 'skip' (dropped) | 'keep' (inside a statement).
+    return array('buffer' => '', 'quote' => '', 'comment' => '');
+}
+
+/**
+ * Split one line of an SQL dump into the statements it completes. Quote-aware, so a value
+ * containing ";" or "--" never ends a statement. Comments before a statement (including
+ * mysqldump's version comments such as "/*!40101 SET ... *\/;") are dropped, and empty
+ * statements are never returned.
+ */
+function tk_db_sql_scan_line(string $line, array &$state): array {
+    $statements = array();
+    $len = strlen($line);
+    $i = 0;
+    while ($i < $len) {
+        if ($state['comment'] !== '') {
+            $end = strpos($line, '*/', $i);
+            $stop = $end === false ? $len : $end + 2;
+            if ($state['comment'] === 'keep') {
+                $state['buffer'] .= substr($line, $i, $stop - $i);
+            }
+            if ($end !== false) {
+                $state['comment'] = '';
+            }
+            $i = $stop;
+            continue;
+        }
+        if ($state['quote'] !== '') {
+            $quote = $state['quote'];
+            // Identifiers (`) have no backslash escapes; all three allow a doubled quote.
+            $j = $i + strcspn($line, $quote === '`' ? '`' : $quote . '\\', $i);
+            if ($j >= $len) {
+                $state['buffer'] .= substr($line, $i);
+                break;
+            }
+            if ($line[$j] === '\\' || ($j + 1 < $len && $line[$j + 1] === $quote)) {
+                $state['buffer'] .= substr($line, $i, $j - $i + 2);
+                $i = $j + 2;
+                continue;
+            }
+            $state['buffer'] .= substr($line, $i, $j - $i + 1);
+            $state['quote'] = '';
+            $i = $j + 1;
+            continue;
+        }
+        $j = $i + strcspn($line, "'\"`;-#/", $i);
+        $state['buffer'] .= substr($line, $i, $j - $i);
+        if ($j >= $len) {
+            break;
+        }
+        $i = $j;
+        $char = $line[$i];
+        $at_start = trim($state['buffer']) === '';
+        if ($char === ';') {
+            if (!$at_start) {
+                $statements[] = trim($state['buffer']) . ';';
+            }
+            $state['buffer'] = '';
+            $i++;
+        } elseif ($char === "'" || $char === '"' || $char === '`') {
+            $state['quote'] = $char;
+            $state['buffer'] .= $char;
+            $i++;
+        } elseif ($char === '#' || ($char === '-' && substr($line, $i, 2) === '--' && ($at_start || $i + 2 >= $len || ctype_space($line[$i + 2])))) {
+            if (!$at_start) {
+                $state['buffer'] .= substr($line, $i);
+            }
+            break;
+        } elseif ($char === '/' && substr($line, $i, 2) === '/*') {
+            $state['comment'] = $at_start ? 'skip' : 'keep';
+            if (!$at_start) {
+                $state['buffer'] .= '/*';
+            }
+            $i += 2;
+        } else {
+            $state['buffer'] .= $char;
+            $i++;
+        }
+    }
+    return $statements;
+}
+
+/**
+ * The trailing statement of a dump that does not end with ";".
+ */
+function tk_db_sql_scan_finish(array &$state): array {
+    $statement = trim($state['buffer']);
+    $state = tk_db_sql_scan_state();
+    return $statement === '' ? array() : array($statement);
+}
+
 function tk_db_download_temp_export_handler() {
     if (!tk_is_admin_user()) wp_die('Forbidden');
     tk_check_nonce('tk_db_download_temp_export');
@@ -1307,6 +1501,9 @@ function tk_db_download_temp_export_handler() {
     header('Content-Disposition: attachment; filename="' . basename($path) . '"');
     header('Content-Length: ' . filesize($path));
     readfile($path);
+    // One download per prepared export; the dump must not stay on disk.
+    delete_transient('tk_db_temp_export_' . $token);
+    @unlink($path);
     exit;
 }
 
@@ -1548,46 +1745,40 @@ function tk_db_live_replace_handler() {
     $errors = [];
 
     foreach ($tables as $table) {
-        $rows = $wpdb->get_results("SELECT * FROM `$table`", ARRAY_A);
-        if (empty($rows)) {
-            continue;
-        }
-
-        $pk = '';
-        $cols = $wpdb->get_results("SHOW COLUMNS FROM `$table`");
-        foreach ($cols as $col) {
-            if ($col->Key === 'PRI') {
-                $pk = $col->Field;
-                break;
-            }
-        }
-
-        if (!$pk) {
+        // Every primary key column goes into the WHERE: matching only the first column of a
+        // composite key would overwrite all rows that share it.
+        $pk = tk_db_primary_key_columns($table);
+        if (empty($pk)) {
             continue; // Can't update without PK easily
         }
 
-        foreach ($rows as $row) {
-            $update_data = array();
-            $update_format = array();
-            foreach ($row as $col => $v) {
-                if (is_null($v)) continue;
-                if ($col === $pk) continue; // Don't replace primary key value
+        try {
+            foreach (tk_db_table_row_chunks($table, $pk) as $rows) {
+                foreach ($rows as $row) {
+                    $update_data = array();
+                    foreach ($row as $col => $v) {
+                        if (is_null($v)) continue;
+                        if (in_array($col, $pk, true)) continue; // Don't replace primary key value
 
-                $processed = is_string($v) ? tk_db_apply_pairs_to_value($v, $pairs, $col, $row) : $v;
-                if ($processed !== $v) {
-                    $update_data[$col] = $processed;
-                    $update_format[] = '%s';
+                        $processed = is_string($v) ? tk_db_apply_pairs_to_value($v, $pairs, $col, $row) : $v;
+                        if ($processed !== $v) {
+                            $update_data[$col] = $processed;
+                        }
+                    }
+
+                    if (!empty($update_data)) {
+                        $where = array_intersect_key($row, array_flip($pk));
+                        $res = $wpdb->update($table, $update_data, $where);
+                        if ($res !== false) {
+                            $updated_rows++;
+                        } else {
+                            $errors[] = "Failed updating table $table at " . urldecode(http_build_query($where, '', ', '));
+                        }
+                    }
                 }
             }
-
-            if (!empty($update_data)) {
-                $res = $wpdb->update($table, $update_data, array($pk => $row[$pk]));
-                if ($res !== false) {
-                    $updated_rows++;
-                } else {
-                    $errors[] = "Failed updating table $table at $pk = " . $row[$pk];
-                }
-            }
+        } catch (RuntimeException $e) {
+            $errors[] = "Failed reading table $table: " . $e->getMessage();
         }
     }
 

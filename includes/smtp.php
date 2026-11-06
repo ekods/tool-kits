@@ -1572,6 +1572,14 @@ function tk_smtp_capture_last_transport($phpmailer): void {
         'secure' => isset($phpmailer->SMTPSecure) ? (string) $phpmailer->SMTPSecure : '',
         'auth' => !empty($phpmailer->SMTPAuth) ? 'on' : 'off',
     );
+    // Runs for every outgoing mail; only write when the delivery path changed, not just the timestamp.
+    $last = tk_smtp_last_transport();
+    unset($last['time']);
+    $compare = $data;
+    unset($compare['time']);
+    if ($last === $compare) {
+        return;
+    }
     tk_update_option('smtp_last_transport', $data);
 }
 

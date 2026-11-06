@@ -588,6 +588,13 @@ function tk_hardening_block_public_wp_cron_request(): void {
     if (tk_hardening_is_local_request()) {
         return;
     }
+    // spawn_cron() stores this token just before its loopback; behind a CDN/proxy the loopback arrives from a
+    // public IP, so the matching token is what proves the request came from this site.
+    $token = isset($_GET['doing_wp_cron']) ? (string) wp_unslash($_GET['doing_wp_cron']) : '';
+    $lock = $token !== '' ? get_transient('doing_cron') : false;
+    if (is_string($lock) && $lock !== '' && hash_equals($lock, $token)) {
+        return;
+    }
     status_header(403);
     nocache_headers();
     wp_die('Public WP-Cron access disabled.', 'Forbidden', array('response' => 403));
@@ -973,44 +980,28 @@ function tk_hardening_apply_recommended_defaults(): void {
     if (!tk_get_option('hardening_auto_toggle', 1)) {
         return;
     }
+    // Apply once; afterwards the administrator's choices stand, even if every option was turned off.
     if (tk_get_option('hardening_auto_applied', 0)) {
-        $keys = array(
-            'hardening_disable_file_editor',
-            'hardening_disable_xmlrpc',
-            'hardening_disable_rest_user_enum',
-            'hardening_reduce_wp_fingerprint',
-            'hardening_security_headers',
-            'hardening_csp_lite_enabled',
-            'hardening_server_aware_enabled',
-            'hardening_block_uploads_php',
-        );
-        $any_enabled = false;
-        foreach ($keys as $key) {
-            if (tk_get_option($key, 0)) {
-                $any_enabled = true;
-                break;
-            }
-        }
-        if ($any_enabled) {
-            return;
-        }
+        return;
     }
-    tk_update_option('hardening_disable_file_editor', 1);
-    tk_update_option('hardening_disable_xmlrpc', 1);
-    tk_update_option('hardening_xmlrpc_block_methods', 1);
-    tk_update_option('hardening_disable_rest_user_enum', 1);
-    tk_update_option('hardening_block_author_enumeration', 1);
-    tk_update_option('hardening_reduce_wp_fingerprint', 1);
-    tk_update_option('hardening_remove_query_ver', 1);
-    tk_update_option('hardening_disable_emojis', 1);
-    tk_update_option('hardening_clean_wp_head', 1);
-    tk_update_option('hardening_security_headers', 1);
-    tk_update_option('hardening_csp_lite_enabled', 1);
-    tk_update_option('hardening_hsts_enabled', 1);
-    tk_update_option('hardening_server_signature_hide', 1);
-    tk_update_option('hardening_server_aware_enabled', 1);
-    tk_update_option('hardening_block_uploads_php', 1);
-    tk_update_option('hardening_auto_applied', 1);
+    tk_update_options(array(
+        'hardening_disable_file_editor' => 1,
+        'hardening_disable_xmlrpc' => 1,
+        'hardening_xmlrpc_block_methods' => 1,
+        'hardening_disable_rest_user_enum' => 1,
+        'hardening_block_author_enumeration' => 1,
+        'hardening_reduce_wp_fingerprint' => 1,
+        'hardening_remove_query_ver' => 1,
+        'hardening_disable_emojis' => 1,
+        'hardening_clean_wp_head' => 1,
+        'hardening_security_headers' => 1,
+        'hardening_csp_lite_enabled' => 1,
+        'hardening_hsts_enabled' => 1,
+        'hardening_server_signature_hide' => 1,
+        'hardening_server_aware_enabled' => 1,
+        'hardening_block_uploads_php' => 1,
+        'hardening_auto_applied' => 1,
+    ));
 }
 
 function tk_hardening_block_uploads_php(): void {

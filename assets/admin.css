@@ -6,9 +6,9 @@
     --tk-muted: #667085;
     --tk-bg-soft: #f6f8fb;
     --tk-surface: #ffffff;
-    --tk-primary: #087f75;
-    --tk-primary-dark: #06665e;
-    --tk-accent: #0891b2;
+    --tk-primary: #4f46e5;
+    --tk-primary-dark: #4338ca;
+    --tk-accent: #14b8a6;
     --tk-success-bg: #e6f4ea;
     --tk-success-text: #0b6b2f;
     --tk-warn-bg: #fff4e5;
@@ -19,7 +19,7 @@
 
 .tk-hero {
     background:
-        linear-gradient(135deg, rgba(8, 127, 117, 0.18), transparent 42%),
+        linear-gradient(135deg, rgba(79, 70, 229, 0.18), transparent 42%),
         linear-gradient(135deg, #111827 0%, #1f2937 100%);
     padding: 42px 36px;
     border-radius: 16px;
@@ -49,7 +49,7 @@
     right: 0;
     width: 46%;
     height: 100%;
-    background: linear-gradient(120deg, transparent, rgba(8, 145, 178, 0.14));
+    background: linear-gradient(120deg, transparent, rgba(20, 184, 166, 0.14));
     border-radius: 0;
     filter: none;
 }
@@ -176,7 +176,7 @@
 .tk-tool-card:focus {
     color: var(--tk-text);
     border-color: #b9c9f7;
-    box-shadow: 0 16px 34px rgba(8, 127, 117, 0.12);
+    box-shadow: 0 16px 34px rgba(79, 70, 229, 0.12);
     transform: translateY(-1px);
     outline: none;
 }
@@ -444,46 +444,6 @@
 
 .tk-table-scroll {
     overflow-x: auto;
-}
-
-.tk-table {
-    border-collapse: separate;
-    border-spacing: 0;
-    width: 100%;
-    overflow: hidden;
-    border: 1px solid var(--tk-border-soft);
-    border-radius: 10px;
-}
-
-.tk-table td,
-.tk-table th {
-    vertical-align: top;
-}
-
-.tk-table th {
-    font-weight: 600;
-    background: #f8fafc;
-    color: #344054;
-}
-
-.tk-table tr td,
-.tk-table tr th {
-    padding: 12px;
-    border-bottom: 1px solid var(--tk-border-soft);
-}
-
-.tk-table tr:last-child td,
-.tk-table tr:last-child th {
-    border-bottom: 0;
-}
-
-.tk-table-scroll .tk-table {
-    min-width: 960px;
-}
-
-.tk-table-scroll .tk-table th,
-.tk-table-scroll .tk-table td {
-    word-break: normal;
 }
 
 .tk-wrap .select2-container:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
@@ -1163,11 +1123,6 @@
         padding: 14px;
     }
 
-    .tk-wrap .tk-table tr td,
-    .tk-wrap .tk-table tr th {
-        padding: 8px;
-    }
-
     .tk-card input.regular-text:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
     .tk-card input[type="text"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
     .tk-card input[type="email"]:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
@@ -1624,7 +1579,7 @@ input:checked+.tk-slider:before {
 .tk-wrap textarea:focus:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
 .tk-wrap select:focus:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     border-color: var(--tk-primary);
-    box-shadow: 0 0 0 3px rgba(8, 127, 117, 0.12);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
     outline: none;
 }
 
@@ -2034,14 +1989,14 @@ input:checked+.tk-slider:before {
     height: 220px;
     pointer-events: none;
     background:
-        linear-gradient(135deg, rgba(8, 127, 117, 0.06), transparent 38%),
-        linear-gradient(90deg, rgba(8, 145, 178, 0.06), transparent 48%);
+        linear-gradient(135deg, rgba(79, 70, 229, 0.06), transparent 38%),
+        linear-gradient(90deg, rgba(20, 184, 166, 0.06), transparent 48%);
     z-index: -1;
 }
 
 .tk-hero {
     background:
-        linear-gradient(135deg, rgba(8, 127, 117, 0.2), transparent 38%),
+        linear-gradient(135deg, rgba(79, 70, 229, 0.2), transparent 38%),
         linear-gradient(120deg, #101827 0%, #182235 58%, #203242 100%);
     border-radius: 18px;
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -2099,7 +2054,7 @@ input:checked+.tk-slider:before {
     width: 44px;
     height: 44px;
     border-radius: 50%;
-    background: rgba(8, 127, 117, 0.07);
+    background: rgba(79, 70, 229, 0.07);
     transform: scale(0.8);
     transition: transform .2s ease, opacity .2s ease;
     opacity: 0;
@@ -2113,14 +2068,14 @@ input:checked+.tk-slider:before {
 
 .tk-tool-card:hover,
 .tk-tool-card:focus {
-    border-color: rgba(8, 127, 117, 0.34);
+    border-color: rgba(79, 70, 229, 0.34);
     box-shadow: var(--tk-shadow-md);
 }
 
 .tk-tool-card .dashicons {
     width: 42px;
     height: 42px;
-    border: 1px solid rgba(8, 127, 117, 0.12);
+    border: 1px solid rgba(79, 70, 229, 0.12);
     border-radius: 12px;
     background: linear-gradient(180deg, #eef4ff, #e8f7fb);
 }
@@ -2156,7 +2111,7 @@ input:checked+.tk-slider:before {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: #087f75;
+    color: #4f46e5;
     background: #eef4ff;
     border-radius: 8px;
     font-size: 20px;
@@ -2231,14 +2186,14 @@ input:checked+.tk-slider:before {
 .tk-wrap .button-primary:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
 .tk-overview-wrap .button-primary {
     border-color: var(--tk-primary);
-    background: linear-gradient(180deg, #159487, #087f75);
-    box-shadow: 0 10px 20px rgba(8, 127, 117, 0.2);
+    background: linear-gradient(180deg, #6366f1, #4f46e5);
+    box-shadow: 0 10px 20px rgba(79, 70, 229, 0.2);
 }
 
 .tk-wrap .button-primary:hover:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
 .tk-overview-wrap .button-primary:hover {
     border-color: var(--tk-primary-dark);
-    background: linear-gradient(180deg, #087f75, #06665e);
+    background: linear-gradient(180deg, #4f46e5, #4338ca);
     transform: translateY(-1px);
 }
 
@@ -2260,17 +2215,7 @@ input:checked+.tk-slider:before {
 .tk-card textarea:focus:not(:where(.tablenav *, .search-box *, .wp-list-table *)),
 .tk-card select:focus:not(:where(.tablenav *, .search-box *, .wp-list-table *)) {
     border-color: var(--tk-primary);
-    box-shadow: 0 0 0 3px rgba(8, 127, 117, 0.12);
-}
-
-.tk-table {
-    border-radius: var(--tk-radius-lg);
-    box-shadow: var(--tk-shadow-sm);
-}
-
-.tk-table th {
-    background: #f6f8fb;
-    color: #27364a;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
 }
 
 .tk-badge {

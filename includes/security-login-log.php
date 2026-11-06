@@ -125,6 +125,11 @@ function tk_login_security_request_host(): string {
 
 function tk_login_security_origin_allowed(): bool {
     $origin = isset($_SERVER['HTTP_ORIGIN']) ? trim((string) $_SERVER['HTTP_ORIGIN']) : '';
+    // Browsers send "Origin: null" on same-site POSTs when the page's Referrer-Policy is no-referrer;
+    // it says nothing about where the request came from, so treat it like a missing header.
+    if ($origin === 'null') {
+        $origin = '';
+    }
     $referer = isset($_SERVER['HTTP_REFERER']) ? trim((string) $_SERVER['HTTP_REFERER']) : '';
     $source = $origin !== '' ? $origin : $referer;
     if ($source === '') {
@@ -327,7 +332,11 @@ function tk_login_log_auto_block_maybe(string $ip, string $agent): void {
     if (function_exists('tk_rate_limit_is_whitelisted') && tk_rate_limit_is_whitelisted($ip)) {
         return;
     }
-    if (!function_exists('tk_security_events_table_exists') || !tk_security_events_table_exists() || !function_exists('tk_rate_limit_block_ip')) {
+    if (!function_exists('tk_security_events_table_exists') || !tk_security_events_table_exists() || !function_exists('tk_rate_limit_lock_key')) {
+        return;
+    }
+    // Retries rejected by an active lockout are not new evidence; counting them turned a few typos into a block.
+    if (get_transient(tk_rate_limit_lock_key())) {
         return;
     }
 
@@ -343,7 +352,8 @@ function tk_login_log_auto_block_maybe(string $ip, string $agent): void {
         $since
     ));
     if ($count >= $threshold) {
-        tk_rate_limit_block_ip($ip);
+        // A 24-hour lock, not a permanent block: shared office/NAT IPs and mistyping admins must recover on their own.
+        set_transient(tk_rate_limit_lock_key(), 1, DAY_IN_SECONDS);
         if (function_exists('tk_security_events_record')) {
             tk_security_events_record(array(
                 'event_type' => 'blocked',
@@ -351,7 +361,7 @@ function tk_login_log_auto_block_maybe(string $ip, string $agent): void {
                 'ip' => $ip,
                 'location' => tk_login_log_location_for_ip($ip),
                 'user_agent' => $agent,
-                'reason' => 'Auto-blocked after ' . $count . ' failed login attempts in ' . $window . ' minutes',
+                'reason' => 'Auto-locked for 24 hours after ' . $count . ' failed login attempts in ' . $window . ' minutes',
                 'request_method' => 'post',
                 'request_uri' => isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '',
             ));
@@ -390,17 +400,16 @@ function tk_render_login_log_page() {
         <?php tk_render_header_branding(); ?>
         <?php tk_render_page_hero(__('Login Activity Log', 'tool-kits'), __('Track all login activity and detect unauthorized access attempts in real-time.', 'tool-kits'), 'dashicons-lock'); ?>
         <div class="tk-card" style="margin-bottom:24px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div style="flex:1;">
-                    <?php tk_render_switch('enabled', 'Enable Login Activity Logging', 'Monitor all successful and failed authentication attempts.', $enabled); ?>
-                </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0; flex:1; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                    <?php tk_nonce_field('tk_login_log_save'); ?>
+                    <input type="hidden" name="action" value="tk_login_log_save">
+                    <div style="flex:1;">
+                        <?php tk_render_switch('enabled', 'Enable Login Activity Logging', 'Monitor all successful and failed authentication attempts.', $enabled); ?>
+                    </div>
+                    <button class="button button-primary button-hero" style="height:40px; padding:0 20px;">Save Changes</button>
+                </form>
                 <div style="display:flex; gap:10px;">
-                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0;">
-                        <?php tk_nonce_field('tk_login_log_save'); ?>
-                        <input type="hidden" name="action" value="tk_login_log_save">
-                        <input type="hidden" name="enabled" value="<?php echo $enabled; ?>">
-                        <button class="button button-primary button-hero" style="height:40px; padding:0 20px;">Save Changes</button>
-                    </form>
                     <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0;">
                         <?php tk_nonce_field('tk_login_log_clear'); ?>
                         <input type="hidden" name="action" value="tk_login_log_clear">
@@ -453,21 +462,21 @@ function tk_render_login_log_page() {
                                 </td>
                                 <td>
                                     <div class="tk-log-details">
-                                        <table class="tk-mini-table" style="width:100%; border-collapse:collapse; font-size:11px;">
+                                        <table class="widefat striped tk-detail-table">
                                             <tr>
-                                                <td style="font-weight:700; width:80px; padding:4px 0; color:#1e293b;">Agent:</td>
-                                                <td style="padding:4px 0; color:#64748b; font-size:10px;"><?php echo esc_html($row->agent); ?></td>
+                                                <th scope="row">Agent:</th>
+                                                <td><?php echo esc_html($row->agent); ?></td>
                                             </tr>
                                             <?php if (!empty($row->reason)) : ?>
                                             <tr>
-                                                <td style="font-weight:700; width:80px; padding:4px 0; color:#1e293b;">Reason:</td>
-                                                <td style="padding:4px 0; color:#64748b;"><?php echo esc_html($row->reason); ?></td>
+                                                <th scope="row">Reason:</th>
+                                                <td><?php echo esc_html($row->reason); ?></td>
                                             </tr>
                                             <?php endif; ?>
                                             <?php if ($row->user_id > 0) : ?>
                                             <tr>
-                                                <td style="font-weight:700; width:80px; padding:4px 0; color:#1e293b;">User ID:</td>
-                                                <td style="padding:4px 0; color:#64748b;"><?php echo esc_html($row->user_id); ?></td>
+                                                <th scope="row">User ID:</th>
+                                                <td><?php echo esc_html($row->user_id); ?></td>
                                             </tr>
                                             <?php endif; ?>
                                         </table>

@@ -26,14 +26,14 @@ function tk_image_opt_signature(string $source, $quality): string {
     )));
 }
 
-function tk_image_opt_valid_derivative(string $source, string $target, $quality): bool {
+function tk_image_opt_valid_derivative(string $source, string $target, $quality, string $signature = ''): bool {
     if (!is_file($source) || !is_file($target) || !is_file($target . '.json')) {
         return false;
     }
     $report = json_decode((string) @file_get_contents($target . '.json'), true);
     clearstatcache(true, $target);
     return is_array($report)
-        && ($report['signature'] ?? '') === tk_image_opt_signature($source, $quality)
+        && ($report['signature'] ?? '') === ($signature !== '' ? $signature : tk_image_opt_signature($source, $quality))
         && (int) ($report['bytes'] ?? 0) === (int) filesize($target)
         && (int) ($report['mtime'] ?? 0) === (int) filemtime($target);
 }

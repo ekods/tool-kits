@@ -1,11 +1,12 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
+require_once __DIR__ . '/cache-runtime.php';
 
 function tk_seo_indexability_init(): void {
     add_action('wp_ajax_tk_seo_indexability', 'tk_seo_indexability_ajax');
     add_action('admin_enqueue_scripts', 'tk_seo_indexability_assets');
-    // Start before page-cache buffers; process the final HTML after theme/plugin output.
-    add_action('template_redirect', 'tk_seo_indexability_start', -2);
+    // Inside the page-cache buffer (priority 0) so stored pages, including early advanced-cache hits, carry the fix.
+    add_action('template_redirect', 'tk_seo_indexability_start', 1);
     add_filter('robots_txt', 'tk_seo_indexability_robots_filter', PHP_INT_MAX, 2);
 }
 
@@ -393,7 +394,8 @@ function tk_seo_indexability_start(): void {
     if (!tk_seo_tools_enabled() || is_admin() || wp_doing_ajax() || is_feed() || is_preview() || is_search() || is_404()
         || (defined('REST_REQUEST') && REST_REQUEST) || !in_array($_SERVER['REQUEST_METHOD'] ?? 'GET', array('GET', 'HEAD'), true)) { return; }
     $home = wp_parse_url(home_url('/'));
-    $url = $home['scheme'] . '://' . $home['host'] . (isset($home['port']) ? ':' . $home['port'] : '') . ($_SERVER['REQUEST_URI'] ?? '/');
+    // Tracking parameters are dropped from the page-cache key too; a ?utm_ first visit must not cache the page unfixed.
+    $url = $home['scheme'] . '://' . $home['host'] . (isset($home['port']) ? ':' . $home['port'] : '') . TK_Page_Cache_Runtime::cache_uri((string) ($_SERVER['REQUEST_URI'] ?? '/'));
     $fix = tk_seo_indexability_fixes()[hash('sha256', $url)] ?? array();
     if (!$fix || !tk_seo_indexability_public_url($url)) { return; }
     if ((string) get_option('blog_public') !== '1') { unset($fix['noindex']); }

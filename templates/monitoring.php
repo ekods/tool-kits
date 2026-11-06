@@ -582,21 +582,21 @@ if (!defined('ABSPATH')) { exit; }
                                         <td><small><?php echo date_i18n('Y-m-d H:i', (int) $entry['last']); ?></small></td>
                                         <td>
                                             <div class="tk-log-details">
-                                                <table class="tk-mini-table" style="width:100%; border-collapse:collapse; font-size:11px;">
+                                                <table class="widefat striped tk-detail-table">
                                                     <?php if (!empty($entry['ref'])) : ?>
                                                         <tr>
-                                                            <td style="font-weight:700; width:90px; padding:4px 0; color:#1e293b;">Referer:</td>
-                                                            <td style="padding:4px 0; color:#64748b; word-break:break-all;"><?php echo esc_html($entry['ref']); ?></td>
+                                                            <th scope="row">Referer:</th>
+                                                            <td><?php echo esc_html($entry['ref']); ?></td>
                                                         </tr>
                                                     <?php endif; ?>
                                                     <?php if (!empty($entry['ua'])) : ?>
                                                         <tr>
-                                                            <td style="font-weight:700; width:90px; padding:4px 0; color:#1e293b;">Agent:</td>
-                                                            <td style="padding:4px 0; color:#64748b; font-size:10px;"><?php echo esc_html($entry['ua']); ?></td>
+                                                            <th scope="row">Agent:</th>
+                                                            <td><?php echo esc_html($entry['ua']); ?></td>
                                                         </tr>
                                                     <?php endif; ?>
                                                     <?php if (empty($entry['ref']) && empty($entry['ua'])) : ?>
-                                                        <tr><td style="color:#94a3b8;">&mdash;</td></tr>
+                                                        <tr><td>&mdash;</td></tr>
                                                     <?php endif; ?>
                                                 </table>
                                             </div>

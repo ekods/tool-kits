@@ -11,6 +11,8 @@ function get_option($name, $default = false) { return array_key_exists($name, $G
 function update_option($name, $value, $autoload = null) { $GLOBALS['writes'][] = $name; $GLOBALS['wp_options'][$name] = $value; return true; }
 function delete_option($name) { $GLOBALS['writes'][] = '-' . $name; unset($GLOBALS['wp_options'][$name]); return true; }
 function wp_using_ext_object_cache() { return false; }
+function get_transient($name) { return $GLOBALS['transients'][$name] ?? false; }
+function set_transient($name, $value, $ttl = 0) { $GLOBALS['transients'][$name] = $value; return true; }
 function add_option($name, $value, $deprecated = '', $autoload = 'yes') { if (array_key_exists($name, $GLOBALS['wp_options'])) return false; return update_option($name, $value); }
 function tk_get_option($key, $default = null) { return $GLOBALS['tk'][$key] ?? $default; }
 function tk_update_option($key, $value) { $GLOBALS['writes'][] = 'tk_options'; $GLOBALS['tk'][$key] = $value; }
@@ -62,6 +64,8 @@ $_SERVER['REQUEST_METHOD'] = 'GET';
 tk_firewall_log_event('Blocked user agent', '203.0.113.9');
 check_load($GLOBALS['geo_remote'] === array(false), 'Blocked request looked up geolocation remotely');
 check_load($GLOBALS['writes'] === array('tk_firewall_event_log') && count(tk_firewall_event_log()) === 1, 'Firewall log did not use its own option');
+tk_firewall_log_event('Blocked user agent', '203.0.113.9');
+check_load(count(tk_firewall_event_log()) === 1 && count($GLOBALS['events']) === 1, 'Repeated blocks from one IP within a minute were all logged');
 
 // Page-cache key ignores campaign/click parameters but keeps real query parameters.
 check_load(TK_Page_Cache_Runtime::cache_uri('/a/?utm_source=x&gclid=1&fbclid=2&msclkid=3') === '/a/', 'Tracking parameters split the page cache');

@@ -17,6 +17,9 @@ $_SERVER = array('REMOTE_ADDR' => '192.0.2.1', 'HTTP_USER_AGENT' => 'Human brows
 $_POST = array();
 function tk_get_option($key, $default = null) { return $GLOBALS['options'][$key] ?? $default; }
 function tk_update_option($key, $value) { $GLOBALS['options'][$key] = $value; }
+function tk_update_options(array $values) { foreach ($values as $key => $value) { tk_update_option($key, $value); } }
+// helpers.php without trusted proxies: the client IP is REMOTE_ADDR.
+function tk_get_ip() { return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'; }
 function tk_post($key, $default = '') { return $_POST[$key] ?? $default; }
 function tk_update_posted_flag($option, $field) { if (isset($_POST[$field]) || in_array($field, (array) ($_POST['tk_switches'] ?? array()), true)) { tk_update_option($option, !empty($_POST[$field]) ? 1 : 0); } }
 function get_transient($key) { return $GLOBALS['cache'][$key] ?? false; }

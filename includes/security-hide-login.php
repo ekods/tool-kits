@@ -147,6 +147,11 @@ function tk_hide_login_block() {
     }
     $path = strtok($path, '?');
     if (tk_hide_login_is_slug_path($path)) {
+        // Without the server rewrite (e.g. nginx) WordPress has already answered this URL as a 404, and
+        // wp-login.php, required inside a function, would keep its top-level variables local although
+        // login_header() and login_footer() read them as globals.
+        global $error, $interim_login, $action, $user_login;
+        status_header(200);
         require_once ABSPATH . 'wp-login.php';
         exit;
     }
@@ -158,7 +163,8 @@ function tk_hide_login_block() {
         tk_hide_login_deny_direct_request();
     }
 
-    $is_admin_area = strpos($path, '/wp-admin') === 0 || strpos($path, '/admin') === 0;
+    // Whole path segments only: a prefix match also sent pages such as /admissions to the home page.
+    $is_admin_area = preg_match('#^/(wp-admin|admin)(/|$)#', $path) === 1;
     if (!$is_admin_area) {
         return;
     }
@@ -245,7 +251,12 @@ function tk_hide_login_save() {
     tk_update_option('hide_login_enabled', $new_enabled);
     tk_update_option('hide_login_slug', $new_slug);
 
-    flush_rewrite_rules();
+    // The rule registered on init still carries the previous slug; swap it before regenerating the rules.
+    global $wp_rewrite;
+    if ($old_slug !== '' && isset($wp_rewrite->extra_rules_top)) {
+        unset($wp_rewrite->extra_rules_top["^{$old_slug}/?$"]);
+    }
+    tk_hide_login_flush_rewrite($new_enabled === 1);
 
     if ($old_enabled !== $new_enabled || $old_slug !== $new_slug) {
         tk_invalidate_all_user_sessions();

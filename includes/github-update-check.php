@@ -30,8 +30,15 @@ function tk_github_updater_enabled(): bool {
 }
 
 function tk_github_can_check_remote(): bool {
-    return tk_github_updater_enabled() && current_user_can('update_plugins')
-        && !wp_doing_cron() && !wp_doing_ajax()
+    if (!tk_github_updater_enabled()) {
+        return false;
+    }
+    // WordPress's twice-daily update check runs in cron; fetching there lets background auto-updates find a new
+    // release (the 1-hour release cache alone is usually expired by then). Visitors never wait on it.
+    if (wp_doing_cron()) {
+        return true;
+    }
+    return current_user_can('update_plugins') && !wp_doing_ajax()
         && (!empty($GLOBALS['tk_github_manual_check']) || (is_admin() && ($GLOBALS['pagenow'] ?? '') === 'plugins.php'));
 }
 
@@ -59,7 +66,9 @@ function tk_github_plugin_update_check($transient) {
         }
         return $transient;
     }
-    if (!tk_github_can_check_remote()) {
+    // Cron (background auto-updates) and other screens reuse the cached release;
+    // only the remote fetch is limited to the Plugins page.
+    if (!tk_github_can_check_remote() && !is_array(get_transient('tk_github_latest_release'))) {
         return $transient;
     }
     if (!is_object($transient)) {
@@ -475,7 +484,9 @@ function tk_github_upgrader_source_selection($source, $remote_source, $upgrader,
 }
 
 function tk_github_normalize_source_directory(string $source, string $remote_source) {
-    $expected = trailingslashit($remote_source) . 'tool-kits';
+    // Keep the installed folder name (e.g. tool-kits-main); renaming would install a
+    // second copy beside the running one and activating it fatals on redeclaration.
+    $expected = trailingslashit($remote_source) . dirname(plugin_basename(TK_PATH . 'tool-kits.php'));
     if (untrailingslashit($source) === untrailingslashit($expected)) {
         return $source;
     }
@@ -539,12 +550,13 @@ function tk_github_upgrader_post_install($response, $hook_extra, $result) {
     }
 
     $plugin_file = plugin_basename(TK_PATH . 'tool-kits.php');
-    $expected_destination = trailingslashit(WP_PLUGIN_DIR) . 'tool-kits';
+    $folder = dirname($plugin_file);
+    $expected_destination = trailingslashit(WP_PLUGIN_DIR) . $folder;
     if (untrailingslashit($result['destination']) !== untrailingslashit($expected_destination)) {
         tk_github_log('Unexpected plugin destination after install: ' . $result['destination']);
     }
 
-    if (!empty($result['destination_name']) && $result['destination_name'] !== 'tool-kits') {
+    if (!empty($result['destination_name']) && $result['destination_name'] !== $folder) {
         tk_github_log('Unexpected destination_name after install: ' . $result['destination_name']);
     }
 

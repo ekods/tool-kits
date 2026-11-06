@@ -435,7 +435,7 @@ function tk_assets_instant_page() {
                 if (entry.isIntersecting) {
                     var a = entry.target;
                     var url = a.href;
-                    if (url && !handled.has(url) && url.origin === window.location.origin) {
+                    if (url && !handled.has(url) && a.origin === window.location.origin) {
                         handled.add(url);
                         preload(url);
                     }
@@ -557,7 +557,8 @@ function tk_assets_preload_fonts() {
 }
 
 function tk_assets_map_url_to_path($url) {
-    $url = trim($url);
+    // ?ver= / ?tkopt= / #fragment are not part of the file name; keeping them made every lookup miss.
+    $url = preg_replace('/[?#].*$/s', '', trim($url));
     if ($url === '') {
         return '';
     }

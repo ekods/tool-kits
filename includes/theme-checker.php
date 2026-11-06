@@ -10,8 +10,34 @@ function tk_render_theme_checker_page() {
     $parent_root = get_template_directory();
 
     $has_child = $parent_root !== $child_root;
-    $child_summary = $has_child ? tk_theme_checker_scan_dir($child_root, 'Child theme') : null;
-    $parent_summary = $has_child ? tk_theme_checker_scan_dir($parent_root, 'Parent theme') : tk_theme_checker_scan_dir($parent_root, 'Theme');
+    $roots = array();
+    if ($has_child) {
+        $roots[] = array('root' => $child_root, 'scope' => 'Child theme');
+        $roots[] = array('root' => $parent_root, 'scope' => 'Parent theme');
+    } else {
+        $roots[] = array('root' => $parent_root, 'scope' => 'Theme');
+    }
+    // Reading every theme file is slow on large themes; reuse the result briefly unless "Recheck theme" was used.
+    $cache_key = md5($child_root . '|' . $parent_root);
+    $cached = empty($_GET['tk_theme_recheck']) ? get_transient('tk_theme_checker_results') : false;
+    if (is_array($cached) && ($cached['key'] ?? '') === $cache_key) {
+        $child_summary = $cached['child_summary'];
+        $parent_summary = $cached['parent_summary'];
+        $duplicates = $cached['duplicates'];
+        $risky = $cached['risky'];
+    } else {
+        $child_summary = $has_child ? tk_theme_checker_scan_dir($child_root, 'Child theme') : null;
+        $parent_summary = $has_child ? tk_theme_checker_scan_dir($parent_root, 'Parent theme') : tk_theme_checker_scan_dir($parent_root, 'Theme');
+        $duplicates = tk_theme_checker_duplicate_files($roots);
+        $risky = tk_theme_checker_risky_functions($roots);
+        set_transient('tk_theme_checker_results', array(
+            'key' => $cache_key,
+            'child_summary' => $child_summary,
+            'parent_summary' => $parent_summary,
+            'duplicates' => $duplicates,
+            'risky' => $risky,
+        ), 10 * MINUTE_IN_SECONDS);
+    }
 
     $largest = array();
     if (is_array($child_summary) && !empty($child_summary['largest'])) {
@@ -26,15 +52,6 @@ function tk_render_theme_checker_page() {
     $largest = array_slice($largest, 0, 10);
 
     $warnings = tk_theme_checker_warnings($child_summary, $parent_summary);
-    $roots = array();
-    if ($has_child) {
-        $roots[] = array('root' => $child_root, 'scope' => 'Child theme');
-        $roots[] = array('root' => $parent_root, 'scope' => 'Parent theme');
-    } else {
-        $roots[] = array('root' => $parent_root, 'scope' => 'Theme');
-    }
-    $duplicates = tk_theme_checker_duplicate_files($roots);
-    $risky = tk_theme_checker_risky_functions($roots);
     ?>
     <div class="wrap tk-wrap">
         <?php tk_render_header_branding(); ?>
@@ -325,7 +342,10 @@ function tk_render_theme_checker_page() {
             button.addEventListener('click', function(){
                 button.disabled = true;
                 button.textContent = '<?php echo esc_js(__('Rechecking...', 'tool-kits')); ?>';
-                window.location.reload();
+                var url = new URL(window.location.href);
+                // A changed query string forces a real reload even when the URL has a #tab hash.
+                url.searchParams.set('tk_theme_recheck', String(Date.now()));
+                window.location.href = url.toString();
             });
         })();
         </script>
@@ -394,6 +414,50 @@ function tk_theme_checker_render_asset_list($child_summary, $parent_summary, $ty
     return $out;
 }
 
+// Walks a theme once per request for all three panels. Excluded directories are pruned instead of filtered
+// per file, unreadable directories are skipped instead of throwing, and the file count is capped.
+function tk_theme_checker_files($root): array {
+    static $cache = array();
+    $root = (string) $root;
+    if (isset($cache[$root])) {
+        return $cache[$root];
+    }
+    $files = array();
+    if ($root === '' || !is_dir($root)) {
+        return $cache[$root] = $files;
+    }
+    // Bundled third-party libraries (Composer vendor/) are not the theme's own code.
+    $skip_dirs = array('node_modules', 'vendor', '.git', '.svn');
+    try {
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveCallbackFilterIterator(
+                new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+                function ($current) use ($skip_dirs) {
+                    return !($current->isDir() && in_array($current->getFilename(), $skip_dirs, true));
+                }
+            ),
+            RecursiveIteratorIterator::LEAVES_ONLY,
+            RecursiveIteratorIterator::CATCH_GET_CHILD
+        );
+        foreach ($iterator as $file) {
+            if (!$file->isFile()) {
+                continue;
+            }
+            $files[] = array(
+                'path' => $file->getPathname(),
+                'size' => (int) $file->getSize(),
+                'ext' => strtolower($file->getExtension()),
+            );
+            if (count($files) >= 20000) {
+                break;
+            }
+        }
+    } catch (RuntimeException $e) {
+        // Keep whatever was collected before the unreadable entry.
+    }
+    return $cache[$root] = $files;
+}
+
 function tk_theme_checker_scan_dir($root, $scope) {
     $summary = array(
         'scope' => $scope,
@@ -412,36 +476,14 @@ function tk_theme_checker_scan_dir($root, $scope) {
         return $summary;
     }
 
-    $skip_dirs = array('node_modules', '.git', '.svn');
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS)
-    );
+    foreach (tk_theme_checker_files($root) as $file) {
+        $path = $file['path'];
 
-    foreach ($iterator as $file) {
-        if (!$file->isFile()) {
-            continue;
-        }
-        $path = $file->getPathname();
-        if (!is_string($path) || $path === '') {
-            continue;
-        }
-        $normalized_path = wp_normalize_path($path);
-        $is_excluded = false;
-        foreach ($skip_dirs as $skip) {
-            if (strpos($normalized_path, '/' . $skip . '/') !== false) {
-                $is_excluded = true;
-                break;
-            }
-        }
-        if ($is_excluded) {
-            continue;
-        }
-
-        $size = (int) $file->getSize();
+        $size = $file['size'];
         $summary['files']++;
         $summary['size'] += $size;
 
-        $ext = strtolower($file->getExtension());
+        $ext = $file['ext'];
         if ($ext === 'css') {
             $summary['css_count']++;
             $summary['css_size'] += $size;
@@ -509,39 +551,18 @@ function tk_theme_checker_duplicate_files($roots) {
     if (!is_array($roots)) {
         return array();
     }
-    $skip_dirs = array('node_modules', '.git', '.svn');
     foreach ($roots as $entry) {
         $root = isset($entry['root']) ? (string) $entry['root'] : '';
         $scope = isset($entry['scope']) ? (string) $entry['scope'] : '';
         if ($root === '' || !is_dir($root)) {
             continue;
         }
-        $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS)
-        );
-        foreach ($iterator as $file) {
-            if (!$file->isFile()) {
+        foreach (tk_theme_checker_files($root) as $file) {
+            $path = $file['path'];
+            if ($file['ext'] !== 'php') {
                 continue;
             }
-            $path = $file->getPathname();
-            if (!is_string($path) || $path === '') {
-                continue;
-            }
-            $normalized_path = wp_normalize_path($path);
-            $is_excluded = false;
-            foreach ($skip_dirs as $skip) {
-                if (strpos($normalized_path, '/' . $skip . '/') !== false) {
-                    $is_excluded = true;
-                    break;
-                }
-            }
-            if ($is_excluded) {
-                continue;
-            }
-            if (strtolower($file->getExtension()) !== 'php') {
-                continue;
-            }
-            $size = (int) $file->getSize();
+            $size = $file['size'];
             if ($size <= 0 || $size > 512 * 1024) {
                 continue;
             }
@@ -595,39 +616,18 @@ function tk_theme_checker_risky_functions($roots) {
     if (!is_array($roots)) {
         return array();
     }
-    $skip_dirs = array('node_modules', '.git', '.svn');
     foreach ($roots as $entry) {
         $root = isset($entry['root']) ? (string) $entry['root'] : '';
         $scope = isset($entry['scope']) ? (string) $entry['scope'] : '';
         if ($root === '' || !is_dir($root)) {
             continue;
         }
-        $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS)
-        );
-        foreach ($iterator as $file) {
-            if (!$file->isFile()) {
+        foreach (tk_theme_checker_files($root) as $file) {
+            $path = $file['path'];
+            if ($file['ext'] !== 'php') {
                 continue;
             }
-            $path = $file->getPathname();
-            if (!is_string($path) || $path === '') {
-                continue;
-            }
-            $normalized_path = wp_normalize_path($path);
-            $is_excluded = false;
-            foreach ($skip_dirs as $skip) {
-                if (strpos($normalized_path, '/' . $skip . '/') !== false) {
-                    $is_excluded = true;
-                    break;
-                }
-            }
-            if ($is_excluded) {
-                continue;
-            }
-            if (strtolower($file->getExtension()) !== 'php') {
-                continue;
-            }
-            $size = (int) $file->getSize();
+            $size = $file['size'];
             if ($size <= 0 || $size > 512 * 1024) {
                 continue;
             }

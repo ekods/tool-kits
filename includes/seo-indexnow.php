@@ -144,6 +144,13 @@ function tk_indexnow_process_queue(): void {
     $batch = array_slice($queue, 0, 100, true);
     $result = tk_indexnow_submit($batch);
     $result['checked_at'] = time();
+    // 400/403/422 (bad key, foreign host) will fail identically every hour; only 429, 5xx and
+    // network errors are retried automatically. The queue is kept for a manual run after a fix.
+    $code = (int) ($result['code'] ?? 0);
+    $permanent = empty($result['ok']) && $code >= 400 && $code < 500 && $code !== 429;
+    if ($permanent) {
+        $result['message'] .= ' Automatic retries paused until the next content change or a manual run.';
+    }
     tk_update_option('indexnow_last_result', $result);
     if (!empty($result['ok'])) {
         foreach (array_keys($batch) as $key) {
@@ -151,7 +158,7 @@ function tk_indexnow_process_queue(): void {
         }
         tk_update_option('indexnow_queue', $queue);
     }
-    if (!empty($queue) && !wp_next_scheduled('tk_indexnow_process_queue')) {
+    if (!$permanent && !empty($queue) && !wp_next_scheduled('tk_indexnow_process_queue')) {
         wp_schedule_single_event(time() + (!empty($result['ok']) ? 5 * MINUTE_IN_SECONDS : HOUR_IN_SECONDS), 'tk_indexnow_process_queue');
     }
 }

@@ -104,10 +104,7 @@ function tk_webp_convert_file($path, $quality) {
     if (!in_array($ext, array('jpg', 'jpeg', 'png'), true)) {
         return;
     }
-    $webp_path = preg_replace('/\.(jpe?g|png)$/i', '.webp', $path);
-    if (!is_string($webp_path) || $webp_path === '') {
-        return;
-    }
+    $webp_path = tk_webp_path_for($path);
     if (file_exists($webp_path) && filemtime($webp_path) >= filemtime($path)) {
         return;
     }
@@ -180,11 +177,37 @@ function tk_webp_url_to_webp($url) {
     if ($path === '') {
         return '';
     }
-    $webp_path = preg_replace('/\.(jpe?g|png)$/i', '.webp', $path);
-    if (!is_string($webp_path) || $webp_path === '' || !file_exists($webp_path)) {
+    if (file_exists(tk_webp_path_for($path))) {
+        return preg_replace('/\.(jpe?g|png)(\?|$)/i', '.$1.webp$2', $url);
+    }
+    if (!tk_webp_legacy_path_is_unambiguous($path)) {
         return '';
     }
     return preg_replace('/\.(jpe?g|png)(\?|$)/i', '.webp$2', $url);
+}
+
+/** photo.jpg -> photo.jpg.webp: keeping the source extension stops photo.jpg and photo.png sharing one WebP. */
+function tk_webp_path_for(string $path): string {
+    return $path . '.webp';
+}
+
+/**
+ * Files converted before the naming change are photo.webp. Serve one only when no other JPG/PNG shares its
+ * stem, because it may hold another file's picture.
+ */
+function tk_webp_legacy_path_is_unambiguous(string $path): bool {
+    $stem = (string) preg_replace('/\.(jpe?g|png)$/i', '', $path);
+    if ($stem === $path || !file_exists($stem . '.webp')) {
+        return false;
+    }
+    foreach (array('jpg', 'jpeg', 'png', 'JPG', 'JPEG', 'PNG') as $ext) {
+        $sibling = $stem . '.' . $ext;
+        // Inode check: on case-insensitive filesystems photo.JPG is the same file as photo.jpg.
+        if ($sibling !== $path && file_exists($sibling) && @fileinode($sibling) !== @fileinode($path)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 function tk_webp_url_to_path($url) {

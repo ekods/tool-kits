@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.79
+Stable tag: 2.7.80
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,34 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.80 =
+Security
+- DB Migrate: prepared exports get unguessable names in a web-protected folder and are deleted after download; uploaded SQL imports no longer stay in the public uploads folder.
+- Passwords, client secrets, OAuth tokens and license/API keys are masked in the Tool Kits audit log.
+- Firewall and captcha use the real visitor IP behind Cloudflare and trusted proxies; strict CIDR parsing and IPv6 comparison.
+- Failed-login auto-block locks an IP for 24 hours instead of permanently, and retries during a lockout no longer count toward it.
+- OTP failures are counted per user across resends; cookie consent now drives Google Consent Mode v2, so GA4/GTM respect "Reject" (also on cached pages).
+- Changing the owner's user ID keeps Tool Kits access in owner-only mode; Role Management follows the Tool Kits access rules.
+
+Fixes
+- WP-Cron keeps running behind Cloudflare/CDNs; payment gateway callbacks (`?wc-api=`) and WP-Cron are no longer blocked by Form Guard.
+- Hardening options can all be turned off; PHP's default timezone is no longer changed (the Server Time panel now sets the WordPress timezone).
+- DB Migrate: serialized-safe search/replace, chunked export for large tables, correct composite primary keys, only this site's tables, and mysqldump imports without "Query was empty" errors.
+- The five-revision default no longer overrides limits set by wp-config, post types or other plugins.
+- Login: `Origin: null` logins, the Login Log switch, dashboard comment replies with captcha, and Hide Login on nginx and with paths such as `/admissions`.
+- Spam filters: `t.co` no longer matches microsoft.com or att.com; accented Latin letters and typographic punctuation pass the non-Latin filter.
+- License stays active when the license server briefly returns a CDN challenge or 4xx; background auto-updates can find new releases.
+- CSS minify keeps `.menu :hover`; WebP files are named per source (`foo.jpg.webp`); Instant Page prefetch works; lazy load leaves `data-loading` alone; indexability and GEO fixes are kept in cached pages.
+- Tamper alerts are sent once per change and reset after updates; one alert per new administrator; IndexNow stops retrying permanent errors.
+
+Performance
+- Page cache is no longer emptied by view counters, autosaves, revisions or spam comments.
+- Image Optimizer, theme checker, malware scanner and the dashboard chart (one grouped query instead of 84) do far less work per request.
+- SMTP logs, reports and queues moved out of the main settings row, which is migrated automatically on update.
+
+Admin UI
+- 404 Monitoring request details use native WordPress table styling; refinements to the shared admin stylesheets.
 
 = 2.7.79 =
 - Refresh admin headers, cards, controls, editor dialogs, SEO panels and Health Center with a consistent teal and mint palette.

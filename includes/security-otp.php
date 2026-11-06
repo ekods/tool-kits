@@ -38,6 +38,10 @@ function tk_otp_maybe_require_challenge($user, $username, $password) {
         return new WP_Error('tk_otp_required', __('This account requires a one-time code. Use an application password for API access.', 'tool-kits'));
     }
 
+    if (tk_otp_user_locked((int) $user->ID)) {
+        return new WP_Error('tk_otp_locked', __('Too many invalid OTP attempts. Please try again later.', 'tool-kits'));
+    }
+
     $remember = !empty($_POST['rememberme']);
     $redirect_to = isset($_REQUEST['redirect_to']) ? esc_url_raw((string) wp_unslash($_REQUEST['redirect_to'])) : admin_url();
     $challenge = tk_otp_create_challenge((int) $user->ID, $remember, $redirect_to);
@@ -62,6 +66,33 @@ function tk_otp_is_noninteractive_request(): bool {
     // Application passwords authenticate at priority 20, before this filter (60).
     // The OTP form itself never runs authenticate, so no request parameter may skip the challenge.
     return did_action('application_password_did_authenticate') > 0;
+}
+
+/**
+ * Failed codes per user, kept across resends and new challenges: the per-challenge counter restarts with each
+ * one, so on its own it let a holder of the password keep guessing. Fixed window, like the CAPTCHA rate limit.
+ */
+function tk_otp_failure_key(int $user_id): string {
+    return 'tk_otp_fail_' . $user_id;
+}
+
+function tk_otp_failure_limit(): int {
+    return 3 * max(1, min(10, (int) tk_get_option('otp_login_max_attempts', 5)));
+}
+
+function tk_otp_user_locked(int $user_id): bool {
+    $record = get_transient(tk_otp_failure_key($user_id));
+    return is_array($record) && ($record['expires_at'] ?? 0) > time() && (int) ($record['count'] ?? 0) >= tk_otp_failure_limit();
+}
+
+function tk_otp_record_failure(int $user_id): void {
+    $key = tk_otp_failure_key($user_id);
+    $record = get_transient($key);
+    if (!is_array($record) || ($record['expires_at'] ?? 0) <= time()) {
+        $record = array('count' => 0, 'expires_at' => time() + HOUR_IN_SECONDS);
+    }
+    $record['count'] = (int) $record['count'] + 1;
+    set_transient($key, $record, max(1, $record['expires_at'] - time()));
 }
 
 function tk_otp_create_challenge(int $user_id, bool $remember, string $redirect_to): array {
@@ -144,6 +175,10 @@ function tk_otp_login_form_handler(): void {
 }
 
 function tk_otp_handle_resend(string $token, array $challenge, WP_User $user): array {
+    if (tk_otp_user_locked((int) $user->ID)) {
+        delete_transient('tk_otp_' . $token);
+        tk_otp_render_login_form($token, __('Too many invalid OTP attempts. Please try again later.', 'tool-kits'), '', true);
+    }
     $cooldown = max(15, min(600, (int) tk_get_option('otp_login_resend_cooldown', 60)));
     $last_sent = (int) ($challenge['last_sent'] ?? 0);
     if ($last_sent > 0 && time() - $last_sent < $cooldown) {
@@ -173,8 +208,14 @@ function tk_otp_handle_verify(string $token, array $challenge, WP_User $user): v
     $max_attempts = max(1, min(10, (int) tk_get_option('otp_login_max_attempts', 5)));
     $attempts = (int) ($challenge['attempts'] ?? 0) + 1;
 
+    if (tk_otp_user_locked((int) $user->ID)) {
+        delete_transient('tk_otp_' . $token);
+        tk_otp_render_login_form($token, __('Too many invalid OTP attempts. Please try again later.', 'tool-kits'), '', true);
+    }
+
     if ($code !== '' && wp_check_password($code, (string) ($challenge['hash'] ?? ''), (int) $user->ID)) {
         delete_transient('tk_otp_' . $token);
+        delete_transient(tk_otp_failure_key((int) $user->ID));
         wp_set_auth_cookie((int) $user->ID, !empty($challenge['remember']), is_ssl());
         wp_set_current_user((int) $user->ID);
         do_action('wp_login', $user->user_login, $user);
@@ -186,7 +227,8 @@ function tk_otp_handle_verify(string $token, array $challenge, WP_User $user): v
         exit;
     }
 
-    if ($attempts >= $max_attempts) {
+    tk_otp_record_failure((int) $user->ID);
+    if ($attempts >= $max_attempts || tk_otp_user_locked((int) $user->ID)) {
         delete_transient('tk_otp_' . $token);
         tk_otp_log('locked', (int) $user->ID, 'OTP challenge locked after too many attempts.');
         tk_otp_render_login_form($token, __('Too many invalid OTP attempts. Please login again.', 'tool-kits'), '', true);
@@ -369,14 +411,16 @@ function tk_render_otp_page(): void {
 function tk_otp_save(): void {
     tk_require_admin_post('tk_otp_save');
     $roles = isset($_POST['otp_login_roles']) && is_array($_POST['otp_login_roles']) ? array_values(array_unique(array_map('sanitize_key', wp_unslash($_POST['otp_login_roles'])))) : array();
-    tk_update_option('otp_login_enabled', !empty($_POST['otp_login_enabled']) ? 1 : 0);
-    tk_update_option('otp_login_roles', $roles);
-    tk_update_option('otp_login_expiry_minutes', max(1, min(30, (int) tk_post('otp_login_expiry_minutes', 5))));
-    tk_update_option('otp_login_max_attempts', max(1, min(10, (int) tk_post('otp_login_max_attempts', 5))));
-    tk_update_option('otp_login_resend_cooldown', max(15, min(600, (int) tk_post('otp_login_resend_cooldown', 60))));
-    tk_update_option('otp_login_trusted_days', max(0, min(365, (int) tk_post('otp_login_trusted_days', 0))));
-    tk_update_option('otp_login_email_subject', sanitize_text_field((string) tk_post('otp_login_email_subject', 'Your {site_name} login code')));
-    tk_update_option('otp_login_email_message', sanitize_textarea_field((string) tk_post('otp_login_email_message', '')));
+    tk_update_options(array(
+        'otp_login_enabled' => !empty($_POST['otp_login_enabled']) ? 1 : 0,
+        'otp_login_roles' => $roles,
+        'otp_login_expiry_minutes' => max(1, min(30, (int) tk_post('otp_login_expiry_minutes', 5))),
+        'otp_login_max_attempts' => max(1, min(10, (int) tk_post('otp_login_max_attempts', 5))),
+        'otp_login_resend_cooldown' => max(15, min(600, (int) tk_post('otp_login_resend_cooldown', 60))),
+        'otp_login_trusted_days' => max(0, min(365, (int) tk_post('otp_login_trusted_days', 0))),
+        'otp_login_email_subject' => sanitize_text_field((string) tk_post('otp_login_email_subject', 'Your {site_name} login code')),
+        'otp_login_email_message' => sanitize_textarea_field((string) tk_post('otp_login_email_message', '')),
+    ));
     wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-security-otp', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }

@@ -7,9 +7,9 @@
 .tk-lang-chip-remove { width: 26px; padding: 0 8px 0 2px; border: 0; background: transparent; color: #50575e; font-size: 16px; line-height: 1; cursor: pointer; }
 .tk-lang-chip-remove:hover { color: #b32d2e; }
 .tk-lang-chip-remove[hidden] { display: none; }
-.tk-lang-chip.is-active { border-color: #087f75; background: #087f75; }
+.tk-lang-chip.is-active { border-color: #4f46e5; background: #4f46e5; }
 .tk-lang-chip.is-active [role="tab"], .tk-lang-chip.is-active [role="tab"] span, .tk-lang-chip.is-active .tk-lang-chip-remove { color: #fff; }
-.tk-lang-chip:focus-within { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #087f75; }
+.tk-lang-chip:focus-within { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #4f46e5; }
 .tk-lang-chip button:focus { outline: none; box-shadow: none; }
 .tk-lang-search { position: relative; flex: 1 1 180px; min-width: 160px; max-width: 360px; }
 .tk-lang-search input[type="search"] { box-sizing: border-box; width: 100%; min-height: 30px; margin: 0; padding: 4px 12px; border: 1px dashed #8c8f94; border-radius: 999px; background: #fff; }
@@ -19,6 +19,6 @@
 .tk-lang-options li { display: flex; align-items: baseline; gap: 10px; margin: 0; padding: 7px 10px; border-radius: 6px; cursor: pointer; }
 .tk-lang-options li strong { min-width: 44px; }
 .tk-lang-options li span { color: #50575e; }
-.tk-lang-options li[aria-selected="true"], .tk-lang-options li[role="option"]:hover { background: #edf8f2; color: #06665e; }
+.tk-lang-options li[aria-selected="true"], .tk-lang-options li[role="option"]:hover { background: #edf8f2; color: #4338ca; }
 .tk-lang-options .tk-lang-empty { color: #646970; cursor: default; }
 .tk-geo-faq-languages { margin: 16px 0; }

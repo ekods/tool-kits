@@ -161,7 +161,10 @@ function tk_heartbeat_enabled(): bool {
 
 function tk_heartbeat_schedule() {
     if (!tk_heartbeat_enabled()) {
-        tk_heartbeat_unschedule();
+        // Runs on every init: the cron array is autoloaded, but delete_option() would query the DB each request.
+        if (wp_next_scheduled('tk_heartbeat_cron') || wp_next_scheduled('tk_heartbeat_retry')) {
+            tk_heartbeat_unschedule();
+        }
         return;
     }
     $event = wp_get_scheduled_event('tk_heartbeat_cron');
@@ -250,7 +253,8 @@ function tk_heartbeat_payload(): array {
         'hide_login_url' => $hide_login_enabled ? tk_hide_login_custom_url() : '',
         'maintenance' => array(
             'revision_limit' => $revision_limit,
-            'revision_limit_source' => defined('WP_POST_REVISIONS') ? 'wp-config' : 'tool-kits-default',
+            // WordPress always defines WP_POST_REVISIONS (true = unlimited); only a number or false is a real limit.
+            'revision_limit_source' => defined('WP_POST_REVISIONS') && (WP_POST_REVISIONS === false || is_numeric(WP_POST_REVISIONS)) ? 'wp-config' : 'tool-kits-default',
             'revisions_total' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'revision'"),
             'last_revision_cleanup' => (int) get_option('tk_db_cleanup_revision_last_run', 0),
             'acf_cleanup' => array(

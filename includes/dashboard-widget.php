@@ -432,22 +432,63 @@ function tk_dashboard_widget_attack_chart_series(int $days): array {
     $bucket_count = $days === 1 ? 12 : 30;
     $bucket_seconds = $days === 1 ? 2 * HOUR_IN_SECONDS : DAY_IN_SECONDS;
     $start = $now - ($bucket_seconds * ($bucket_count - 1));
+    $counts = tk_dashboard_widget_attack_bucket_counts($start, $now + 1, $bucket_seconds, $bucket_count);
 
     for ($i = 0; $i < $bucket_count; $i++) {
         $bucket_start = $start + ($i * $bucket_seconds);
-        $bucket_end = $bucket_start + $bucket_seconds;
-        if ($i === $bucket_count - 1) {
-            $bucket_end = $now + 1;
-        }
-        $count = tk_dashboard_widget_attacks_count($bucket_start, 'total') - tk_dashboard_widget_attacks_count($bucket_end, 'total');
         $label = $days === 1 ? wp_date('g a', $bucket_start) : wp_date('M j', $bucket_start);
         $points[] = array(
             'label' => $label,
-            'value' => max(0, $count),
+            'value' => max(0, $counts[$i]),
         );
     }
 
     return $points;
+}
+
+// Per-bucket 'total' attack counts for [$start, $end), one grouped query instead of two COUNT(*) per bucket.
+// The current-blocklist term of the 'total' count is time-independent, so it never contributes to a bucket.
+function tk_dashboard_widget_attack_bucket_counts(int $start, int $end, int $bucket_seconds, int $bucket_count): array {
+    global $wpdb;
+    $counts = array_fill(0, $bucket_count, 0);
+    $start_mysql = gmdate('Y-m-d H:i:s', $start);
+    $end_mysql = gmdate('Y-m-d H:i:s', $end);
+    $rows = array();
+    // TIMESTAMPDIFF on two DATETIMEs is independent of the MySQL session time zone.
+    if (tk_dashboard_widget_use_security_events()) {
+        $rows = $wpdb->get_results($wpdb->prepare(
+            'SELECT TIMESTAMPDIFF(SECOND, %s, time) DIV %d AS bucket, COUNT(*) AS count FROM ' . tk_security_events_table() . ' WHERE event_type = %s AND time >= %s AND time < %s GROUP BY bucket',
+            $start_mysql,
+            $bucket_seconds,
+            'blocked',
+            $start_mysql,
+            $end_mysql
+        ));
+    } else {
+        if (tk_dashboard_widget_login_table_exists()) {
+            $rows = $wpdb->get_results($wpdb->prepare(
+                'SELECT TIMESTAMPDIFF(SECOND, %s, time) DIV %d AS bucket, COUNT(*) AS count FROM ' . tk_login_log_table() . ' WHERE status = %s AND time >= %s AND time < %s GROUP BY bucket',
+                $start_mysql,
+                $bucket_seconds,
+                'failed',
+                $start_mysql,
+                $end_mysql
+            ));
+        }
+        foreach (tk_dashboard_widget_firewall_events() as $event) {
+            $time = isset($event['time']) ? (int) $event['time'] : 0;
+            if ($time >= $start && $time < $end) {
+                $counts[intdiv($time - $start, $bucket_seconds)]++;
+            }
+        }
+    }
+    foreach (is_array($rows) ? $rows : array() as $row) {
+        $bucket = (int) $row->bucket;
+        if ($bucket >= 0 && $bucket < $bucket_count) {
+            $counts[$bucket] += (int) $row->count;
+        }
+    }
+    return $counts;
 }
 
 function tk_dashboard_widget_render_attack_chart(array $points): void {
@@ -552,7 +593,12 @@ function tk_render_dashboard_widget() {
  * Render Cache Dashboard Widget
  */
 function tk_render_cache_dashboard_widget() {
-    $stats = function_exists('tk_page_cache_stats') ? tk_page_cache_stats() : array('files' => 0, 'bytes' => 0);
+    // tk_page_cache_stats() stats every cached page; the Dashboard only needs an approximate figure.
+    $stats = get_transient('tk_dashboard_page_cache_stats');
+    if (!is_array($stats)) {
+        $stats = function_exists('tk_page_cache_stats') ? tk_page_cache_stats() : array('files' => 0, 'bytes' => 0);
+        set_transient('tk_dashboard_page_cache_stats', $stats, 5 * MINUTE_IN_SECONDS);
+    }
     $files = isset($stats['files']) ? max(0, (int) $stats['files']) : 0;
     $bytes = isset($stats['bytes']) ? max(0, (int) $stats['bytes']) : 0;
     $summary = function_exists('tk_page_cache_summary_text') ? tk_page_cache_summary_text($stats) : $files . ' files';
@@ -898,7 +944,7 @@ function tk_render_attacks_blocked_dashboard_widget() {
             padding-top: 16px;
         }
         .tk-attacks-table-scroll { overflow-x: auto; margin: 12px 0 16px; }
-        .tk-attacks-table-scroll:focus-visible { outline: 2px solid #087f75; outline-offset: 2px; }
+        .tk-attacks-table-scroll:focus-visible { outline: 2px solid #4f46e5; outline-offset: 2px; }
         .tk-attacks-table-scroll > table { min-width: 360px; }
         .tk-attacks-flag {
             text-align: center !important;

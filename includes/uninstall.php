@@ -15,7 +15,7 @@ function tk_uninstall_option_names(): array {
         'tk_license_reset_skip_validate', 'tk_github_updater_status', 'tk_hidden_admin_menus', 'tk_heartbeat_cron_metrics',
         'tk_firewall_event_log', 'tk_rate_limit_blocked_ips', 'tk_fim_last_scan_result', 'tk_fim_last_scan_time',
         'tk_db_cleanup_acf_last_run', 'tk_db_cleanup_revision_last_run', 'tk_login_log_schema_version',
-        'tk_security_events_schema_version',
+        'tk_security_events_schema_version', 'tk_fragment_cache_keys', 'tk_tamper_last_alert_signature',
     );
 }
 

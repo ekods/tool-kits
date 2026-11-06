@@ -22,7 +22,8 @@ function tk_db_cleanup_effective_revision_limit(): int {
 }
 
 function tk_db_cleanup_revision_limit($num, $post): int {
-    return tk_db_cleanup_effective_revision_limit();
+    // Only cap WordPress's unlimited default (-1); keep limits from wp-config, post-type support or other plugins.
+    return (int) $num < 0 ? tk_db_cleanup_effective_revision_limit() : (int) $num;
 }
 
 function tk_render_db_cleanup_page() {
@@ -377,21 +378,28 @@ function tk_render_db_cleanup_panel() {
     global $wpdb;
 
     $acf_scan = tk_db_cleanup_acf_scan();
-    $counts = array(
-        'revisions' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'revision'"),
-        'autosaves' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'revision' AND post_name LIKE '%autosave%'"),
-        'trash_posts' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'trash'"),
-        'spam_comments' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->comments} WHERE comment_approved = 'spam'"),
-        'trash_comments' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->comments} WHERE comment_approved = 'trash'"),
-        'transients' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->options} WHERE (SUBSTRING(option_name, 1, 19) = '_transient_timeout_' OR SUBSTRING(option_name, 1, 24) = '_site_transient_timeout_') AND CAST(option_value AS UNSIGNED) > 0 AND CAST(option_value AS UNSIGNED) < " . time()),
-        'auto_drafts' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'auto-draft'"),
-        'orphaned_postmeta' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->postmeta} pm LEFT JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE p.ID IS NULL"),
-        'orphaned_acf' => (int) ($acf_scan['reference_rows'] ?? 0),
-    );
-
-    // Calculate DB Size
-    $db_size = $wpdb->get_results("SELECT SUM(data_length + index_length) AS size FROM information_schema.TABLES WHERE table_schema = (SELECT DATABASE())");
-    $total_size = isset($db_size[0]->size) ? $db_size[0]->size : 0;
+    // This panel renders on every DB Tools page load (tabs switch client-side), so the heavy
+    // counts are cached briefly and dropped when a cleanup job completes or is cancelled.
+    $stats = get_transient('tk_db_cleanup_panel_stats');
+    if (!is_array($stats) || !isset($stats['counts'], $stats['total_size'])) {
+        $stats = array('counts' => array(
+            'revisions' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'revision'"),
+            'autosaves' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'revision' AND post_name LIKE '%autosave%'"),
+            'trash_posts' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'trash'"),
+            'spam_comments' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->comments} WHERE comment_approved = 'spam'"),
+            'trash_comments' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->comments} WHERE comment_approved = 'trash'"),
+            'transients' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->options} WHERE (SUBSTRING(option_name, 1, 19) = '_transient_timeout_' OR SUBSTRING(option_name, 1, 24) = '_site_transient_timeout_') AND CAST(option_value AS UNSIGNED) > 0 AND CAST(option_value AS UNSIGNED) < " . time()),
+            'auto_drafts' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'auto-draft'"),
+            'orphaned_postmeta' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->postmeta} pm LEFT JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE p.ID IS NULL"),
+        ));
+        // Calculate DB Size
+        $db_size = $wpdb->get_results("SELECT SUM(data_length + index_length) AS size FROM information_schema.TABLES WHERE table_schema = (SELECT DATABASE())");
+        $stats['total_size'] = isset($db_size[0]->size) ? $db_size[0]->size : 0;
+        set_transient('tk_db_cleanup_panel_stats', $stats, MINUTE_IN_SECONDS * 5);
+    }
+    $counts = $stats['counts'];
+    $counts['orphaned_acf'] = (int) ($acf_scan['reference_rows'] ?? 0);
+    $total_size = $stats['total_size'];
 
     ?>
     <?php

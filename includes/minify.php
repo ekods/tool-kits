@@ -247,11 +247,28 @@ function tk_minify_inline_css($css) {
     if (!is_string($css) || $css === '') {
         return $css;
     }
-    $css = preg_replace('!/\*.*?\*/!s', '', $css);
-    $css = preg_replace('/\s+/', ' ', $css);
-    $css = preg_replace('/\s*([{}:;,])\s*/', '$1', $css);
-    $css = str_replace(';}', '}', $css);
-    return trim($css);
+    // Drop comments and set quoted strings aside in one pass, so content: " : " and "/*" in strings survive.
+    $strings = array();
+    $minified = preg_replace_callback('~/\*.*?\*/|"(?:[^"\\\\]|\\\\.)*"|\'(?:[^\'\\\\]|\\\\.)*\'~s', function($m) use (&$strings) {
+        if ($m[0][0] === '/') {
+            return '';
+        }
+        $key = "\x01" . count($strings) . "\x01";
+        $strings[$key] = $m[0];
+        return $key;
+    }, $css);
+    if (!is_string($minified)) {
+        return $css;
+    }
+    $minified = preg_replace('/\s+/', ' ', $minified);
+    $minified = preg_replace('/\s*([{};,])\s*/', '$1', $minified);
+    // Whitespace before ':' is kept: in a selector it is a descendant combinator (".menu :hover").
+    $minified = preg_replace('/:\s+/', ':', $minified);
+    if (!is_string($minified)) {
+        return $css;
+    }
+    $minified = str_replace(';}', '}', $minified);
+    return trim(strtr($minified, $strings));
 }
 
 /**
@@ -274,6 +291,7 @@ function tk_minify_inline_js($js) {
     $braces = 0;
     $templates = array(); // brace depth at each open ${ ... }
     $regex_keywords = array('return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await');
+    $ident_chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$' . implode('', array_map('chr', range(128, 255)));
     $is_ident = static function ($ch) {
         return $ch !== '' && (ctype_alnum($ch) || $ch === '_' || $ch === '$' || ord($ch) > 127);
     };
@@ -325,7 +343,7 @@ function tk_minify_inline_js($js) {
         if ($ch === ' ' || $ch === "\t" || $ch === "\f" || $ch === "\v") {
             if ($word !== '') { $prev_word = $word; $word = ''; }
             $pending_space = true;
-            $i++;
+            $i += strspn($js, " \t\f\v", $i);
             continue;
         }
         if ($ch === '/' && $next === '/') {
@@ -411,7 +429,13 @@ function tk_minify_inline_js($js) {
             if ($word === '' && $pending_space === false && $is_ident(substr($out, -1))) {
                 $pending_space = true;
             }
-            $word .= $ch;
+            // Take the whole identifier run at once: per-character closure calls made 100KB+ inline scripts slow.
+            $run = substr($js, $i, strspn($js, $ident_chars, $i));
+            $word .= $run;
+            $emit($run);
+            $prev = substr($run, -1);
+            $i += strlen($run);
+            continue;
         }
         $emit($ch);
         $prev = $ch;

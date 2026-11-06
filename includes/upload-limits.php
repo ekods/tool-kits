@@ -94,8 +94,16 @@ function tk_upload_limits_category_max_bytes(string $category, $file = array()):
         $bytes = tk_upload_limits_document_max_mb() * 1024 * 1024;
     } elseif ($category === 'video') {
         $bytes = tk_upload_limits_video_max_mb() * 1024 * 1024;
-    } else {
+    } elseif ($category === 'image') {
         $bytes = tk_upload_limits_current_bytes($file);
+    } else {
+        // Audio, archives, JSON etc. have no setting of their own; the 2 MB image default was far too
+        // small for them. Use the largest configured limit, the same value shown as the upload maximum.
+        $bytes = max(
+            tk_upload_limits_max_bytes(),
+            tk_upload_limits_document_max_mb() * 1024 * 1024,
+            tk_upload_limits_video_max_mb() * 1024 * 1024
+        );
     }
 
     return max(1, (int) apply_filters('tk_upload_limits_category_max_bytes', $bytes, $category, $file));
@@ -141,6 +149,10 @@ function tk_upload_limits_prefilter($file) {
     // Bypass custom limit for plugin/theme zip files
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
     if ($ext === 'zip') {
+        return $file;
+    }
+    // The Tool Kits database import enforces its own limit (TK_DB_IMPORT_MAX_BYTES).
+    if (doing_action('admin_post_tk_db_import')) {
         return $file;
     }
 
