@@ -504,6 +504,35 @@ function tk_cf7dbc_get_db_size() {
     return $size ? round($size->size_mb, 2) : 0;
 }
 
+/** Shared Tool Kits identity; data and controls stay outside its custom button styles. */
+function tk_cf7dbc_render_page_heading($title, $description) {
+    echo '<div class="tk-wrap cf7dbc-page-heading">';
+    tk_render_header_branding();
+    tk_render_page_hero($title, $description, 'dashicons-database');
+    echo '</div>';
+}
+
+function tk_cf7dbc_detail_url($id, $form_id) {
+    return add_query_arg(array('page' => tk_cf7_database_collection_slug(), 'form_id' => absint($form_id), 'submission_id' => absint($id)), admin_url('admin.php'));
+}
+
+function tk_cf7dbc_render_modal($open_id = 0) {
+    echo '<div id="tk-cf7dbc-modal" style="display:none" data-open-id="' . esc_attr(absint($open_id)) . '"><div id="tk-cf7dbc-modal-content"></div></div>';
+}
+
+function tk_cf7dbc_deleted_notice() {
+    if (isset($_GET['deleted'])) {
+        echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Submission deleted successfully.', 'tool-kits') . '</p></div>';
+    }
+}
+
+function tk_cf7dbc_render_list_table($kind, $form_id = 0) {
+    require_once __DIR__ . '/class-cf7-database-list-table.php';
+    $table = new TK_CF7_Database_List_Table($kind, $form_id);
+    $table->prepare_items();
+    $table->display();
+}
+
 function tk_cf7dbc_render_admin_page() {
     if (!tk_cf7_database_can_manage()) {
         return;
@@ -517,17 +546,18 @@ function tk_cf7dbc_render_admin_page() {
     $offset = ($paged - 1) * $per_page;
 
     if ($submission_id > 0) {
-        tk_cf7dbc_render_submission_detail($submission_id, $form_id_filter);
-        return;
+        global $wpdb;
+        $row = $wpdb->get_row($wpdb->prepare('SELECT form_id FROM ' . tk_cf7dbc_table_name() . ' WHERE id = %d', $submission_id));
+        if ($row) { $form_id_filter = absint($row->form_id); }
     }
 
     if ($form_id_filter > 0) {
-        tk_cf7dbc_render_form_submissions($form_id_filter, $paged, $per_page, $offset);
+        tk_cf7dbc_render_form_submissions($form_id_filter, $paged, $per_page, $offset, $submission_id);
         return;
     }
 
-    if (isset($_GET['view']) && $_GET['view'] === 'forms') {
-        tk_cf7dbc_render_forms_overview($paged, $per_page, $offset);
+    if ($submission_id > 0 || (isset($_GET['view']) && $_GET['view'] === 'forms')) {
+        tk_cf7dbc_render_forms_overview($paged, $per_page, $offset, $submission_id);
         return;
     }
 
@@ -541,13 +571,13 @@ function tk_cf7dbc_render_dashboard() {
     $all_forms = tk_cf7dbc_get_contact_forms();
     $forms_count = count($all_forms);
     ?>
-    <div class="wrap tk-wrap cf7dbc-wrap">
-
+    <div class="wrap cf7dbc-wrap">
+        <?php tk_cf7dbc_render_page_heading(__('CF7 Database', 'tool-kits'), __('Browse saved Contact Form 7 messages and export submissions.', 'tool-kits')); ?>
         <div class="cf7dbc-header">
             <div class="cf7dbc-header-content">
                 <div>
                     <h2><?php esc_html_e('Saved submissions', 'tool-kits'); ?></h2>
-                    <p class="description"><?php printf(esc_html__('%d unread submissions.', 'tool-kits'), $stats['unread']); ?></p>
+                    <p class="description" data-cf7-unread-summary><?php printf(esc_html__('%d unread submissions.', 'tool-kits'), $stats['unread']); ?></p>
                 </div>
                 <div class="cf7dbc-actions">
                     <a href="<?php echo esc_url(admin_url('admin.php?page=tool-kits-cf7-collection&view=forms')); ?>" class="button">
@@ -575,7 +605,7 @@ function tk_cf7dbc_render_dashboard() {
                 </div>
                 <div class="cf7dbc-stat-content">
                     <h3><?php esc_html_e('Unread Messages', 'tool-kits'); ?></h3>
-                    <div class="value"><?php echo number_format_i18n($stats['unread']); ?></div>
+                    <div class="value" data-cf7-unread-count><?php echo number_format_i18n($stats['unread']); ?></div>
                 </div>
             </div>
 
@@ -618,7 +648,7 @@ function tk_cf7dbc_render_dashboard() {
                                 $detail_url = admin_url('admin.php?page=tool-kits-cf7-collection&form_id=' . absint($item->form_id) . '&submission_id=' . absint($item->id));
                                 $is_unread = tk_cf7dbc_is_unread($item);
                                 ?>
-                                <div class="cf7dbc-recent-item">
+                                <div class="cf7dbc-recent-item" data-cf7-submission="<?php echo esc_attr($item->id); ?>">
                                     <div class="cf7dbc-recent-info">
                                         <h4><?php echo esc_html($item->form_title); ?></h4>
                                         <p>
@@ -630,7 +660,7 @@ function tk_cf7dbc_render_dashboard() {
                                         <?php if ($is_unread) : ?>
                                             <span class="cf7dbc-badge cf7dbc-badge-unread" style="margin-right: 8px;"><?php esc_html_e('New', 'tool-kits'); ?></span>
                                         <?php endif; ?>
-                                        <a href="<?php echo esc_url($detail_url); ?>" class="button button-small"><?php esc_html_e('View', 'tool-kits'); ?></a>
+                                        <a href="<?php echo esc_url($detail_url); ?>" class="button button-small tk-cf7dbc-view" data-submission-id="<?php echo esc_attr($item->id); ?>"><?php esc_html_e('View', 'tool-kits'); ?></a>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
@@ -675,90 +705,27 @@ function tk_cf7dbc_render_dashboard() {
                 </div>
             </div>
         </div>
+        <?php tk_cf7dbc_render_modal(); ?>
     </div>
     <?php
 }
 
-function tk_cf7dbc_render_forms_overview($paged, $per_page, $offset) {
-    global $wpdb;
-
-    $table_name = tk_cf7dbc_table_name();
-    $contact_forms = tk_cf7dbc_get_contact_forms();
-    $form_stats = $wpdb->get_results(
-        "SELECT form_id, COUNT(*) AS total_submissions, MAX(submitted_at) AS latest_submission
-        FROM {$table_name}
-        GROUP BY form_id",
-        OBJECT_K
-    );
-    $total = count($contact_forms);
-    $forms = array_slice($contact_forms, $offset, $per_page);
-    $total_pages = max(1, (int) ceil($total / $per_page));
+function tk_cf7dbc_render_forms_overview($paged, $per_page, $offset, $open_id = 0) {
     $export_url = wp_nonce_url(admin_url('admin.php?page=tool-kits-cf7-collection&tk_cf7dbc_export=1'), 'tk_cf7dbc_export');
     ?>
-    <div class="wrap tk-wrap cf7dbc-wrap">
-        <h2><?php esc_html_e('Form List', 'tool-kits'); ?></h2>
-
-        <?php if (isset($_GET['deleted'])) : ?>
-            <div class="notice notice-success is-dismissible"><p><?php esc_html_e('Submission deleted successfully.', 'tool-kits'); ?></p></div>
-        <?php endif; ?>
-
+    <div class="wrap cf7dbc-wrap">
+        <?php tk_cf7dbc_render_page_heading(__('Form List', 'tool-kits'), __('Browse the submissions saved for each Contact Form 7 form.', 'tool-kits')); ?>
+        <?php tk_cf7dbc_deleted_notice(); ?>
         <div class="cf7dbc-actions">
+            <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=tool-kits-cf7-collection')); ?>"><?php esc_html_e('Dashboard', 'tool-kits'); ?></a>
             <a href="<?php echo esc_url($export_url); ?>" class="button button-primary"><?php esc_html_e('Export Excel', 'tool-kits'); ?></a>
         </div>
-
-        <div class="cf7dbc-table-container">
-            <table class="widefat striped cf7dbc-table">
-            <thead>
-                <tr>
-                    <th><?php esc_html_e('Form', 'tool-kits'); ?></th>
-                    <th><?php esc_html_e('Message Count', 'tool-kits'); ?></th>
-                    <th><?php esc_html_e('Latest Message', 'tool-kits'); ?></th>
-                </tr>
-            </thead>
-            <tbody>
-            <?php if (empty($forms)) : ?>
-                <tr>
-                    <td colspan="3"><?php esc_html_e('No Contact Form 7 forms found.', 'tool-kits'); ?></td>
-                </tr>
-            <?php else : ?>
-                <?php foreach ($forms as $form) : ?>
-                    <?php
-                    $stats = isset($form_stats[$form->ID]) ? $form_stats[$form->ID] : null;
-                    $total_submissions = $stats ? (int) $stats->total_submissions : 0;
-                    $latest_submission = $stats ? $stats->latest_submission : '';
-                    ?>
-                    <tr>
-                        <td>
-                            <a href="<?php echo esc_url(admin_url('admin.php?page=tool-kits-cf7-collection&form_id=' . absint($form->ID))); ?>">
-                                <strong><?php echo esc_html($form->post_title ? $form->post_title : __('Untitled', 'tool-kits')); ?></strong>
-                            </a><br>
-                            <small>ID: <?php echo esc_html($form->ID); ?></small>
-                        </td>
-                        <td><?php echo esc_html(number_format_i18n($total_submissions)); ?></td>
-                        <td><?php echo $latest_submission ? esc_html($latest_submission) : '&mdash;'; ?></td>
-                    </tr>
-                <?php endforeach; ?>
-            <?php endif; ?>
-            </tbody>
-        </table>
-    </div>
-
-        <?php if ($total_pages > 1) : ?>
-            <div class="tablenav">
-                <div class="tablenav-pages">
-                    <?php
-                    echo wp_kses_post(paginate_links([
-                        'base'      => add_query_arg('paged', '%#%'),
-                        'format'    => '',
-                        'current'   => $paged,
-                        'total'     => $total_pages,
-                        'prev_text' => '&laquo;',
-                        'next_text' => '&raquo;',
-                    ]));
-                    ?>
-                </div>
-            </div>
-        <?php endif; ?>
+        <form method="get">
+            <input type="hidden" name="page" value="tool-kits-cf7-collection">
+            <input type="hidden" name="view" value="forms">
+            <?php tk_cf7dbc_render_list_table('forms'); ?>
+        </form>
+        <?php tk_cf7dbc_render_modal($open_id); ?>
     </div>
     <?php
 }
@@ -773,223 +740,64 @@ function tk_cf7dbc_get_contact_forms() {
     ]);
 }
 
-function tk_cf7dbc_render_form_submissions($form_id, $paged, $per_page, $offset) {
+function tk_cf7dbc_render_form_submissions($form_id, $paged, $per_page, $offset, $open_id = 0) {
     global $wpdb;
-
-    $table_name = tk_cf7dbc_table_name();
     $form_title = get_the_title($form_id);
-
     if (!$form_title) {
-        $form_title = (string) $wpdb->get_var($wpdb->prepare("SELECT form_title FROM {$table_name} WHERE form_id = %d ORDER BY submitted_at DESC LIMIT 1", $form_id));
+        $form_title = (string) $wpdb->get_var($wpdb->prepare('SELECT form_title FROM ' . tk_cf7dbc_table_name() . ' WHERE form_id = %d ORDER BY submitted_at DESC LIMIT 1', $form_id));
     }
-
-    $total = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table_name} WHERE form_id = %d", $form_id));
-    $rows = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$table_name} WHERE form_id = %d ORDER BY submitted_at DESC LIMIT %d OFFSET %d", $form_id, $per_page, $offset));
-    $total_pages = max(1, (int) ceil($total / $per_page));
     $export_url = wp_nonce_url(admin_url('admin.php?page=tool-kits-cf7-collection&tk_cf7dbc_export=1&form_id=' . absint($form_id)), 'tk_cf7dbc_export');
     ?>
-    <div class="wrap tk-wrap cf7dbc-wrap">
-        <h1><?php esc_html_e('Message List', 'tool-kits'); ?></h1>
-
-        <?php if (isset($_GET['deleted'])) : ?>
-            <div class="notice notice-success is-dismissible"><p><?php esc_html_e('Submission deleted successfully.', 'tool-kits'); ?></p></div>
-        <?php endif; ?>
-
-        <p>
-            <a href="<?php echo esc_url(admin_url('admin.php?page=tool-kits-cf7-collection&view=forms')); ?>">&larr; <?php esc_html_e('Back to form list', 'tool-kits'); ?></a>
-        </p>
-
-        <h2><?php echo esc_html($form_title ? $form_title : __('Untitled', 'tool-kits')); ?></h2>
-
+    <div class="wrap cf7dbc-wrap">
+        <?php tk_cf7dbc_render_page_heading(__('Message List', 'tool-kits'), $form_title ?: __('Untitled', 'tool-kits')); ?>
+        <?php tk_cf7dbc_deleted_notice(); ?>
         <div class="cf7dbc-actions">
+            <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=tool-kits-cf7-collection&view=forms')); ?>"><?php esc_html_e('Back to form list', 'tool-kits'); ?></a>
             <a href="<?php echo esc_url($export_url); ?>" class="button button-primary"><?php esc_html_e('Export This Form Excel', 'tool-kits'); ?></a>
         </div>
-
-        <div class="cf7dbc-table-container">
-            <table class="widefat striped cf7dbc-table">
-                <thead>
-                    <tr>
-                        <th><?php esc_html_e('ID', 'tool-kits'); ?></th>
-                        <th><?php esc_html_e('Date', 'tool-kits'); ?></th>
-                        <th><?php esc_html_e('Read Status', 'tool-kits'); ?></th>
-                        <th><?php esc_html_e('Spam Status', 'tool-kits'); ?></th>
-                        <th><?php esc_html_e('IP', 'tool-kits'); ?></th>
-                        <th><?php esc_html_e('Page', 'tool-kits'); ?></th>
-                        <th><?php esc_html_e('Actions', 'tool-kits'); ?></th>
-                    </tr>
-                </thead>
-                <tbody>
-                <?php if (empty($rows)) : ?>
-                    <tr>
-                        <td colspan="7"><?php esc_html_e('No messages found for this form.', 'tool-kits'); ?></td>
-                    </tr>
-                <?php else : ?>
-                    <?php foreach ($rows as $row) : ?>
-                        <?php
-                        $is_unread = tk_cf7dbc_is_unread($row);
-                        $row_style = $is_unread ? 'font-weight: 700;' : 'font-weight: 400;';
-                        $detail_url = admin_url('admin.php?page=tool-kits-cf7-collection&form_id=' . absint($form_id) . '&submission_id=' . absint($row->id));
-                        ?>
-                        <tr style="<?php echo esc_attr($row_style); ?>">
-                            <td>
-                                <a href="<?php echo esc_url($detail_url); ?>" style="<?php echo esc_attr($row_style); ?>">
-                                    #<?php echo esc_html($row->id); ?>
-                                </a>
-                            </td>
-                            <td>
-                                <a href="<?php echo esc_url($detail_url); ?>" style="<?php echo esc_attr($row_style); ?>">
-                                    <?php echo esc_html($row->submitted_at); ?>
-                                </a>
-                            </td>
-                            <td><?php echo wp_kses_post(tk_cf7dbc_get_read_status_badge($row)); ?></td>
-                            <td><?php echo wp_kses_post(tk_cf7dbc_get_spam_status_badge($row)); ?></td>
-                            <td><?php echo esc_html($row->user_ip); ?></td>
-                            <td>
-                                <?php if (!empty($row->page_url)) : ?>
-                                    <a href="<?php echo esc_url($row->page_url); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html($row->page_url); ?></a>
-                                <?php else : ?>
-                                    &mdash;
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <?php
-                                $delete_url = wp_nonce_url(
-                                    admin_url('admin.php?page=tool-kits-cf7-collection&form_id=' . absint($form_id) . '&tk_cf7dbc_delete=' . absint($row->id)),
-                                    'tk_cf7dbc_delete_' . absint($row->id)
-                                );
-                                ?>
-                                <a href="<?php echo esc_url($delete_url); ?>" class="button button-small" onclick="return confirm('<?php echo esc_js(__('Delete this submission?', 'tool-kits')); ?>');">
-                                    <?php esc_html_e('Delete', 'tool-kits'); ?>
-                                </a>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-
-        <?php if ($total_pages > 1) : ?>
-            <div class="tablenav">
-                <div class="tablenav-pages">
-                    <?php
-                    echo wp_kses_post(paginate_links([
-                        'base'      => add_query_arg('paged', '%#%'),
-                        'format'    => '',
-                        'current'   => $paged,
-                        'total'     => $total_pages,
-                        'prev_text' => '&laquo;',
-                        'next_text' => '&raquo;',
-                    ]));
-                    ?>
-                </div>
-            </div>
-        <?php endif; ?>
+        <form method="get">
+            <input type="hidden" name="page" value="tool-kits-cf7-collection">
+            <input type="hidden" name="form_id" value="<?php echo esc_attr($form_id); ?>">
+            <?php tk_cf7dbc_render_list_table('messages', $form_id); ?>
+        </form>
+        <?php tk_cf7dbc_render_modal($open_id); ?>
     </div>
     <?php
 }
 
-function tk_cf7dbc_render_submission_detail($submission_id, $form_id) {
-    global $wpdb;
-
-    $table_name = tk_cf7dbc_table_name();
-    $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table_name} WHERE id = %d", $submission_id));
-
-    if (!$row) {
-        ?>
-        <div class="wrap">
-            <h1><?php esc_html_e('Message Detail', 'tool-kits'); ?></h1>
-            <div class="notice notice-error"><p><?php esc_html_e('Submission not found.', 'tool-kits'); ?></p></div>
-            <p><a href="<?php echo esc_url(admin_url('admin.php?page=tool-kits-cf7-collection&view=forms')); ?>">&larr; <?php esc_html_e('Back to form list', 'tool-kits'); ?></a></p>
-        </div>
-        <?php
-        return;
-    }
-
-    tk_cf7dbc_mark_submission_as_read($row);
-    $row->read_status = 'read';
-    $row->read_at = $row->read_at ? $row->read_at : current_time('mysql');
-
-    $form_id = $form_id > 0 ? $form_id : absint($row->form_id);
+/** Escaped message content; the WordPress Thickbox supplies the dialog chrome. */
+function tk_cf7dbc_render_submission_detail($row) {
     $data = json_decode($row->data, true);
+    $metadata = array(
+        __('Submission ID', 'tool-kits') => esc_html($row->id),
+        __('Date', 'tool-kits') => esc_html($row->submitted_at),
+        __('Read Status', 'tool-kits') => tk_cf7dbc_get_read_status_badge($row),
+        __('Read At', 'tool-kits') => $row->read_at ? esc_html($row->read_at) : '&mdash;',
+        __('IP', 'tool-kits') => esc_html($row->user_ip),
+        __('Spam Status', 'tool-kits') => tk_cf7dbc_get_spam_status_badge($row),
+        __('Spam Score', 'tool-kits') => esc_html((int) ($row->spam_score ?? 0)),
+        __('Detection Reasons', 'tool-kits') => esc_html(tk_cf7dbc_get_spam_reasons_text($row)),
+        __('Page', 'tool-kits') => $row->page_url ? '<a href="' . esc_url($row->page_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($row->page_url) . '</a>' : '&mdash;',
+        __('User Agent', 'tool-kits') => esc_html($row->user_agent),
+    );
     ?>
-    <div class="wrap tk-wrap cf7dbc-wrap">
-        <div class="cf7dbc-header">
-            <h1><?php esc_html_e('Message Detail', 'tool-kits'); ?></h1>
-            <a href="<?php echo esc_url(admin_url('admin.php?page=tool-kits-cf7-collection&form_id=' . absint($form_id))); ?>" class="button"><?php _e('Back to list', 'tool-kits'); ?></a>
-        </div>
-
-        <h2 class="cf7dbc-section-title"><?php echo esc_html($row->form_title ? $row->form_title : __('Untitled', 'tool-kits')); ?></h2>
-
-        <div class="cf7dbc-detail-card">
-            <table class="cf7dbc-detail-table">
-                <tbody>
-                    <tr>
-                        <th style="width: 180px;"><?php esc_html_e('Submission ID', 'tool-kits'); ?></th>
-                        <td><?php echo esc_html($row->id); ?></td>
-                    </tr>
-                    <tr>
-                        <th><?php esc_html_e('Date', 'tool-kits'); ?></th>
-                        <td><?php echo esc_html($row->submitted_at); ?></td>
-                    </tr>
-                    <tr>
-                        <th><?php esc_html_e('Read Status', 'tool-kits'); ?></th>
-                        <td><?php echo wp_kses_post(tk_cf7dbc_get_read_status_badge($row)); ?></td>
-                    </tr>
-                    <tr>
-                        <th><?php esc_html_e('Read At', 'tool-kits'); ?></th>
-                        <td><?php echo $row->read_at ? esc_html($row->read_at) : '&mdash;'; ?></td>
-                    </tr>
-                    <tr>
-                        <th><?php esc_html_e('IP', 'tool-kits'); ?></th>
-                        <td><?php echo esc_html($row->user_ip); ?></td>
-                    </tr>
-                    <tr>
-                        <th><?php esc_html_e('Spam Status', 'tool-kits'); ?></th>
-                        <td><?php echo wp_kses_post(tk_cf7dbc_get_spam_status_badge($row)); ?></td>
-                    </tr>
-                    <tr>
-                        <th><?php esc_html_e('Spam Score', 'tool-kits'); ?></th>
-                        <td><?php echo esc_html(isset($row->spam_score) ? (int) $row->spam_score : 0); ?></td>
-                    </tr>
-                    <tr>
-                        <th><?php esc_html_e('Detection Reasons', 'tool-kits'); ?></th>
-                        <td><?php echo esc_html(tk_cf7dbc_get_spam_reasons_text($row)); ?></td>
-                    </tr>
-                    <tr>
-                        <th><?php esc_html_e('Page', 'tool-kits'); ?></th>
-                        <td>
-                            <?php if (!empty($row->page_url)) : ?>
-                                <a href="<?php echo esc_url($row->page_url); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html($row->page_url); ?></a>
-                            <?php else : ?>
-                                &mdash;
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th><?php esc_html_e('User Agent', 'tool-kits'); ?></th>
-                        <td><small><?php echo esc_html($row->user_agent); ?></small></td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <h2 class="cf7dbc-section-title"><?php esc_html_e('Message Content', 'tool-kits'); ?></h2>
-
-        <?php if (is_array($data) && !empty($data)) : ?>
-            <div class="cf7dbc-detail-card">
-                <table class="cf7dbc-detail-table">
-                <tbody>
-                <?php foreach ($data as $key => $value) : ?>
-                    <tr>
-                        <th style="width: 180px;"><?php echo esc_html($key); ?></th>
-                        <td><?php echo nl2br(esc_html(tk_cf7dbc_format_submission_value($value))); ?></td>
-                    </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-<?php else : ?>
+    <div class="cf7dbc-message-detail">
+        <h2><?php echo esc_html($row->form_title ?: __('Untitled', 'tool-kits')); ?></h2>
+        <table class="widefat striped">
+            <tbody>
+            <?php foreach ($metadata as $label => $value) : ?>
+                <tr><th scope="row"><?php echo esc_html($label); ?></th><td><?php echo wp_kses_post($value); ?></td></tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <h2><?php esc_html_e('Message Content', 'tool-kits'); ?></h2>
+        <?php if (is_array($data) && $data) : ?>
+            <table class="widefat striped"><tbody>
+            <?php foreach ($data as $key => $value) : ?>
+                <tr><th scope="row"><?php echo esc_html($key); ?></th><td><?php echo nl2br(esc_html(tk_cf7dbc_format_submission_value($value))); ?></td></tr>
+            <?php endforeach; ?>
+            </tbody></table>
+        <?php else : ?>
             <p><?php esc_html_e('Message data is empty or invalid.', 'tool-kits'); ?></p>
         <?php endif; ?>
     </div>

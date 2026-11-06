@@ -19,7 +19,7 @@ preg_match('/<input[^>]+id="tk-seo-slug"[^>]*>/', $prefilled, $slug_field);
 verify_panel(strpos($slug_field[0], 'readonly=') === false, 'Ordinary page slug must remain editable without a readonly helper');
 verify_panel(strpos($prefilled, 'data-token-display') !== false, 'Variable chips must be rendered before JavaScript loads');
 verify_panel(strpos($prefilled, 'tk-seo-content-open') === false && strpos($prefilled, '<dialog') === false, 'The content panel must not render the retired popup for authorized administrators');
-verify_panel(strpos($prefilled, 'Social media preview') !== false && strpos($prefilled, 'Facebook') !== false && strpos($prefilled, 'LinkedIn') !== false, 'Social previews must be present without a popup');
+verify_panel(strpos($prefilled, 'Social media preview') !== false && strpos($prefilled, 'Facebook') !== false && strpos($prefilled, 'WhatsApp') !== false && strpos($prefilled, 'LinkedIn') === false, 'Inline social previews must offer Facebook and WhatsApp without LinkedIn');
 verify_panel(strpos($prefilled, 'data-state="short">Too short') !== false, 'Initial length status must count expanded values');
 foreach (array(0 => 'empty', 29 => 'short', 30 => 'ideal', 60 => 'ideal', 61 => 'long') as $length => $expected_state) {
     ob_start(); tk_seo_length_feedback('title', str_repeat('🧭', $length), 30, 60); $feedback = ob_get_clean();

@@ -6,6 +6,8 @@ function tk_cf7_database_init(): void {
     add_action('admin_init', 'tk_cf7_database_handle_actions');
     add_action('admin_enqueue_scripts', 'tk_cf7_database_assets');
     add_action('admin_menu', 'tk_cf7_database_register_menu');
+    add_action('wp_ajax_tk_cf7_database_detail', 'tk_cf7_database_detail');
+    add_filter('removable_query_args', 'tk_cf7_database_removable_query_args');
     // Run after every plugin has loaded, regardless of plugin load order.
     add_action('init', 'tk_cf7_database_register_capture');
 }
@@ -17,6 +19,11 @@ function tk_cf7_database_enabled(): bool {
 /** Slug of the stand-alone message pages; Tool Kits itself only keeps the on/off switch. */
 function tk_cf7_database_collection_slug(): string {
     return 'tool-kits-cf7-collection';
+}
+
+function tk_cf7_database_removable_query_args($args) {
+    if (($_GET['page'] ?? '') === tk_cf7_database_collection_slug()) { $args[] = 'submission_id'; }
+    return $args;
 }
 
 /** Top-level "CF7 Database" menu, right below Contact Form 7's "Contact" (position 30), only while enabled. */
@@ -68,7 +75,37 @@ function tk_cf7_database_save(): void {
 
 function tk_cf7_database_assets(): void {
     if (($_GET['page'] ?? '') !== tk_cf7_database_collection_slug() || !tk_cf7_database_can_manage()) { return; }
-    wp_enqueue_style('tk-cf7-database', TK_URL . 'assets/cf7-database.css', array(), tk_asset_version('assets/cf7-database.css'));
+    add_thickbox();
+    wp_enqueue_style('tk-cf7-database', TK_URL . 'assets/cf7-database.css', array('tool-kits-admin-ui-v2'), tk_asset_version('assets/cf7-database.css'));
+    wp_enqueue_script('tk-cf7-database', TK_URL . 'assets/cf7-database.js', array('jquery', 'thickbox'), tk_asset_version('assets/cf7-database.js'), true);
+    wp_localize_script('tk-cf7-database', 'tkCf7Database', array(
+        'ajaxUrl' => admin_url('admin-ajax.php'), 'nonce' => wp_create_nonce('tk_cf7_database_detail'),
+        'title' => __('Message Detail', 'tool-kits'), 'loading' => __('Loading message…', 'tool-kits'),
+        'error' => __('Unable to load this message. Close the popup and try again.', 'tool-kits'), 'read' => __('Read', 'tool-kits'),
+    ));
+}
+
+/** Only a licensed manager with a valid nonce may fetch and mark a message read. */
+function tk_cf7_database_detail(): void {
+    if (!tk_cf7_database_enabled() || !tk_cf7_database_can_manage()) {
+        wp_send_json_error(array('message' => __('You cannot view these messages.', 'tool-kits')), 403);
+    }
+    check_ajax_referer('tk_cf7_database_detail', 'nonce');
+    tk_cf7_database_load();
+    global $wpdb;
+    $id = absint($_POST['submission_id'] ?? 0);
+    $row = $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . tk_cf7dbc_table_name() . ' WHERE id = %d', $id));
+    if (!$row) { wp_send_json_error(array('message' => __('Submission not found.', 'tool-kits')), 404); }
+    tk_cf7dbc_mark_submission_as_read($row);
+    $row->read_status = 'read';
+    $row->read_at = $row->read_at ?: current_time('mysql');
+    ob_start();
+    tk_cf7dbc_render_submission_detail($row);
+    $html = ob_get_clean();
+    $unread = tk_cf7dbc_get_unread_count();
+    wp_send_json_success(array('id' => absint($row->id), 'html' => $html,
+        'unread_count' => number_format_i18n($unread),
+        'unread_summary' => sprintf(__('%d unread submissions.', 'tool-kits'), $unread)));
 }
 
 function tk_cf7_database_handle_actions(): void {

@@ -13,6 +13,14 @@ $GLOBALS['checks'] = 0;
 
 class DatabaseRedirect extends RuntimeException {}
 class DatabaseDenied extends RuntimeException {}
+class DatabaseJson extends RuntimeException {
+    public $data;
+    public $status;
+    public function __construct($success, $data, $status) { parent::__construct($success ? 'success' : 'error'); $this->data = $data; $this->status = $status; }
+}
+function wp_send_json_success($data, $status = 200) { throw new DatabaseJson(true, $data, $status); }
+function wp_send_json_error($data, $status = 400) { throw new DatabaseJson(false, $data, $status); }
+function check_ajax_referer($action, $key) { if (!wp_verify_nonce($_POST[$key] ?? '', $action)) { wp_die('Invalid nonce'); } }
 function check_database($ok, $message) { if (!$ok) { throw new RuntimeException($message); } $GLOBALS['checks']++; }
 function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?? $default; }
 function update_option($key, $value) { $GLOBALS['options'][$key] = $value; }
@@ -25,6 +33,7 @@ function wp_verify_nonce($nonce, $action) { return $GLOBALS['nonce_valid'] && $n
 function wp_safe_redirect($url) { throw new DatabaseRedirect($url); }
 function check_admin_referer($action) { $GLOBALS['nonce_action'] = $action; if (!wp_verify_nonce($_GET['_wpnonce'] ?? '', $action)) { wp_die('Invalid nonce'); } }
 function add_action($hook, $callback, $priority = 10) { $GLOBALS['hooks'][$hook][$priority][$callback] = true; }
+function add_filter($hook, $callback, $priority = 10) { add_action($hook, $callback, $priority); }
 function remove_action($hook, $callback, $priority = 10) { unset($GLOBALS['hooks'][$hook][$priority][$callback]); }
 function do_action($hook, ...$args) {
     $priorities = $GLOBALS['hooks'][$hook] ?? array(); ksort($priorities);
@@ -59,11 +68,38 @@ function wp_kses_post($value) { return $value; }
 function get_posts($args) { return array((object) array('ID' => 7, 'post_title' => 'Contact')); }
 function get_the_title($id) { return 'Contact'; }
 function wp_nonce_url($url, $action) { return $url . '&_wpnonce=valid'; }
+function wp_create_nonce($action) { return 'valid'; }
+function esc_js($value) { return addslashes($value); }
 function wp_tempnam($filename) { return tempnam(sys_get_temp_dir(), 'tk-cf7-xlsx-'); }
 function tk_asset_version($path) { return 'fixture'; }
 function wp_enqueue_style(...$args) { $GLOBALS['styles'][] = $args; }
+function wp_enqueue_script(...$args) { $GLOBALS['scripts'][] = $args; }
+function wp_localize_script(...$args) { $GLOBALS['localized'][] = $args; }
+function add_thickbox() { $GLOBALS['thickbox'] = true; }
 function tk_toolkits_capability() { return 'manage_options'; }
 function add_menu_page(...$args) { $GLOBALS['menus'][] = $args; }
+
+// Rendering boundary only; native dimensions and mobile behavior are tested in real WordPress.
+class WP_List_Table {
+    public $items = array();
+    protected $_column_headers;
+    public function __construct($args) {}
+    public function set_pagination_args($args) {}
+    public function get_pagenum() { return max(1, absint($_GET['paged'] ?? 1)); }
+    public function row_actions($actions) { return '<div class="row-actions">' . implode(' | ', $actions) . '</div>'; }
+    public function single_row($item) { echo '<tr>'; $this->single_row_columns($item); echo '</tr>'; }
+    protected function single_row_columns($item) {
+        foreach ($this->get_columns() as $key => $label) {
+            $method = 'column_' . $key;
+            echo '<td>' . (method_exists($this, $method) ? $this->$method($item) : $this->column_default($item, $key)) . '</td>';
+        }
+    }
+    public function display() {
+        echo '<table class="wp-list-table widefat fixed striped"><tbody>';
+        foreach ($this->items as $item) { $this->single_row($item); }
+        echo '</tbody></table>';
+    }
+}
 
 // Exercise the real Tool Kits permission/nonce helpers without bootstrapping unrelated modules.
 $helpers = file_get_contents(dirname(__DIR__) . '/includes/helpers.php');
@@ -81,8 +117,20 @@ class CollectionDatabase {
     public function insert($table, $row, $formats) { $row['id'] = count($this->rows) + 1; $row['read_at'] = null; $this->rows[] = $row; }
     public function get_var($query) { $this->queries++; return count($this->rows); }
     public function get_results($query, $format = null) { $this->queries++; return array(); }
-    public function get_row($query) { $this->queries++; return $this->rows ? (object) $this->rows[0] : null; }
-    public function prepare($query, ...$values) { return $query; }
+    public function get_row($query) {
+        $this->queries++;
+        if (preg_match('/WHERE id = (\d+)/', $query, $match)) {
+            foreach ($this->rows as $row) { if ($row['id'] === (int) $match[1]) { return (object) $row; } }
+            return null;
+        }
+        return $this->rows ? (object) $this->rows[0] : null;
+    }
+    public function prepare($query, ...$values) {
+        return preg_replace_callback('/%[ds]/', function ($match) use (&$values) {
+            $value = array_shift($values);
+            return $match[0] === '%d' ? (string) (int) $value : "'" . addslashes((string) $value) . "'";
+        }, $query);
+    }
     public function update($table, $values, ...$args) { $this->updates++; $this->rows[0] = array_merge($this->rows[0], $values); }
     public function delete($table, $where, $formats) { $this->rows = array_values(array_filter($this->rows, function ($row) use ($where) { return $row['id'] !== $where['id']; })); }
 }
@@ -104,6 +152,7 @@ check_database(empty($GLOBALS['styles']), 'Collection stylesheet loaded on the T
 $_GET['page'] = 'tool-kits-cf7-collection';
 tk_cf7_database_assets();
 check_database(count($GLOBALS['styles']) === 1, 'Collection stylesheet missing');
+check_database(!empty($GLOBALS['thickbox']) && count($GLOBALS['scripts']) === 1, 'Native Thickbox and collection interaction script are missing');
 $_GET['page'] = 'other'; tk_cf7_database_assets();
 check_database(count($GLOBALS['styles']) === 1, 'Collection stylesheet leaked to other screens');
 
@@ -191,8 +240,32 @@ check_database(strpos($forms_html, 'page=cf7dbc') === false, 'View linked to sta
 $_GET = array('page' => 'tool-kits-cf7-collection', 'submission_id' => 1);
 $wpdb->rows[0]['data'] = json_encode(array('message' => '<script>alert(1)</script>'));
 ob_start(); tk_render_cf7_database_collection_page(); $detail_html = ob_get_clean();
+check_database(strpos($detail_html, 'data-open-id="1"') !== false && $wpdb->updates === 0, 'Legacy detail URL must open the modal without reading messages during list rendering');
+$_POST = array('submission_id' => 1, 'nonce' => 'invalid');
+try { tk_cf7_database_detail(); throw new RuntimeException('Invalid nonce viewed a message'); }
+catch (DatabaseDenied $e) { check_database($wpdb->updates === 0, 'Invalid nonce changed read state'); }
+$_POST['nonce'] = 'valid';
+$GLOBALS['manager'] = false;
+try { tk_cf7_database_detail(); throw new RuntimeException('Unauthorized manager viewed a message'); }
+catch (DatabaseJson $e) { check_database($e->status === 403 && $wpdb->updates === 0, 'Unauthorized manager read a message'); }
+$GLOBALS['manager'] = true;
+$GLOBALS['licensed'] = false;
+try { tk_cf7_database_detail(); throw new RuntimeException('Expired license exposed a message'); }
+catch (DatabaseJson $e) { check_database($e->status === 403 && $wpdb->updates === 0, 'Expired license read a message'); }
+$GLOBALS['licensed'] = true;
+$GLOBALS['tk']['cf7_database_enabled'] = 0;
+try { tk_cf7_database_detail(); throw new RuntimeException('Disabled collection exposed a message'); }
+catch (DatabaseJson $e) { check_database($e->status === 403 && $wpdb->updates === 0, 'Disabled collection read a message'); }
+$GLOBALS['tk']['cf7_database_enabled'] = 1;
+$_POST['submission_id'] = 999;
+try { tk_cf7_database_detail(); throw new RuntimeException('Unknown message was returned'); }
+catch (DatabaseJson $e) { check_database($e->status === 404 && $wpdb->updates === 0, 'Unknown message changed read state'); }
+$_POST['submission_id'] = 1;
+try { tk_cf7_database_detail(); } catch (DatabaseJson $e) { $detail_html = $e->data['html']; }
 check_database(strpos($detail_html, '<script>') === false && strpos($detail_html, '&lt;script&gt;') !== false, 'Message detail is not XSS-safe');
 check_database($wpdb->rows[0]['read_status'] === 'read' && $wpdb->updates === 1, 'Opening a message did not mark it read');
+try { tk_cf7_database_detail(); } catch (DatabaseJson $e) {}
+check_database($wpdb->updates === 1, 'Reopening a message changed its read timestamp');
 check_database(tk_cf7dbc_escape_excel_cell('=HYPERLINK("bad")') === '\'=HYPERLINK("bad")', 'Excel formula protection was lost');
 check_database(!tk_cf7dbc_should_export_field('tk_captcha_answer') && tk_cf7dbc_should_export_field('your-email'), 'Export field filtering was lost');
 $excel = tk_cf7dbc_create_excel_file(array('Message'), array(array('=1+1'), array('<script>message</script>')), 'submissions.xlsx');

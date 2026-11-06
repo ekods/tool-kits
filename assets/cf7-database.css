@@ -1,5 +1,6 @@
 /* Bundled CF7 collection, using the Tool Kits workbench foundations. */
 .cf7dbc-wrap { padding: 0 0 24px; box-sizing: border-box; max-width: 1440px; }
+.cf7dbc-wrap > .cf7dbc-page-heading { margin: 0; padding: 16px 0 0; max-width: none; }
 .cf7dbc-header { margin-bottom: 20px; }
 .cf7dbc-header-content, .cf7dbc-header, .cf7dbc-widget-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .cf7dbc-header-content { width: 100%; }
@@ -8,17 +9,14 @@
 .cf7dbc-section-title { margin: 24px 0 14px; font-size: 1.3em; color: var(--tk-text); }
 .cf7dbc-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 0 0 20px; }
 .cf7dbc-header .cf7dbc-actions { margin: 0; }
-.cf7dbc-table-container { overflow-x: auto; border: 1px solid var(--tk-border); border-radius: 8px; background: var(--tk-surface); }
-.cf7dbc-table-container > .widefat { border: 0; box-shadow: none; }
-.cf7dbc-table td { vertical-align: middle; }
-.cf7dbc-detail-card { border: 1px solid var(--tk-border); border-radius: 8px; background: var(--tk-surface); margin-bottom: 24px; overflow-x: auto; }
-.cf7dbc-detail-table { width: 100%; border-collapse: collapse; }
-.cf7dbc-detail-table th, .cf7dbc-detail-table td { padding: 14px 18px; border-bottom: 1px solid var(--tk-border-soft); text-align: start; vertical-align: top; line-height: 1.6; }
-.cf7dbc-detail-table th { width: 210px; background: var(--tk-bg-soft); color: var(--tk-muted); font-weight: 500; }
-.cf7dbc-detail-table td { color: var(--tk-text); overflow-wrap: anywhere; }
-.cf7dbc-detail-table tr:last-child > * { border-bottom: 0; }
+/* Core owns table borders, striping, pagination, row actions and every button. */
+.cf7dbc-wrap .wp-list-table td { overflow-wrap: anywhere; }
+.cf7dbc-message-detail .widefat { table-layout: fixed; }
+.cf7dbc-message-detail .widefat th[scope="row"] { width: 28%; }
+.cf7dbc-message-detail .widefat :is(th, td) { overflow-wrap: anywhere; }
+.cf7dbc-modal-loading .spinner { float: none; margin: 0 8px 0 0; }
 .cf7dbc-badge { display: inline-block; max-width: 100%; padding: 3px 8px; border-radius: 4px; font-size: 13px; font-weight: 500; line-height: 1.5; white-space: nowrap; }
-.cf7dbc-badge-unread { background: var(--tk-primary-soft); color: var(--tk-primary-dark); }
+.cf7dbc-badge-unread { background: var(--tk-primary-soft, #eaf3ff); color: var(--tk-primary-dark); }
 .cf7dbc-badge-read { background: var(--tk-bg-soft); color: var(--tk-muted); }
 .cf7dbc-dashboard-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin-bottom: 24px; border: 1px solid var(--tk-border); border-radius: 10px; background: var(--tk-surface); }
 .cf7dbc-stat-card { display: flex; align-items: center; gap: 14px; padding: 20px; border-inline-start: 1px solid var(--tk-border); min-width: 0; }
@@ -53,7 +51,5 @@
     .cf7dbc-stat-card { padding: 14px; gap: 8px; }
     .cf7dbc-stat-icon { display: none; }
     .cf7dbc-stat-content .value { font-size: 23px; }
-    .cf7dbc-detail-table th { width: auto; }
-    .cf7dbc-detail-table th, .cf7dbc-detail-table td { padding: 12px; }
     .cf7dbc-recent-item { flex-wrap: wrap; }
 }

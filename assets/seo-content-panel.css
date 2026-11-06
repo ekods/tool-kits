@@ -50,11 +50,10 @@
 .tk-seo-length-status[data-state="ideal"] { background: #e5f4e9; color: #116329; }
 .tk-seo-length-status[data-state="short"] { background: #fff4d6; color: #805500; }
 .tk-seo-length-status[data-state="long"] { background: #fbe2e2; color: #b32d2e; }
-#tk-seo-social-facebook:checked ~ .tk-seo-preview-heading [for="tk-seo-social-facebook"], #tk-seo-social-linkedin:checked ~ .tk-seo-preview-heading [for="tk-seo-social-linkedin"] { background: #2271b1; color: #fff; }
-#tk-seo-social-facebook:focus-visible ~ .tk-seo-preview-heading [for="tk-seo-social-facebook"], #tk-seo-social-linkedin:focus-visible ~ .tk-seo-preview-heading [for="tk-seo-social-linkedin"] { outline: 2px solid #2271b1; outline-offset: 2px; }
+#tk-seo-social-facebook:checked ~ .tk-seo-preview-heading [for="tk-seo-social-facebook"], #tk-seo-social-whatsapp:checked ~ .tk-seo-preview-heading [for="tk-seo-social-whatsapp"] { background: #2271b1; color: #fff; }
+#tk-seo-social-facebook:focus-visible ~ .tk-seo-preview-heading [for="tk-seo-social-facebook"], #tk-seo-social-whatsapp:focus-visible ~ .tk-seo-preview-heading [for="tk-seo-social-whatsapp"] { outline: 2px solid #2271b1; outline-offset: 2px; }
 .tk-seo-social-card { max-width: 650px; border: 1px solid #dcdcde; border-radius: 5px; overflow: hidden; background: #f0f2f5; color: #202124; overflow-wrap: anywhere; }
 .tk-seo-social-image-controls { display: flex; flex-wrap: wrap; gap: 8px; }
-#tk-seo-social-linkedin:checked ~ .tk-seo-social-card { border-radius: 8px; background: #eef3f8; border-color: #c5d3df; }
 .tk-seo-social-visual { position: relative; aspect-ratio: 1.91; background: #e8ecf0; }
 .tk-seo-social-image { display: block; width: 100%; height: 100%; object-fit: cover; }
 .tk-seo-social-image-empty { position: absolute; inset: 0; display: grid; place-items: center; color: #646970; font-size: 14px; }
@@ -63,6 +62,14 @@
 .tk-seo-social-title { display: block; font-size: 18px; line-height: 1.4; }
 .tk-seo-social-copy .tk-seo-social-description { margin: 8px 0 0; color: #50575e; font-size: 13px; line-height: 1.6; }
 .tk-seo-social-url { display: block; margin-top: 10px; color: #646970; font-size: 11px; }
+/* Illustrative WhatsApp link card, sharing the same Open Graph content and image. */
+#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card { display: grid; grid-template-columns: 96px minmax(0, 1fr); max-width: 440px; border-radius: 8px; border-color: #bdd7c2; background: #e7f5e8; }
+#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-visual { aspect-ratio: auto; min-height: 112px; background: #d7e8d9; }
+#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 12px; }
+#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-title { font-size: 14px; }
+#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-description { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin: 0; color: #47574b; }
+#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-domain { order: 1; margin: 0; color: #47574b; text-transform: none; }
+#tk-seo-social-whatsapp:checked ~ .tk-seo-social-card .tk-seo-social-url { display: none; }
 .tk-seo-analysis-issues { padding-left: 20px; list-style: disc; }
 .tk-seo-template-field { position: relative; margin-top: 20px; }
 .tk-seo-field-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }

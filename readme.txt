@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.83
+Stable tag: 2.7.84
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,12 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.84 =
+Changes
+- CF7 Database now shares the Tool Kits header and uses native WordPress list tables, buttons, row actions, pagination and mobile row details.
+- Message Detail opens in WordPress Thickbox without leaving the list. Access and nonce checks protect each request; opening a message updates its read status and dashboard counts, while reopening preserves its read timestamp. Closing restores keyboard focus, and existing message URLs open the popup above the list.
+- SEO Content Open Graph preview now offers Facebook and WhatsApp. WhatsApp uses a compact link card that follows the live SEO title, description and social image; the duplicate LinkedIn preview has been removed.
 
 = 2.7.83 =
 Fixes
