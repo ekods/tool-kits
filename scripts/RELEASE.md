@@ -1,3 +1,16 @@
+## Tool Kits 2.7.87
+
+FAQ GEO now appears inside the Tool Kits SEO / GEO sidebar card. The Edit FAQ
+popup, saved FAQ data and public schema output retain their existing behavior.
+SEO Settings can hide the SEO/GEO controls and FAQ section independently; the
+shared card stays available while either section is enabled. SEO Content remains
+in its own main editor panel. No option or metadata migration is required.
+
+Validation: automatic SEO/GEO signals (37), locale-copy/panel visibility (54),
+FAQ persistence/security and rendered HTML audit; 61 isolated browser checks for
+the merged/FAQ-only card, Apply/Cancel, submitted nonces/values and 1280/390/320px
+layouts.
+
 ## Tool Kits 2.7.86
 
 GEO audit sampling, batched settings writes, streaming CF7 Excel exports and lighter frontend SEO/GEO loading. See `readme.txt` for the complete list.

@@ -343,7 +343,7 @@ function tk_seo_add_geo_meta_boxes(): void {
     }
 
     foreach (tk_seo_selected_post_types() as $post_type) {
-        if (tk_seo_editor_panel_visible('geo')) {
+        if (tk_seo_editor_panel_visible('geo') || tk_seo_editor_panel_visible('faq')) {
         add_meta_box(
             // A new ID prevents a saved legacy "normal" order from moving it back below the editor.
             'tk-seo-geo-sidebar',
@@ -364,25 +364,17 @@ function tk_seo_add_geo_meta_boxes(): void {
             'low'
         );
         }
-        if (tk_seo_editor_panel_visible('faq')) {
-        add_meta_box(
-            'tk-seo-faq',
-            'Tool Kits FAQ GEO',
-            'tk_seo_render_faq_meta_box',
-            $post_type,
-            'side',
-            'default'
-        );
-        }
     }
 }
 
 function tk_seo_render_geo_meta_box($post): void {
     $post_id = is_object($post) ? (int) $post->ID : 0;
 
-    wp_nonce_field('tk_seo_geo_meta_box', 'tk_seo_geo_meta_nonce');
+    $show_geo = tk_seo_editor_panel_visible('geo');
     ?>
     <div class="tk-seo-geo-box">
+        <?php if ($show_geo) : ?>
+        <?php wp_nonce_field('tk_seo_geo_meta_box', 'tk_seo_geo_meta_nonce'); ?>
         <div class="tk-seo-geo-switches" role="group" aria-label="SEO and GEO output for this content">
             <?php foreach (array('seo' => 'SEO', 'geo' => 'GEO') as $feature => $label) : ?>
                 <input type="hidden" name="tk_<?php echo esc_attr($feature); ?>_enabled" value="0">
@@ -403,6 +395,13 @@ function tk_seo_render_geo_meta_box($post): void {
             </div>
         <?php endif; ?>
         <?php tk_seo_render_public_audit_panel($post); ?>
+        <?php endif; ?>
+        <?php if (tk_seo_editor_panel_visible('faq')) : ?>
+            <section class="tk-seo-geo-faq<?php echo $show_geo ? ' tk-seo-geo-faq-separated' : ''; ?>" aria-label="FAQ GEO">
+                <h3>FAQ GEO</h3>
+                <?php tk_seo_render_faq_meta_box($post); ?>
+            </section>
+        <?php endif; ?>
     </div>
     <?php
 }
@@ -2535,11 +2534,11 @@ function tk_render_seo_opt_panel() {
                 <legend><strong>Editor Panels</strong></legend>
                 <input type="hidden" name="tk_seo_panels_present" value="1">
                 <p><label><input type="checkbox" name="seo_content_panel_enabled" value="1" <?php checked(tk_seo_editor_panel_visible('content')); ?>> Show Tool Kits SEO Content</label></p>
-                <p><label><input type="checkbox" name="seo_geo_panel_enabled" value="1" <?php checked(tk_seo_editor_panel_visible('geo')); ?>> Show Tool Kits SEO / GEO</label></p>
-                <p><label><input type="checkbox" name="seo_faq_panel_enabled" value="1" <?php checked(tk_seo_editor_panel_visible('faq')); ?>> Show Tool Kits FAQ GEO</label></p>
+                <p><label><input type="checkbox" name="seo_geo_panel_enabled" value="1" <?php checked(tk_seo_editor_panel_visible('geo')); ?>> Show SEO / GEO controls</label></p>
+                <p><label><input type="checkbox" name="seo_faq_panel_enabled" value="1" <?php checked(tk_seo_editor_panel_visible('faq')); ?>> Show FAQ GEO in Tool Kits SEO / GEO</label></p>
                 <p><label><input type="checkbox" name="seo_list_score_enabled" value="1" <?php checked(tk_seo_list_score_enabled()); ?>> Show SEO score column in content lists</label></p>
                 <p><label><input type="checkbox" name="seo_list_geo_enabled" value="1" <?php checked(tk_seo_list_geo_enabled()); ?>> Show GEO indicator column in content lists</label></p>
-                <p class="description">Choose which panels appear in the content editor and whether content lists (wp-admin/edit.php) show the SEO score and GEO indicators. GEO uses the latest GEO Audit &amp; Fixes results. Hiding a panel or column preserves saved metadata and public SEO/GEO output.</p>
+                <p class="description">SEO / GEO controls and FAQ GEO share one sidebar card; each section can be hidden separately. Choose whether content lists (wp-admin/edit.php) show the SEO score and GEO indicators. GEO uses the latest GEO Audit &amp; Fixes results. Hiding a section, panel or column preserves saved metadata and public SEO/GEO output.</p>
             </fieldset>
 
             <fieldset style="margin-bottom:24px;">

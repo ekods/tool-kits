@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.86
+Stable tag: 2.7.87
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,7 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.87 merges FAQ GEO into the Tool Kits SEO / GEO sidebar card. Edit FAQ opens the existing popup. SEO Settings can show or hide the SEO/GEO controls and FAQ section independently; saved FAQs and public output are preserved.
 - Version 2.7.62 makes I'm not a robot a single checkbox without a code input. Clicking automatically checks the browser-bound token, minimum time, honeypot and request limits on the server before returning a one-use proof. Classic Text continues to use an image code. Checkbox checks validate the request/session; they are not a guarantee of human identity. Clear page/CDN caches after updating.
 - Version 2.7.61 strengthens CAPTCHA enforcement. Protected CF7 forms reject missing CAPTCHA fields, and checkbox mode opens an image-code challenge rather than approving a click alone. Codes have at least 6 characters, expire after 5 minutes and use visitor-bound, one-use tokens. Adjust minimum solve time and attempt limits under Spam Protection > Captcha. Clear page/CDN caches after installing; old cached CAPTCHA markup and click proofs are no longer valid.
 - Version 2.7.60 adds a live Contact Form 7 cooldown timer and Submission Cooldown settings under Spam Protection > Timing & Velocity. Adjust email minutes, IP seconds and the duplicate window; use 0 to disable an individual rule or turn off Submission Cooldown to disable all three. IP Rate Limiting remains a separate setting.
@@ -80,6 +81,11 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.87 =
+- Merge Tool Kits FAQ GEO into the Tool Kits SEO / GEO sidebar card, retaining the Edit FAQ popup and keeping Tool Kits SEO Content separate.
+- Preserve independent SEO/GEO and FAQ visibility settings; show the shared card when either section is enabled and avoid submitting hidden SEO/GEO controls in FAQ-only mode.
+- Retain FAQ data, Apply/Cancel behavior, separate save nonces, selected content types and public FAQ/schema output.
 
 = 2.7.86 =
 Performance

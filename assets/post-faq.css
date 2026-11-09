@@ -1,4 +1,6 @@
 .tk-post-faq .dashicons { vertical-align: middle; }
+.tk-seo-geo-faq-separated { margin-top: 12px; padding-top: 12px; border-top: 1px solid #dcdcde; }
+.tk-seo-geo-faq > h3 { margin: 0 0 8px; font-size: 13px; }
 .tk-faq-dialog .button .dashicons { width: 18px; height: 18px; font-size: 18px; line-height: 18px; vertical-align: 0; }
 .tk-faq-dialog { box-sizing: border-box; width: 760px; max-width: calc(100vw - 40px); max-height: calc(100vh - 64px); max-height: calc(100dvh - 64px); padding: 0; overflow: hidden; border: 1px solid #dcdcde; border-radius: 12px; color: #1d2327; background: #fff; box-shadow: 0 24px 80px rgba(0,0,0,.2); }
 .tk-faq-dialog[open] { display: flex; flex-direction: column; }

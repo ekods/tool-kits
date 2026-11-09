@@ -36,7 +36,7 @@ function sanitize_text_field($value) { return strip_tags($value); }
 function wp_unslash($value) { return stripslashes($value); }
 function tk_is_admin_user() { return true; }
 function add_meta_box(...$args) { $GLOBALS['boxes'][] = $args; }
-function wp_nonce_field(...$args) {}
+function wp_nonce_field($action, $name) { echo '<input type="hidden" name="' . esc_attr($name) . '" value="valid">'; }
 function esc_attr($value) { return htmlspecialchars($value, ENT_QUOTES, 'UTF-8'); }
 function esc_html($value) { return esc_attr($value); }
 function esc_url($value) { return esc_attr($value); }
@@ -132,8 +132,18 @@ $html = ob_get_clean();
 foreach (array('tk_schema_type', 'tk_geo_reference_urls', 'tk_geo_related_posts', 'Schema Type', 'References / Sources', 'Related Content') as $removed) {
     verify_auto(strpos($html, $removed) === false, 'Removed field still rendered: ' . $removed);
 }
-verify_auto(strpos($html, 'tk_seo_focus_keyword') === false && strpos($html, 'tk-seo-content-open') === false && strpos($html, 'tk-faq-dialog') === false, 'Sidebar must leave FAQ and content editing to separate panels');
-verify_auto($boxes[2][0] === 'tk-seo-faq' && $boxes[2][4] === 'side' && $boxes[2][1] === 'Tool Kits FAQ GEO', 'FAQ GEO must have its own sidebar panel');
+verify_auto(strpos($html, 'tk_seo_focus_keyword') === false && strpos($html, 'tk-seo-content-open') === false && substr_count($html, 'class="tk-faq-dialog"') === 1, 'Sidebar must embed the FAQ popup once while leaving SEO Content separate');
+verify_auto(count($boxes) === 2 && $boxes[0][1] === 'Tool Kits SEO / GEO', 'FAQ GEO and SEO / GEO share one sidebar card');
+verify_auto(substr_count($html, 'name="tk_seo_geo_meta_nonce"') === 1 && substr_count($html, 'name="tk_seo_faq_meta_nonce"') === 1, 'Merged card retains each save handler nonce exactly once');
+$options['seo_faq_panel_enabled'] = 0;
+ob_start(); tk_seo_render_geo_meta_box($posts[1]); $without_faq = ob_get_clean();
+verify_auto(strpos($without_faq, 'tk-faq-dialog') === false && strpos($without_faq, 'tk-seo-geo-switches') !== false, 'FAQ can be hidden without hiding SEO / GEO controls');
+$options['seo_faq_panel_enabled'] = 1; $options['seo_geo_panel_enabled'] = 0;
+$boxes = array(); tk_seo_add_geo_meta_boxes();
+ob_start(); tk_seo_render_geo_meta_box($posts[1]); $faq_only = ob_get_clean();
+verify_auto(count($boxes) === 2 && $boxes[0][0] === 'tk-seo-geo-sidebar', 'Shared sidebar card remains available when only FAQ is enabled');
+verify_auto(strpos($faq_only, 'tk-faq-dialog') !== false && strpos($faq_only, 'tk-seo-geo-switches') === false && strpos($faq_only, 'tk_seo_enabled') === false, 'FAQ-only rendering must not submit hidden SEO/GEO controls');
+$options['seo_geo_panel_enabled'] = 1;
 ob_start();
 tk_seo_render_faq_meta_box($posts[1]);
 $html = ob_get_clean();
