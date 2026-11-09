@@ -5,14 +5,18 @@ function tk_geo_batch_targets(): array {
     $targets = array(array('id' => 0, 'url' => home_url('/'), 'title' => 'Homepage'));
     $types = array_values(array_intersect(get_post_types(array('public' => true), 'names'), tk_seo_selected_post_types()));
     if (!$types) { return $targets; }
-    $posts = get_posts(array('post_type' => $types, 'post_status' => 'publish', 'posts_per_page' => -1, 'orderby' => 'modified', 'order' => 'DESC', 'has_password' => false));
     $seen = array(home_url('/') => true);
-    foreach ($posts as $post) {
-        if (!is_post_type_viewable($post->post_type)) { continue; }
-        $url = get_permalink($post->ID);
-        if (!$url || isset($seen[$url])) { continue; }
-        $seen[$url] = true;
-        $targets[] = array('id' => (int) $post->ID, 'url' => $url, 'title' => get_the_title($post));
+    foreach ($types as $type) {
+        if (!is_post_type_viewable($type) || $type === 'attachment') { continue; }
+        // Pages have distinct layouts; posts/CPTs share templates, so audit three recent examples per type.
+        $posts = get_posts(array('post_type' => $type, 'post_status' => 'publish', 'posts_per_page' => $type === 'page' ? -1 : 3,
+            'orderby' => array('date' => 'DESC', 'ID' => 'DESC'), 'has_password' => false));
+        foreach ($posts as $post) {
+            $url = get_permalink($post->ID);
+            if (!$url || isset($seen[$url])) { continue; }
+            $seen[$url] = true;
+            $targets[] = array('id' => (int) $post->ID, 'url' => $url, 'title' => get_the_title($post));
+        }
     }
     return $targets;
 }
@@ -36,7 +40,6 @@ function tk_geo_batch_report(array $items, int $total): array {
 
 function tk_geo_batch_start(): void {
     tk_geo_batch_authorize();
-    $targets = tk_geo_batch_targets();
     $mode = $_POST['mode'] ?? '';
     $report = (array) tk_get_option('seo_geo_audit_report', array());
     $existing = isset($report['items']) && is_array($report['items']) ? $report['items'] : array();
@@ -51,10 +54,22 @@ function tk_geo_batch_start(): void {
             $failed = !isset($item['score']) || (int) ($item['status'] ?? 0) < 200 || (int) ($item['status'] ?? 0) >= 400;
             if (($mode === 'failed' && $failed) || ($mode === 'report-selected' && in_array($item['url'], $requested, true))) { $urls[] = $item['url']; }
         }
-        $targets = array_values(array_filter($targets, function ($target) use ($urls) { return in_array($target['url'], $urls, true); }));
-    } elseif ($mode !== 'all') {
-        $ids = isset($_POST['ids']) && is_array($_POST['ids']) ? array_map('absint', $_POST['ids']) : array();
-        $targets = array_values(array_filter($targets, function ($target) use ($ids) { return in_array($target['id'], $ids, true); }));
+        // A saved URL may have aged out of the latest-three sample; explicit retries still work.
+        $targets = array();
+        foreach (array_unique($urls) as $url) {
+            $url = tk_geo_crawler_fix_url((string) $url);
+            if ($url !== '') { $targets[] = array('id' => 0, 'url' => $url, 'title' => $url); }
+        }
+    } else {
+        $targets = tk_geo_batch_targets();
+        if ($mode === 'all') {
+            $sample_urls = array_fill_keys(array_column($targets, 'url'), true);
+            $existing = array_values(array_filter($existing, function ($item) use ($sample_urls) { return isset($sample_urls[$item['url'] ?? '']); }));
+            $existing_total = count($targets);
+        } else {
+            $ids = isset($_POST['ids']) && is_array($_POST['ids']) ? array_map('absint', $_POST['ids']) : array();
+            $targets = array_values(array_filter($targets, function ($target) use ($ids) { return in_array($target['id'], $ids, true); }));
+        }
     }
     if (!$targets) { wp_send_json_error(array('message' => 'Select at least one URL.'), 400); }
     $token = wp_generate_password(24, false, false);
@@ -145,6 +160,7 @@ function tk_geo_fix_batch_step(): void {
 function tk_geo_batch_controls(): void {
     ?>
     <div id="tk-geo-batch" data-nonce="<?php echo esc_attr(wp_create_nonce('tk_geo_batch')); ?>" data-endpoint="<?php echo esc_url(admin_url('admin-ajax.php')); ?>">
+        <p class="description">Audit scope: homepage, all selected Pages, and three latest published posts per selected post type. Sample results do not cover every post.</p>
         <p><label><input type="checkbox" class="tk-geo-select-all"> Select all</label></p>
         <div style="max-height:280px;overflow:auto;border:1px solid #dcdcde;padding:12px;">
             <?php foreach (tk_geo_batch_targets() as $target) : ?>

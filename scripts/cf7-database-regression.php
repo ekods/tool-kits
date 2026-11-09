@@ -26,6 +26,7 @@ function get_option($key, $default = false) { return $GLOBALS['options'][$key] ?
 function update_option($key, $value) { $GLOBALS['options'][$key] = $value; }
 function tk_get_option($key, $default = null) { return $GLOBALS['tk'][$key] ?? $default; }
 function tk_update_option($key, $value) { $GLOBALS['tk'][$key] = $value; }
+function tk_update_options(array $values) { $GLOBALS['batch_writes'] = ($GLOBALS['batch_writes'] ?? 0) + 1; foreach ($values as $key => $value) { tk_update_option($key, $value); } }
 function tk_license_features_enabled() { return $GLOBALS['licensed']; }
 function tk_is_admin_user() { return $GLOBALS['manager']; }
 function wp_die($message, ...$args) { throw new DatabaseDenied($message); }

@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.85
+Stable tag: 2.7.86
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -80,6 +80,19 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.86 =
+Performance
+- GEO Audit checks the homepage, all published unprotected Pages in the selected post types, and three latest published posts per selected post/custom post type. Run All aligns the report with this sample; explicit retries of previously saved local URLs remain available. Indexing Checks continues to discover the full website separately.
+- Batch configuration writes in General, Assets, Cache, Lazy Load, WebP, Image Optimizer, Uploads, Analytics, SEO, GEO/AI Catalog, SMTP and CF7 settings, preserving checkbox markers, blank secrets and OAuth token resets.
+- Stream CF7 Database Excel exports through 500-row database batches and a temporary spool, retaining dynamic columns, form filters, date ordering, formula protection and cleanup after errors.
+- Skip eight SEO/GEO editor and audit files on public pages while keeping shared metadata, social images, save hooks, schema and AI endpoints available.
+- Combine adjacent global and per-page metadata buffers, preserve page override precedence and intervening third-party buffer order, stop metadata parsing at the closing head tag, and assemble edits without repeatedly copying the page body.
+
+Upgrade notes
+- GEO post/CPT results represent a sample, not every published entry. Run GEO Audit again to align an existing full report with the current sample.
+- No database schema or option format changes. Existing submissions, settings and credentials are preserved.
+- Frontend measurements use isolated local fixtures; they do not establish production TTFB gains.
 
 = 2.7.85 =
 Changes

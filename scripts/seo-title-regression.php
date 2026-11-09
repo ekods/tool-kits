@@ -10,6 +10,7 @@ $_SERVER['REQUEST_METHOD'] = 'GET';
 function check($ok, $message) { if (!$ok) { throw new RuntimeException($message); } }
 function tk_get_option($key, $default = null) { return $GLOBALS['options'][$key] ?? $default; }
 function tk_update_option($key, $value) { $GLOBALS['options'][$key] = $value; }
+function tk_update_options(array $values) { $GLOBALS['batch_writes'] = ($GLOBALS['batch_writes'] ?? 0) + 1; foreach ($values as $key => $value) { tk_update_option($key, $value); } }
 function tk_license_features_enabled() { return $GLOBALS['licensed']; }
 function tk_require_admin_post($action) { check($action === 'tk_seo_global_save', 'Wrong authorization action'); if (!$GLOBALS['authorized']) { throw new RuntimeException('Unauthorized'); } }
 function tk_post($key, $default = '') { return $_POST[$key] ?? $default; }

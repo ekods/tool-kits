@@ -35,6 +35,7 @@ foreach (array('draft', 'private', 'password', 'attachment', 'internal') as $ind
 function check_catalog($ok, $message) { if (!$ok) throw new RuntimeException($message); }
 function tk_get_option($key, $default = null) { return $GLOBALS['options'][$key] ?? $default; }
 function tk_update_option($key, $value) { $GLOBALS['options'][$key] = $value; }
+function tk_update_options(array $values) { $GLOBALS['batch_writes'] = ($GLOBALS['batch_writes'] ?? 0) + 1; foreach ($values as $key => $value) { tk_update_option($key, $value); } }
 function tk_post($key, $default = '') { return isset($_POST[$key]) ? stripslashes($_POST[$key]) : $default; }
 function wp_date($format, $timestamp = null) { return $timestamp === null ? $GLOBALS['today'] : gmdate($format, $timestamp); }
 function sanitize_text_field($text) { return trim(strip_tags($text)); }

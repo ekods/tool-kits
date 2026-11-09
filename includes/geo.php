@@ -1,9 +1,12 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
-require_once __DIR__ . '/geo-audit-batch.php';
+if (!function_exists('tk_request_needs_admin_modules') || tk_request_needs_admin_modules()) {
+    require_once __DIR__ . '/geo-audit-batch.php';
+    require_once __DIR__ . '/geo-schema-check.php';
+}
+
 require_once __DIR__ . '/geo-crawler-fixes.php';
 require_once __DIR__ . '/geo-radar.php';
-require_once __DIR__ . '/geo-schema-check.php';
 require_once __DIR__ . '/geo-ai-catalog.php';
 
 function tk_geo_init() {
@@ -2098,6 +2101,7 @@ function tk_geo_ai_access_clear(): void {
 }
 
 function tk_geo_save(): void {
+    $settings = array();
     tk_require_admin_post('tk_geo_save');
 
     $catalog_settings = tk_geo_ai_catalog_posted_settings();
@@ -2184,23 +2188,25 @@ function tk_geo_save(): void {
         $itemlist_language_mode = 'single';
     }
 
-    tk_update_option('geo_enabled', !empty($_POST['geo_enabled']) ? 1 : 0);
-    tk_update_option('seo_schema_enabled', !empty($_POST['seo_schema_enabled']) ? 1 : 0);
-    tk_update_option('seo_breadcrumb_enabled', !empty($_POST['seo_breadcrumb_enabled']) ? 1 : 0);
-    tk_update_option('geo_schema_override_theme', !empty($_POST['geo_schema_override_theme']) ? 1 : 0);
+    $settings['geo_enabled'] = !empty($_POST['geo_enabled']) ? 1 : 0;
+    $settings['seo_schema_enabled'] = !empty($_POST['seo_schema_enabled']) ? 1 : 0;
+    $settings['seo_breadcrumb_enabled'] = !empty($_POST['seo_breadcrumb_enabled']) ? 1 : 0;
+    $settings['geo_schema_override_theme'] = !empty($_POST['geo_schema_override_theme']) ? 1 : 0;
     // Schema types are detected automatically. Legacy maps are preserved but no longer read or edited.
-    tk_update_option('geo_custom_jsonld', $custom_json);
-    tk_update_option('geo_faq_enabled', !empty($_POST['geo_faq_enabled']) ? 1 : 0);
-    tk_update_option('geo_faq_items', tk_geo_normalize_faq_items($faq_items));
-    tk_update_option('geo_itemlist_enabled', !empty($_POST['geo_itemlist_enabled']) ? 1 : 0);
-    tk_update_option('geo_itemlist_name', sanitize_text_field((string) tk_post('geo_itemlist_name', '')));
-    tk_update_option('geo_itemlist_description', sanitize_textarea_field((string) tk_post('geo_itemlist_description', '')));
-    tk_update_option('geo_itemlist_post_type', $post_type);
-    tk_update_option('geo_itemlist_post_ids', $post_ids);
-    tk_update_option('geo_itemlist_limit', max(1, min(50, (int) tk_post('geo_itemlist_limit', 10))));
-    tk_update_option('geo_itemlist_language_mode', $itemlist_language_mode);
-    tk_update_option('geo_llms_enabled', !empty($_POST['geo_llms_enabled']) ? 1 : 0);
-    tk_update_option('geo_ai_catalog_enabled', !empty($_POST['geo_ai_catalog_enabled']) || !empty($_POST['geo_ai_catalog_generate']) || !empty($_POST['geo_ai_catalog_generate_auto']) ? 1 : 0);
+    $settings['geo_custom_jsonld'] = $custom_json;
+    $settings['geo_faq_enabled'] = !empty($_POST['geo_faq_enabled']) ? 1 : 0;
+    $settings['geo_faq_items'] = tk_geo_normalize_faq_items($faq_items);
+    $settings['geo_itemlist_enabled'] = !empty($_POST['geo_itemlist_enabled']) ? 1 : 0;
+    $settings['geo_itemlist_name'] = sanitize_text_field((string) tk_post('geo_itemlist_name', ''));
+    $settings['geo_itemlist_description'] = sanitize_textarea_field((string) tk_post('geo_itemlist_description', ''));
+    $settings['geo_itemlist_post_type'] = $post_type;
+    $settings['geo_itemlist_post_ids'] = $post_ids;
+    $settings['geo_itemlist_limit'] = max(1, min(50, (int) tk_post('geo_itemlist_limit', 10)));
+    $settings['geo_itemlist_language_mode'] = $itemlist_language_mode;
+    $settings['geo_llms_enabled'] = !empty($_POST['geo_llms_enabled']) ? 1 : 0;
+    $settings['geo_ai_catalog_enabled'] = !empty($_POST['geo_ai_catalog_enabled']) || !empty($_POST['geo_ai_catalog_generate']) || !empty($_POST['geo_ai_catalog_generate_auto']) ? 1 : 0;
+    tk_update_options($settings);
+    $settings = array();
     if (is_array($catalog_settings)) { tk_geo_ai_catalog_save_settings($catalog_settings); }
     if (!empty($_POST['geo_ai_catalog_use_example'])) { $active_tab = 'ai-catalog'; }
     if (!empty($_POST['geo_ai_catalog_generate']) || !empty($_POST['geo_ai_catalog_generate_auto'])) {
@@ -2210,11 +2216,11 @@ function tk_geo_save(): void {
     if (!in_array($llms_mode, array('auto', 'manual', 'hybrid'), true)) {
         $llms_mode = 'auto';
     }
-    tk_update_option('geo_llms_mode', $llms_mode);
+    $settings['geo_llms_mode'] = $llms_mode;
     $llms_manual = sanitize_textarea_field((string) tk_post('geo_llms_manual', ''));
-    tk_update_option('geo_llms_manual', $llms_manual);
-    tk_update_option('geo_llms_include_faq', !empty($_POST['geo_llms_include_faq']) ? 1 : 0);
-    tk_update_option('geo_llms_include_itemlist', !empty($_POST['geo_llms_include_itemlist']) ? 1 : 0);
+    $settings['geo_llms_manual'] = $llms_manual;
+    $settings['geo_llms_include_faq'] = !empty($_POST['geo_llms_include_faq']) ? 1 : 0;
+    $settings['geo_llms_include_itemlist'] = !empty($_POST['geo_llms_include_itemlist']) ? 1 : 0;
     $llms_sections = array();
     $llms_titles = isset($_POST['geo_llms_section_title']) && is_array($_POST['geo_llms_section_title']) ? $_POST['geo_llms_section_title'] : array();
     $llms_contents = isset($_POST['geo_llms_section_content']) && is_array($_POST['geo_llms_section_content']) ? $_POST['geo_llms_section_content'] : array();
@@ -2224,7 +2230,8 @@ function tk_geo_save(): void {
             'content' => isset($llms_contents[$index]) ? wp_unslash((string) $llms_contents[$index]) : '',
         );
     }
-    tk_update_option('geo_llms_sections', tk_geo_normalize_llms_sections($llms_sections));
+    $settings['geo_llms_sections'] = tk_geo_normalize_llms_sections($llms_sections);
+    tk_update_options($settings);
     if (!empty($_POST['geo_llms_generate_draft'])) {
         tk_update_option('geo_llms_manual', tk_geo_build_llms_auto_text());
         $active_tab = 'llms';

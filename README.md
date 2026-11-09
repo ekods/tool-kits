@@ -76,6 +76,16 @@ generator; the date changes when the saved catalog changes. Invalid JSON, duplic
 website URLs and non-array features/tags are rejected before GEO settings are written.
 Disable **Enable ai-catalog.json** and save to stop serving the catalog.
 
+### GEO audit sampling
+
+**GEO Audit & Fixes** checks the homepage, all published unprotected Pages in the selected
+post types, and the three latest published unprotected posts per selected post/custom post type.
+Latest means publication date, with the post ID resolving ties. Attachments and non-public types
+are excluded, and the homepage appears once. This is a template sample, not a full content audit.
+**Run All** keeps the saved report within that sample. Explicit retries of previously saved
+local URLs still work when those URLs have aged out of the latest-three sample.
+Indexing Checks & Fixes below continues to discover the full website independently.
+
 ### Check and fix indexing exclusions
 
 Open **Tool Kits > SEO > Indexing > Indexing Checks & Fixes** and click **Check Current Website**.

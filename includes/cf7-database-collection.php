@@ -227,65 +227,76 @@ function tk_cf7dbc_create_excel_file($headers, $rows, $filename) {
     $sheet_path = wp_tempnam('cf7dbc-worksheet.xml');
 
     if (!$excel_path || !$sheet_path) {
+        if ($excel_path) { @unlink($excel_path); }
+        if ($sheet_path) { @unlink($sheet_path); }
         return new WP_Error('tk_cf7dbc_excel_temp', __('Unable to create the temporary Excel file.', 'tool-kits'));
     }
 
-    $writer = new XMLWriter();
+    $complete = false;
+    try {
+        $writer = new XMLWriter();
 
-    if (!$writer->openUri($sheet_path)) {
-        @unlink($excel_path);
-        @unlink($sheet_path);
-        return new WP_Error('tk_cf7dbc_excel_sheet', __('Unable to create the Excel worksheet.', 'tool-kits'));
+        if (!$writer->openUri($sheet_path)) {
+            @unlink($excel_path);
+            @unlink($sheet_path);
+            return new WP_Error('tk_cf7dbc_excel_sheet', __('Unable to create the Excel worksheet.', 'tool-kits'));
+        }
+
+        $last_column = tk_cf7dbc_excel_column_name(max(count($headers) - 1, 0));
+        $last_row = 1;
+
+        $writer->startDocument('1.0', 'UTF-8', 'yes');
+        $writer->startElement('worksheet');
+        $writer->writeAttribute('xmlns', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
+        $writer->startElement('sheetViews');
+        $writer->startElement('sheetView');
+        $writer->writeAttribute('workbookViewId', '0');
+        $writer->startElement('pane');
+        $writer->writeAttribute('ySplit', '1');
+        $writer->writeAttribute('topLeftCell', 'A2');
+        $writer->writeAttribute('activePane', 'bottomLeft');
+        $writer->writeAttribute('state', 'frozen');
+        $writer->endElement();
+        $writer->endElement();
+        $writer->endElement();
+        $writer->startElement('sheetData');
+        tk_cf7dbc_write_excel_row($writer, $headers, 1, true);
+
+        foreach ($rows as $row) {
+            tk_cf7dbc_write_excel_row($writer, $row, ++$last_row);
+        }
+
+        $writer->endElement();
+        $writer->startElement('autoFilter');
+        $writer->writeAttribute('ref', 'A1:' . $last_column . $last_row);
+        $writer->endElement();
+        $writer->endElement();
+        $writer->endDocument();
+        $writer->flush();
+
+        $zip = new ZipArchive();
+
+        if ($zip->open($excel_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            @unlink($excel_path);
+            @unlink($sheet_path);
+            return new WP_Error('tk_cf7dbc_excel_zip', __('Unable to create the Excel archive.', 'tool-kits'));
+        }
+
+        $zip->addFromString('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>');
+        $zip->addFromString('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+        $zip->addFromString('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Submissions" sheetId="1" r:id="rId1"/></sheets></workbook>');
+        $zip->addFromString('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+        $zip->addFromString('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
+        $zip->addFile($sheet_path, 'xl/worksheets/sheet1.xml');
+        if (!$zip->close()) { throw new RuntimeException('Unable to finish the Excel archive.'); }
+        $complete = true;
+    } catch (Throwable $error) {
+        return new WP_Error('tk_cf7dbc_excel_write', __('Unable to write the Excel file.', 'tool-kits'));
+    } finally {
+        unset($writer, $zip);
+        if (is_file($sheet_path)) { @unlink($sheet_path); }
+        if (!$complete && is_file($excel_path)) { @unlink($excel_path); }
     }
-
-    $last_column = tk_cf7dbc_excel_column_name(max(count($headers) - 1, 0));
-    $last_row = max(count($rows) + 1, 1);
-
-    $writer->startDocument('1.0', 'UTF-8', 'yes');
-    $writer->startElement('worksheet');
-    $writer->writeAttribute('xmlns', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
-    $writer->startElement('sheetViews');
-    $writer->startElement('sheetView');
-    $writer->writeAttribute('workbookViewId', '0');
-    $writer->startElement('pane');
-    $writer->writeAttribute('ySplit', '1');
-    $writer->writeAttribute('topLeftCell', 'A2');
-    $writer->writeAttribute('activePane', 'bottomLeft');
-    $writer->writeAttribute('state', 'frozen');
-    $writer->endElement();
-    $writer->endElement();
-    $writer->endElement();
-    $writer->startElement('sheetData');
-    tk_cf7dbc_write_excel_row($writer, $headers, 1, true);
-
-    foreach ($rows as $row_index => $row) {
-        tk_cf7dbc_write_excel_row($writer, $row, $row_index + 2);
-    }
-
-    $writer->endElement();
-    $writer->startElement('autoFilter');
-    $writer->writeAttribute('ref', 'A1:' . $last_column . $last_row);
-    $writer->endElement();
-    $writer->endElement();
-    $writer->endDocument();
-    $writer->flush();
-
-    $zip = new ZipArchive();
-
-    if ($zip->open($excel_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-        @unlink($excel_path);
-        @unlink($sheet_path);
-        return new WP_Error('tk_cf7dbc_excel_zip', __('Unable to create the Excel archive.', 'tool-kits'));
-    }
-
-    $zip->addFromString('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>');
-    $zip->addFromString('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
-    $zip->addFromString('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Submissions" sheetId="1" r:id="rId1"/></sheets></workbook>');
-    $zip->addFromString('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
-    $zip->addFromString('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
-    $zip->addFile($sheet_path, 'xl/worksheets/sheet1.xml');
-    $zip->close();
-    @unlink($sheet_path);
 
     return $excel_path;
 }
@@ -944,6 +955,65 @@ function tk_cf7dbc_get_spam_reasons_text($row) {
 /**
  * Renders the header branding section.
  */
+/** Read a stable set in bounded batches, using the existing time/form indexes. */
+function tk_cf7dbc_export_batches(int $form_id): Generator {
+    global $wpdb;
+    $table = tk_cf7dbc_table_name();
+    $maximum = (int) $wpdb->get_var("SELECT MAX(id) FROM {$table}");
+    if (!empty($wpdb->last_error)) { throw new RuntimeException('Unable to read submissions for export.'); }
+    $cursor = null;
+    do {
+        $where = $wpdb->prepare('id <= %d', $maximum);
+        if ($form_id > 0) { $where .= $wpdb->prepare(' AND form_id = %d', $form_id); }
+        if ($cursor) {
+            $where .= $wpdb->prepare(' AND (submitted_at < %s OR (submitted_at = %s AND id < %d))', $cursor->submitted_at, $cursor->submitted_at, $cursor->id);
+        }
+        $rows = $wpdb->get_results("SELECT * FROM {$table} WHERE {$where} ORDER BY submitted_at DESC, id DESC LIMIT 500");
+        if (!empty($wpdb->last_error) || !is_array($rows)) { throw new RuntimeException('Unable to read submissions for export.'); }
+        if ($rows) { $cursor = end($rows); }
+        foreach ($rows as $row) { yield $row; }
+    } while (count($rows) === 500);
+}
+
+/** Discover dynamic columns once while spooling rows to disk, then stream the XLSX worksheet. */
+function tk_cf7dbc_prepare_export(int $form_id, string $filename) {
+    $spool = tmpfile();
+    if (!$spool) { return new WP_Error('tk_cf7dbc_export_temp', __('Unable to create the temporary export file.', 'tool-kits')); }
+    try {
+        $field_headers = array();
+        foreach (tk_cf7dbc_export_batches($form_id) as $row) {
+            $data = json_decode($row->data, true);
+            $clean = array();
+            foreach (is_array($data) ? $data : array() as $field => $value) {
+                if (!tk_cf7dbc_should_export_field($field)) { continue; }
+                $clean[$field] = $value;
+                $field_headers[$field] = $field;
+            }
+            $base = array($row->id, $row->form_id, $row->form_title, $row->submitted_at,
+                tk_cf7dbc_is_unread($row) ? 'unread' : 'read', $row->read_at ?? '', $row->user_ip, $row->page_url, $row->spam_status ?? 'clean');
+            $line = wp_json_encode(array($base, $clean));
+            if (!is_string($line) || fwrite($spool, $line . "\n") !== strlen($line) + 1) {
+                throw new RuntimeException('Unable to write the temporary export file.');
+            }
+        }
+        if (!rewind($spool)) { throw new RuntimeException('Unable to read the temporary export file.'); }
+        $headers = array_merge(array('ID', 'Form ID', 'Form Title', 'Submitted At', 'Read Status', 'Read At', 'User IP', 'Page URL', 'Spam Status'), array_values($field_headers));
+        $rows = (function () use ($spool, $field_headers) {
+            while (($line = fgets($spool)) !== false) {
+                list($base, $data) = json_decode($line, true);
+                foreach ($field_headers as $field) { $base[] = $data[$field] ?? ''; }
+                yield $base;
+            }
+            if (!feof($spool)) { throw new RuntimeException('Unable to read the temporary export file.'); }
+        })();
+        return tk_cf7dbc_create_excel_file($headers, $rows, $filename);
+    } catch (Throwable $error) {
+        return new WP_Error('tk_cf7dbc_export_failed', __('Unable to prepare the Excel export. Please try again.', 'tool-kits'));
+    } finally {
+        fclose($spool);
+    }
+}
+
 function tk_cf7dbc_export_excel() {
     if (!tk_cf7_database_can_manage()) {
         wp_die(esc_html__('Access denied.', 'tool-kits'));
@@ -951,69 +1021,9 @@ function tk_cf7dbc_export_excel() {
 
     check_admin_referer('tk_cf7dbc_export');
 
-    global $wpdb;
-
-    $table_name = tk_cf7dbc_table_name();
     $form_id_filter = isset($_GET['form_id']) ? absint($_GET['form_id']) : 0;
-
-    if ($form_id_filter > 0) {
-        $rows = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$table_name} WHERE form_id = %d ORDER BY submitted_at DESC", $form_id_filter));
-    } else {
-        $rows = $wpdb->get_results("SELECT * FROM {$table_name} ORDER BY submitted_at DESC");
-    }
-
-    $field_headers = [];
-    $export_rows = [];
-
-    foreach ($rows as $row) {
-        $data = json_decode($row->data, true);
-        $clean_data = [];
-
-        if (is_array($data)) {
-            foreach ($data as $field => $value) {
-                if (!tk_cf7dbc_should_export_field($field)) {
-                    continue;
-                }
-
-                $clean_data[$field] = $value;
-                $field_headers[$field] = $field;
-            }
-        }
-
-        $export_rows[] = [
-            'row'  => $row,
-            'data' => $clean_data,
-        ];
-    }
-
-    $base_headers = ['ID', 'Form ID', 'Form Title', 'Submitted At', 'Read Status', 'Read At', 'User IP', 'Page URL', 'Spam Status'];
-    $headers = array_merge($base_headers, array_values($field_headers));
-    $excel_rows = [];
-
-    foreach ($export_rows as $export_row) {
-        $row = $export_row['row'];
-        $data = $export_row['data'];
-        $excel_row = [
-            $row->id,
-            $row->form_id,
-            $row->form_title,
-            $row->submitted_at,
-            tk_cf7dbc_is_unread($row) ? 'unread' : 'read',
-            isset($row->read_at) ? $row->read_at : '',
-            $row->user_ip,
-            $row->page_url,
-            isset($row->spam_status) ? $row->spam_status : 'clean',
-        ];
-
-        foreach ($field_headers as $field) {
-            $excel_row[] = isset($data[$field]) ? $data[$field] : '';
-        }
-
-        $excel_rows[] = $excel_row;
-    }
-
     $filename = tk_cf7dbc_get_export_filename();
-    $excel_path = tk_cf7dbc_create_excel_file($headers, $excel_rows, $filename);
+    $excel_path = tk_cf7dbc_prepare_export($form_id_filter, $filename);
 
     if (is_wp_error($excel_path)) {
         wp_die(esc_html($excel_path->get_error_message()));

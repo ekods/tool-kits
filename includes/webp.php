@@ -354,10 +354,12 @@ function tk_render_webp_panel() {
 }
 
 function tk_webp_save() {
+    $settings = array();
     tk_require_admin_post('tk_webp_save');
-    tk_update_option('webp_convert_enabled', !empty($_POST['webp_convert_enabled']) ? 1 : 0);
-    tk_update_option('webp_serve_enabled', !empty($_POST['webp_serve_enabled']) ? 1 : 0);
-    tk_update_option('webp_quality', max(10, min(100, (int) tk_post('webp_quality', 82))));
+    $settings['webp_convert_enabled'] = !empty($_POST['webp_convert_enabled']) ? 1 : 0;
+    $settings['webp_serve_enabled'] = !empty($_POST['webp_serve_enabled']) ? 1 : 0;
+    $settings['webp_quality'] = max(10, min(100, (int) tk_post('webp_quality', 82)));
+    tk_update_options($settings);
     wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-webp', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }

@@ -1,5 +1,6 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
+require_once __DIR__ . '/seo-metadata-buffer.php';
 
 /** Explicit per-page edits own these fields, including on theme-managed sites. */
 function tk_seo_content_output_enabled(): bool {
@@ -32,14 +33,7 @@ function tk_seo_content_output_start(): void {
         if ($image !== '') { $values['image'] = $image; }
     }
     // Start just inside page caching and outside later title/GEO/theme buffers.
-    ob_start(function ($html) use ($values, $social) {
-        $status = http_response_code();
-        if ($status && $status !== 200) { return $html; }
-        foreach (headers_list() as $header) {
-            if (stripos($header, 'Content-Type:') === 0 && stripos($header, 'text/html') === false) { return $html; }
-        }
-        return tk_seo_content_replace_html($html, $values, $social);
-    });
+    tk_seo_metadata_buffer('content', $values, $social);
 }
 
 function tk_seo_image_metadata_values(string $image): array {
@@ -80,10 +74,12 @@ function tk_seo_content_replace_html(string $html, array $values, bool $add_soci
     };
     $attributes = '(?:"[^"]*"|\'[^\']*\'|[^\'">])*';
     $pattern = '~<!--.*?-->|<(script|style|textarea|template|noscript|svg|math|title)(?=[\s>])' . $attributes . '>.*?</\1\s*>|<(?:html|head|meta|link)(?=[\s/>])' . $attributes . '>|</head\s*>~is';
-    preg_match_all($pattern, $html, $tokens, PREG_OFFSET_CAPTURE);
+    $offset = 0;
     $in_html = false; $in_head = false; $closed = false; $seen = array(); $edits = array();
-    foreach ($tokens[0] as $token) {
+    while (preg_match($pattern, $html, $matches, PREG_OFFSET_CAPTURE, $offset) === 1) {
+        $token = $matches[0];
         $tag = $token[0];
+        $offset = $token[1] + strlen($tag);
         if (preg_match('/^<html(?=[\s>])/i', $tag)) { $in_html = true; continue; }
         if ($in_html && preg_match('/^<head(?=[\s>])/i', $tag)) { $in_head = true; continue; }
         if ($in_head && preg_match('/^<\/head\s*>/i', $tag)) {
@@ -119,7 +115,14 @@ function tk_seo_content_replace_html(string $html, array $values, bool $add_soci
         $edits[] = array($token[1], strlen($tag), isset($seen[$key]) ? '' : $tag_for($key));
         $seen[$key] = true;
     }
-    if (!$closed) { return $html; }
-    foreach (array_reverse($edits) as $edit) { $html = substr_replace($html, $edit[2], $edit[0], $edit[1]); }
-    return $html;
+    if (!$closed || !$edits) { return $html; }
+    // Assemble the edited head once, then append the untouched body once.
+    $parts = array(); $cursor = 0;
+    foreach ($edits as $edit) {
+        $parts[] = substr($html, $cursor, $edit[0] - $cursor);
+        $parts[] = $edit[2];
+        $cursor = $edit[0] + $edit[1];
+    }
+    $parts[] = substr($html, $cursor);
+    return implode('', $parts);
 }

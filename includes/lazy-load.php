@@ -341,13 +341,15 @@ function tk_render_lazy_load_panel() {
 }
 
 function tk_lazy_load_save() {
+    $settings = array();
     tk_require_admin_post('tk_lazy_load_save');
-    tk_update_option('lazy_load_enabled', !empty($_POST['lazy_load_enabled']) ? 1 : 0);
-    tk_update_option('lazy_load_eager_images', max(0, (int) tk_post('lazy_load_eager_images', 2)));
-    tk_update_option('lazy_load_html_images', !empty($_POST['lazy_load_html_images']) ? 1 : 0);
-    tk_update_option('lazy_load_iframe_video', !empty($_POST['lazy_load_iframe_video']) ? 1 : 0);
-    tk_update_option('lazy_load_script_defer', sanitize_text_field((string) tk_post('lazy_load_script_defer', '')));
-    tk_update_option('lazy_load_script_delay', sanitize_text_field((string) tk_post('lazy_load_script_delay', '')));
+    $settings['lazy_load_enabled'] = !empty($_POST['lazy_load_enabled']) ? 1 : 0;
+    $settings['lazy_load_eager_images'] = max(0, (int) tk_post('lazy_load_eager_images', 2));
+    $settings['lazy_load_html_images'] = !empty($_POST['lazy_load_html_images']) ? 1 : 0;
+    $settings['lazy_load_iframe_video'] = !empty($_POST['lazy_load_iframe_video']) ? 1 : 0;
+    $settings['lazy_load_script_defer'] = sanitize_text_field((string) tk_post('lazy_load_script_defer', ''));
+    $settings['lazy_load_script_delay'] = sanitize_text_field((string) tk_post('lazy_load_script_delay', ''));
+    tk_update_options($settings);
     wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-lazy-load', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }

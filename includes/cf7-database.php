@@ -59,6 +59,7 @@ function tk_cf7_database_capture($contact_form): void {
 }
 
 function tk_cf7_database_save(): void {
+    $settings = array();
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { wp_die('Method not allowed', '', array('response' => 405)); }
     tk_require_admin_post('tk_cf7_database_save');
     if (!tk_license_features_enabled()) { wp_die('An active Tool Kits license is required.'); }
@@ -67,8 +68,9 @@ function tk_cf7_database_save(): void {
         tk_cf7_database_load();
         tk_cf7dbc_maybe_upgrade_schema();
     }
-    tk_update_option('cf7_database_enabled', $enabled);
-    tk_update_option('cf7_database_managed', 1);
+    $settings['cf7_database_enabled'] = $enabled;
+    $settings['cf7_database_managed'] = 1;
+    tk_update_options($settings);
     wp_safe_redirect(admin_url('admin.php?page=tool-kits-cf7-database&tk_saved=1'));
     exit;
 }

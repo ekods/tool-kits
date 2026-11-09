@@ -241,17 +241,19 @@ function tk_render_upload_limits_panel() {
 }
 
 function tk_upload_limits_save() {
+    $settings = array();
     tk_require_admin_post('tk_upload_limits_save');
     $max_mb = min(10240, max(1, (int) tk_post('upload_images_max_mb', tk_upload_limits_fallback_max_mb())));
     $default_mb = max(1, (int) tk_post('upload_images_default_mb', tk_upload_limits_default_mb()));
     $default_mb = min($default_mb, $max_mb);
     $document_max_mb = min(10240, max(1, (int) tk_post('upload_documents_max_mb', tk_upload_limits_document_max_mb())));
     $video_max_mb = min(10240, max(1, (int) tk_post('upload_videos_max_mb', tk_upload_limits_video_max_mb())));
-    tk_update_option('upload_images_limit_enabled', !empty($_POST['upload_images_limit_enabled']) ? 1 : 0);
-    tk_update_option('upload_images_default_mb', $default_mb);
-    tk_update_option('upload_images_max_mb', $max_mb);
-    tk_update_option('upload_documents_max_mb', $document_max_mb);
-    tk_update_option('upload_videos_max_mb', $video_max_mb);
+    $settings['upload_images_limit_enabled'] = !empty($_POST['upload_images_limit_enabled']) ? 1 : 0;
+    $settings['upload_images_default_mb'] = $default_mb;
+    $settings['upload_images_max_mb'] = $max_mb;
+    $settings['upload_documents_max_mb'] = $document_max_mb;
+    $settings['upload_videos_max_mb'] = $video_max_mb;
+    tk_update_options($settings);
     wp_safe_redirect(admin_url('admin.php?page=tool-kits-general&tk_saved=1#uploads'));
     exit;
 }

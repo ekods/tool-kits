@@ -1,3 +1,15 @@
+## Tool Kits 2.7.86
+
+GEO audit sampling, batched settings writes, streaming CF7 Excel exports and lighter frontend SEO/GEO loading. See `readme.txt` for the complete list.
+
+Upgrade notes:
+- GEO Audit uses the homepage, all selected Pages and three latest published unprotected posts per selected post/CPT. Run All aligns older reports to this sample. Explicit saved-URL retries still work outside the sample.
+- Indexing Checks continues to discover the full website; this sampling change applies to GEO Audit.
+- No database schema or option format migration. Export remains XLSX with dynamic fields, form filters and formula protection.
+- Metadata policies share a buffer when adjacent; intervening third-party buffers retain their order. Existing frontend metadata precedence remains in place.
+
+Validation: 86 regression cases including the browser score-refresh case, PHP 7.4/8.4 checks, 1,201-row export fixtures, public/admin/AJAX/cron/REST/CLI/XML-RPC module loading and metadata ordering/output checks. Local synthetic frontend measurements are recorded separately and do not claim production TTFB gains.
+
 ## Tool Kits 2.7.83
 
 Scanner false-positive fix, Google Tag Manager tabs, a new header design and a native third menu level. See `readme.txt` for the complete list.

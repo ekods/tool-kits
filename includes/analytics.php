@@ -140,7 +140,7 @@ function tk_analytics_save(): void {
         $value = trim(tk_post($key));
         $updates[$key] = $key === 'google_analytics_gtag_id' ? sanitize_text_field($value) : $value;
     }
-    foreach ($updates as $key => $value) { tk_update_option($key, $value); }
+    tk_update_options($updates);
 
     $redirect = (string) tk_post('_wp_http_referer', admin_url('admin.php?page=tool-kits'));
     wp_safe_redirect(add_query_arg('tk_analytics_saved', '1', $redirect));

@@ -1216,6 +1216,7 @@ Mail Service</textarea>
 }
 
 function tk_smtp_save() {
+    $settings = array();
     tk_require_admin_post('tk_smtp_save');
 
     $presets = tk_smtp_provider_presets();
@@ -1223,8 +1224,8 @@ function tk_smtp_save() {
     if (!array_key_exists($provider, $presets)) {
         $provider = 'custom';
     }
-    tk_update_option('smtp_enabled', !empty($_POST['smtp_enabled']) ? 1 : 0);
-    tk_update_option('smtp_provider', $provider);
+    $settings['smtp_enabled'] = !empty($_POST['smtp_enabled']) ? 1 : 0;
+    $settings['smtp_provider'] = $provider;
 
     $host = isset($_POST['smtp_host']) ? sanitize_text_field(wp_unslash($_POST['smtp_host'])) : '';
     $port = isset($_POST['smtp_port']) ? (int) $_POST['smtp_port'] : 0;
@@ -1246,9 +1247,9 @@ function tk_smtp_save() {
         }
     }
 
-    tk_update_option('smtp_host', $host);
-    tk_update_option('smtp_port', $port);
-    tk_update_option('smtp_secure', $secure);
+    $settings['smtp_host'] = $host;
+    $settings['smtp_port'] = $port;
+    $settings['smtp_secure'] = $secure;
 
     $old_client_id = (string) tk_get_option('smtp_gmail_client_id', '');
     $old_client_secret = (string) tk_get_option('smtp_gmail_client_secret', '');
@@ -1257,16 +1258,16 @@ function tk_smtp_save() {
     $client_secret = $posted_client_secret !== '' ? $posted_client_secret : $old_client_secret;
     $oauth_credentials_changed = $client_id !== $old_client_id
         || ($posted_client_secret !== '' && !hash_equals($old_client_secret, $posted_client_secret));
-    tk_update_option('smtp_gmail_client_id', $client_id);
+    $settings['smtp_gmail_client_id'] = $client_id;
     if ($posted_client_secret !== '') {
-        tk_update_option('smtp_gmail_client_secret', $posted_client_secret);
+        $settings['smtp_gmail_client_secret'] = $posted_client_secret;
     }
     if ($oauth_credentials_changed) {
-        tk_smtp_set_oauth_error('gmail', '');
-        tk_update_option('smtp_gmail_access_token', '');
-        tk_update_option('smtp_gmail_refresh_token', '');
-        tk_update_option('smtp_gmail_token_expires_at', 0);
-        tk_update_option('smtp_gmail_email', '');
+        $settings['smtp_gmail_auth_error'] = '';
+        $settings['smtp_gmail_access_token'] = '';
+        $settings['smtp_gmail_refresh_token'] = '';
+        $settings['smtp_gmail_token_expires_at'] = 0;
+        $settings['smtp_gmail_email'] = '';
     }
 
     $old_ms_client_id = (string) tk_get_option('smtp_microsoft_client_id', '');
@@ -1282,46 +1283,47 @@ function tk_smtp_save() {
         || $ms_tenant !== $old_ms_tenant
         || $ms_email !== $old_ms_email
         || ($posted_ms_secret !== '' && !hash_equals($old_ms_client_secret, $posted_ms_secret));
-    tk_update_option('smtp_microsoft_client_id', $ms_client_id);
-    tk_update_option('smtp_microsoft_tenant_id', $ms_tenant);
-    tk_update_option('smtp_microsoft_email', $ms_email);
+    $settings['smtp_microsoft_client_id'] = $ms_client_id;
+    $settings['smtp_microsoft_tenant_id'] = $ms_tenant;
+    $settings['smtp_microsoft_email'] = $ms_email;
     if ($posted_ms_secret !== '') {
-        tk_update_option('smtp_microsoft_client_secret', $posted_ms_secret);
+        $settings['smtp_microsoft_client_secret'] = $posted_ms_secret;
     }
     if ($ms_credentials_changed) {
-        tk_smtp_set_oauth_error('microsoft', '');
-        tk_update_option('smtp_microsoft_access_token', '');
-        tk_update_option('smtp_microsoft_refresh_token', '');
-        tk_update_option('smtp_microsoft_token_expires_at', 0);
+        $settings['smtp_microsoft_auth_error'] = '';
+        $settings['smtp_microsoft_access_token'] = '';
+        $settings['smtp_microsoft_refresh_token'] = '';
+        $settings['smtp_microsoft_token_expires_at'] = 0;
     }
 
     if ($provider === 'gmail') {
-        $username = sanitize_email((string) tk_get_option('smtp_gmail_email', ''));
+        $username = sanitize_email((string) ($settings['smtp_gmail_email'] ?? tk_get_option('smtp_gmail_email', '')));
     } elseif ($provider === 'office365') {
         $username = $ms_email;
     } else {
         $username = isset($_POST['smtp_username']) ? sanitize_text_field(wp_unslash($_POST['smtp_username'])) : '';
     }
-    tk_update_option('smtp_username', $username);
+    $settings['smtp_username'] = $username;
 
     // A blank field keeps the saved password; only the explicit checkbox removes it.
     $password = isset($_POST['smtp_password']) ? wp_unslash($_POST['smtp_password']) : '';
     if (!empty($_POST['smtp_password_clear'])) {
-        tk_update_option('smtp_password', '');
+        $settings['smtp_password'] = '';
     } elseif (is_string($password) && $password !== '') {
-        tk_update_option('smtp_password', $password);
+        $settings['smtp_password'] = $password;
     }
 
     $from_email = isset($_POST['smtp_from_email']) ? sanitize_email(wp_unslash($_POST['smtp_from_email'])) : '';
     if ($from_email === '' && is_email($username)) {
         $from_email = $username;
     }
-    tk_update_option('smtp_from_email', $from_email);
+    $settings['smtp_from_email'] = $from_email;
     $from_name = isset($_POST['smtp_from_name']) ? sanitize_text_field(wp_unslash($_POST['smtp_from_name'])) : '';
-    tk_update_option('smtp_from_name', $from_name);
-    tk_update_option('smtp_force_from', !empty($_POST['smtp_force_from']) ? 1 : 0);
-    tk_update_option('smtp_return_path', !empty($_POST['smtp_return_path']) ? 1 : 0);
+    $settings['smtp_from_name'] = $from_name;
+    $settings['smtp_force_from'] = !empty($_POST['smtp_force_from']) ? 1 : 0;
+    $settings['smtp_return_path'] = !empty($_POST['smtp_return_path']) ? 1 : 0;
 
+    tk_update_options($settings);
     $redirect = add_query_arg(array('page'=>'tool-kits-smtp','tk_saved'=>1), admin_url('admin.php'));
     wp_safe_redirect($redirect);
     exit;

@@ -1242,32 +1242,34 @@ function tk_render_assets_panel() {
 }
 
 function tk_assets_opt_save() {
+    $settings = array();
     tk_require_admin_post('tk_assets_opt_save');
-    tk_update_option('assets_critical_css_enabled', !empty($_POST['assets_critical_css_enabled']) ? 1 : 0);
-    tk_update_option('assets_critical_css', (string) tk_post('assets_critical_css', ''));
-    tk_update_option('assets_defer_css_handles', sanitize_text_field((string) tk_post('assets_defer_css_handles', '')));
-    tk_update_option('assets_preload_css_handles', sanitize_text_field((string) tk_post('assets_preload_css_handles', '')));
-    tk_update_option('assets_preload_fonts', (string) tk_post('assets_preload_fonts', ''));
-    tk_update_option('assets_font_display_swap', !empty($_POST['assets_font_display_swap']) ? 1 : 0);
-    tk_update_option('assets_disable_google_fonts', !empty($_POST['assets_disable_google_fonts']) ? 1 : 0);
-    tk_update_option('assets_dimensions_enabled', !empty($_POST['assets_dimensions_enabled']) ? 1 : 0);
-    tk_update_option('assets_lcp_bg_preload_enabled', !empty($_POST['assets_lcp_bg_preload_enabled']) ? 1 : 0);
-    tk_update_option('assets_preconnect_auto_enabled', !empty($_POST['assets_preconnect_auto_enabled']) ? 1 : 0);
-    tk_update_posted_flag('assets_js_delay_enabled', 'assets_js_delay_enabled');
+    $settings['assets_critical_css_enabled'] = !empty($_POST['assets_critical_css_enabled']) ? 1 : 0;
+    $settings['assets_critical_css'] = (string) tk_post('assets_critical_css', '');
+    $settings['assets_defer_css_handles'] = sanitize_text_field((string) tk_post('assets_defer_css_handles', ''));
+    $settings['assets_preload_css_handles'] = sanitize_text_field((string) tk_post('assets_preload_css_handles', ''));
+    $settings['assets_preload_fonts'] = (string) tk_post('assets_preload_fonts', '');
+    $settings['assets_font_display_swap'] = !empty($_POST['assets_font_display_swap']) ? 1 : 0;
+    $settings['assets_disable_google_fonts'] = !empty($_POST['assets_disable_google_fonts']) ? 1 : 0;
+    $settings['assets_dimensions_enabled'] = !empty($_POST['assets_dimensions_enabled']) ? 1 : 0;
+    $settings['assets_lcp_bg_preload_enabled'] = !empty($_POST['assets_lcp_bg_preload_enabled']) ? 1 : 0;
+    $settings['assets_preconnect_auto_enabled'] = !empty($_POST['assets_preconnect_auto_enabled']) ? 1 : 0;
+    if (tk_form_has_field('assets_js_delay_enabled')) { $settings['assets_js_delay_enabled'] = !empty($_POST['assets_js_delay_enabled']) ? 1 : 0; }
     if (isset($_POST['assets_js_delay_handles'])) {
-        tk_update_option('assets_js_delay_handles', sanitize_text_field((string) tk_post('assets_js_delay_handles', '')));
+        $settings['assets_js_delay_handles'] = sanitize_text_field((string) tk_post('assets_js_delay_handles', ''));
     }
-    tk_update_option('assets_disable_emojis', !empty($_POST['assets_disable_emojis']) ? 1 : 0);
-    tk_update_option('assets_disable_dashicons', !empty($_POST['assets_disable_dashicons']) ? 1 : 0);
-    tk_update_option('assets_disable_embeds', !empty($_POST['assets_disable_embeds']) ? 1 : 0);
-    tk_update_option('assets_instant_page_enabled', !empty($_POST['assets_instant_page_enabled']) ? 1 : 0);
+    $settings['assets_disable_emojis'] = !empty($_POST['assets_disable_emojis']) ? 1 : 0;
+    $settings['assets_disable_dashicons'] = !empty($_POST['assets_disable_dashicons']) ? 1 : 0;
+    $settings['assets_disable_embeds'] = !empty($_POST['assets_disable_embeds']) ? 1 : 0;
+    $settings['assets_instant_page_enabled'] = !empty($_POST['assets_instant_page_enabled']) ? 1 : 0;
     $heartbeat_interval = (int) tk_post('assets_heartbeat_interval', 0);
-    tk_update_option('assets_heartbeat_interval', in_array($heartbeat_interval, array(60, 120), true) ? $heartbeat_interval : 0);
-    tk_update_option('assets_heartbeat_frontend_disabled', !empty($_POST['assets_heartbeat_frontend_disabled']) ? 1 : 0);
-    tk_update_option('assets_disable_cart_fragments', !empty($_POST['assets_disable_cart_fragments']) ? 1 : 0);
-    tk_update_option('assets_cls_guard_enabled', 1);
-    tk_update_option('assets_lcp_boost_enabled', !empty($_POST['assets_lcp_boost_enabled']) ? 1 : 0);
-    tk_update_option('assets_theme_version_enabled', !empty($_POST['assets_theme_version_enabled']) ? 1 : 0);
+    $settings['assets_heartbeat_interval'] = in_array($heartbeat_interval, array(60, 120), true) ? $heartbeat_interval : 0;
+    $settings['assets_heartbeat_frontend_disabled'] = !empty($_POST['assets_heartbeat_frontend_disabled']) ? 1 : 0;
+    $settings['assets_disable_cart_fragments'] = !empty($_POST['assets_disable_cart_fragments']) ? 1 : 0;
+    $settings['assets_cls_guard_enabled'] = 1;
+    $settings['assets_lcp_boost_enabled'] = !empty($_POST['assets_lcp_boost_enabled']) ? 1 : 0;
+    $settings['assets_theme_version_enabled'] = !empty($_POST['assets_theme_version_enabled']) ? 1 : 0;
+    tk_update_options($settings);
     wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-assets', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }

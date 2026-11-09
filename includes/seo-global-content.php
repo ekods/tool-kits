@@ -1,5 +1,6 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
+require_once __DIR__ . '/seo-metadata-buffer.php';
 
 function tk_seo_global_fields(): array {
     return array(
@@ -86,9 +87,7 @@ function tk_seo_global_save(): void {
         if ($field === 'image' && trim((string) ($posted[$field] ?? '')) !== '' && $value === '') { wp_die('Enter an HTTP or HTTPS social image URL.'); }
         if ($value !== '') { $values[$field] = $value; }
     }
-    tk_update_option('seo_global_content', $values);
-    tk_update_option('seo_global_enabled', tk_post('seo_global_enabled', '') === '1' ? 1 : 0);
-    foreach ($title_settings as $key => $value) { tk_update_option($key, $value); }
+    tk_update_options(array_merge(array('seo_global_content' => $values, 'seo_global_enabled' => tk_post('seo_global_enabled', '') === '1' ? 1 : 0), $title_settings));
     if (function_exists('tk_page_cache_purge')) { tk_page_cache_purge(); }
     wp_safe_redirect(admin_url('admin.php?page=tool-kits-seo&tk_global_saved=1') . '#global-content');
     exit;
@@ -158,14 +157,7 @@ function tk_seo_global_start(): void {
     if ((int) tk_get_option('seo_og_enabled', 1) !== 1) { unset($values['image']); }
     if (!is_front_page()) { unset($values['title']); }
     elseif ((int) tk_get_option('seo_title_override_enabled', 0) === 1) { $values['title'] = tk_seo_title_value(); }
-    ob_start(function($html) use ($values) {
-        $status = http_response_code();
-        if ($status && $status !== 200) { return $html; }
-        foreach (headers_list() as $header) {
-            if (stripos($header, 'Content-Type:') === 0 && stripos($header, 'text/html') === false) { return $html; }
-        }
-        return tk_seo_global_fill_html($html, $values);
-    });
+    tk_seo_metadata_buffer('global', $values, (int) tk_get_option('seo_og_enabled', 1) === 1);
 }
 
 function tk_seo_global_fill_html(string $html, array $values): string {

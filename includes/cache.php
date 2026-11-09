@@ -845,6 +845,7 @@ function tk_page_cache_should_ignore_option_change(string $option): bool {
 }
 
 function tk_cache_save() {
+    $settings = array();
     if (!tk_is_admin_user()) {
         wp_die('Forbidden');
     }
@@ -852,13 +853,14 @@ function tk_cache_save() {
 
     $was_page_cache_enabled = (int) tk_get_option('page_cache_enabled', 0) === 1;
     $page_cache_enabled = !empty($_POST['page_cache_enabled']) ? 1 : 0;
-    tk_update_option('page_cache_enabled', $page_cache_enabled);
-    tk_update_option('page_cache_ttl', max(0, (int) tk_post('page_cache_ttl', 3600)));
-    tk_update_option('page_cache_exclude_paths', (string) tk_post('page_cache_exclude_paths', "/wp-login.php\n/wp-admin\n"));
+    $settings['page_cache_enabled'] = $page_cache_enabled;
+    $settings['page_cache_ttl'] = max(0, (int) tk_post('page_cache_ttl', 3600));
+    $settings['page_cache_exclude_paths'] = (string) tk_post('page_cache_exclude_paths', "/wp-login.php\n/wp-admin\n");
     if (isset($_POST['page_cache_preload_urls'])) {
-        tk_update_option('page_cache_preload_urls', (string) tk_post('page_cache_preload_urls', ''));
+        $settings['page_cache_preload_urls'] = (string) tk_post('page_cache_preload_urls', '');
     }
-    tk_update_option('page_cache_auto_preload_after_purge', !empty($_POST['page_cache_auto_preload_after_purge']) ? 1 : 0);
+    $settings['page_cache_auto_preload_after_purge'] = !empty($_POST['page_cache_auto_preload_after_purge']) ? 1 : 0;
+    tk_update_options($settings);
     tk_page_cache_early_sync();
 
     if ($was_page_cache_enabled && $page_cache_enabled === 0) {

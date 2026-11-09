@@ -1011,20 +1011,22 @@ function tk_render_image_opt_panel() {
 }
 
 function tk_image_opt_save() {
+    $settings = array();
     tk_require_admin_post('tk_image_opt_save');
-    tk_update_option('image_opt_enabled', !empty($_POST['image_opt_enabled']) ? 1 : 0);
-    tk_update_option('image_opt_frontend_optimize', !empty($_POST['image_opt_frontend_optimize']) ? 1 : 0);
-    tk_update_option('image_opt_safe_derivatives', 1);
-    tk_update_option('image_opt_preserve_hires', !empty($_POST['image_opt_preserve_hires']) ? 1 : 0);
-    tk_update_option('image_opt_srcset_original_only', !empty($_POST['image_opt_srcset_original_only']) ? 1 : 0);
-    tk_update_option('image_opt_frontend_to_webp', (int) tk_get_option('webp_serve_enabled', 0));
-    tk_update_option('image_opt_rewrite_all_assets', (int) tk_get_option('webp_serve_enabled', 0));
-    tk_update_option('image_opt_quality', max(30, min(100, (int) tk_post('image_opt_quality', 95))));
-    tk_update_option('image_opt_max_width', max(0, min(12000, (int) tk_post('image_opt_max_width', 0))));
-    tk_update_option('image_opt_max_height', max(0, min(12000, (int) tk_post('image_opt_max_height', 0))));
-    tk_update_option('image_opt_target_dpi', max(0, min(600, (int) tk_post('image_opt_target_dpi', 72))));
-    tk_update_option('image_opt_strip_metadata', !empty($_POST['image_opt_strip_metadata']) ? 1 : 0);
-    tk_update_option('image_opt_sharpen_enabled', !empty($_POST['image_opt_sharpen_enabled']) ? 1 : 0);
+    $settings['image_opt_enabled'] = !empty($_POST['image_opt_enabled']) ? 1 : 0;
+    $settings['image_opt_frontend_optimize'] = !empty($_POST['image_opt_frontend_optimize']) ? 1 : 0;
+    $settings['image_opt_safe_derivatives'] = 1;
+    $settings['image_opt_preserve_hires'] = !empty($_POST['image_opt_preserve_hires']) ? 1 : 0;
+    $settings['image_opt_srcset_original_only'] = !empty($_POST['image_opt_srcset_original_only']) ? 1 : 0;
+    $settings['image_opt_frontend_to_webp'] = (int) tk_get_option('webp_serve_enabled', 0);
+    $settings['image_opt_rewrite_all_assets'] = (int) tk_get_option('webp_serve_enabled', 0);
+    $settings['image_opt_quality'] = max(30, min(100, (int) tk_post('image_opt_quality', 95)));
+    $settings['image_opt_max_width'] = max(0, min(12000, (int) tk_post('image_opt_max_width', 0)));
+    $settings['image_opt_max_height'] = max(0, min(12000, (int) tk_post('image_opt_max_height', 0)));
+    $settings['image_opt_target_dpi'] = max(0, min(600, (int) tk_post('image_opt_target_dpi', 72)));
+    $settings['image_opt_strip_metadata'] = !empty($_POST['image_opt_strip_metadata']) ? 1 : 0;
+    $settings['image_opt_sharpen_enabled'] = !empty($_POST['image_opt_sharpen_enabled']) ? 1 : 0;
+    tk_update_options($settings);
     wp_redirect(add_query_arg(array('page' => 'tool-kits-image-opt', 'tk_saved' => 1), admin_url('admin.php')));
     exit;
 }

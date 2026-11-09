@@ -89,11 +89,11 @@ function tk_geo_ai_catalog_posted_settings() {
 }
 
 function tk_geo_ai_catalog_save_settings(array $settings): void {
+    $updates = array('geo_ai_catalog_mode' => $settings['mode'], 'geo_ai_catalog_entries' => $settings['entries']);
     if ($settings['mode'] !== tk_get_option('geo_ai_catalog_mode', 'auto') || $settings['entries'] !== tk_get_option('geo_ai_catalog_entries', array())) {
-        tk_update_option('geo_ai_catalog_updated_at', wp_date('Y-m-d'));
+        $updates['geo_ai_catalog_updated_at'] = wp_date('Y-m-d');
     }
-    tk_update_option('geo_ai_catalog_mode', $settings['mode']);
-    tk_update_option('geo_ai_catalog_entries', $settings['entries']);
+    tk_update_options($updates);
 }
 
 /** A migrated site's saved report must not become evidence for its new hostname. */

@@ -2,6 +2,11 @@
 // Each case runs in its own process so PHP mocks and browser state stay isolated.
 const { spawnSync } = require('node:child_process');
 const cases = [
+  { "name": "settings-batch", "runtime": "php", "source": ["<?php", "require __DIR__ . '/settings-batch-regression.php';"] },
+  { "name": "frontend-module-load", "runtime": "php", "source": ["<?php", "require __DIR__ . '/frontend-module-load-regression.php';"] },
+  { "name": "geo-sampling", "runtime": "php", "source": ["<?php", "require __DIR__ . '/geo-sampling-regression.php';"] },
+  { "name": "cf7-export-batch", "runtime": "php", "source": ["<?php", "require __DIR__ . '/cf7-export-batch-regression.php';"] },
+  { "name": "seo-metadata-buffer", "runtime": "php", "source": ["<?php", "require __DIR__ . '/seo-metadata-buffer-regression.php';"] },
   { "name": "cf7-database", "runtime": "php", "source": ["<?php", "require __DIR__ . '/cf7-database-regression.php';"] },
   { "name": "server-load", "runtime": "php", "source": ["<?php", "require __DIR__ . '/server-load-regression.php';"] },
   { "name": "html-injection-first-party", "runtime": "php", "source": ["<?php", "require __DIR__ . '/html-injection-first-party-regression.php';"] },
@@ -747,6 +752,7 @@ const cases = [
       "function tk_is_admin_user() { return true; }",
       "function tk_license_features_enabled() { return true; }",
       "function absint($id) { return abs((int) $id); }",
+      "function tk_geo_crawler_fix_url($url) { return strpos($url, 'https://example.com/') === 0 ? $url : ''; }",
       "function wp_generate_password($length, $special, $extra) { return str_repeat('A', 24); }",
       "function get_current_user_id() { return 1; }",
       "function set_transient($key, $value, $ttl) { $GLOBALS['cache'][$key] = $value; }",
@@ -802,8 +808,11 @@ const cases = [
       "function wp_remote_get($url, $args) { $GLOBALS['calls']++; $GLOBALS['timeout'] = $args['timeout']; return new WP_Error(); }",
       "function is_wp_error($value) { return $value instanceof WP_Error; }",
       "function home_url($path) { return 'https://example.com/'; }",
-      "function get_post_types($args, $format) { return array('page'); }",
-      "function get_posts($args) { return array(1, 2); }",
+      "function get_post_types($args, $format) { return $format === 'objects' ? array('page' => (object) array('name' => 'page')) : array('page'); }",
+      "function tk_get_option($key, $default = null) { return $default; }",
+      "function get_posts($args) { return array((object) array('ID' => 1), (object) array('ID' => 2)); }",
+      "function get_the_title($post) { return 'Page ' . $post->ID; }",
+      "function is_post_type_viewable($type) { return true; }",
       "function get_permalink($id) { return 'https://example.com/page-' . $id; }",
       "require dirname(__DIR__) . '/includes/seo-optimization.php';",
       "$report = tk_seo_run_geo_audit();",

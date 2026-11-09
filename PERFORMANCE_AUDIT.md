@@ -1,5 +1,39 @@
 # Audit performa Tool Kits 2.7.25
 
+## Optimasi lanjutan source kerja — 9 November 2026
+
+- Audit GEO: homepage dan seluruh Page dari jenis konten terpilih, ditambah tiga post terbaru
+  per post/CPT menurut tanggal publikasi lalu ID. Draft, konten berpassword, attachment dan
+  tipe nonpublik dikecualikan. Run All menyelaraskan laporan dengan sampel; retry URL lokal
+  yang pernah tersimpan tetap tersedia ketika URL tersebut sudah keluar dari sampel.
+- Penyimpanan General, Assets, Cache, Lazy Load, WebP, Image Optimizer, Uploads, Analytics,
+  SEO, GEO/AI Catalog, SMTP dan switch CF7 menggunakan batch konfigurasi. Nilai checkbox
+  yang tidak ada pada form serta password/secret kosong mengikuti perilaku sebelumnya.
+  GEO masih menyimpan beberapa kelompok secara berurutan karena generator membaca hasil
+  penyimpanan sebelumnya. Tidak mengubah schema atau format option.
+- Export CF7 tetap XLSX: query dibatasi 500 row dengan cursor tanggal/ID dan batas ID awal.
+  Kolom dinamis dikumpulkan sambil menulis spool sementara; worksheet membaca spool sebagai
+  iterator. Row tidak disalin lagi ke beberapa array seukuran seluruh database. File sementara
+  dibersihkan pada jalur selesai maupun kegagalan; formula escaping dan filter internal tetap ada.
+  Batas ID mengecualikan submission baru, bukan transaksi snapshot untuk update/delete serentak.
+- Delapan file audit/editor SEO/GEO dilewati pada halaman publik. Resolusi metadata, gambar
+  sosial, save hooks, schema, canonical dan endpoint AI tetap tersedia. Admin, AJAX, cron,
+  alternate cron, REST, CLI dan XML-RPC mempertahankan modul yang dibutuhkan.
+- Buffer metadata global/per halaman digabung bila bersebelahan, dengan prioritas per halaman.
+  Buffer pihak ketiga di antaranya tetap dipertahankan urutannya. Parser metadata berhenti
+  pada penutup head dan menyusun hasil sekali tanpa menyalin body untuk setiap edit tag.
+  Buffer canonical, title, GEO dan optimizer lain tetap mempunyai urutan masing-masing.
+
+Validasi: suite bawaan 86/86 kasus pada PHP 8.4, termasuk browser score refresh; 17 skrip
+terkait lulus pada PHP 7.4. Lint 32 file PHP yang ditambah/diubah lulus pada kedua versi.
+Fixture export mencakup 1.201 submission, timestamp sama lintas batch, kolom dinamis terakhir,
+filter form, empty export, kesalahan query/writer dan pembersihan file sementara. Lima kasus baru:
+`settings-batch`, `frontend-module-load`, `cf7-export-batch`, `geo-sampling`, `seo-metadata-buffer`.
+Ini bukti perilaku/operasi dari fixture; belum ada pengukuran TTFB, SQL atau peak memory situs aktif.
+Perubahan ini disiapkan untuk rilis 2.7.86; verifikasi publikasi dicatat terpisah pada metadata distribusi.
+
+---
+
 Tanggal: 17 Oktober 2026 (Asia/Jakarta). Implementasi disiapkan di folder kerja saja; tidak ada push, sinkronisasi ke instalasi WordPress, atau deploy produksi.
 
 ## Baseline yang diperiksa

@@ -1,10 +1,17 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
-require_once __DIR__ . '/seo-rendered-audit.php';
-require_once __DIR__ . '/seo-content-fixes.php';
-require_once __DIR__ . '/seo-content-modal.php';
-require_once __DIR__ . '/seo-content-panel.php';
-require_once __DIR__ . '/seo-content-locale.php';
+
+require_once __DIR__ . '/seo-content-values.php';
+// Standalone integrations without the plugin bootstrap keep the full public helper API.
+if (!function_exists('tk_request_needs_admin_modules') || tk_request_needs_admin_modules()) {
+    require_once __DIR__ . '/seo-rendered-audit.php';
+    require_once __DIR__ . '/seo-content-fixes.php';
+    require_once __DIR__ . '/seo-content-modal.php';
+    require_once __DIR__ . '/seo-content-panel.php';
+    require_once __DIR__ . '/seo-content-locale.php';
+    require_once __DIR__ . '/seo-list-score.php';
+}
+
 require_once __DIR__ . '/seo-variables.php';
 require_once __DIR__ . '/seo-content-output.php';
 require_once __DIR__ . '/seo-global-content.php';
@@ -12,7 +19,6 @@ require_once __DIR__ . '/seo-title.php';
 require_once __DIR__ . '/seo-indexability.php';
 require_once __DIR__ . '/seo-language-canonical.php';
 require_once __DIR__ . '/seo-post-faq.php';
-require_once __DIR__ . '/seo-list-score.php';
 
 function tk_seo_opt_init() {
     tk_seo_title_init();
@@ -56,7 +62,7 @@ function tk_seo_opt_init() {
     add_filter('wp_title', 'tk_seo_content_title_filter', PHP_INT_MAX);
     add_action('admin_enqueue_scripts', 'tk_seo_enqueue_faq_editor');
     add_action('admin_post_tk_seo_post_rendered_audit', 'tk_seo_post_rendered_audit');
-    tk_seo_list_score_init();
+    if (function_exists('tk_seo_list_score_init')) { tk_seo_list_score_init(); }
 
     add_action('wp_head', 'tk_seo_render_head_tags', 2);
     add_filter('wp_robots', 'tk_seo_filter_robots');
@@ -85,15 +91,21 @@ function tk_seo_editor_panel_visible(string $panel): bool {
         && (int) tk_get_option('seo_' . $panel . '_panel_enabled', 1) === 1;
 }
 
-function tk_seo_save_panel_visibility(array $input): void {
-    if (!isset($input['tk_seo_panels_present'])) { return; }
+function tk_seo_panel_visibility_settings(array $input): array {
+    $settings = array();
+    if (!isset($input['tk_seo_panels_present'])) { return $settings; }
     foreach (array('content', 'geo', 'faq') as $panel) {
         $key = 'seo_' . $panel . '_panel_enabled';
-        tk_update_option($key, isset($input[$key]) && $input[$key] === '1' ? 1 : 0);
+        $settings[$key] = isset($input[$key]) && $input[$key] === '1' ? 1 : 0;
     }
     foreach (array('seo_list_score_enabled', 'seo_list_geo_enabled') as $key) {
-        tk_update_option($key, isset($input[$key]) && $input[$key] === '1' ? 1 : 0);
+        $settings[$key] = isset($input[$key]) && $input[$key] === '1' ? 1 : 0;
     }
+    return $settings;
+}
+
+function tk_seo_save_panel_visibility(array $input): void {
+    tk_update_options(tk_seo_panel_visibility_settings($input));
 }
 
 function tk_seo_post_feature_enabled(string $feature, int $post_id = 0): bool {
@@ -1788,24 +1800,9 @@ function tk_seo_geo_audit_clear() {
 }
 
 function tk_seo_run_geo_audit(): array {
-    $urls = array(home_url('/'));
-    $ids = get_posts(array(
-        'post_type' => array_values(array_diff(get_post_types(array('public' => true), 'names'), array('attachment'))),
-        'post_status' => 'publish',
-        'numberposts' => 12,
-        'fields' => 'ids',
-        'orderby' => 'modified',
-        'order' => 'DESC',
-    ));
-    foreach ($ids as $post_id) {
-        $url = get_permalink((int) $post_id);
-        if (is_string($url) && $url !== '') {
-            $urls[] = $url;
-        }
-    }
-
+    require_once __DIR__ . '/geo-audit-batch.php';
     $items = array();
-    $targets = array_slice(array_values(array_unique($urls)), 0, 12);
+    $targets = array_column(tk_geo_batch_targets(), 'url');
     $deadline = microtime(true) + 25;
     foreach ($targets as $url) {
         $remaining = (int) floor($deadline - microtime(true));
@@ -3023,21 +3020,23 @@ function tk_render_seo_opt_panel() {
 }
 
 function tk_seo_opt_save() {
+    $settings = array();
     tk_require_admin_post('tk_seo_opt_save');
-    tk_seo_save_panel_visibility($_POST);
+    $settings = tk_seo_panel_visibility_settings($_POST);
     if (isset($_POST['tk_seo_post_types_present'])) {
         $requested = isset($_POST['seo_geo_post_types']) && is_array($_POST['seo_geo_post_types']) ? wp_unslash($_POST['seo_geo_post_types']) : array();
         $requested = array_map('sanitize_key', array_filter($requested, 'is_string'));
-        tk_update_option('seo_geo_post_types', array_values(array_intersect(array_keys(tk_seo_editor_post_types()), $requested)));
+        $settings['seo_geo_post_types'] = array_values(array_intersect(array_keys(tk_seo_editor_post_types()), $requested));
     }
-    tk_update_option('seo_enabled', !empty($_POST['seo_enabled']) ? 1 : 0);
-    tk_update_option('seo_meta_desc_enabled', !empty($_POST['seo_meta_desc_enabled']) ? 1 : 0);
-    tk_update_option('seo_canonical_enabled', !empty($_POST['seo_canonical_enabled']) ? 1 : 0);
-    tk_update_option('seo_og_enabled', !empty($_POST['seo_og_enabled']) ? 1 : 0);
-    tk_update_option('seo_noindex_search', !empty($_POST['seo_noindex_search']) ? 1 : 0);
-    tk_update_option('seo_noindex_404', !empty($_POST['seo_noindex_404']) ? 1 : 0);
-    tk_update_option('seo_noindex_paged_archives', !empty($_POST['seo_noindex_paged_archives']) ? 1 : 0);
+    $settings['seo_enabled'] = !empty($_POST['seo_enabled']) ? 1 : 0;
+    $settings['seo_meta_desc_enabled'] = !empty($_POST['seo_meta_desc_enabled']) ? 1 : 0;
+    $settings['seo_canonical_enabled'] = !empty($_POST['seo_canonical_enabled']) ? 1 : 0;
+    $settings['seo_og_enabled'] = !empty($_POST['seo_og_enabled']) ? 1 : 0;
+    $settings['seo_noindex_search'] = !empty($_POST['seo_noindex_search']) ? 1 : 0;
+    $settings['seo_noindex_404'] = !empty($_POST['seo_noindex_404']) ? 1 : 0;
+    $settings['seo_noindex_paged_archives'] = !empty($_POST['seo_noindex_paged_archives']) ? 1 : 0;
 
+    tk_update_options($settings);
     wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-seo', 'tk_saved' => 1), admin_url('admin.php')) . '#settings');
     exit;
 }

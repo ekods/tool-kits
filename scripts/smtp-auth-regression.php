@@ -13,6 +13,7 @@ $checks = 0;
 $_POST = array();
 function tk_get_option($key, $default = null) { return $GLOBALS['options'][$key] ?? $default; }
 function tk_update_option($key, $value) { $GLOBALS['options'][$key] = $value; }
+function tk_update_options(array $values) { $GLOBALS['batch_writes'] = ($GLOBALS['batch_writes'] ?? 0) + 1; foreach ($values as $key => $value) { tk_update_option($key, $value); } }
 function tk_log($message) { $GLOBALS['logged'][] = $message; }
 function tk_require_admin_post($action) {}
 function __($text, $domain = '') { return $text; }

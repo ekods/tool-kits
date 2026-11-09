@@ -1485,6 +1485,7 @@ function tk_render_general_page(): void {
 }
 
 function tk_general_save(): void {
+    $settings = array();
     if (!tk_toolkits_can_manage()) {
         wp_die('Forbidden');
     }
@@ -1497,38 +1498,38 @@ function tk_general_save(): void {
     }
 
     if ($section === 'editing') {
-        tk_update_option('classic_editor_enabled', !empty($_POST['classic_editor_enabled']) ? 1 : 0);
-        tk_update_option('classic_widgets_enabled', !empty($_POST['classic_widgets_enabled']) ? 1 : 0);
-        tk_update_option('duplicate_content_enabled', !empty($_POST['duplicate_content_enabled']) ? 1 : 0);
+        $settings['classic_editor_enabled'] = !empty($_POST['classic_editor_enabled']) ? 1 : 0;
+        $settings['classic_widgets_enabled'] = !empty($_POST['classic_widgets_enabled']) ? 1 : 0;
+        $settings['duplicate_content_enabled'] = !empty($_POST['duplicate_content_enabled']) ? 1 : 0;
     } elseif ($section === '404-handling') {
-        tk_update_option('monitoring_404_redirect_home', !empty($_POST['monitoring_404_redirect_home']) ? 1 : 0);
+        $settings['monitoring_404_redirect_home'] = !empty($_POST['monitoring_404_redirect_home']) ? 1 : 0;
     } elseif ($section === 'xml-sitemap') {
         $sitemap_path = sanitize_text_field((string) tk_post('seo_sitemap_path', 'sitemap.xml'));
         $sitemap_path = trim($sitemap_path);
         if ($sitemap_path === '') {
             $sitemap_path = 'sitemap.xml';
         }
-        tk_update_option('seo_sitemap_enabled', !empty($_POST['seo_sitemap_enabled']) ? 1 : 0);
-        tk_update_option('seo_sitemap_path', ltrim($sitemap_path, '/'));
-        tk_update_option('seo_sitemap_include_taxonomies', !empty($_POST['seo_sitemap_include_taxonomies']) ? 1 : 0);
-        tk_update_option('seo_sitemap_include_images', !empty($_POST['seo_sitemap_include_images']) ? 1 : 0);
+        $settings['seo_sitemap_enabled'] = !empty($_POST['seo_sitemap_enabled']) ? 1 : 0;
+        $settings['seo_sitemap_path'] = ltrim($sitemap_path, '/');
+        $settings['seo_sitemap_include_taxonomies'] = !empty($_POST['seo_sitemap_include_taxonomies']) ? 1 : 0;
+        $settings['seo_sitemap_include_images'] = !empty($_POST['seo_sitemap_include_images']) ? 1 : 0;
         $changefreq = sanitize_key((string) tk_post('seo_sitemap_changefreq', 'weekly'));
         if (!in_array($changefreq, array('always', 'hourly', 'daily', 'weekly', 'monthly', 'yearly', 'never'), true)) {
             $changefreq = 'weekly';
         }
-        tk_update_option('seo_sitemap_changefreq', $changefreq);
-        tk_update_option('seo_sitemap_priority', max(0, min(1, (float) tk_post('seo_sitemap_priority', 0.8))));
-        tk_update_option('seo_sitemap_exclude_paths', (string) tk_post('seo_sitemap_exclude_paths', ''));
-        tk_update_option('sitemap_google_property', sanitize_text_field((string) tk_post('sitemap_google_property', home_url('/'))));
+        $settings['seo_sitemap_changefreq'] = $changefreq;
+        $settings['seo_sitemap_priority'] = max(0, min(1, (float) tk_post('seo_sitemap_priority', 0.8)));
+        $settings['seo_sitemap_exclude_paths'] = (string) tk_post('seo_sitemap_exclude_paths', '');
+        $settings['sitemap_google_property'] = sanitize_text_field((string) tk_post('sitemap_google_property', home_url('/')));
         if (!empty($_POST['sitemap_google_token_clear'])) {
-            tk_update_option('sitemap_google_access_token', '');
+            $settings['sitemap_google_access_token'] = '';
         } elseif (trim((string) tk_post('sitemap_google_access_token', '')) !== '') {
-            tk_update_option('sitemap_google_access_token', sanitize_text_field((string) tk_post('sitemap_google_access_token', '')));
+            $settings['sitemap_google_access_token'] = sanitize_text_field((string) tk_post('sitemap_google_access_token', ''));
         }
         if (!empty($_POST['sitemap_bing_token_clear'])) {
-            tk_update_option('sitemap_bing_access_token', '');
+            $settings['sitemap_bing_access_token'] = '';
         } elseif (trim((string) tk_post('sitemap_bing_access_token', '')) !== '') {
-            tk_update_option('sitemap_bing_access_token', sanitize_text_field((string) tk_post('sitemap_bing_access_token', '')));
+            $settings['sitemap_bing_access_token'] = sanitize_text_field((string) tk_post('sitemap_bing_access_token', ''));
         }
     } elseif ($section === 'login-page') {
         $overlay_color = sanitize_hex_color((string) tk_post('login_overlay_color', '#0f172a'));
@@ -1536,36 +1537,37 @@ function tk_general_save(): void {
             $overlay_color = '#0f172a';
         }
 
-        tk_update_option('login_branding_enabled', !empty($_POST['login_branding_enabled']) ? 1 : 0);
-        tk_update_option('login_logo_id', tk_general_sanitize_image_attachment_id(tk_post('login_logo_id', 0)));
-        tk_update_option('login_background_id', tk_general_sanitize_image_attachment_id(tk_post('login_background_id', 0)));
-        tk_update_option('login_logo_width', max(80, min(420, absint(tk_post('login_logo_width', 240)))));
-        tk_update_option('login_logo_height', max(40, min(180, absint(tk_post('login_logo_height', 96)))));
-        tk_update_option('login_overlay_color', $overlay_color);
-        tk_update_option('login_overlay_opacity', max(0, min(100, absint(tk_post('login_overlay_opacity', 46)))));
+        $settings['login_branding_enabled'] = !empty($_POST['login_branding_enabled']) ? 1 : 0;
+        $settings['login_logo_id'] = tk_general_sanitize_image_attachment_id(tk_post('login_logo_id', 0));
+        $settings['login_background_id'] = tk_general_sanitize_image_attachment_id(tk_post('login_background_id', 0));
+        $settings['login_logo_width'] = max(80, min(420, absint(tk_post('login_logo_width', 240))));
+        $settings['login_logo_height'] = max(40, min(180, absint(tk_post('login_logo_height', 96))));
+        $settings['login_overlay_color'] = $overlay_color;
+        $settings['login_overlay_opacity'] = max(0, min(100, absint(tk_post('login_overlay_opacity', 46))));
         $form_background_color = sanitize_hex_color((string) tk_post('login_form_background_color', '#ffffff'));
         $form_text_color = sanitize_hex_color((string) tk_post('login_form_text_color', '#1f2937'));
-        tk_update_option('login_form_background_color', $form_background_color ?: '#ffffff');
-        tk_update_option('login_form_text_color', $form_text_color ?: '#1f2937');
+        $settings['login_form_background_color'] = $form_background_color ?: '#ffffff';
+        $settings['login_form_text_color'] = $form_text_color ?: '#1f2937';
     } elseif ($section === 'admin-menu') {
-        tk_update_option('hide_toolkits_menu', !empty($_POST['hide_toolkits_menu']) ? 1 : 0);
-        tk_update_option('hide_cff_menu', !empty($_POST['hide_cff_menu']) ? 1 : 0);
+        $settings['hide_toolkits_menu'] = !empty($_POST['hide_toolkits_menu']) ? 1 : 0;
+        $settings['hide_cff_menu'] = !empty($_POST['hide_cff_menu']) ? 1 : 0;
         $hidden = isset($_POST['hidden_menus']) && is_array($_POST['hidden_menus']) ? array_map('sanitize_text_field', $_POST['hidden_menus']) : array();
-        tk_update_option('tk_hidden_admin_menus', $hidden);
+        $settings['tk_hidden_admin_menus'] = $hidden;
     } elseif ($section === 'cookie-consent') {
-        tk_update_option('cookie_consent_enabled', !empty($_POST['cookie_consent_enabled']) ? 1 : 0);
-        tk_update_option('cookie_consent_text', wp_kses_post((string) tk_post('cookie_consent_text', '')));
-        tk_update_option('cookie_consent_privacy_url', sanitize_url((string) tk_post('cookie_consent_privacy_url', '')));
-        tk_update_option('cookie_consent_expiry', absint(tk_post('cookie_consent_expiry', 365)));
+        $settings['cookie_consent_enabled'] = !empty($_POST['cookie_consent_enabled']) ? 1 : 0;
+        $settings['cookie_consent_text'] = wp_kses_post((string) tk_post('cookie_consent_text', ''));
+        $settings['cookie_consent_privacy_url'] = sanitize_url((string) tk_post('cookie_consent_privacy_url', ''));
+        $settings['cookie_consent_expiry'] = absint(tk_post('cookie_consent_expiry', 365));
     } elseif ($section === 'server-time') {
         $tz = sanitize_text_field((string) tk_post('tk_server_timezone', ''));
         if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) {
             update_option('timezone_string', $tz);
         }
         // Retire the old override so it is no longer applied to PHP's default timezone.
-        tk_update_option('tk_server_timezone', '');
+        $settings['tk_server_timezone'] = '';
     }
 
+    tk_update_options($settings);
     wp_safe_redirect(admin_url('admin.php?page=tool-kits-general&tk_saved=1#' . $section));
     exit;
 }

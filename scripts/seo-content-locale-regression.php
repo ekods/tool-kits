@@ -15,6 +15,7 @@ $configured_languages = array('slug' => array('id', 'en'), 'name' => array('Indo
 $boxes = array(); $assets = array(); $writes = array(); $fail_key = '';
 function tk_get_option($key, $fallback = null) { return $GLOBALS['options'][$key] ?? $fallback; }
 function tk_update_option($key, $value) { $GLOBALS['options'][$key] = $value; }
+function tk_update_options(array $values) { $GLOBALS['batch_writes'] = ($GLOBALS['batch_writes'] ?? 0) + 1; foreach ($values as $key => $value) { tk_update_option($key, $value); } }
 function get_post($id) { return $GLOBALS['posts'][$id] ?? null; }
 function get_post_type($id) { return get_post($id)->post_type ?? ''; }
 function get_post_types($args, $format) { return array('page' => (object) array('name' => 'page')); }
