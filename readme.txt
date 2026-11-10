@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.87
+Stable tag: 2.7.88
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,7 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.88 sends CAPTCHA actions in POST bodies instead of crawlable query URLs. Legacy CAPTCHA endpoints send X-Robots-Tag: noindex, nofollow and reject empty or malformed actions with HTTP 400. Clear page/CDN caches after updating. Existing Search Console entries update after Google recrawls; no robots.txt block is added.
 - Version 2.7.87 merges FAQ GEO into the Tool Kits SEO / GEO sidebar card. Edit FAQ opens the existing popup. SEO Settings can show or hide the SEO/GEO controls and FAQ section independently; saved FAQs and public output are preserved.
 - Version 2.7.62 makes I'm not a robot a single checkbox without a code input. Clicking automatically checks the browser-bound token, minimum time, honeypot and request limits on the server before returning a one-use proof. Classic Text continues to use an image code. Checkbox checks validate the request/session; they are not a guarantee of human identity. Clear page/CDN caches after updating.
 - Version 2.7.61 strengthens CAPTCHA enforcement. Protected CF7 forms reject missing CAPTCHA fields, and checkbox mode opens an image-code challenge rather than approving a click alone. Codes have at least 6 characters, expire after 5 minutes and use visitor-bound, one-use tokens. Adjust minimum solve time and attempt limits under Spam Protection > Captcha. Clear page/CDN caches after installing; old cached CAPTCHA markup and click proofs are no longer valid.
@@ -81,6 +82,15 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.88 =
+- Give legacy strong/br field captions a consistent 8px gap above text inputs, number inputs, selects and textareas; neutralize negative small-input margins while preserving inline checkbox/radio labels and native list-table controls.
+- Standardize GA, GTM and Collector header status links with matching height, padding and centered indicators. Link directly to the Analytics/GTM sections and the Collector Connection tab, including navigation within the Access page.
+- Refresh Security, SEO and GEO scores as individual white cards with tinted icons, circular percentage indicators, clear keyboard focus and responsive stacking; preserve score calculations and existing detail links.
+- Align protection module names, statuses, details and actions in consistent columns; remove legacy card spacing and stack details/actions in narrow panels with mobile-sized buttons.
+- Send CAPTCHA refresh and checkbox verification actions in POST bodies, keeping action query URLs out of newly generated script configuration.
+- Add noindex, nofollow and no-cache headers to CAPTCHA endpoint responses, including legacy query URLs and errors. Return HTTP 400 for empty, unknown or malformed actions.
+- Preserve cached-page query routing, CAPTCHA nonce/origin checks, challenge issuance and one-use verification; leave ordinary content responses unchanged.
 
 = 2.7.87 =
 - Merge Tool Kits FAQ GEO into the Tool Kits SEO / GEO sidebar card, retaining the Edit FAQ popup and keeping Tool Kits SEO Content separate.

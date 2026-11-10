@@ -55,7 +55,7 @@ const checkboxForm = form('checkbox');
 const classicForm = form('text');
 const context = vm.createContext({
     Date: { now: () => now }, URLSearchParams, TextEncoder, navigator: { webdriver: false },
-    window: { tkCaptcha: { refreshUrl: '/refresh', verifyUrl: '/verify', refreshNonce: 'refresh-nonce', verifyNonce: 'verify-nonce',
+    window: { tkCaptcha: { refreshUrl: '/', verifyUrl: '/', refreshNonce: 'refresh-nonce', verifyNonce: 'verify-nonce',
         minSeconds: 1, loading: 'Loading', required: 'Required', incorrect: 'Incorrect', verifyFailed: 'Check the box again', refreshFailed: 'Refresh failed', tooFast: 'Wait', rateLimited: 'Rate limited' },
         setTimeout(resolve, ms) { now += ms; resolve(); },
     },
@@ -95,6 +95,8 @@ function submit(owner) {
     assert.equal(requests.length, 1, 'Fresh browser cookie issuance must be serialized');
     assert.equal(requests[0].options.credentials, 'same-origin');
     assert.equal(requests[0].options.cache, 'no-store');
+    assert.equal(requests[0].url, '/');
+    assert.equal(requests[0].options.body.get('tk_captcha_action'), 'refresh', 'Refresh action must travel in the POST body');
     assert.equal(submit(checkboxForm).prevented, true, 'Submission was allowed before challenge issuance');
     const checkbox = await refreshed(0, 'checkbox');
     assert.equal(requests.length, 2);
@@ -112,7 +114,8 @@ function submit(owner) {
     click(checkbox.box);
     await flush();
     assert.equal(requests.length, 3, 'Repeated clicks started overlapping verification requests');
-    assert.equal(requests[2].url, '/verify');
+    assert.equal(requests[2].url, '/');
+    assert.equal(requests[2].options.body.get('tk_captcha_action'), 'verify_click', 'Verification action must travel in the POST body');
     assert.equal(requests[2].options.body.get('checked'), '1');
     assert.match(requests[2].options.body.get('pow_nonce') || '', /^\d+$/, 'Checkbox did not send its proof-of-work nonce');
     assert.equal(requests[2].options.body.get('answer'), null, 'Checkbox still submits a human-entered answer');
@@ -161,7 +164,8 @@ function submit(owner) {
     assert.equal(requests.length, 8, 'Clicks during loading started extra challenge requests');
     const loaded = await refreshed(7, 'checkbox');
     assert.equal(requests.length, 9);
-    assert.equal(requests[8].url, '/verify');
+    assert.equal(requests[8].url, '/');
+    assert.equal(requests[8].options.body.get('tk_captcha_action'), 'verify_click');
     requests[8].resolve({ ok: true, json: async () => ({ success: true, data: { answer: 'b'.repeat(64) } }) });
     await flush();
     assert.equal(loaded.box.classList.contains('is-checked'), true);

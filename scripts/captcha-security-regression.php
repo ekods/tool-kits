@@ -256,6 +256,20 @@ $_SERVER['HTTP_USER_AGENT'] = 'Human browser';
 unset($options['captcha_adaptive_pow']);
 $options['captcha_type'] = 'text';
 
+// Route new POST-only actions and cached query URLs through the real dispatcher.
+$_GET = array();
+$routed = captcha_endpoint('tk_captcha_custom_ajax_handler_init', array('tk_captcha_action' => 'refresh', 'nonce' => 'valid', 'type' => 'text'));
+check_captcha($routed->success && strpos($routed->data['markup'], 'data:image/') !== false, 'POST-body refresh did not reach the challenge issuer');
+$checkbox = fixture_challenge('checkbox');
+$routed = captcha_endpoint('tk_captcha_custom_ajax_handler_init', array('tk_captcha_action' => 'verify_click', 'nonce' => 'valid',
+    'token' => $checkbox['token'], 'checked' => '1', 'pow_nonce' => solve_pow($checkbox['token'])));
+check_captcha($routed->success && preg_match('/^[a-f0-9]{64}$/D', $routed->data['answer'] ?? ''), 'POST-body verification did not reach the proof issuer');
+$_GET = array('tk_captcha_action' => 'refresh');
+$routed = captcha_endpoint('tk_captcha_custom_ajax_handler_init', array('nonce' => 'valid', 'type' => 'text'));
+check_captcha($routed->success && !empty($routed->data['markup']), 'Cached query-based refresh stopped working');
+$_GET = $_POST = array();
+check_captcha(tk_captcha_custom_ajax_handler_init() === null, 'An ordinary page was intercepted by CAPTCHA routing');
+
 $old = fixture_challenge();
 $refresh = captcha_endpoint('tk_captcha_refresh_ajax', array('nonce' => 'valid', 'type' => 'text', 'old_token' => $old['token']));
 check_captcha($refresh->success && !isset($cache['tk_captcha_' . $old['token']]) && !empty($no_cache), 'Refresh did not invalidate the old challenge or disable caching');

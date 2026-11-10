@@ -18,6 +18,7 @@ const cases = [
   { "name": "seo-score-refresh", "runtime": "php", "source": ["<?php", "require __DIR__ . '/seo-score-refresh-regression.php';"] },
   { "name": "seo-score-ui", "runtime": "node", "source": ["require(__dirname + '/seo-score-ui-regression.cjs');"] },
   { "name": "captcha-security", "runtime": "php", "source": ["<?php", "require __DIR__ . '/captcha-security-regression.php';"] },
+  { "name": "captcha-routing", "runtime": "node", "source": ["require(__dirname + '/captcha-routing-regression.cjs');"] },
   { "name": "captcha-ui", "runtime": "node", "source": ["require(__dirname + '/captcha-ui-regression.cjs');"] },
   { "name": "antispam-cooldown", "runtime": "php", "source": ["<?php", "require __DIR__ . '/antispam-cooldown-regression.php';"] },
   { "name": "antispam-cooldown-ui", "runtime": "node", "source": ["require(__dirname + '/antispam-cooldown-ui-regression.cjs');"] },

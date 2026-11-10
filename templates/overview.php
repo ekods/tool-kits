@@ -37,18 +37,29 @@ $geo_score = (int) ($geo_score_data['score'] ?? 0);
     <section class="tk-readiness-board" aria-label="<?php echo esc_attr(__('Site readiness scores', 'tool-kits')); ?>">
         <?php
         $readiness = array(
-            array('label' => __('Security score', 'tool-kits'), 'description' => __('Login protection, firewall, and hardening checks.', 'tool-kits'), 'score' => $score, 'color' => $score_color, 'icon' => 'dashicons-shield', 'link' => tk_admin_url(tk_hardening_page_slug())),
-            array('label' => __('SEO score', 'tool-kits'), 'description' => __('Metadata, sitemap, canonical URLs, and indexability.', 'tool-kits'), 'score' => $seo_score, 'color' => $seo_score_data['color'] ?? '#e74c3c', 'icon' => 'dashicons-search', 'link' => $seo_score_data['link'] ?? '#'),
-            array('label' => __('GEO score', 'tool-kits'), 'description' => __('Structured content and access for AI search crawlers.', 'tool-kits'), 'score' => $geo_score, 'color' => $geo_score_data['color'] ?? '#e74c3c', 'icon' => 'dashicons-editor-code', 'link' => $geo_score_data['link'] ?? '#'),
+            'security' => array('label' => __('Security score', 'tool-kits'), 'description' => __('Login protection, firewall, and hardening checks.', 'tool-kits'), 'score' => $score, 'color' => $score_color, 'icon' => 'dashicons-shield', 'link' => tk_admin_url(tk_hardening_page_slug())),
+            'seo' => array('label' => __('SEO score', 'tool-kits'), 'description' => __('Metadata, sitemap, canonical URLs, and indexability.', 'tool-kits'), 'score' => $seo_score, 'color' => $seo_score_data['color'] ?? '#e74c3c', 'icon' => 'dashicons-search', 'link' => $seo_score_data['link'] ?? '#'),
+            'geo' => array('label' => __('GEO score', 'tool-kits'), 'description' => __('Structured content and access for AI search crawlers.', 'tool-kits'), 'score' => $geo_score, 'color' => $geo_score_data['color'] ?? '#e74c3c', 'icon' => 'dashicons-editor-code', 'link' => $geo_score_data['link'] ?? '#'),
         );
-        foreach ($readiness as $item) :
+        foreach ($readiness as $kind => $item) :
             $value = max(0, min(100, (int) $item['score']));
         ?>
-            <a class="tk-readiness-item" href="<?php echo esc_url((string) $item['link']); ?>" style="--tk-icon-color:<?php echo esc_attr((string) $item['color']); ?>;">
-                <span class="tk-readiness-heading"><span class="dashicons <?php echo esc_attr($item['icon']); ?>" aria-hidden="true"></span><?php echo esc_html($item['label']); ?></span>
-                <strong class="tk-readiness-value"><?php echo esc_html((string) $value); ?><small>%</small></strong>
-                <p><?php echo esc_html($item['description']); ?></p>
-                <span class="tk-readiness-meter" aria-hidden="true" style="--tk-score:<?php echo esc_attr((string) $value); ?>%;--tk-score-color:<?php echo esc_attr((string) $item['color']); ?>;"><span></span></span>
+            <a class="tk-readiness-item tk-readiness-item--<?php echo esc_attr($kind); ?>" href="<?php echo esc_url((string) $item['link']); ?>" style="--tk-score-color:<?php echo esc_attr((string) $item['color']); ?>;">
+                <span class="tk-readiness-heading">
+                    <span class="tk-readiness-icon"><span class="dashicons <?php echo esc_attr($item['icon']); ?>" aria-hidden="true"></span></span>
+                    <span><?php echo esc_html($item['label']); ?></span>
+                    <span class="tk-readiness-arrow dashicons dashicons-arrow-right-alt2" aria-hidden="true"></span>
+                </span>
+                <span class="tk-readiness-summary">
+                    <span class="tk-readiness-gauge<?php echo $value === 0 ? ' is-empty' : ''; ?>">
+                        <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+                            <circle class="tk-readiness-track" cx="50" cy="50" r="43" />
+                            <circle class="tk-readiness-progress" cx="50" cy="50" r="43" pathLength="100" stroke-dasharray="100" stroke-dashoffset="<?php echo esc_attr((string) (100 - $value)); ?>" />
+                        </svg>
+                        <strong class="tk-readiness-value"><?php echo esc_html((string) $value); ?><small>%</small></strong>
+                    </span>
+                    <span class="tk-readiness-description"><?php echo esc_html($item['description']); ?></span>
+                </span>
             </a>
         <?php endforeach; ?>
     </section>
@@ -146,7 +157,7 @@ $geo_score = (int) ($geo_score_data['score'] ?? 0);
         </div>
 
         <div class="tk-overview-sidebar">
-            <div class="tk-sidebar-widget">
+            <div class="tk-sidebar-widget" id="google-analytics">
                 <?php 
                 $gtag_id = (string) tk_get_option('google_analytics_gtag_id', '');
                 $is_connected = !empty($gtag_id);

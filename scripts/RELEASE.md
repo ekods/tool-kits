@@ -1,3 +1,52 @@
+## Tool Kits 2.7.88
+
+Legacy stacked field captions now have an explicit 8px gap before their controls,
+including Attack Details filters, Retention days and the Hide Login custom slug.
+Bare line breaks and WordPress's negative small-input top margin no longer pull
+controls against the caption. Rules stay within Tool Kits settings and exclude
+inline checkbox/radio labels and native list-table controls. Five production fields
+were checked at five viewport widths with unchanged submitted form values.
+
+GA, GTM and Collector header statuses now share consistent link styling, height,
+padding and centered indicators. GA and GTM open their Overview settings sections;
+Collector opens Access & License's Connection tab, including when that page is
+already open. Status calculations and saved IDs remain unchanged. Header links
+were checked at ten viewport widths, with full IDs, keyboard focus, destination
+anchors and initial/same-page Connection navigation. Analytics/GTM and request
+option regression checks also pass.
+
+Security, SEO and GEO readiness scores now appear as separate white cards with
+tinted category icons, circular percentage indicators and clear link affordances.
+Cards stack on smaller screens and retain visible keyboard focus and reduced-motion
+support. Score calculations, score colors and existing detail destinations are
+unchanged. No additional JavaScript or chart dependency is required.
+
+The Overview protection list now aligns module names, statuses, details and actions
+in consistent columns. Legacy card body height and list spacing are removed;
+narrow panels stack the details and actions below the module heading. Buttons
+retain WordPress styling, and mobile actions have a 44px minimum height. Settings,
+configure links and the nonce-protected Hardening reset form are preserved.
+
+CAPTCHA refresh and checkbox verification now send their action in the POST body
+to the site's home endpoint. Newly generated script configuration no longer emits
+`?tk_captcha_action=` URLs. Cached pages using the old query endpoints still work.
+All CAPTCHA route responses send `X-Robots-Tag: noindex, nofollow` and no-cache
+headers; empty, unknown or malformed actions return HTTP 400 instead of HTTP 200.
+Ordinary pages retain their existing indexing behavior.
+
+After updating, clear page/CDN caches. Existing Search Console entries may remain
+until Google recrawls them. No robots.txt block is added, so crawlers can read the
+response status and noindex header. No CAPTCHA settings or storage migration.
+
+Validation: 12 HTTP routing/header cases for legacy and POST-body actions,
+malformed input and unaffected content; 100 CAPTCHA security checks on PHP 7.4
+and 8.4, UI flows and focused public-module/login checks. HTTP tests use isolated
+WordPress stubs, not a deployed site's database or Search Console account.
+The protection list was also checked in enabled/disabled states at 11 viewport
+widths (2188px through 320px), with long slugs and unchanged reset form values.
+Readiness cards were checked at the same 11 widths, including empty/full rings,
+long labels, retained links and scores, keyboard navigation and reduced motion.
+
 ## Tool Kits 2.7.87
 
 FAQ GEO now appears inside the Tool Kits SEO / GEO sidebar card. The Edit FAQ

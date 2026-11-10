@@ -1381,7 +1381,7 @@ function tk_render_toolkits_access_page() {
                         <button type="button" class="button button-hero tk-copy-debug" data-debug="<?php echo esc_attr(tk_get_debug_info()); ?>">Copy Debug Info</button>
                     </div>
                 </div>
-                <div class="tk-card tk-tab-panel" data-panel-id="license">
+                <div class="tk-card tk-tab-panel" data-panel-id="license" id="license">
                     <h2 style="margin-bottom:8px;">Connection Settings</h2>
                     <p class="description" style="margin-bottom:24px;">Configure your collector and heartbeat endpoints to unlock cloud features.</p>
                     
@@ -1553,12 +1553,16 @@ function tk_render_toolkits_access_page() {
         tk_csp_print_inline_script(
             "(function(){
             function activateTab(panelId) {
+                var panels = document.querySelectorAll('.tk-tab-panel');
+                if (!Array.prototype.some.call(panels, function(panel){ return panel.getAttribute('data-panel-id') === panelId; })) { return; }
                 document.querySelectorAll('.tk-tab-panel').forEach(function(panel){
                     panel.classList.toggle('is-active', panel.getAttribute('data-panel-id') === panelId);
                 });
                 document.querySelectorAll('.tk-tabs-nav-button').forEach(function(btn){
                     btn.classList.toggle('is-active', btn.getAttribute('data-panel') === panelId);
                 });
+                var target = document.getElementById(panelId);
+                if (target) { target.scrollIntoView({block: 'start'}); }
             }
             function getPanelFromHash() {
                 var hash = window.location.hash || '';
@@ -1578,6 +1582,10 @@ function tk_render_toolkits_access_page() {
             if (initial) {
                 activateTab(initial);
             }
+            window.addEventListener('hashchange', function(){
+                var panelId = getPanelFromHash();
+                if (panelId) { activateTab(panelId); }
+            });
             var tokenDisplay = document.querySelector('input[name=\"heartbeat_auth_key_display\"]');
             var tokenHidden = document.querySelector('input[name=\"heartbeat_auth_key\"]');
             if (tokenDisplay && tokenHidden) {

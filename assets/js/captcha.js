@@ -85,7 +85,7 @@
         // Serial issuance ensures several forms share the same freshly issued HttpOnly browser cookie.
         const job = refreshQueue.catch(function () {}).then(async function () {
             if (!field.isConnected) return;
-            const data = await request(config.refreshUrl, { nonce: config.refreshNonce,
+            const data = await request(config.refreshUrl, { tk_captcha_action: 'refresh', nonce: config.refreshNonce,
                 type: field.getAttribute('data-type') || 'text',
                 old_token: field.querySelector('[name="tk_captcha_token"]')?.value || '' });
             const template = document.createElement('template');
@@ -124,7 +124,7 @@
                 const delay = Math.max(0, Number(field.dataset.tkCaptchaNotBefore || 0) - Date.now());
                 if (delay) await new Promise(function (resolve) { window.setTimeout(resolve, delay); });
                 if (!field.isConnected) return;
-                data = await request(config.verifyUrl, { nonce: config.verifyNonce,
+                data = await request(config.verifyUrl, { tk_captcha_action: 'verify_click', nonce: config.verifyNonce,
                     token: field.querySelector('[name="tk_captcha_token"]').value, checked: '1', pow_nonce: pow,
                     automation: navigator.webdriver ? '1' : '0', interaction: trusted ? '1' : '0',
                     tk_robot_honeypot: field.querySelector('[name="tk_robot_honeypot"]')?.value || '' });

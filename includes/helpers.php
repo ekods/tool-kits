@@ -40,21 +40,22 @@ function tk_render_header_branding() {
             <?php 
             $ga_id = tk_get_option('google_analytics_gtag_id', '');
             if ($ga_id) : ?>
-                <div class="tk-header-status" style="background:#f0fdf4; border-color:#bbf7d0; color:#166534;">
-                    <div class="tk-status-dot" style="background:#22c55e;"></div>
-                    <span>GA Connected: <?php echo esc_html($ga_id); ?></span>
-                </div>
+                <a class="tk-header-status" href="<?php echo esc_url(tk_admin_url('tool-kits') . '#google-analytics'); ?>" title="Open Google Analytics settings">
+                    <span class="tk-status-dot" style="background:#22c55e;" aria-hidden="true"></span>
+                    <span class="tk-header-status-text">GA Connected: <?php echo esc_html($ga_id); ?></span>
+                    <span class="tk-header-status-arrow dashicons dashicons-arrow-right-alt2" aria-hidden="true"></span>
+                </a>
             <?php endif; ?>
 
             <?php if (function_exists('tk_analytics_gtm_status')) :
                 $gtm_status = tk_analytics_gtm_status();
-                $gtm_color = $gtm_status['state'] === 'configured' ? '#166534' : ($gtm_status['state'] === 'not-set' ? '#64748b' : '#92400e');
                 $gtm_dot = $gtm_status['state'] === 'configured' ? '#22c55e' : ($gtm_status['state'] === 'not-set' ? '#94a3b8' : '#f59e0b');
             ?>
-                <div class="tk-header-status" style="color:<?php echo esc_attr($gtm_color); ?>;" title="<?php echo esc_attr($gtm_status['message']); ?>" data-tk-gtm-status="<?php echo esc_attr($gtm_status['state']); ?>">
-                    <div class="tk-status-dot" style="background:<?php echo esc_attr($gtm_dot); ?>;"></div>
-                    <span>GTM <?php echo esc_html($gtm_status['label'] . ($gtm_status['id'] !== '' ? ': ' . $gtm_status['id'] : '')); ?></span>
-                </div>
+                <a class="tk-header-status" href="<?php echo esc_url(tk_admin_url('tool-kits') . '#google-tag-manager'); ?>" title="<?php echo esc_attr('Open Google Tag Manager settings. ' . $gtm_status['message']); ?>" data-tk-gtm-status="<?php echo esc_attr($gtm_status['state']); ?>">
+                    <span class="tk-status-dot" style="background:<?php echo esc_attr($gtm_dot); ?>;" aria-hidden="true"></span>
+                    <span class="tk-header-status-text">GTM <?php echo esc_html($gtm_status['label'] . ($gtm_status['id'] !== '' ? ': ' . $gtm_status['id'] : '')); ?></span>
+                    <span class="tk-header-status-arrow dashicons dashicons-arrow-right-alt2" aria-hidden="true"></span>
+                </a>
             <?php endif; ?>
 
             <?php
@@ -64,10 +65,11 @@ function tk_render_header_branding() {
             $hb_color = $is_online ? '#22c55e' : ($heartbeat_fail > 0 ? '#e74c3c' : '#94a3b8');
             $hb_text = $is_online ? 'Collector Online' : ($heartbeat_fail > 0 ? 'Collector Offline' : 'Collector Not Connected');
             ?>
-            <div class="tk-header-status" style="background:#f8fafc; border-color:#e2e8f0; color:#334155;">
-                <div class="tk-status-dot" style="background:<?php echo $hb_color; ?>;"></div>
-                <span><?php echo esc_html($hb_text); ?></span>
-            </div>
+            <a class="tk-header-status" href="<?php echo esc_url(tk_admin_url('tool-kits-access') . '#license'); ?>" title="Open Collector connection settings">
+                <span class="tk-status-dot" style="background:<?php echo $hb_color; ?>;" aria-hidden="true"></span>
+                <span class="tk-header-status-text"><?php echo esc_html($hb_text); ?></span>
+                <span class="tk-header-status-arrow dashicons dashicons-arrow-right-alt2" aria-hidden="true"></span>
+            </a>
 
         </div>
     </div>

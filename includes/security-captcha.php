@@ -30,31 +30,32 @@ function tk_captcha_init() {
 }
 
 function tk_captcha_custom_ajax_handler_init() {
-    if (isset($_GET['tk_captcha_action'])) {
-        $action = sanitize_key((string) wp_unslash($_GET['tk_captcha_action']));
-        if ($action === 'refresh') {
-            tk_captcha_refresh_ajax();
-        } elseif ($action === 'verify_click') {
-            tk_captcha_verify_click_ajax();
-        } else {
-            wp_send_json_error('invalid_action');
-        }
-        exit;
-    }
+    tk_captcha_custom_ajax_handler();
 }
 
 function tk_captcha_custom_ajax_handler() {
-    if (isset($_GET['tk_captcha_action'])) {
-        $action = sanitize_key((string) wp_unslash($_GET['tk_captcha_action']));
-        if ($action === 'refresh') {
-            tk_captcha_refresh_ajax();
-        } elseif ($action === 'verify_click') {
-            tk_captcha_verify_click_ajax();
-        } else {
-            wp_send_json_error('invalid_action');
-        }
-        exit;
+    // New requests keep the action in the POST body. Retain query routing for cached pages.
+    if (array_key_exists('tk_captcha_action', $_GET)) {
+        $action = tk_captcha_scalar($_GET, 'tk_captcha_action');
+    } elseif (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && array_key_exists('tk_captcha_action', $_POST)) {
+        $action = tk_captcha_scalar($_POST, 'tk_captcha_action');
+    } else {
+        return;
     }
+
+    // These JSON responses are service endpoints, including empty or malformed legacy URLs.
+    nocache_headers();
+    if (!headers_sent()) {
+        header('X-Robots-Tag: noindex, nofollow', true);
+    }
+    if ($action === 'refresh') {
+        tk_captcha_refresh_ajax();
+    } elseif ($action === 'verify_click') {
+        tk_captcha_verify_click_ajax();
+    } else {
+        wp_send_json_error('invalid_action', 400);
+    }
+    exit;
 }
 
 function tk_captcha_length(): int {
@@ -909,8 +910,8 @@ function tk_captcha_refresh_script() {
     $printed = true;
     wp_enqueue_script('tk-captcha', TK_URL . 'assets/js/captcha.js', array(), tk_asset_version('assets/js/captcha.js'), true);
     wp_localize_script('tk-captcha', 'tkCaptcha', array(
-        'refreshUrl' => home_url('/?tk_captcha_action=refresh'),
-        'verifyUrl' => home_url('/?tk_captcha_action=verify_click'),
+        'refreshUrl' => home_url('/'),
+        'verifyUrl' => home_url('/'),
         'refreshNonce' => wp_create_nonce('tk_captcha_refresh'),
         'verifyNonce' => wp_create_nonce('tk_captcha_verify_click'),
         'minSeconds' => tk_captcha_min_seconds(),
