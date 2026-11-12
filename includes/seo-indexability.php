@@ -239,7 +239,96 @@ function tk_seo_indexability_scan(string $url, float $deadline = 0.0): array {
         'detail' => $redirect ? 'HTTP ' . $status . ' → ' . ($item['redirect_to'] ?: 'missing Location header') : $unknown,
         'recommendation' => 'If intentional, keep the redirect and use its destination in links and sitemaps. Remove only an unintended redirect at its source.',
     );
+    $item['checks']['status'] = tk_seo_indexability_status_check($ok, $status, $html ? (string) wp_remote_retrieve_body($response) : '', $html, $unknown);
+    $item['checks']['googlebot'] = tk_seo_indexability_googlebot_check($url, $ok, $status, $parsed['meta_noindex'] || $header_noindex, $deadline);
     return $item;
+}
+
+/** Server errors, missing pages, and 200 responses that look like an error page (soft 404). */
+function tk_seo_indexability_status_check(bool $ok, int $status, string $body, bool $html, string $unknown): array {
+    $state = 'unknown'; $detail = $unknown;
+    if ($ok && $status >= 400) {
+        $state = 'issue'; $detail = 'HTTP ' . $status . '. Google reports this as a server error (5xx) or not found (404).';
+    } elseif ($ok && $status >= 300) {
+        $state = 'pass'; $detail = 'HTTP ' . $status . ' redirect; see the redirect check.';
+    } elseif ($html) {
+        $text = trim(preg_replace('/\s+/', ' ', wp_strip_all_tags(preg_replace('~<(script|style|noscript)\b.*?</\1\s*>~is', ' ', $body))));
+        $title = preg_match('~<title\b[^>]*>(.*?)</title>~is', $body, $match) ? html_entity_decode(trim($match[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8') : '';
+        $looks_missing = (bool) preg_match('/^\s*(?:error\s*)?404\b|\b(?:page|post|content) not found\b|\b(?:halaman|konten) tidak (?:ditemukan|ada)\b/i', $title);
+        $thin = strlen($text) < 120;
+        $state = $looks_missing || $thin ? 'issue' : 'pass';
+        $detail = $looks_missing ? 'HTTP 200 but the title reads like an error page ("' . $title . '"). Google may classify it as a soft 404.'
+            : ($thin ? 'HTTP 200 but the page has almost no visible text (' . strlen($text) . ' characters). Google may classify it as a soft 404.' : 'HTTP ' . $status . ' with page content.');
+    } elseif ($ok) {
+        $state = 'pass'; $detail = 'HTTP ' . $status . ' (not an HTML page).';
+    }
+    return array(
+        'label' => 'Server error, not found, or soft 404', 'state' => $state, 'detail' => $detail,
+        'recommendation' => 'Restore real content, return a proper 404/410 for removed pages, or redirect to the closest replacement. Remove the URL from the sitemap if it should not be indexed.',
+    );
+}
+
+/** Compare what a Googlebot user agent receives with the plain response, to expose firewall/CDN/cache differences. */
+function tk_seo_indexability_googlebot_check(string $url, bool $ok, int $status, bool $noindex, float $deadline): array {
+    $check = array('label' => 'Googlebot receives the same response', 'state' => 'unknown', 'detail' => 'Plain request failed; nothing to compare.',
+        'recommendation' => 'If this differs, review firewall, bot protection, CDN, and cache rules for Googlebot. Verify against real Googlebot traffic in server logs.');
+    if (!$ok) { return $check; }
+    $remaining = $deadline - microtime(true);
+    if ($remaining <= 0) { $check['detail'] = 'Live-check time budget reached. Recheck this URL.'; return $check; }
+    $response = wp_safe_remote_get($url, array('timeout' => min(15.0, $remaining), 'redirection' => 0, 'limit_response_size' => 2 * MB_IN_BYTES,
+        'headers' => array('User-Agent' => 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', 'Cache-Control' => 'no-cache')));
+    if (is_wp_error($response)) { $check['detail'] = $response->get_error_message(); return $check; }
+    $bot_status = (int) wp_remote_retrieve_response_code($response);
+    $bot_noindex = false;
+    foreach ((array) wp_remote_retrieve_header($response, 'x-robots-tag') as $header) {
+        if (tk_seo_indexability_has_noindex((string) $header)) { $bot_noindex = true; }
+    }
+    if ($bot_status === 200 && stripos((string) wp_remote_retrieve_header($response, 'content-type'), 'text/html') !== false) {
+        $bot_noindex = $bot_noindex || tk_seo_indexability_parse((string) wp_remote_retrieve_body($response))['meta_noindex'];
+    }
+    $same = $bot_status === $status && $bot_noindex === $noindex;
+    $check['state'] = $same ? 'pass' : 'issue';
+    $check['detail'] = $same ? 'Googlebot user agent receives HTTP ' . $bot_status . ', matching the plain request.'
+        : 'Plain request: HTTP ' . $status . ($noindex ? ' (noindex)' : '') . '. Googlebot user agent: HTTP ' . $bot_status . ($bot_noindex ? ' (noindex)' : '') . '. A spoofed user agent can be challenged by bot protection even when real Googlebot is allowed; confirm in logs.';
+    return $check;
+}
+
+/** Parse a sitemap or sitemap index on this website into same-origin URLs. */
+function tk_seo_indexability_sitemap_urls(string $sitemap_url, int $limit = 2000): array {
+    $queue = array($sitemap_url); $seen = array(); $urls = array(); $fetched = 0;
+    while ($queue && $fetched < 25 && count($urls) < $limit) {
+        $current = tk_seo_indexability_url(array_shift($queue));
+        if ($current === '' || isset($seen[$current])) { continue; }
+        $seen[$current] = true; $fetched++;
+        $response = wp_safe_remote_get($current, array('timeout' => 20, 'redirection' => 2, 'limit_response_size' => 10 * MB_IN_BYTES, 'headers' => array('User-Agent' => 'Tool Kits Indexability Audit')));
+        if (is_wp_error($response) || (int) wp_remote_retrieve_response_code($response) !== 200) {
+            if ($fetched === 1) { throw new RuntimeException('Could not read the sitemap at ' . $current . '. Check that it is reachable and enabled.'); }
+            continue;
+        }
+        $previous = libxml_use_internal_errors(true);
+        $xml = simplexml_load_string((string) wp_remote_retrieve_body($response), 'SimpleXMLElement', LIBXML_NONET);
+        libxml_clear_errors(); libxml_use_internal_errors($previous);
+        if (!$xml) { if ($fetched === 1) { throw new RuntimeException('The sitemap is not valid XML.'); } continue; }
+        $name = $xml->getName();
+        foreach ($xml->children() as $entry) {
+            $loc = trim((string) $entry->loc);
+            if ($loc === '') { continue; }
+            if ($name === 'sitemapindex') { $queue[] = $loc; }
+            elseif ($name === 'urlset') { $loc = tk_seo_indexability_url($loc); if ($loc !== '') { $urls[$loc] = true; } }
+        }
+    }
+    return array_slice(array_keys($urls), 0, $limit);
+}
+
+/** Same-origin URLs from pasted text (for example a Search Console export), one or more per line. */
+function tk_seo_indexability_list_urls(string $text, int $limit = 1000): array {
+    $urls = array();
+    preg_match_all('~https?://[^\s,;"\'<>]+~i', $text, $matches);
+    foreach ($matches[0] as $candidate) {
+        $url = tk_seo_indexability_url($candidate);
+        if ($url !== '') { $urls[$url] = true; }
+    }
+    return array_slice(array_keys($urls), 0, $limit);
 }
 
 /** Fixes only target a published, editable permalink or the site homepage. */
@@ -320,7 +409,16 @@ function tk_seo_indexability_ajax(): void {
         $operation = (string) tk_post('operation', 'scan');
         if ($operation === 'discover') {
             $page = max(1, (int) tk_post('page', 1));
-            $batch = tk_seo_indexability_discover($page);
+            $source = (string) tk_post('source', 'site');
+            if ($source === 'sitemap') {
+                $sitemap = function_exists('tk_general_sitemap_url') ? tk_general_sitemap_url() : home_url('/sitemap.xml');
+                $batch = array('urls' => tk_seo_indexability_sitemap_urls($sitemap), 'has_more' => false, 'next_page' => 2);
+            } elseif ($source === 'list') {
+                $batch = array('urls' => tk_seo_indexability_list_urls((string) tk_post('urls', '')), 'has_more' => false, 'next_page' => 2);
+                if (!$batch['urls']) { throw new RuntimeException('No URLs on this website were found in the pasted list.'); }
+            } else {
+                $batch = tk_seo_indexability_discover($page);
+            }
             if ($page === 1) { tk_update_option('seo_indexability_report', array()); }
             wp_send_json_success($batch);
         }
@@ -443,6 +541,7 @@ function tk_seo_indexability_fix_html(string $html, array $fix): string {
 function tk_seo_indexability_panel(): void {
     $report = tk_get_option('seo_indexability_report', array());
     $report = is_array($report) ? array_values($report) : array();
+    tk_gsc_readiness_panel();
     ?>
     <div id="tk-seo-indexability" data-nonce="<?php echo esc_attr(wp_create_nonce('tk_seo_indexability')); ?>" data-home="<?php echo esc_attr(home_url('/')); ?>">
         <h3>Indexing Checks &amp; Fixes</h3>
@@ -450,7 +549,10 @@ function tk_seo_indexability_panel(): void {
         <p>Website: <strong><?php echo esc_html(home_url('/')); ?></strong></p>
         <p class="description">These are live website checks. Google's duplicate classification and indexing status still require Search Console URL Inspection. Keep intentional exclusions and redirects.</p>
         <?php if (!tk_seo_tools_enabled()): ?><p>Enable SEO Toolkit in Settings to apply per-URL fixes.</p><?php endif; ?>
-        <p><button type="button" class="button button-primary" data-indexability-scan>Check Current Website</button> <button type="button" class="button" data-indexability-retry hidden disabled>Retry Unverified</button> <button type="button" class="button button-secondary" data-indexability-fix-all aria-describedby="tk-indexability-fix-hint" disabled>Fix All</button> <button type="button" class="button" data-indexability-stop hidden disabled>Stop Fix All</button> <a class="button" href="<?php echo esc_url(admin_url('options-reading.php')); ?>">Search Engine Visibility</a> <a class="button" href="<?php echo esc_url(tk_admin_url('tool-kits-seo') . '#redirects'); ?>">Manage Redirects</a></p>
+        <p><label>URLs to check <select data-indexability-source><option value="site">Website content</option><option value="sitemap">Sitemap URLs</option><option value="list">Pasted URL list (e.g. Search Console export)</option></select></label></p>
+        <p data-indexability-list-wrap hidden><textarea data-indexability-urls rows="6" class="large-text code" placeholder="https://example.com/page-1/&#10;https://example.com/page-2/" aria-label="URLs to check"></textarea><br><span class="description">Paste URLs from the Search Console issue you are validating. Only URLs on this website are checked (up to 1000).</span></p>
+        <p data-indexability-summary role="status" aria-live="polite"></p>
+        <p><button type="button" class="button button-primary" data-indexability-scan>Check Current Website</button><button type="button" class="button" data-indexability-retry hidden disabled>Retry Unverified</button> <button type="button" class="button button-secondary" data-indexability-fix-all aria-describedby="tk-indexability-fix-hint" disabled>Fix All</button> <button type="button" class="button" data-indexability-stop hidden disabled>Stop Fix All</button> <a class="button" href="<?php echo esc_url(admin_url('options-reading.php')); ?>">Search Engine Visibility</a> <a class="button" href="<?php echo esc_url(tk_admin_url('tool-kits-seo') . '#redirects'); ?>">Manage Redirects</a></p>
         <p id="tk-indexability-fix-hint" class="description" data-indexability-fix-hint role="status"></p>
         <p><label><input type="checkbox" data-indexability-include-redirects> Include disabling Tool Kits redirects</label></p>
         <p class="description">Fix All processes editable findings from the current report and rechecks each change. Missing canonical tags use the page permalink; choose a preferred URL below for conflicting canonicals. Intentional redirects are kept unless included. Server/CDN rules and physical robots.txt files need correction at their source.</p>

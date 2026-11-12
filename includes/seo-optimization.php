@@ -17,12 +17,14 @@ require_once __DIR__ . '/seo-content-output.php';
 require_once __DIR__ . '/seo-global-content.php';
 require_once __DIR__ . '/seo-title.php';
 require_once __DIR__ . '/seo-indexability.php';
+require_once __DIR__ . '/seo-gsc-readiness.php';
 require_once __DIR__ . '/seo-language-canonical.php';
 require_once __DIR__ . '/seo-post-faq.php';
 
 function tk_seo_opt_init() {
     tk_seo_title_init();
     tk_seo_indexability_init();
+    tk_gsc_readiness_init();
     add_action('admin_post_tk_seo_opt_save', 'tk_seo_opt_save');
     add_action('admin_post_tk_seo_global_save', 'tk_seo_global_save');
     // Inside page caching and explicit page edits, outside late theme buffers.

@@ -58,6 +58,7 @@ function wp_safe_remote_get($url, $args) {
     if ($args['timeout'] < ($GLOBALS['minimum_page_timeout'] ?? 0)) return new WP_Error('http_request_failed', 'cURL error 28: Operation timed out');
     return $GLOBALS['response'];
 }
+function wp_strip_all_tags($text) { return strip_tags($text); }
 function is_wp_error($value) { return $value instanceof WP_Error; }
 function wp_remote_retrieve_response_code($response) { return $response['code']; }
 function wp_remote_retrieve_header($response, $name) { return $response['headers'][$name] ?? ''; }
@@ -84,7 +85,7 @@ $options = array(); $tools = true; $licensed = true; $admin = true; $editable = 
 $discovery_posts = array(); $discovery_urls = array(); $discovery_types = array('page' => 'page', 'attachment' => 'attachment');
 $post = (object) array('post_status' => 'publish', 'post_password' => '', 'post_type' => 'page');
 $robots = array('code' => 200, 'headers' => array(), 'body' => "User-agent: *\nDisallow: /private/\n");
-$response = array('code' => 200, 'headers' => array('content-type' => 'text/html'), 'body' => '<html><head><meta content="index, follow" name="ROBOTS"><link href="/page/" rel="alternate canonical"></head><body>Public</body></html>');
+$response = array('code' => 200, 'headers' => array('content-type' => 'text/html'), 'body' => '<html><head><meta content="index, follow" name="ROBOTS"><link href="/page/" rel="alternate canonical"></head><body>' . str_repeat('Public content. ', 12) . '</body></html>');
 $healthy = $response;
 verify_indexing(tk_seo_indexability_url($url . '#part') === $url, 'Fragment not removed');
 foreach (array('https://external.example/page', 'https://site.example.evil/page', 'http://site.example/page', 'https://user:pass@site.example/page', 'https://site.example:444/page') as $unsafe) {
@@ -99,8 +100,8 @@ verify_indexing($requests[1] === 'https://site.example/robots.txt', 'Robots fetc
 $minimum_page_timeout = 8.0;
 $slow = tk_seo_indexability_scan($url);
 verify_indexing($slow['checks']['noindex']['state'] === 'pass' && $slow['checks']['canonical']['state'] === 'pass', 'Slow page still fails the former five-second timeout');
-verify_indexing($request_args[count($request_args) - 2]['timeout'] >= 8 && $request_args[count($request_args) - 2]['timeout'] <= 20, 'Page timeout is not bounded');
-verify_indexing($request_args[count($request_args) - 1]['timeout'] <= 5, 'Robots request exhausted the page budget');
+verify_indexing($request_args[count($request_args) - 3]['timeout'] >= 8 && $request_args[count($request_args) - 3]['timeout'] <= 20, 'Page timeout is not bounded');
+verify_indexing($request_args[count($request_args) - 2]['timeout'] <= 5, 'Robots request exhausted the page budget');
 $minimum_page_timeout = 0;
 $request_count = count($requests); $expired = tk_seo_indexability_scan($url, microtime(true) - 1);
 verify_indexing(count($requests) === $request_count && $expired['checks']['noindex']['state'] === 'unknown' && $expired['checks']['robots']['state'] === 'unknown', 'Expired budget starts HTTP calls or falsely passes checks');
@@ -197,7 +198,7 @@ verify_indexing(!tk_seo_indexability_editable($url . '?variant=1'), 'Alternate U
 $response = $healthy; $response['body'] = '<html><head></head></html>';
 $request_count = count($requests);
 tk_seo_indexability_apply($url, 'canonical', $url);
-verify_indexing(count($requests) - $request_count === 2, 'Self-canonical fix fetched the same page twice');
+verify_indexing(count($requests) - $request_count === 3, 'Self-canonical fix fetched the same page twice');
 verify_indexing($options['seo_indexability_fixes'][hash('sha256', $url)]['canonical'] === $url, 'Preferred canonical not persisted');
 tk_seo_indexability_apply($url, 'remove');
 verify_indexing(!isset($options['seo_indexability_fixes'][hash('sha256', $url)]), 'Undo did not remove page overrides');
@@ -250,4 +251,13 @@ $admin = false;
 verify_indexing(!ajax_indexing()->success, 'Unauthorized AJAX accepted');
 $admin = true; $licensed = false;
 verify_indexing(!ajax_indexing()->success, 'Unlicensed AJAX accepted');
+// Pre-validate additions: soft 404, error statuses, pasted URL lists, and Googlebot parity.
+$page = str_repeat('Real article text. ', 12);
+verify_indexing(tk_seo_indexability_status_check(true, 200, '<html><head><title>Page not found</title></head><body>' . $page . '</body></html>', true, '')['state'] === 'issue', 'Error-looking title not flagged as soft 404');
+verify_indexing(tk_seo_indexability_status_check(true, 200, '<html><head><title>Home</title></head><body>Hi</body></html>', true, '')['state'] === 'issue', 'Thin 200 not flagged as soft 404');
+verify_indexing(tk_seo_indexability_status_check(true, 503, '', false, '')['state'] === 'issue', '5xx not flagged');
+verify_indexing(tk_seo_indexability_status_check(true, 200, '<html><head><title>How to fix 404 errors</title></head><body>' . $page . '</body></html>', true, '')['state'] === 'issue' ? false : true, 'Article about 404 flagged as soft 404');
+verify_indexing(tk_seo_indexability_list_urls("https://site.example/a/\nhttps://evil.example/b/, https://site.example/a/ https://site.example/c/#x") === array('https://site.example/a/', 'https://site.example/c/'), 'Pasted URL list not filtered to this site');
+$response = $healthy;
+verify_indexing(tk_seo_indexability_scan($url)['checks']['googlebot']['state'] === 'pass', 'Matching Googlebot response flagged');
 echo "PASS: automatic paged website discovery, public content and redirect sources, four live checks, scoped fixes, frontend guards, AJAX contracts and cache purging\n";

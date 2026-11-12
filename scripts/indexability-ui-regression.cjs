@@ -21,16 +21,18 @@ function fixture(saved, fetcher) {
     const results = new Element(), status = new Element(), scan = new Element('button'), data = new Element('script', JSON.stringify(saved));
     const fixAll = new Element('button'), stop = new Element('button'), includeRedirects = new Element('input'), bulkResults = new Element();
     const retry = new Element('button'), fixHint = new Element();
+    const source = new Element('select'), listWrap = new Element('p'), urlsBox = new Element('textarea'), summary = new Element('p');
+    source.value = 'site';
     includeRedirects.checked = false;
     root.children = [results, status, scan, fixAll, stop, retry, fixHint, includeRedirects, bulkResults, data];
     root.querySelector = selector => ({'[data-indexability-results]': results, '[data-indexability-status]': status, '[data-indexability-scan]': scan, '.tk-indexability-saved': data,
-        '[data-indexability-fix-all]': fixAll, '[data-indexability-stop]': stop, '[data-indexability-retry]': retry, '[data-indexability-fix-hint]': fixHint, '[data-indexability-include-redirects]': includeRedirects, '[data-indexability-bulk-results]': bulkResults}[selector]);
+        '[data-indexability-fix-all]': fixAll, '[data-indexability-stop]': stop, '[data-indexability-retry]': retry, '[data-indexability-fix-hint]': fixHint, '[data-indexability-include-redirects]': includeRedirects, '[data-indexability-bulk-results]': bulkResults, '[data-indexability-source]': source, '[data-indexability-list-wrap]': listWrap, '[data-indexability-urls]': urlsBox, '[data-indexability-summary]': summary}[selector]);
     root.querySelectorAll = selector => walk(root).filter(node => selector === 'input[data-indexability-canonical]' ? node.tagName === 'input' && !!node.dataset.indexabilityCanonical : ['button', 'input', 'textarea'].includes(node.tagName));
     vm.runInNewContext(fs.readFileSync(__dirname + '/../assets/seo-indexability.js', 'utf8'), {
         document: {getElementById: () => root, createElement: tag => new Element(tag), createTextNode: text => new Element('#text', text)},
         window: {ajaxurl: '/wp-admin/admin-ajax.php'}, fetch: fetcher, URL, URLSearchParams, Map, Set, Date
     });
-    return {root, results, status, scan, fixAll, stop, retry, fixHint, includeRedirects, bulkResults};
+    return {root, results, status, scan, fixAll, stop, retry, fixHint, includeRedirects, bulkResults, source, listWrap, urlsBox, summary};
 }
 (async () => {
     const calls = []; let mode = 'fix';

@@ -11,6 +11,10 @@
     var stop = root.querySelector('[data-indexability-stop]');
     var includeRedirects = root.querySelector('[data-indexability-include-redirects]');
     var bulkResults = root.querySelector('[data-indexability-bulk-results]');
+    var source = root.querySelector('[data-indexability-source]');
+    var listWrap = root.querySelector('[data-indexability-list-wrap]');
+    var urlsBox = root.querySelector('[data-indexability-urls]');
+    var summary = root.querySelector('[data-indexability-summary]');
     var busy = false;
     var bulkRunning = false;
     var stopRequested = false;
@@ -71,6 +75,7 @@
     }
     async function request(url, operation, kind, canonical, page) {
         var body = new URLSearchParams({ action: 'tk_seo_indexability', nonce: root.dataset.nonce, url: url, operation: operation || 'scan', kind: kind || '', canonical: canonical || '', page: String(page || 1) });
+        if (operation === 'discover') { body.set('source', source.value); body.set('urls', urlsBox.value); }
         var response = await fetch(window.ajaxurl, { method: 'POST', credentials: 'same-origin', body: body });
         var data;
         try { data = await response.json(); }
@@ -92,8 +97,29 @@
         } catch (error) { status.textContent = (applied ? applied.message + ' Live verification failed; use Recheck URL. ' : '') + error.message; }
         finally { lock(false); }
     }
+    function summarize() {
+        if (!items.size) { summary.textContent = ''; return; }
+        var clean = 0; var unverified = 0; var groups = {};
+        items.forEach(function (item) {
+            var bad = false; var unknown = false;
+            Object.values(item.checks).forEach(function (check) {
+                if (check.state === 'issue') { bad = true; groups[check.label] = (groups[check.label] || 0) + 1; }
+                else if (check.state === 'unknown') unknown = true;
+            });
+            if (bad) return;
+            if (unknown) unverified++; else clean++;
+        });
+        var attention = items.size - clean - unverified;
+        var text = items.size + ' URL(s) checked: ' + clean + ' clean, ' + attention + ' need attention, ' + unverified + ' unverified.';
+        var parts = Object.keys(groups).map(function (label) { return label + ': ' + groups[label]; });
+        if (parts.length) text += ' ' + parts.join(' · ') + '.';
+        if (!attention && !unverified) text += ' Everything checked is clean. Clear the cache, then click Validate fix in Search Console.';
+        else text += ' Resolve these before clicking Validate fix, or Google will report "Some fixes failed".';
+        summary.textContent = text;
+    }
     function render() {
         results.replaceChildren();
+        summarize();
         if (!items.size) { lock(busy); return; }
         var wrapper = el('div'); wrapper.style.overflowX = 'auto';
         wrapper.setAttribute('role', 'region'); wrapper.setAttribute('aria-label', 'Indexing checks grouped by URL'); wrapper.tabIndex = 0;
@@ -120,6 +146,8 @@
                 var action = el('td');
                 if (check.state === 'issue' && sourceOnly(item, kind)) {
                     action.appendChild(el('p', kind === 'redirect' ? 'Review the redirect in WordPress, the originating plugin, server, or CDN. Keep it if intentional.' : 'Correct the HTTP header in the originating plugin, server, or CDN, then recheck.'));
+                } else if (check.state === 'issue' && !labels[kind]) {
+                    action.appendChild(el('p', kind === 'status' ? 'Fix the page content or response at its source, or remove the URL from the sitemap.' : 'Review firewall, bot protection, CDN, and cache rules at their source, then recheck.'));
                 } else if (check.state === 'issue' && item.editable) {
                     var canonical;
                     if (kind === 'canonical') {
@@ -155,6 +183,7 @@
         wrapper.appendChild(table); results.appendChild(wrapper);
         lock(busy);
     }
+    source.addEventListener('change', function () { listWrap.hidden = source.value !== 'list'; });
     includeRedirects.addEventListener('change', updateBulkControls);
     retry.addEventListener('click', async function () {
         if (busy) return;
@@ -230,7 +259,7 @@
         try {
             var more = true;
             while (more) {
-                status.textContent = 'Finding public pages on ' + root.dataset.home + '… ' + checked + ' checked.';
+                status.textContent = (source.value === 'site' ? 'Finding public pages on ' + root.dataset.home : source.value === 'sitemap' ? 'Reading the sitemap' : 'Reading the pasted URL list') + '… ' + checked + ' checked.';
                 var batch = await request('', 'discover', '', '', page);
                 if (page === 1) { items.clear(); canonicalDrafts.clear(); render(); }
                 for (var i = 0; i < batch.urls.length; i++) {

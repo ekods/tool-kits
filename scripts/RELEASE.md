@@ -1,3 +1,29 @@
+## Tool Kits 2.7.89
+
+SEO > Indexing gains a read-only Search Console Readiness checklist and a broader
+Indexing Checks scan, so problems that make Search Console report "Some fixes
+failed" can be found before clicking Validate fix.
+
+Readiness checklist: ownership verification tag, search engine visibility,
+HTTPS and a single host version, robots.txt (Googlebot access, rendering
+resources, Sitemap line), sitemap validity, homepage basics (title, description,
+viewport, one H1, self-canonical), JSON-LD validity and the last malware scan.
+It changes nothing and does not guarantee indexing.
+
+Indexing Checks can now scan website content, the sitemap, or a URL list pasted
+from a Search Console export (up to 1000 same-site URLs). Each URL also gets a
+server error / not found / soft 404 check and a comparison of the response a
+Googlebot user agent receives, and the report ends with a summary by issue type.
+Existing fixes and Fix All are unchanged. A scan now makes three requests per URL
+instead of two. A spoofed Googlebot user agent can be challenged by bot protection
+even when real Googlebot is allowed; confirm differences in server logs.
+
+No option or database migration.
+
+Validation: indexability PHP and UI regression suites, public-module and runtime
+load checks; the checklist logic was exercised against stubbed responses for
+healthy and failing sites. Not run against a live Search Console account.
+
 ## Tool Kits 2.7.88
 
 Legacy stacked field captions now have an explicit 8px gap before their controls,

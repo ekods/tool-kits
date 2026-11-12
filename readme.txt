@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.88
+Stable tag: 2.7.89
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -82,6 +82,12 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.89 =
+- Add a read-only Search Console Readiness checklist to SEO > Indexing: ownership verification tag, search engine visibility, HTTPS and single host, robots.txt, sitemap validity, homepage basics, JSON-LD validity and the last malware scan.
+- Let Indexing Checks run against the sitemap or a URL list pasted from a Search Console export, in addition to website content.
+- Flag 4xx/5xx and soft 404 responses, and compare the response a Googlebot user agent receives with the plain response to expose firewall, CDN and cache differences.
+- Summarize each indexing report by issue type and say whether it is safe to click Validate fix in Search Console.
 
 = 2.7.88 =
 - Give legacy strong/br field captions a consistent 8px gap above text inputs, number inputs, selects and textareas; neutralize negative small-input margins while preserving inline checkbox/radio labels and native list-table controls.

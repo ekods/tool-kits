@@ -86,9 +86,14 @@ are excluded, and the homepage appears once. This is a template sample, not a fu
 local URLs still work when those URLs have aged out of the latest-three sample.
 Indexing Checks & Fixes below continues to discover the full website independently.
 
+### Search Console readiness checklist
+
+At the top of **Tool Kits > SEO > Indexing**, **Run Readiness Check** runs a read-only, site-level checklist: ownership verification tag, search engine visibility, HTTPS and single host, robots.txt (Googlebot access, rendering resources, Sitemap line), sitemap validity, homepage basics (title, description, viewport, H1, canonical), JSON-LD validity, and the last malware scan. It changes nothing and does not guarantee indexing.
+
 ### Check and fix indexing exclusions
 
-Open **Tool Kits > SEO > Indexing > Indexing Checks & Fixes** and click **Check Current Website**.
+Open **Tool Kits > SEO > Indexing > Indexing Checks & Fixes** choose which URLs to check (website content, the sitemap, or a URL list pasted from a Search Console export) and click **Check Current Website**.
+The report also flags 4xx/5xx and soft 404 responses and compares what a Googlebot user agent receives, and ends with a summary telling you whether it is safe to click **Validate fix** in Search Console.
 The scanner automatically discovers the current site's homepage, published pages, posts, public custom
 content, and active Tool Kits redirect sources. No URL input is needed. Discovery uses batches and
 continues past 100 URLs, checking each URL separately for robots/Googlebot meta noindex,
