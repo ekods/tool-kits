@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.89
+Stable tag: 2.7.90
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -82,6 +82,10 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.90 =
+- Redesign Role Management: searchable and collapsible capability and menu groups with selected counters, tab counts, a sticky save bar with a summary, and a responsive role list.
+- Flag high-risk capabilities (user, plugin, theme and site-wide settings) with a badge, and warn before leaving the role form with unsaved changes.
 
 = 2.7.89 =
 - Add a read-only Search Console Readiness checklist to SEO > Indexing: ownership verification tag, search engine visibility, HTTPS and single host, robots.txt, sitemap validity, homepage basics, JSON-LD validity and the last malware scan.

@@ -14,6 +14,14 @@ function tk_role_management_init(): void {
     add_action('admin_menu', 'tk_role_management_apply_menu_rules', 100000);
     add_action('admin_post_tk_role_management_save', 'tk_role_management_save');
     add_action('admin_post_tk_role_management_delete', 'tk_role_management_delete');
+    add_action('admin_enqueue_scripts', 'tk_role_management_assets');
+}
+
+function tk_role_management_assets(): void {
+    if (($_GET['page'] ?? '') !== 'tool-kits-role-management') {
+        return;
+    }
+    wp_enqueue_style('tk-role-management', TK_URL . 'assets/role-management.css', array('tool-kits-admin-ui-v2'), tk_asset_version('assets/role-management.css'));
 }
 
 function tk_role_management_register_page(): void {
@@ -1035,6 +1043,12 @@ function tk_role_management_render_page(): void {
     $menu_children = tk_role_management_available_menu_children($available_menus, $menu_parents);
     $capability_groups = tk_role_management_capability_groups();
     $capability_catalog = tk_role_management_capability_catalog($capability_groups);
+    $high_risk_capabilities = array(
+        'manage_options', 'unfiltered_html', 'update_core', 'import', 'export',
+        'list_users', 'create_users', 'edit_users', 'promote_users', 'remove_users', 'delete_users',
+        'activate_plugins', 'install_plugins', 'update_plugins', 'edit_plugins', 'delete_plugins',
+        'switch_themes', 'install_themes', 'update_themes', 'edit_themes', 'delete_themes', 'edit_theme_options',
+    );
     $edit_slug = isset($_GET['role']) ? sanitize_key(wp_unslash((string) $_GET['role'])) : '';
     $editing = $edit_slug !== '' && isset($managed_roles[$edit_slug]);
     $role_data = $editing ? $managed_roles[$edit_slug] : array('name' => '', 'base_role' => 'subscriber');
@@ -1082,160 +1096,202 @@ function tk_role_management_render_page(): void {
             <?php tk_notice($notices[$status][0], $notices[$status][1]); ?>
         <?php endif; ?>
 
-        <div class="tk-card" style="margin-bottom:24px;">
-            <h2><?php esc_html_e('Managed Roles', 'tool-kits'); ?></h2>
+        <div class="tk-card tk-rm-card">
+            <div class="tk-rm-card-head">
+                <div>
+                    <h2><?php esc_html_e('Managed Roles', 'tool-kits'); ?></h2>
+                    <p class="description"><?php esc_html_e('Custom roles created with Tool Kits. Pick one to edit, or create a new role below.', 'tool-kits'); ?></p>
+                </div>
+                <?php if ($editing) : ?>
+                    <a class="button button-primary" href="<?php echo esc_url(add_query_arg('page', 'tool-kits-role-management', admin_url('admin.php'))); ?>#tk-role-form">+ <?php esc_html_e('New Role', 'tool-kits'); ?></a>
+                <?php endif; ?>
+            </div>
             <?php if (empty($managed_roles)) : ?>
-                <p><?php esc_html_e('No custom roles have been created yet.', 'tool-kits'); ?></p>
+                <div class="tk-rm-empty"><?php esc_html_e('No custom roles yet. Use the form below to create your first one.', 'tool-kits'); ?></div>
             <?php else : ?>
-                <table class="widefat striped">
-                    <thead><tr><th><?php esc_html_e('Role', 'tool-kits'); ?></th><th><?php esc_html_e('Base', 'tool-kits'); ?></th><th><?php esc_html_e('Users', 'tool-kits'); ?></th><th><?php esc_html_e('Capabilities', 'tool-kits'); ?></th><th><?php esc_html_e('Visible Menus', 'tool-kits'); ?></th><th><?php esc_html_e('Actions', 'tool-kits'); ?></th></tr></thead>
+                <div class="tk-rm-table-wrap">
+                <table class="widefat striped tk-rm-table">
+                    <thead><tr><th><?php esc_html_e('Role', 'tool-kits'); ?></th><th><?php esc_html_e('Base', 'tool-kits'); ?></th><th><?php esc_html_e('Users', 'tool-kits'); ?></th><th><?php esc_html_e('Capabilities', 'tool-kits'); ?></th><th><?php esc_html_e('Visible Menus', 'tool-kits'); ?></th><th style="text-align:right;"><?php esc_html_e('Actions', 'tool-kits'); ?></th></tr></thead>
                     <tbody>
                     <?php foreach ($managed_roles as $role_slug => $data) : ?>
                         <?php $user_count = tk_role_management_user_count($role_slug); ?>
-                        <tr>
+                        <tr class="<?php echo $editing && $edit_slug === $role_slug ? 'is-editing' : ''; ?>">
                             <td><strong><?php echo esc_html($data['name']); ?></strong><br><code><?php echo esc_html($role_slug); ?></code></td>
-                            <td><?php echo esc_html($data['base_role']); ?></td>
+                            <td><span class="tk-rm-pill"><?php echo esc_html($data['base_role']); ?></span></td>
                             <td><?php echo esc_html((string) $user_count); ?></td>
                             <td><?php echo esc_html((string) count(tk_role_management_role_capabilities($role_slug))); ?></td>
                             <td><?php echo esc_html((string) count($rules[$role_slug] ?? array())); ?></td>
-                            <td style="display:flex; gap:8px; align-items:center;">
-                                <a class="button" href="<?php echo esc_url(add_query_arg(array('page' => 'tool-kits-role-management', 'role' => $role_slug), admin_url('admin.php'))); ?>"><?php esc_html_e('Edit', 'tool-kits'); ?></a>
-                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('<?php echo esc_js(__('Delete this custom role?', 'tool-kits')); ?>');">
-                                    <?php tk_nonce_field('tk_role_management_delete'); ?>
-                                    <input type="hidden" name="action" value="tk_role_management_delete">
-                                    <input type="hidden" name="role_slug" value="<?php echo esc_attr($role_slug); ?>">
-                                    <button class="button button-link-delete" <?php disabled($user_count > 0); ?>><?php esc_html_e('Delete', 'tool-kits'); ?></button>
-                                </form>
+                            <td>
+                                <div class="tk-rm-actions">
+                                    <a class="button" href="<?php echo esc_url(add_query_arg(array('page' => 'tool-kits-role-management', 'role' => $role_slug), admin_url('admin.php')) . '#tk-role-form'); ?>"><?php esc_html_e('Edit', 'tool-kits'); ?></a>
+                                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('<?php echo esc_js(__('Delete this custom role?', 'tool-kits')); ?>');">
+                                        <?php tk_nonce_field('tk_role_management_delete'); ?>
+                                        <input type="hidden" name="action" value="tk_role_management_delete">
+                                        <input type="hidden" name="role_slug" value="<?php echo esc_attr($role_slug); ?>">
+                                        <button class="button button-link-delete" <?php disabled($user_count > 0); ?> <?php echo $user_count > 0 ? 'title="' . esc_attr__('Reassign all users before deleting this role.', 'tool-kits') . '"' : ''; ?>><?php esc_html_e('Delete', 'tool-kits'); ?></button>
+                                    </form>
+                                </div>
                             </td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
             <?php endif; ?>
         </div>
 
-        <div class="tk-card" style="margin-bottom:24px;">
-            <h2><?php echo $editing ? esc_html__('Edit Custom Role', 'tool-kits') : esc_html__('Create Custom Role', 'tool-kits'); ?></h2>
-            <p class="description"><?php esc_html_e('Choose a base preset, customize its capabilities by module, then control the dashboard sidebar visibility.', 'tool-kits'); ?></p>
+        <div class="tk-card tk-rm-card" id="tk-role-form">
+            <div class="tk-rm-card-head">
+                <div>
+                    <h2><?php echo $editing ? esc_html(sprintf(__('Edit Role: %s', 'tool-kits'), $role_data['name'])) : esc_html__('Create Custom Role', 'tool-kits'); ?></h2>
+                    <p class="description"><?php esc_html_e('1) Name the role and pick a base preset. 2) Fine-tune capabilities. 3) Choose which dashboard menus it sees.', 'tool-kits'); ?></p>
+                </div>
+            </div>
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                 <?php tk_nonce_field('tk_role_management_save'); ?>
                 <input type="hidden" name="action" value="tk_role_management_save">
                 <input type="hidden" name="original_role_slug" value="<?php echo esc_attr($editing ? $edit_slug : ''); ?>">
 
-                <table class="form-table" role="presentation">
-                    <tr>
-                        <th scope="row"><label for="tk-role-name"><?php esc_html_e('Display Name', 'tool-kits'); ?></label></th>
-                        <td><input id="tk-role-name" class="regular-text" type="text" name="role_name" required value="<?php echo esc_attr($role_data['name']); ?>" placeholder="Content Manager"></td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="tk-role-slug"><?php esc_html_e('Role Slug', 'tool-kits'); ?></label></th>
-                        <td>
-                            <?php if ($editing) : ?>
-                                <code id="tk-role-slug"><?php echo esc_html($edit_slug); ?></code>
-                            <?php else : ?>
-                                <code id="tk-role-slug" data-empty-label="<?php echo esc_attr__('Generated after you type a display name', 'tool-kits'); ?>"><?php esc_html_e('Generated after you type a display name', 'tool-kits'); ?></code>
-                            <?php endif; ?>
-                            <p class="description"><?php esc_html_e('Generated automatically from the display name. The slug is immutable after creation.', 'tool-kits'); ?></p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row"><label for="tk-base-role"><?php esc_html_e('Base Capabilities', 'tool-kits'); ?></label></th>
-                        <td>
-                            <select id="tk-base-role" name="base_role" <?php disabled($editing); ?>>
-                                <?php foreach ($base_roles as $base_slug => $base_data) : ?>
-                                    <option value="<?php echo esc_attr($base_slug); ?>" <?php selected($role_data['base_role'], $base_slug); ?>><?php echo esc_html($base_data['name']); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <?php if ($editing) : ?><input type="hidden" name="base_role" value="<?php echo esc_attr($role_data['base_role']); ?>"><?php endif; ?>
-                        </td>
-                    </tr>
-                </table>
+                <div class="tk-rm-fields">
+                    <div class="tk-rm-field">
+                        <label for="tk-role-name"><?php esc_html_e('Display Name', 'tool-kits'); ?></label>
+                        <input id="tk-role-name" type="text" name="role_name" required value="<?php echo esc_attr($role_data['name']); ?>" placeholder="Content Manager">
+                    </div>
+                    <div class="tk-rm-field">
+                        <label for="tk-role-slug"><?php esc_html_e('Role Slug', 'tool-kits'); ?></label>
+                        <?php if ($editing) : ?>
+                            <code id="tk-role-slug" class="tk-rm-slug"><?php echo esc_html($edit_slug); ?></code>
+                        <?php else : ?>
+                            <code id="tk-role-slug" class="tk-rm-slug" data-empty-label="<?php echo esc_attr__('Generated after you type a display name', 'tool-kits'); ?>"><?php esc_html_e('Generated after you type a display name', 'tool-kits'); ?></code>
+                        <?php endif; ?>
+                        <p class="description"><?php esc_html_e('Generated automatically and immutable after creation.', 'tool-kits'); ?></p>
+                    </div>
+                    <div class="tk-rm-field">
+                        <label for="tk-base-role"><?php esc_html_e('Base Capabilities', 'tool-kits'); ?></label>
+                        <select id="tk-base-role" name="base_role" <?php disabled($editing); ?>>
+                            <?php foreach ($base_roles as $base_slug => $base_data) : ?>
+                                <option value="<?php echo esc_attr($base_slug); ?>" <?php selected($role_data['base_role'], $base_slug); ?>><?php echo esc_html($base_data['name']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <?php if ($editing) : ?><input type="hidden" name="base_role" value="<?php echo esc_attr($role_data['base_role']); ?>"><?php endif; ?>
+                        <p class="description"><?php esc_html_e('Changing the preset re-fills the capability checkboxes below.', 'tool-kits'); ?></p>
+                    </div>
+                </div>
 
-                <div class="tk-role-tabs" style="display:flex; gap:8px; margin:28px 0 18px; border-bottom:1px solid var(--tk-border-soft);">
-                    <button type="button" class="button button-primary tk-role-tab" data-role-tab="capabilities" style="border-radius:8px 8px 0 0;"><?php esc_html_e('Capabilities', 'tool-kits'); ?></button>
-                    <button type="button" class="button tk-role-tab" data-role-tab="menus" style="border-radius:8px 8px 0 0;"><?php esc_html_e('Visible Dashboard Menus', 'tool-kits'); ?></button>
+                <div class="tk-rm-tabs" role="tablist">
+                    <button type="button" role="tab" class="tk-rm-tab tk-role-tab is-active" aria-selected="true" data-role-tab="capabilities"><?php esc_html_e('Capabilities', 'tool-kits'); ?> <span class="tk-rm-count" data-total-count="capabilities">0</span></button>
+                    <button type="button" role="tab" class="tk-rm-tab tk-role-tab" aria-selected="false" data-role-tab="menus"><?php esc_html_e('Visible Dashboard Menus', 'tool-kits'); ?> <span class="tk-rm-count" data-total-count="menus">0</span></button>
                 </div>
 
                 <div class="tk-role-tab-panel" data-role-tab-panel="capabilities">
-                    <div style="margin:0 0 12px;">
-                        <h3 style="margin-bottom:4px;"><?php esc_html_e('Capabilities', 'tool-kits'); ?></h3>
-                        <p class="description"><?php esc_html_e('Capabilities enforce access. Create, edit, publish, and delete permissions can be configured independently where WordPress supports them.', 'tool-kits'); ?></p>
+                    <div class="tk-rm-toolbar">
+                        <input type="search" class="tk-rm-filter" data-filter-target="capabilities" placeholder="<?php esc_attr_e('Search capability, e.g. publish or plugins…', 'tool-kits'); ?>" aria-label="<?php esc_attr_e('Search capabilities', 'tool-kits'); ?>">
+                        <button type="button" class="button tk-rm-expand" data-target="capabilities" data-open="1"><?php esc_html_e('Expand all', 'tool-kits'); ?></button>
+                        <button type="button" class="button tk-rm-expand" data-target="capabilities" data-open="0"><?php esc_html_e('Collapse all', 'tool-kits'); ?></button>
                     </div>
-                <div class="tk-responsive-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; margin-bottom:28px;">
-                    <?php foreach ($capability_groups as $group_key => $group) : ?>
-                        <fieldset class="tk-capability-group" data-capability-group="<?php echo esc_attr($group_key); ?>" style="margin:0; border:1px solid var(--tk-border-soft); border-radius:14px; padding:16px; background:var(--tk-bg-soft); min-width:0;">
-                            <legend style="padding:0 8px; font-weight:700; color:var(--tk-primary);">
-                                <?php echo esc_html($group['label']); ?>
-                            </legend>
-                            <p class="description" style="margin:0 0 12px; min-height:36px;"><?php echo esc_html($group['description']); ?></p>
-                            <div style="display:flex; gap:6px; margin-bottom:12px;">
-                                <button type="button" class="button button-small tk-capability-toggle" data-mode="all"><?php esc_html_e('Select all', 'tool-kits'); ?></button>
-                                <button type="button" class="button button-small tk-capability-toggle" data-mode="none"><?php esc_html_e('Clear', 'tool-kits'); ?></button>
-                            </div>
-                            <div style="display:grid; gap:8px;">
-                                <?php foreach ($group['capabilities'] as $capability => $capability_label) : ?>
-                                    <?php $is_read = $capability === 'read'; ?>
-                                    <label style="display:flex; align-items:flex-start; gap:9px; padding:8px 10px; background:#fff; border:1px solid var(--tk-border-soft); border-radius:9px;">
-                                        <input class="tk-capability-checkbox" type="checkbox" name="capabilities[]" value="<?php echo esc_attr($capability); ?>" <?php checked($is_read || in_array($capability, $selected_capabilities, true)); ?> <?php disabled($is_read); ?> style="margin-top:2px;">
-                                        <?php if ($is_read) : ?><input type="hidden" name="capabilities[]" value="read"><?php endif; ?>
-                                        <span><strong><?php echo esc_html($capability_label); ?></strong><br><code style="font-size:11px; word-break:break-all;"><?php echo esc_html($capability); ?></code></span>
-                                    </label>
-                                <?php endforeach; ?>
-                            </div>
-                        </fieldset>
-                    <?php endforeach; ?>
-                </div>
+                    <p class="tk-rm-hint"><?php esc_html_e('Capabilities enforce access. Create, edit, publish, and delete can be set independently where WordPress supports it.', 'tool-kits'); ?></p>
+                    <div class="tk-rm-groups" data-panel-list="capabilities">
+                        <?php foreach ($capability_groups as $group_key => $group) : ?>
+                            <details class="tk-rm-group tk-capability-group" open data-capability-group="<?php echo esc_attr($group_key); ?>">
+                                <summary>
+                                    <span class="tk-rm-group-title"><?php echo esc_html($group['label']); ?></span>
+                                    <span class="tk-rm-group-count" data-group-count>0</span>
+                                </summary>
+                                <div class="tk-rm-group-body">
+                                    <p class="description"><?php echo esc_html($group['description']); ?></p>
+                                    <div class="tk-rm-group-tools">
+                                        <button type="button" class="button button-small tk-capability-toggle" data-mode="all"><?php esc_html_e('Select all', 'tool-kits'); ?></button>
+                                        <button type="button" class="button button-small tk-capability-toggle" data-mode="none"><?php esc_html_e('Clear', 'tool-kits'); ?></button>
+                                    </div>
+                                    <div class="tk-rm-items">
+                                        <?php foreach ($group['capabilities'] as $capability => $capability_label) : ?>
+                                            <?php $is_read = $capability === 'read'; ?>
+                                            <?php $is_risky = in_array($capability, $high_risk_capabilities, true); ?>
+                                            <label class="tk-rm-item<?php echo $is_risky ? ' is-risky' : ''; ?>" data-search="<?php echo esc_attr(strtolower($capability_label . ' ' . $capability)); ?>">
+                                                <input class="tk-capability-checkbox" type="checkbox" name="capabilities[]" value="<?php echo esc_attr($capability); ?>" <?php checked($is_read || in_array($capability, $selected_capabilities, true)); ?> <?php disabled($is_read); ?>>
+                                                <?php if ($is_read) : ?><input type="hidden" name="capabilities[]" value="read"><?php endif; ?>
+                                                <span><strong><?php echo esc_html($capability_label); ?></strong><?php if ($is_risky) : ?> <span class="tk-rm-risk" title="<?php echo esc_attr__('Grants powerful access. Only give this to trusted roles.', 'tool-kits'); ?>"><?php esc_html_e('High risk', 'tool-kits'); ?></span><?php endif; ?><br><code><?php echo esc_html($capability); ?></code></span>
+                                            </label>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                            </details>
+                        <?php endforeach; ?>
+                    </div>
+                    <p class="tk-rm-none" data-none="capabilities"><?php esc_html_e('No capability matches your search.', 'tool-kits'); ?></p>
 
-                <div class="notice notice-warning inline" style="margin:0 0 24px;">
-                    <p><strong><?php esc_html_e('Security note:', 'tool-kits'); ?></strong> <?php esc_html_e('manage_options, user management, plugin, and theme capabilities grant powerful access. Menu hiding does not block direct URLs.', 'tool-kits'); ?></p>
-                </div>
+                    <div class="notice notice-warning inline tk-rm-warning">
+                        <p><strong><?php esc_html_e('Security note:', 'tool-kits'); ?></strong> <?php esc_html_e('manage_options, user management, plugin, and theme capabilities grant powerful access. Menu hiding does not block direct URLs.', 'tool-kits'); ?></p>
+                    </div>
                 </div>
 
                 <div class="tk-role-tab-panel" data-role-tab-panel="menus" hidden>
-                <h3><?php esc_html_e('Visible Dashboard Menus', 'tool-kits'); ?></h3>
-                <div class="tk-responsive-grid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin:16px 0 24px;">
-                    <?php foreach ($available_menus as $menu_slug => $menu_label) : ?>
-                        <?php if (isset($menu_parents[$menu_slug])) { continue; } ?>
-                        <?php $is_dashboard = $menu_slug === 'index.php'; ?>
-                        <?php $menu_capability = isset($menu_capabilities[$menu_slug]) ? sanitize_key((string) $menu_capabilities[$menu_slug]) : ''; ?>
-                        <div class="tk-checkable-card tk-menu-group" style="background:var(--tk-bg-soft); border:1px solid var(--tk-border-soft); padding:14px; border-radius:12px;">
-                            <label style="display:flex; gap:10px; align-items:flex-start;">
-                                <input class="tk-menu-checkbox" type="checkbox" name="allowed_menus[]" value="<?php echo esc_attr($menu_slug); ?>" data-menu-capability="<?php echo esc_attr($menu_capability); ?>" <?php checked($is_dashboard || in_array($menu_slug, $selected_menus, true)); ?> <?php disabled($is_dashboard); ?>>
-                                <?php if ($is_dashboard) : ?><input type="hidden" name="allowed_menus[]" value="index.php"><?php endif; ?>
-                                <?php if ($menu_capability !== '') : ?><input type="hidden" name="menu_capabilities[<?php echo esc_attr($menu_slug); ?>]" value="<?php echo esc_attr($menu_capability); ?>"><?php endif; ?>
-                                <span>
-                                    <strong><?php echo esc_html($menu_label); ?></strong><br>
-                                    <small><?php echo esc_html($menu_slug); ?></small>
-                                    <?php if ($menu_capability !== '') : ?><br><small><?php printf(esc_html__('Requires: %s', 'tool-kits'), esc_html($menu_capability)); ?></small><?php endif; ?>
-                                </span>
-                            </label>
-                            <?php if (!empty($menu_children[$menu_slug])) : ?>
-                                <div style="display:flex; gap:6px; margin:12px 0 0 28px;">
-                                    <button type="button" class="button button-small tk-menu-toggle" data-mode="all"><?php esc_html_e('Select all', 'tool-kits'); ?></button>
-                                    <button type="button" class="button button-small tk-menu-toggle" data-mode="none"><?php esc_html_e('Clear', 'tool-kits'); ?></button>
+                    <div class="tk-rm-toolbar">
+                        <input type="search" class="tk-rm-filter" data-filter-target="menus" placeholder="<?php esc_attr_e('Search menu…', 'tool-kits'); ?>" aria-label="<?php esc_attr_e('Search menus', 'tool-kits'); ?>">
+                        <button type="button" class="button tk-rm-expand" data-target="menus" data-open="1"><?php esc_html_e('Expand all', 'tool-kits'); ?></button>
+                        <button type="button" class="button tk-rm-expand" data-target="menus" data-open="0"><?php esc_html_e('Collapse all', 'tool-kits'); ?></button>
+                    </div>
+                    <p class="tk-rm-hint"><?php esc_html_e('Tick the menus this role may see in the sidebar. Ticking a submenu also ticks its parent.', 'tool-kits'); ?></p>
+                    <div class="tk-rm-groups" data-panel-list="menus">
+                        <?php foreach ($available_menus as $menu_slug => $menu_label) : ?>
+                            <?php if (isset($menu_parents[$menu_slug])) { continue; } ?>
+                            <?php $is_dashboard = $menu_slug === 'index.php'; ?>
+                            <?php $menu_capability = isset($menu_capabilities[$menu_slug]) ? sanitize_key((string) $menu_capabilities[$menu_slug]) : ''; ?>
+                            <?php $has_children = !empty($menu_children[$menu_slug]); ?>
+                            <?php
+                            $search_text = $menu_label . ' ' . $menu_slug;
+                            if ($has_children) {
+                                foreach ($menu_children[$menu_slug] as $child_slug => $child_label) {
+                                    $search_text .= ' ' . $child_label . ' ' . $child_slug;
+                                }
+                            }
+                            ?>
+                            <details class="tk-rm-group tk-menu-group" <?php echo $has_children ? 'open' : ''; ?> data-search="<?php echo esc_attr(strtolower(wp_strip_all_tags($search_text))); ?>">
+                                <summary>
+                                    <label class="tk-rm-group-title" onclick="event.stopPropagation();" style="display:flex; gap:8px; align-items:center; font-weight:700;">
+                                        <input class="tk-menu-checkbox" type="checkbox" name="allowed_menus[]" value="<?php echo esc_attr($menu_slug); ?>" data-menu-capability="<?php echo esc_attr($menu_capability); ?>" <?php checked($is_dashboard || in_array($menu_slug, $selected_menus, true)); ?> <?php disabled($is_dashboard); ?>>
+                                        <span><?php echo esc_html(wp_strip_all_tags($menu_label)); ?></span>
+                                    </label>
+                                    <?php if ($has_children) : ?><span class="tk-rm-group-count" data-group-count>0</span><?php endif; ?>
+                                </summary>
+                                <div class="tk-rm-group-body">
+                                    <?php if ($is_dashboard) : ?><input type="hidden" name="allowed_menus[]" value="index.php"><?php endif; ?>
+                                    <?php if ($menu_capability !== '') : ?><input type="hidden" name="menu_capabilities[<?php echo esc_attr($menu_slug); ?>]" value="<?php echo esc_attr($menu_capability); ?>"><?php endif; ?>
+                                    <p class="description"><code><?php echo esc_html($menu_slug); ?></code><?php if ($menu_capability !== '') : ?> · <?php printf(esc_html__('Requires: %s', 'tool-kits'), esc_html($menu_capability)); ?><?php endif; ?></p>
+                                    <?php if ($has_children) : ?>
+                                        <div class="tk-rm-group-tools">
+                                            <button type="button" class="button button-small tk-menu-toggle" data-mode="all"><?php esc_html_e('Select all', 'tool-kits'); ?></button>
+                                            <button type="button" class="button button-small tk-menu-toggle" data-mode="none"><?php esc_html_e('Clear', 'tool-kits'); ?></button>
+                                        </div>
+                                        <div class="tk-rm-items">
+                                            <?php foreach ($menu_children[$menu_slug] as $child_slug => $child_label) : ?>
+                                                <?php $child_capability = isset($menu_capabilities[$child_slug]) ? sanitize_key((string) $menu_capabilities[$child_slug]) : ''; ?>
+                                                <label class="tk-rm-item" data-search="<?php echo esc_attr(strtolower(wp_strip_all_tags($child_label . ' ' . $child_slug))); ?>">
+                                                    <input class="tk-menu-checkbox" type="checkbox" name="allowed_menus[]" value="<?php echo esc_attr($child_slug); ?>" data-menu-capability="<?php echo esc_attr($child_capability); ?>" data-parent-menu="<?php echo esc_attr($menu_slug); ?>" <?php checked(in_array($child_slug, $selected_menus, true)); ?>>
+                                                    <?php if ($child_capability !== '') : ?><input type="hidden" name="menu_capabilities[<?php echo esc_attr($child_slug); ?>]" value="<?php echo esc_attr($child_capability); ?>"><?php endif; ?>
+                                                    <span>
+                                                        <strong><?php echo esc_html(wp_strip_all_tags($child_label)); ?></strong><br>
+                                                        <code><?php echo esc_html($child_slug); ?></code>
+                                                        <?php if ($child_capability !== '') : ?><br><code><?php printf(esc_html__('Requires: %s', 'tool-kits'), esc_html($child_capability)); ?></code><?php endif; ?>
+                                                    </span>
+                                                </label>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
-                                <div style="margin:12px 0 0 28px; display:grid; gap:8px;">
-                                    <?php foreach ($menu_children[$menu_slug] as $child_slug => $child_label) : ?>
-                                        <?php $child_capability = isset($menu_capabilities[$child_slug]) ? sanitize_key((string) $menu_capabilities[$child_slug]) : ''; ?>
-                                        <label style="display:flex; gap:8px; align-items:flex-start; padding-top:8px; border-top:1px solid var(--tk-border-soft);">
-                                            <input class="tk-menu-checkbox" type="checkbox" name="allowed_menus[]" value="<?php echo esc_attr($child_slug); ?>" data-menu-capability="<?php echo esc_attr($child_capability); ?>" data-parent-menu="<?php echo esc_attr($menu_slug); ?>" <?php checked(in_array($child_slug, $selected_menus, true)); ?>>
-                                            <?php if ($child_capability !== '') : ?><input type="hidden" name="menu_capabilities[<?php echo esc_attr($child_slug); ?>]" value="<?php echo esc_attr($child_capability); ?>"><?php endif; ?>
-                                            <span>
-                                                <strong><?php echo esc_html($child_label); ?></strong><br>
-                                                <small><?php echo esc_html($child_slug); ?></small>
-                                                <?php if ($child_capability !== '') : ?><br><small><?php printf(esc_html__('Requires: %s', 'tool-kits'), esc_html($child_capability)); ?></small><?php endif; ?>
-                                            </span>
-                                        </label>
-                                    <?php endforeach; ?>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
+                            </details>
+                        <?php endforeach; ?>
+                    </div>
+                    <p class="tk-rm-none" data-none="menus"><?php esc_html_e('No menu matches your search.', 'tool-kits'); ?></p>
                 </div>
 
-                <button class="button button-primary button-hero"><?php echo $editing ? esc_html__('Save Role', 'tool-kits') : esc_html__('Create Role', 'tool-kits'); ?></button>
-                <?php if ($editing) : ?><a class="button button-hero" href="<?php echo esc_url(add_query_arg('page', 'tool-kits-role-management', admin_url('admin.php'))); ?>"><?php esc_html_e('Cancel', 'tool-kits'); ?></a><?php endif; ?>
+                <div class="tk-rm-savebar">
+                    <span class="tk-rm-summary" id="tk-rm-summary"></span>
+                    <span class="tk-rm-buttons">
+                        <?php if ($editing) : ?><a class="button" href="<?php echo esc_url(add_query_arg('page', 'tool-kits-role-management', admin_url('admin.php'))); ?>"><?php esc_html_e('Cancel', 'tool-kits'); ?></a><?php endif; ?>
+                        <button class="button button-primary"><?php echo $editing ? esc_html__('Save Role', 'tool-kits') : esc_html__('Create Role', 'tool-kits'); ?></button>
+                    </span>
+                </div>
             </form>
         </div>
 
@@ -1265,7 +1321,8 @@ function tk_role_management_render_page(): void {
                 button.addEventListener('click', function () {
                     var tab = button.getAttribute('data-role-tab');
                     document.querySelectorAll('.tk-role-tab').forEach(function (candidate) {
-                        candidate.classList.toggle('button-primary', candidate === button);
+                        candidate.classList.toggle('is-active', candidate === button);
+                        candidate.setAttribute('aria-selected', candidate === button ? 'true' : 'false');
                     });
                     document.querySelectorAll('.tk-role-tab-panel').forEach(function (panel) {
                         panel.hidden = panel.getAttribute('data-role-tab-panel') !== tab;
@@ -1339,6 +1396,106 @@ function tk_role_management_render_page(): void {
                 });
             });
 
+            function updateCounts() {
+                var capBoxes = document.querySelectorAll('.tk-capability-checkbox');
+                var menus = document.querySelectorAll('.tk-menu-checkbox:checked').length;
+                var menuBoxes = document.querySelectorAll('.tk-menu-checkbox').length;
+                // 'read' is a disabled checkbox plus a hidden input; count it once via the hidden input.
+                var caps = document.querySelectorAll('.tk-capability-checkbox:checked:not(:disabled)').length + document.querySelectorAll('input[type=hidden][name="capabilities[]"]').length;
+                var capEl = document.querySelector('[data-total-count="capabilities"]');
+                var menuEl = document.querySelector('[data-total-count="menus"]');
+                if (capEl) capEl.textContent = caps;
+                if (menuEl) menuEl.textContent = menus;
+                var summary = document.getElementById('tk-rm-summary');
+                if (summary) summary.textContent = caps + ' / ' + capBoxes.length + ' capabilities · ' + menus + ' / ' + menuBoxes + ' menus';
+                document.querySelectorAll('.tk-rm-group').forEach(function (group) {
+                    var badge = group.querySelector('[data-group-count]');
+                    if (!badge) return;
+                    var boxes = group.querySelectorAll('.tk-rm-items input[type=checkbox]');
+                    var on = group.querySelectorAll('.tk-rm-items input[type=checkbox]:checked').length;
+                    badge.textContent = on + ' / ' + boxes.length;
+                });
+                document.querySelectorAll('.tk-rm-item').forEach(function (item) {
+                    var box = item.querySelector('input[type=checkbox]');
+                    item.classList.toggle('is-checked', !!(box && box.checked));
+                });
+            }
+
+            document.querySelectorAll('input[type=checkbox]').forEach(function (box) {
+                box.addEventListener('change', updateCounts);
+            });
+            document.querySelectorAll('.tk-capability-toggle, .tk-menu-toggle').forEach(function (button) {
+                button.addEventListener('click', function () { setTimeout(updateCounts, 0); });
+            });
+
+            document.querySelectorAll('.tk-rm-filter').forEach(function (input) {
+                input.addEventListener('input', function () {
+                    var target = input.getAttribute('data-filter-target');
+                    var term = input.value.toLowerCase().trim();
+                    var list = document.querySelector('[data-panel-list="' + target + '"]');
+                    if (!list) return;
+                    var visibleGroups = 0;
+                    list.querySelectorAll('.tk-rm-group').forEach(function (group) {
+                        var groupMatch = term === '' || (group.getAttribute('data-search') || '').indexOf(term) !== -1
+                            || (group.querySelector('summary').textContent || '').toLowerCase().indexOf(term) !== -1;
+                        var anyItem = false;
+                        group.querySelectorAll('.tk-rm-item').forEach(function (item) {
+                            var hit = term === '' || (item.getAttribute('data-search') || '').indexOf(term) !== -1;
+                            item.hidden = !hit;
+                            if (hit) anyItem = true;
+                        });
+                        var show = term === '' || anyItem || (groupMatch && !group.querySelector('.tk-rm-item'));
+                        if (term !== '' && groupMatch && !anyItem && group.querySelector('.tk-rm-item')) {
+                            // Group title matched but no item did: show the whole group.
+                            group.querySelectorAll('.tk-rm-item').forEach(function (item) { item.hidden = false; });
+                            show = true;
+                        }
+                        group.hidden = !show;
+                        if (term !== '' && show) group.open = true;
+                        if (show) visibleGroups++;
+                    });
+                    var none = document.querySelector('[data-none="' + target + '"]');
+                    if (none) none.classList.toggle('is-visible', visibleGroups === 0);
+                });
+                input.addEventListener('keydown', function (event) {
+                    if (event.key === 'Enter') event.preventDefault();
+                });
+            });
+
+            document.querySelectorAll('.tk-rm-expand').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    var list = document.querySelector('[data-panel-list="' + button.getAttribute('data-target') + '"]');
+                    if (!list) return;
+                    var open = button.getAttribute('data-open') === '1';
+                    list.querySelectorAll('.tk-rm-group').forEach(function (group) { group.open = open; });
+                });
+            });
+
+            updateCounts();
+
+            var dirty = false;
+            function markDirty() { dirty = true; }
+            var roleForm = document.querySelector('#tk-role-form form');
+            if (roleForm) {
+                roleForm.addEventListener('change', function (event) {
+                    if (!event.target.classList.contains('tk-rm-filter')) markDirty();
+                });
+                roleForm.addEventListener('input', function (event) {
+                    if (event.target === roleNameInput) markDirty();
+                });
+                roleForm.querySelectorAll('.tk-capability-toggle, .tk-menu-toggle').forEach(function (button) {
+                    button.addEventListener('click', markDirty);
+                });
+            }
+            document.querySelectorAll('form').forEach(function (form) {
+                form.addEventListener('submit', function () { dirty = false; });
+            });
+            window.addEventListener('beforeunload', function (event) {
+                if (!dirty) return;
+                event.preventDefault();
+                event.returnValue = '';
+            });
+
             if (baseSelect && !baseSelect.disabled) {
                 baseSelect.addEventListener('change', function () {
                     var selected = presets[baseSelect.value] || [];
@@ -1346,6 +1503,7 @@ function tk_role_management_render_page(): void {
                         checkbox.checked = selected.indexOf(checkbox.value) !== -1;
                     });
                     syncMenusFromCapabilities();
+                    updateCounts();
                 });
             }
         }());

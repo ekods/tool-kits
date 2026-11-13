@@ -1,3 +1,25 @@
+## Tool Kits 2.7.90
+
+Role Management has a clearer layout. Capability and menu groups are collapsible
+and searchable, each with a selected/total counter; tabs show their totals; and a
+sticky save bar summarizes how many capabilities and menus the role has. The role
+list highlights the role being edited and scrolls horizontally on narrow screens
+instead of widening the page.
+
+Capabilities that grant powerful access (site settings, user, plugin and theme
+management, core updates, unfiltered HTML, import/export) carry a "High risk" badge.
+The browser now asks for confirmation when leaving the role form with unsaved
+changes; searching does not count as a change.
+
+Saving, capability enforcement, menu rules, field names and nonces are unchanged.
+No option or database migration. Styles live in the new assets/role-management.css,
+loaded only on the Role Management screen.
+
+Validation: rendered with stubbed WordPress data at 1440px and 390px (no horizontal
+overflow, no JavaScript errors); search, tab switching, counters, preset sync and
+the unsaved-changes prompt were exercised in a browser. Not tested against a live
+WordPress install or the admin-layout regression suite.
+
 ## Tool Kits 2.7.89
 
 SEO > Indexing gains a read-only Search Console Readiness checklist and a broader
