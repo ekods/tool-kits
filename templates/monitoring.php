@@ -709,10 +709,10 @@ if (!defined('ABSPATH')) { exit; }
                     <div style="background:var(--tk-bg-soft); padding:20px; border-radius:12px; border:1px solid var(--tk-border-soft);">
                         <p><strong><?php _e('Last Scan:', 'tool-kits'); ?></strong> <?php echo date_i18n('Y-m-d H:i:s', $last_scan); ?></p>
                         <?php if (empty($altered_files)) : ?>
-                            <div class="tk-alert tk-alert-success">&#10003; <?php _e('All core files matched WordPress.org checksums.', 'tool-kits'); ?></div>
+                            <div class="tk-alert tk-alert-success">&#10003; <?php _e('Checked core files matched WordPress.org checksums. Missing optional content bundles and distribution documentation are excluded.', 'tool-kits'); ?></div>
                         <?php else : ?>
                             <div class="tk-alert tk-alert-error">
-                                <h3><?php printf(__('%d altered files detected!', 'tool-kits'), count($altered_files)); ?></h3>
+                                <h3><?php printf(__('%d core integrity issues detected', 'tool-kits'), count($altered_files)); ?></h3>
                                 <ul style="margin-top: 10px;">
                                     <?php foreach (array_slice($altered_files, 0, 20) as $file) : ?>
                                         <li><code><?php echo esc_html($file); ?></code></li>

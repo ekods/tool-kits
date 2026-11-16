@@ -89,7 +89,7 @@ function tk_geo_batch_step(): void {
     $index = count($state['items']);
     if (isset($state['targets'][$index])) {
         $target = $state['targets'][$index];
-        $state['items'][] = tk_seo_geo_audit_url($target['url'], 20, !empty($state['retry']));
+        $state['items'][] = tk_seo_geo_audit_url($target['url'], 20, true);
         set_transient($key, $state, HOUR_IN_SECONDS);
         $merged = array();
         foreach (array_merge($state['existing'] ?? array(), $state['items']) as $item) { $merged[$item['url']] = $item; }

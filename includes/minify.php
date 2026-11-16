@@ -391,6 +391,10 @@ function tk_minify_inline_js($js) {
             continue;
         }
         if ($ch === '/') {
+            // After a closed group or block, slash needs a full parser to distinguish regex from division.
+            if ($prev === ')' || $prev === '}') {
+                return $js;
+            }
             $regex_allowed = $prev === '' || strpos('(,=:[!&|?{};+-*%<>~^}', $prev) !== false
                 || ($is_ident($prev) && in_array($prev_word, $regex_keywords, true));
             if ($regex_allowed) {

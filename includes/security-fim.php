@@ -13,8 +13,7 @@ function tk_fim_scan_handler() {
     $locale = get_locale();
     $api_url = 'https://api.wordpress.org/core/checksums/1.0/?version=' . $wp_version . '&locale=' . $locale;
     
-    $ssl_verify = tk_get_option('license_ssl_verify', 1) ? true : false;
-    $response = wp_remote_get($api_url, array('sslverify' => $ssl_verify, 'timeout' => 15));
+    $response = wp_remote_get($api_url, array('sslverify' => true, 'timeout' => 15));
     
     if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
         wp_safe_redirect(add_query_arg(array(
@@ -43,7 +42,14 @@ function tk_fim_scan_handler() {
     foreach ($checksums as $file => $expected_hash) {
         $file_path = ABSPATH . $file;
         if (!file_exists($file_path)) {
-            // We ignore missing files for now, but could log them.
+            // Content bundles and distribution documentation may be intentionally removed.
+            if (strpos($file, 'wp-content/') !== 0 && !in_array($file, array('readme.html', 'license.txt', 'wp-config-sample.php'), true)) {
+                $altered_files[] = $file . ' (missing)';
+            }
+            continue;
+        }
+        if (!is_file($file_path) || !is_readable($file_path)) {
+            $altered_files[] = $file . ' (unreadable)';
             continue;
         }
         
@@ -59,7 +65,7 @@ function tk_fim_scan_handler() {
     wp_safe_redirect(add_query_arg(array(
         'page' => 'tool-kits-monitoring',
         'tk_fim_status' => 'ok',
-        'tk_fim_msg' => 'File integrity scan completed. ' . count($altered_files) . ' altered files found.',
+        'tk_fim_msg' => 'File integrity scan completed. ' . count($altered_files) . ' integrity issues found.',
     ), admin_url('admin.php')) . '#integrity');
     exit;
 }

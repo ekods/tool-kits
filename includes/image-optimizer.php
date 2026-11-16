@@ -612,8 +612,8 @@ function tk_image_opt_compress_file($path, $quality) {
     return tk_image_opt_create_optimized_derivative($path, tk_image_opt_derivative_path($path), $quality);
 }
 
+/** @deprecated Metadata is applied during encoding; this compatibility function has no effect. */
 function tk_image_opt_postprocess_file($path, bool $was_resized = false): void {
-    // Kept for compatibility. Metadata is applied before the single encoding pass.
 }
 
 function tk_image_opt_is_supported_mime($mime) {

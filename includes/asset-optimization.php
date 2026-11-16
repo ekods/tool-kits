@@ -245,10 +245,12 @@ function tk_assets_collect_preconnect_hosts($html) {
     return array_slice($origins, 0, 3);
 }
 
+/** @deprecated Use tk_assets_apply_image_hints($html, true, false). */
 function tk_assets_apply_cls_guard($html) {
     return tk_assets_apply_image_hints($html, true, false);
 }
 
+/** @deprecated Use tk_assets_apply_image_hints($html, false, true). */
 function tk_assets_apply_lcp_boost($html) {
     return tk_assets_apply_image_hints($html, false, true);
 }
@@ -679,17 +681,6 @@ function tk_assets_opt_generate_critical() {
     $resp = wp_remote_get(home_url('/'), array('timeout' => 8));
     if (is_wp_error($resp)) {
         $message = $resp->get_error_message();
-        if (stripos($message, 'cURL error 60') !== false) {
-            $resp = wp_remote_get(home_url('/'), array(
-                'timeout' => 8,
-                'sslverify' => false,
-            ));
-            if (is_wp_error($resp)) {
-                $message = $resp->get_error_message();
-            } else {
-                $message = '';
-            }
-        }
         if (is_wp_error($resp)) {
             set_transient('tk_assets_critical_error', $message, MINUTE_IN_SECONDS * 5);
             wp_redirect(add_query_arg(array(

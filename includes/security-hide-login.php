@@ -1,11 +1,9 @@
 <?php
 if (!defined('ABSPATH')) exit;
 
-/**
- * Hide wp-login.php
- */
-
 function tk_hide_login_init() {
+    add_action('init', 'tk_hide_login_prepare_request', -1);
+    add_action('login_init', 'tk_hide_login_prepare_request', -1);
     add_action('init', 'tk_hide_login_rewrite');
     add_action('login_init', 'tk_hide_login_block_login');
     add_action('admin_init', 'tk_hide_login_block_admin', 1);
@@ -19,6 +17,43 @@ function tk_hide_login_init() {
     add_filter('register_url', 'tk_hide_login_filter_register_url', 10, 1);
     add_filter('site_url', 'tk_hide_login_filter_site_url', 10, 4);
     add_filter('network_site_url', 'tk_hide_login_filter_network_site_url', 10, 3);
+    add_action('login_head', 'tk_hide_login_referrer_meta', 0);
+}
+
+function tk_hide_login_prepare_request(): void {
+    if (!tk_get_option('hide_login_enabled')) return;
+    if (!is_user_logged_in()) {
+        // Core's /login and /login.php shorthand redirects otherwise disclose the custom slug.
+        remove_action('template_redirect', 'wp_redirect_admin_locations', 1000);
+    }
+    $path = (string) wp_parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+    if (!tk_hide_login_is_slug_path($path)) return;
+    if (!defined('DONOTCACHEPAGE')) { define('DONOTCACHEPAGE', true); }
+    if (!headers_sent()) {
+        nocache_headers();
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('X-Robots-Tag: noindex, nofollow, noarchive');
+        header('Referrer-Policy: no-referrer');
+    }
+}
+
+function tk_hide_login_referrer_meta(): void {
+    if (!tk_get_option('hide_login_enabled')) return;
+    remove_action('login_head', 'wp_strict_cross_origin_referrer');
+    echo '<meta name="referrer" content="no-referrer" />' . "\n";
+}
+
+function tk_hide_login_private_context(): bool {
+    $path = (string) wp_parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+    return tk_hide_login_is_slug_path($path)
+        || (is_user_logged_in() && (current_user_can('manage_options') || current_user_can('edit_posts')));
+}
+
+function tk_hide_login_public_customer_request($url): bool {
+    return tk_get_option('hide_login_enabled') && !tk_hide_login_private_context()
+        && tk_hide_login_url_has_wp_login($url)
+        && function_exists('wc_get_page_id') && function_exists('wc_get_page_permalink')
+        && wc_get_page_id('myaccount') > 0;
 }
 
 function tk_hide_login_slug() {
@@ -71,7 +106,7 @@ function tk_hide_login_custom_url() {
 }
 
 function tk_hide_login_swap_url_base($url) {
-    if (!tk_get_option('hide_login_enabled')) {
+    if (!tk_get_option('hide_login_enabled') || !tk_hide_login_private_context() || !tk_hide_login_url_has_wp_login($url)) {
         return $url;
     }
     $custom = tk_hide_login_custom_url();
@@ -101,27 +136,36 @@ function tk_hide_login_url_has_wp_login($url) {
 }
 
 function tk_hide_login_filter_login_url($login_url, $redirect, $force_reauth) {
+    if (tk_hide_login_public_customer_request($login_url)) {
+        return wc_get_page_permalink('myaccount');
+    }
     return tk_hide_login_swap_url_base($login_url);
 }
 
 function tk_hide_login_filter_logout_url($logout_url, $redirect) {
+    if (tk_hide_login_public_customer_request($logout_url) && function_exists('wc_get_account_endpoint_url')
+        && get_option('woocommerce_logout_endpoint', 'customer-logout') !== '') {
+        return wc_get_account_endpoint_url('customer-logout');
+    }
     return tk_hide_login_swap_url_base($logout_url);
 }
 
 function tk_hide_login_filter_lostpassword_url($lostpassword_url, $redirect) {
+    if (tk_hide_login_public_customer_request($lostpassword_url) && function_exists('wc_lostpassword_url')) {
+        return wc_lostpassword_url($lostpassword_url);
+    }
     return tk_hide_login_swap_url_base($lostpassword_url);
 }
 
 function tk_hide_login_filter_register_url($register_url) {
-    return tk_hide_login_swap_url_base($register_url);
+    return tk_hide_login_filter_login_url($register_url, '', false);
 }
 
 function tk_hide_login_filter_site_url($url, $path = '', $scheme = null, $blog_id = null) {
     if (!tk_get_option('hide_login_enabled')) {
         return $url;
     }
-    $path = (string) $path;
-    if (stripos($path, 'wp-login.php') === false && !tk_hide_login_url_has_wp_login($url)) {
+    if (!tk_hide_login_url_has_wp_login($url)) {
         return $url;
     }
     return tk_hide_login_swap_url_base($url);
@@ -174,8 +218,7 @@ function tk_hide_login_block() {
     if (strpos($path, '/wp-admin/admin-ajax.php') === 0 || strpos($path, '/wp-admin/admin-post.php') === 0) {
         return;
     }
-    wp_redirect(home_url());
-    exit;
+    tk_hide_login_deny_direct_request('direct_wp_admin_blocked');
 }
 
 function tk_hide_login_block_login() {
@@ -188,23 +231,35 @@ function tk_hide_login_block_login() {
     if (tk_hide_login_is_slug_path($path)) {
         return;
     }
+    // WooCommerce may fall back to the signed core logout URL when its logout endpoint is disabled.
+    if (is_user_logged_in() && ($_REQUEST['action'] ?? '') === 'logout'
+        && isset($_REQUEST['_wpnonce']) && is_string($_REQUEST['_wpnonce'])
+        && wp_verify_nonce(wp_unslash($_REQUEST['_wpnonce']), 'log-out')) {
+        return;
+    }
     tk_hide_login_deny_direct_request();
 }
 
-function tk_hide_login_deny_direct_request() {
+function tk_hide_login_deny_direct_request(string $reason = 'direct_wp_login_blocked') {
     if (function_exists('tk_security_events_record')) {
         tk_security_events_record(array(
             'event_type' => 'blocked',
             'category' => 'brute_force',
             'ip' => function_exists('tk_get_ip') ? tk_get_ip() : '',
             'user_agent' => isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : '',
-            'reason' => 'direct_wp_login_blocked',
+            'reason' => $reason,
             'request_method' => isset($_SERVER['REQUEST_METHOD']) ? (string) $_SERVER['REQUEST_METHOD'] : '',
             'request_uri' => isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '',
             'username' => isset($_POST['log']) ? (string) wp_unslash($_POST['log']) : '',
         ));
     }
-    wp_safe_redirect(home_url('/'));
+    if (!headers_sent()) {
+        nocache_headers();
+        header('X-Robots-Tag: noindex, nofollow, noarchive');
+        header('Content-Type: text/plain; charset=UTF-8');
+    }
+    status_header(404);
+    echo 'Not found.';
     exit;
 }
 
@@ -221,8 +276,7 @@ function tk_hide_login_block_admin() {
     if (in_array(basename((string) $path), array('admin-ajax.php', 'admin-post.php'), true)) {
         return;
     }
-    wp_redirect(home_url());
-    exit;
+    tk_hide_login_deny_direct_request('direct_wp_admin_blocked');
 }
 
 function tk_hide_login_block_admin_early() {
@@ -296,9 +350,10 @@ function tk_render_hide_login_panel() {
             <input type="hidden" name="tk_tab" value="hide-login">
             <label><input type="checkbox" name="enabled" value="1" <?php checked(1, $enabled); ?>> Enable Hide Login</label>
             <p>
-                <strong>Custom slug</strong><br>
-                <input type="text" name="slug" value="<?php echo esc_attr($slug); ?>" class="regular-text">
+                <label for="tk-hide-login-slug"><strong>Custom slug</strong></label><br>
+                <input id="tk-hide-login-slug" type="text" name="slug" value="<?php echo esc_attr($slug); ?>" class="regular-text" aria-describedby="tk-hide-login-help">
             </p>
+            <p class="description" id="tk-hide-login-help">Use a long, unique slug and keep it private. Avoid common names such as secure-login. WooCommerce customer login remains on My Account.</p>
             <p class="description">After saving, visit <code><?php echo esc_html(home_url('/' . trim($slug, '/') . '/')); ?></code> to login.</p>
             <p><button class="button button-primary">Save</button></p>
         </form>

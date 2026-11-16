@@ -34,6 +34,14 @@ $js_cases = array(
 foreach ($js_cases as $source => $expected) {
     check(tk_minify_inline_js($source) === $expected, 'inline JS minify keeps ' . json_encode(strtok($source, "\n")));
 }
+foreach (array(
+    'if (true) /[//]/.test("/"); console.log("ok");',
+    'while (false) /[/*]/.test("*");',
+    'const n = (12 + 4) / 2; /* keep ambiguous syntax intact */',
+    'const n = {} / 2; console.log(n);',
+) as $source) {
+    check(tk_minify_inline_js($source) === $source, 'ambiguous regex/division context is preserved: ' . $source);
+}
 
 function esc_url($url) { return $url; }
 $tag = "<script id=\"wpcf7-js-translations\">wp.i18n.setLocaleData({});</script>\n"

@@ -191,9 +191,12 @@ function tk_rate_limit_honey_trap_request(): void {
         return;
     }
 
-    // Visiting a trap path only redirects; locking is reserved for credential POSTs to it.
+    // Locking is reserved for credential POSTs; a visit alone must not lock an administrator out.
     if (isset($_SERVER['REQUEST_METHOD']) && strtoupper((string) $_SERVER['REQUEST_METHOD']) === 'POST') {
         tk_rate_limit_lock_current_ip(tk_rate_limit_next_lock_minutes(), 'login_honey_trap:' . $path);
+    }
+    if (function_exists('tk_hide_login_deny_direct_request')) {
+        tk_hide_login_deny_direct_request('login_honey_trap:' . $path);
     }
     wp_safe_redirect(home_url('/'));
     exit;

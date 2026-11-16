@@ -42,6 +42,12 @@ function tk_cookie_consent_render_banner() {
     $cookie_text = (string) tk_get_option('cookie_consent_text', '');
 
     $privacy_url = (string) tk_get_option('cookie_consent_privacy_url', '');
+    if ($privacy_url === '' && function_exists('get_privacy_policy_url')) {
+        $privacy_url = (string) get_privacy_policy_url();
+    }
+    $policy_link = $privacy_url !== ''
+        ? '<a href="' . esc_url($privacy_url) . '" class="tk-cookie-consent-link">Privacy Policy</a>' : 'Privacy Policy';
+    $cookie_text = str_replace('<a href="#" class="tk-cookie-consent-link">Privacy Policy</a>', $policy_link, $cookie_text);
     $expiry_days = (int) tk_get_option('cookie_consent_expiry', 365);
     ?>
     <div class="tk-cookie-consent" id="tk-cookie-consent-banner">
@@ -50,7 +56,7 @@ function tk_cookie_consent_render_banner() {
                 <?php if ($cookie_text !== '') : ?>
                     <?php echo wp_kses_post($cookie_text); ?>
                 <?php else : ?>
-                    By clicking <strong>"Accept"</strong>, you agree to the storing of cookies on your device to enhance site navigation, analyze site usage, and assist in our marketing efforts. View our <a href="<?php echo esc_url($privacy_url ? $privacy_url : '#'); ?>" class="tk-cookie-consent-link">Privacy Policy</a> for more information.
+                    By clicking <strong>"Accept"</strong>, you agree to the storing of cookies on your device to enhance site navigation, analyze site usage, and assist in our marketing efforts.<?php if ($privacy_url !== '') : ?> View our <a href="<?php echo esc_url($privacy_url); ?>" class="tk-cookie-consent-link">Privacy Policy</a> for more information.<?php endif; ?>
                 <?php endif; ?>
             </p>
             <div class="tk-cookie-consent-actions">
@@ -61,11 +67,10 @@ function tk_cookie_consent_render_banner() {
         </div>
     </div>
 
-    <div class="tk-cookie-modal-overlay" id="tk-cookie-modal-overlay"></div>
-    <div class="tk-cookie-modal" id="tk-cookie-modal">
+    <dialog class="tk-cookie-modal" id="tk-cookie-modal" aria-labelledby="tk-cookie-modal-title">
         <div class="tk-cookie-modal-header">
-            <h3>Cookie Preferences</h3>
-            <button type="button" class="tk-cookie-modal-close" id="tk-cookie-modal-close">&times;</button>
+            <h3 id="tk-cookie-modal-title">Cookie Preferences</h3>
+            <button type="button" class="tk-cookie-modal-close" id="tk-cookie-modal-close" aria-label="Close cookie preferences" autofocus>&times;</button>
         </div>
         <div class="tk-cookie-modal-body">
             <div class="tk-cookie-item">
@@ -79,7 +84,7 @@ function tk_cookie_consent_render_banner() {
             </div>
             <div class="tk-cookie-item">
                 <div class="tk-cookie-item-info">
-                    <h4>Analytics Cookies</h4>
+                    <h4><label for="tk-cookie-pref-analytics">Analytics Cookies</label></h4>
                     <p>These cookies allow us to count visits and traffic sources so we can measure and improve the performance of our site.</p>
                 </div>
                 <div class="tk-cookie-item-toggle">
@@ -91,7 +96,7 @@ function tk_cookie_consent_render_banner() {
             </div>
             <div class="tk-cookie-item">
                 <div class="tk-cookie-item-info">
-                    <h4>Marketing Cookies</h4>
+                    <h4><label for="tk-cookie-pref-marketing">Marketing Cookies</label></h4>
                     <p>These cookies may be set through our site by our advertising partners to build a profile of your interests.</p>
                 </div>
                 <div class="tk-cookie-item-toggle">
@@ -105,7 +110,7 @@ function tk_cookie_consent_render_banner() {
         <div class="tk-cookie-modal-footer">
             <button class="tk-cookie-btn tk-cookie-btn-accept" type="button" id="tk-cookie-btn-save-pref" style="width: 100%;">Save Preferences</button>
         </div>
-    </div>
+    </dialog>
 
     <style>
     .tk-cookie-consent, .tk-cookie-modal {
@@ -208,14 +213,8 @@ function tk_cookie_consent_render_banner() {
         background: #0f172a;
     }
 
-    /* Modal Styles */
-    .tk-cookie-modal-overlay {
-        display: none;
-        position: fixed;
-        inset: 0;
+    .tk-cookie-modal::backdrop {
         background: rgba(15, 23, 42, 0.5);
-        z-index: 999999;
-        backdrop-filter: blur(4px);
     }
 
     .tk-cookie-modal {
@@ -223,6 +222,9 @@ function tk_cookie_consent_render_banner() {
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
+        margin: 0;
+        padding: 0;
+        border: 0;
         width: calc(100% - 48px);
         max-width: 500px;
         background: #ffffff;
@@ -233,11 +235,8 @@ function tk_cookie_consent_render_banner() {
         flex-direction: column;
         max-height: calc(100vh - 48px);
     }
-    .tk-cookie-modal.tk-show {
+    .tk-cookie-modal[open] {
         display: flex;
-    }
-    .tk-cookie-modal-overlay.tk-show {
-        display: block;
     }
     .tk-cookie-consent.tk-show {
         display: block;
@@ -262,6 +261,8 @@ function tk_cookie_consent_render_banner() {
     }
 
     .tk-cookie-modal-close {
+        min-width: 44px;
+        min-height: 44px;
         background: transparent;
         border: none;
         font-size: 24px;
@@ -320,22 +321,26 @@ function tk_cookie_consent_render_banner() {
         position: relative;
         display: inline-block;
         width: 44px;
-        height: 24px;
+        height: 44px;
     }
 
     .tk-cookie-switch input {
         opacity: 0;
-        width: 0;
-        height: 0;
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        z-index: 1;
+        cursor: pointer;
     }
 
     .tk-cookie-slider {
         position: absolute;
         cursor: pointer;
-        top: 0;
+        top: 10px;
         left: 0;
         right: 0;
-        bottom: 0;
+        bottom: 10px;
         background-color: #cbd5e1;
         transition: .4s;
         border-radius: 24px;
@@ -358,7 +363,8 @@ function tk_cookie_consent_render_banner() {
     }
 
     .tk-cookie-switch input:focus + .tk-cookie-slider {
-        box-shadow: 0 0 1px #1e293b;
+        outline: 3px solid #1e293b;
+        outline-offset: 3px;
     }
 
     .tk-cookie-switch input:checked + .tk-cookie-slider:before {
@@ -427,13 +433,20 @@ function tk_cookie_consent_render_banner() {
         background: #f8fafc;
         transform: scale(1.05);
     }
+    .tk-cookie-consent button, .tk-cookie-modal button, .tk-cookie-modal label { cursor: pointer; }
+    .tk-cookie-consent button, .tk-cookie-modal button { min-height: 44px; }
+    .tk-cookie-consent button:focus-visible, .tk-cookie-modal button:focus-visible, .tk-cookie-floating-btn:focus-visible { outline: 3px solid #1e293b; outline-offset: 3px; }
+    .tk-cookie-consent button:active, .tk-cookie-modal button:active { transform: translateY(1px); }
+    @media (prefers-reduced-motion: reduce) {
+        .tk-cookie-consent, .tk-cookie-consent *, .tk-cookie-modal, .tk-cookie-modal *, .tk-cookie-floating-btn, .tk-cookie-slider:before { transition: none; }
+    }
     </style>
 
     <script>
     document.addEventListener("DOMContentLoaded", function() {
         var banner = document.getElementById('tk-cookie-consent-banner');
         var modal = document.getElementById('tk-cookie-modal');
-        var overlay = document.getElementById('tk-cookie-modal-overlay');
+        var modalTrigger = null;
         
         if (!banner) return;
 
@@ -479,6 +492,7 @@ function tk_cookie_consent_render_banner() {
         // Persistent floating button (hidden by CSS until .tk-show)
         var floatingBtn = document.createElement('button');
         floatingBtn.id = 'tk-cookie-floating-btn';
+        floatingBtn.type = 'button';
         floatingBtn.className = 'tk-cookie-floating-btn';
         floatingBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/><path d="M8.5 8.5v.01"/><path d="M16 12.5v.01"/><path d="M12 16v.01"/><path d="M11 12.5v.01"/></svg>';
         floatingBtn.setAttribute('aria-label', 'Cookie Preferences');
@@ -492,9 +506,28 @@ function tk_cookie_consent_render_banner() {
                 document.getElementById('tk-cookie-pref-analytics').checked = !!choice.analytics;
                 document.getElementById('tk-cookie-pref-marketing').checked = !!choice.marketing;
             }
-            modal.classList.add('tk-show');
-            overlay.classList.add('tk-show');
+            modalTrigger = e ? e.currentTarget : document.activeElement;
+            modal.showModal();
         }
+
+        function closeModal() { modal.close(); }
+        modal.addEventListener('keydown', function(event) {
+            if (event.key !== 'Tab') return;
+            var controls = Array.from(modal.querySelectorAll('button, input')).filter(function(control) {
+                return !control.disabled && control.getClientRects().length;
+            });
+            var first = controls[0];
+            var last = controls[controls.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault(); last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault(); first.focus();
+            }
+        });
+        modal.addEventListener('close', function() {
+            var target = modalTrigger && modalTrigger.getClientRects().length ? modalTrigger : floatingBtn;
+            target.focus();
+        });
 
         // Event listeners for opening modal
         document.getElementById('tk-cookie-btn-pref').addEventListener('click', openModal);
@@ -518,15 +551,12 @@ function tk_cookie_consent_render_banner() {
             saveChoice(false, false);
         });
 
-        // Modal Actions
-        document.getElementById('tk-cookie-modal-close').addEventListener('click', function() {
-            modal.classList.remove('tk-show');
-            overlay.classList.remove('tk-show');
-        });
-        
-        overlay.addEventListener('click', function() {
-            modal.classList.remove('tk-show');
-            overlay.classList.remove('tk-show');
+        document.getElementById('tk-cookie-modal-close').addEventListener('click', closeModal);
+        modal.addEventListener('click', function(event) {
+            var rect = modal.getBoundingClientRect();
+            if (event.target === modal && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) {
+                closeModal();
+            }
         });
 
         document.getElementById('tk-cookie-btn-save-pref').addEventListener('click', function() {
@@ -535,8 +565,7 @@ function tk_cookie_consent_render_banner() {
 
             saveChoice(allowAnalytics, allowMarketing);
 
-            modal.classList.remove('tk-show');
-            overlay.classList.remove('tk-show');
+            closeModal();
         });
     });
     </script>

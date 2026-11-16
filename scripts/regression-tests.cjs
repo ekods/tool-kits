@@ -2,6 +2,12 @@
 // Each case runs in its own process so PHP mocks and browser state stay isolated.
 const { spawnSync } = require('node:child_process');
 const cases = [
+  { "name": "hide-login-defaults", "runtime": "php", "source": ["<?php", "require __DIR__ . '/hide-login-defaults-regression.php';"] },
+  { "name": "hide-login-routing", "runtime": "node", "source": ["require(__dirname + '/hide-login-routing-regression.cjs');"] },
+  { "name": "hide-login", "runtime": "php", "source": ["<?php", "require __DIR__ . '/hide-login-regression.php';"] },
+  { "name": "cookie-consent-ui", "runtime": "node", "source": ["require(__dirname + '/cookie-consent-ui-regression.cjs');"] },
+  { "name": "security-fim", "runtime": "php", "source": ["<?php", "require __DIR__ . '/security-fim-regression.php';"] },
+  { "name": "geo-audit-freshness", "runtime": "php", "source": ["<?php", "require __DIR__ . '/geo-audit-freshness-regression.php';"] },
   { "name": "settings-batch", "runtime": "php", "source": ["<?php", "require __DIR__ . '/settings-batch-regression.php';"] },
   { "name": "frontend-module-load", "runtime": "php", "source": ["<?php", "require __DIR__ . '/frontend-module-load-regression.php';"] },
   { "name": "geo-sampling", "runtime": "php", "source": ["<?php", "require __DIR__ . '/geo-sampling-regression.php';"] },
@@ -151,7 +157,7 @@ const cases = [
     "runtime": "node",
     "source": [
       "const fs = require('node:fs');",
-      "const geo = fs.readFileSync(__dirname + '/../includes/geo.php', 'utf8');",
+      "const geo = fs.readFileSync(__dirname + '/../includes/geo.php', 'utf8') + fs.readFileSync(__dirname + '/../templates/geo-panel.php', 'utf8');",
       "const fixes = fs.readFileSync(__dirname + '/../includes/geo-crawler-fixes.php', 'utf8');",
       "if (!geo.includes('Bulk Fix All') || !geo.includes('tk_geo_audit_bulk_fix')) throw new Error('Bulk Fix All control is missing');",
       "if (!geo.includes('tk_geo_fix_batch_start') || !geo.includes('tk_geo_fix_batch_step')) throw new Error('Bulk fix AJAX actions are missing');",
@@ -169,7 +175,7 @@ const cases = [
     "source": [
       "const fs = require('node:fs');",
       "const menu = fs.readFileSync(__dirname + '/../includes/admin-menu.php', 'utf8');",
-      "const geo = fs.readFileSync(__dirname + '/../includes/geo.php', 'utf8');",
+      "const geo = fs.readFileSync(__dirname + '/../includes/geo.php', 'utf8') + fs.readFileSync(__dirname + '/../templates/geo-panel.php', 'utf8');",
       "const radar = fs.readFileSync(__dirname + '/../includes/geo-radar.php', 'utf8');",
       "const fixes = fs.readFileSync(__dirname + '/../includes/geo-crawler-fixes.php', 'utf8');",
       "if (!menu.includes(\"'tool-kits-geo-audit', 'tk_render_geo_audit_page'\")) throw new Error('Missing GEO Audit & Fixes submenu');",
@@ -443,7 +449,7 @@ const cases = [
       "const path = require('node:path');",
       "const assert = require('node:assert/strict');",
       "const postFaq = fs.readFileSync(path.join(__dirname, '../assets/post-faq.js'), 'utf8');",
-      "const geo = fs.readFileSync(path.join(__dirname, '../includes/geo.php'), 'utf8');",
+      "const geo = fs.readFileSync(path.join(__dirname, '../includes/geo.php'), 'utf8') + fs.readFileSync(path.join(__dirname, '../templates/geo-panel.php'), 'utf8');",
       "const picker = fs.readFileSync(path.join(__dirname, '../assets/language-picker.js'), 'utf8');",
       "assert.ok(picker.includes(\"close.className = 'tk-lang-chip-remove'\"));",
       "assert.ok(picker.includes('if (tag === defaultLanguage || languages.length <= 1) { return; }'));",
@@ -1682,7 +1688,7 @@ if (requested === '--list') {
     cases.forEach(test => console.log(test.name));
     process.exit(0);
 }
-const optional = new Set(['cleanup-browser', 'request-options', 'performance-core', 'cf7-assets', 'admin-layout-ui', 'image-optimizer', 'image-optimizer-no-imagick', 'monitoring-ui', 'admin-menu-flyout-ui']);
+const optional = new Set(['cookie-consent-ui', 'cleanup-browser', 'request-options', 'performance-core', 'cf7-assets', 'admin-layout-ui', 'image-optimizer', 'image-optimizer-no-imagick', 'monitoring-ui', 'admin-menu-flyout-ui']);
 const selected = requested ? cases.filter(test => test.name === requested) : cases.filter(test => !optional.has(test.name));
 if (!selected.length) { console.error('Unknown test: ' + requested); process.exit(1); }
 let failures = 0;

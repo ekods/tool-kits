@@ -127,7 +127,7 @@ function tk_server_cache_status(bool $force = false): array {
     $response = wp_remote_head(home_url('/'), array(
         'timeout' => 4,
         'redirection' => 3,
-        'sslverify' => false,
+        'sslverify' => true,
         'headers' => array(
             'Cache-Control' => 'no-cache',
             'User-Agent' => 'Tool Kits Cache Detector',
@@ -379,6 +379,10 @@ function tk_cache_dynamic_path_patterns(): array {
                 $patterns[] = rtrim($path, '/');
             }
         }
+    }
+
+    if (tk_get_option('hide_login_enabled', 0) && function_exists('tk_hide_login_slug_path')) {
+        $patterns = array_merge($patterns, tk_hide_login_slug_path());
     }
 
     return array_values(array_unique(array_filter($patterns, 'strlen')));
@@ -958,7 +962,7 @@ function tk_cache_preload_run(): array {
         $response = wp_remote_get($url, array(
             'timeout' => min(8, $remaining),
             'redirection' => 3,
-            'sslverify' => false,
+            'sslverify' => true,
             'headers' => array(
                 'User-Agent' => 'Tool Kits Cache Preloader',
             ),

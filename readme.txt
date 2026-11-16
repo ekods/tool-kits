@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.90
+Stable tag: 2.7.91
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,7 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.91 limits custom admin login URLs to the private login page and authenticated staff, while WooCommerce customers keep using My Account. Direct login/admin probes return 404 without revealing the custom URL; the private login page sends noindex, no-store and no-referrer and is excluded from page caches. New installations receive a random login slug; existing slugs are preserved. Change predictable existing slugs manually and clear page/CDN caches after updating. These protections do not guarantee that a leaked login URL cannot be discovered or that public pages will be indexed by Google.
 - Version 2.7.88 sends CAPTCHA actions in POST bodies instead of crawlable query URLs. Legacy CAPTCHA endpoints send X-Robots-Tag: noindex, nofollow and reject empty or malformed actions with HTTP 400. Clear page/CDN caches after updating. Existing Search Console entries update after Google recrawls; no robots.txt block is added.
 - Version 2.7.87 merges FAQ GEO into the Tool Kits SEO / GEO sidebar card. Edit FAQ opens the existing popup. SEO Settings can show or hide the SEO/GEO controls and FAQ section independently; saved FAQs and public output are preserved.
 - Version 2.7.62 makes I'm not a robot a single checkbox without a code input. Clicking automatically checks the browser-bound token, minimum time, honeypot and request limits on the server before returning a one-use proof. Classic Text continues to use an image code. Checkbox checks validate the request/session; they are not a guarantee of human identity. Clear page/CDN caches after updating.
@@ -82,6 +83,15 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.91 =
+- Prevent public login links and WordPress login shorthand redirects from exposing the custom admin login slug. Preserve WooCommerce My Account login, registration, password recovery and signed customer logout flows.
+- Return a generic 404 for direct login/admin probes, retain credential-POST lockouts, and avoid locking ordinary GET visitors. Send noindex, no-store and no-referrer on the private login page, exclude its URL from normal and early page caches, and invalidate cache configuration when login settings change.
+- Generate an unpredictable login slug for new installations while preserving existing login URLs to avoid locking administrators out.
+- Preserve JavaScript when regex/division syntax is ambiguous to the conservative minifier; retain TLS certificate verification for audit and critical CSS requests.
+- Reuse saved GEO helper results for ordinary reads while explicit audit retries and batch steps fetch fresh results. Report missing required WordPress integrity files while allowing absent optional bundled files.
+- Move admin header, license helpers and General/SEO/GEO renderers into their existing ownership areas without changing their public entry points.
+- Improve cookie preference keyboard focus, dialog labels, touch targets and reduced-motion behavior while retaining saved consent behavior.
 
 = 2.7.90 =
 - Redesign Role Management: searchable and collapsible capability and menu groups with selected counters, tab counts, a sticky save bar with a summary, and a responsive role list.

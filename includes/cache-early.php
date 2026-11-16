@@ -99,6 +99,7 @@ function tk_page_cache_early_fingerprint(): string {
         tk_page_cache_early_hook_requirements(), (int) tk_get_option('page_cache_ttl', 3600),
         (string) tk_get_option('page_cache_exclude_paths', ''), tk_page_cache_dir(), defined('TK_VERSION') ? TK_VERSION : '',
         is_array($claims) ? (int) ($claims['expires_at'] ?? 0) : 0, home_url('/'),
+        (int) tk_get_option('hide_login_enabled', 0), (string) tk_get_option('hide_login_slug', ''),
     )));
 }
 
@@ -191,7 +192,7 @@ function tk_page_cache_early_sync(): void {
 function tk_page_cache_early_option_changed($option, $old = null, $new = null): void {
     if ($option !== 'tk_options' && $option !== 'active_plugins' && $option !== 'home' && $option !== 'siteurl') { return; }
     if ($option === 'tk_options' && is_array($old) && is_array($new)) {
-        $keys = array('page_cache_enabled', 'page_cache_ttl', 'page_cache_exclude_paths', 'license_status', 'license_key', 'license_signature', 'license_receipt', 'license_site_url', 'license_expires_at', 'toolkits_install_id', 'hardening_waf_enabled', 'hardening_httpauth_enabled');
+        $keys = array('page_cache_enabled', 'page_cache_ttl', 'page_cache_exclude_paths', 'license_status', 'license_key', 'license_signature', 'license_receipt', 'license_site_url', 'license_expires_at', 'toolkits_install_id', 'hardening_waf_enabled', 'hardening_httpauth_enabled', 'hide_login_enabled', 'hide_login_slug');
         $changed = false;
         foreach ($keys as $key) { if (($old[$key] ?? null) !== ($new[$key] ?? null)) { $changed = true; break; } }
         if (!$changed) { return; }

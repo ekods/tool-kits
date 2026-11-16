@@ -725,7 +725,10 @@ function tk_captcha_render_markup(string $type = ''): string {
                     <path d="M12 16h.01"></path>
                   </svg>';
         $html .= '      <span class="tk-captcha-brand-text">ToolKits Guard</span>';
-        $html .= '      <div class="tk-captcha-footer-links"><a href="#">Privacy</a> - <a href="#">Terms</a></div>';
+        $privacy_url = function_exists('get_privacy_policy_url') ? (string) get_privacy_policy_url() : '';
+        if ($privacy_url !== '') {
+            $html .= '      <div class="tk-captcha-footer-links"><a href="' . esc_url($privacy_url) . '">Privacy</a></div>';
+        }
         $html .= '    </div>';
         $html .= '  </div>';
         $html .= '</div>';
