@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.91
+Stable tag: 2.7.92
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,7 @@ Tool Kits is an admin toolkit plugin for:
 3. Open the "Tool Kits" and "Tool Kits Security" menus.
 
 == Notes ==
+- Version 2.7.92 adds pagination and horizontally scrollable columns to Indexing Checks & Fixes and Content SEO Audit. Search Console Readiness findings link to their fixing tools and are saved with timestamps, including partial runs and unverified checks, so the report remains available after reopening the page.
 - Version 2.7.91 limits custom admin login URLs to the private login page and authenticated staff, while WooCommerce customers keep using My Account. Direct login/admin probes return 404 without revealing the custom URL; the private login page sends noindex, no-store and no-referrer and is excluded from page caches. New installations receive a random login slug; existing slugs are preserved. Change predictable existing slugs manually and clear page/CDN caches after updating. These protections do not guarantee that a leaked login URL cannot be discovered or that public pages will be indexed by Google.
 - Version 2.7.88 sends CAPTCHA actions in POST bodies instead of crawlable query URLs. Legacy CAPTCHA endpoints send X-Robots-Tag: noindex, nofollow and reject empty or malformed actions with HTTP 400. Clear page/CDN caches after updating. Existing Search Console entries update after Google recrawls; no robots.txt block is added.
 - Version 2.7.87 merges FAQ GEO into the Tool Kits SEO / GEO sidebar card. Edit FAQ opens the existing popup. SEO Settings can show or hide the SEO/GEO controls and FAQ section independently; saved FAQs and public output are preserved.
@@ -83,6 +84,13 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.92 =
+- Add 10/25/50/100 URL pagination to Indexing Checks & Fixes while preserving canonical drafts, whole-report summaries, and Fix All across every page.
+- Add 10/25/50/100 post pagination to Content SEO Audit, retaining open check details when navigating pages.
+- Keep report columns readable with fixed layouts, wider Issues columns, and horizontal scrolling within the table instead of overflowing the page.
+- Add contextual fixing-tool links to Search Console Readiness findings; links open in a new tab so the checklist stays available.
+- Save readiness results and check times in a dedicated non-autoloaded WordPress option, restore saved findings and CTAs when reopening the page, preserve partial and unverified results, separate check runs, and report storage failures.
 
 = 2.7.91 =
 - Prevent public login links and WordPress login shorthand redirects from exposing the custom admin login slug. Preserve WooCommerce My Account login, registration, password recovery and signed customer logout flows.

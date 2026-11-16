@@ -78,6 +78,11 @@ const cases = [
     "source": ["require(__dirname + '/indexability-ui-regression.cjs');"]
   },
   {
+    "name": "gsc-readiness-persistence",
+    "runtime": "php",
+    "source": ["<?php", "require __DIR__ . '/gsc-readiness-persistence-regression.php';"]
+  },
+  {
     "name": "global-seo-content",
     "runtime": "php",
     "source": ["<?php", "require __DIR__ . '/global-seo-content-regression.php';"]

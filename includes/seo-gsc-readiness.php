@@ -25,6 +25,43 @@ function tk_gsc_readiness_items(): array {
     );
 }
 
+function tk_gsc_readiness_actions(): array {
+    $indexing = tk_admin_url('tool-kits-seo') . '#indexing';
+    $sitemap = tk_admin_url('tool-kits-general') . '#xml-sitemap';
+    $actions = array(
+        'verification' => array(array('label' => 'Verify Ownership in Search Console', 'url' => 'https://search.google.com/search-console')),
+        'visibility' => array(
+            array('label' => 'Open Indexing Fixes', 'url' => $indexing),
+            array('label' => 'Change Search Engine Visibility', 'url' => admin_url('options-reading.php')),
+        ),
+        'https_host' => array(array('label' => 'Open Site URL Settings', 'url' => admin_url('options-general.php'))),
+        'robots' => array(
+            array('label' => 'Review Crawl Blocks', 'url' => $indexing),
+            array('label' => 'View robots.txt', 'url' => home_url('/robots.txt')),
+            array('label' => 'Manage Sitemap', 'url' => $sitemap),
+        ),
+        'sitemap' => array(array('label' => 'Fix Sitemap Settings', 'url' => $sitemap)),
+        'basics' => array(
+            array('label' => 'Edit Homepage Metadata', 'url' => tk_admin_url('tool-kits-seo') . '#global-content'),
+            array('label' => 'Open Canonical Fixes', 'url' => $indexing),
+        ),
+        'schema' => array(
+            array('label' => 'Manage Schema Output', 'url' => tk_admin_url('tool-kits-geo') . '#overview'),
+            array('label' => 'Edit Custom JSON-LD', 'url' => tk_admin_url('tool-kits-geo') . '#custom-jsonld'),
+        ),
+        'security' => array(array('label' => 'Review Malware Findings', 'url' => tk_admin_url('tool-kits-malware-scanner'))),
+    );
+    if ((string) get_option('blog_public') !== '1') {
+        $actions['visibility'] = array_reverse($actions['visibility']);
+    }
+    $front_id = get_option('show_on_front') === 'page' ? (int) get_option('page_on_front') : 0;
+    if ($front_id > 0 && current_user_can('edit_post', $front_id)) {
+        $edit_url = get_edit_post_link($front_id, 'raw');
+        if ($edit_url) { array_unshift($actions['basics'], array('label' => 'Edit Homepage Content', 'url' => $edit_url)); }
+    }
+    return $actions;
+}
+
 function tk_gsc_readiness_result(string $key, string $state, string $detail, string $recommendation = ''): array {
     return array('key' => $key, 'label' => tk_gsc_readiness_items()[$key], 'state' => $state, 'detail' => $detail, 'recommendation' => $recommendation);
 }
@@ -197,17 +234,36 @@ function tk_gsc_readiness_ajax(): void {
     check_ajax_referer('tk_gsc_readiness', 'nonce');
     $key = (string) tk_post('item', '');
     if (!isset(tk_gsc_readiness_items()[$key])) { wp_send_json_error(array('message' => 'Unknown check.'), 400); }
-    wp_send_json_success(array('item' => tk_gsc_readiness_check($key, (string) tk_post('first', '') === '1')));
+    $run = (string) tk_post('run', '');
+    if (!preg_match('/^[a-zA-Z0-9_-]{1,80}$/D', $run)) { wp_send_json_error(array('message' => 'Invalid check session. Reload this page and retry.'), 400); }
+    $operation = (string) tk_post('operation', 'check');
+    if (!in_array($operation, array('check', 'record_error'), true)) { wp_send_json_error(array('message' => 'Unknown operation.'), 400); }
+    $item = $operation === 'record_error'
+        ? tk_gsc_readiness_result($key, 'unknown', sanitize_text_field(substr((string) tk_post('error', 'The check could not complete.'), 0, 1000)), 'Run the check again.')
+        : tk_gsc_readiness_check($key, (string) tk_post('first', '') === '1');
+    $now = time();
+    $item['checked_at'] = $now;
+    $report = tk_get_option('seo_gsc_readiness_report', array());
+    if (!is_array($report) || !is_array($report['items'] ?? null) || ($report['run'] ?? '') !== $run) { $report = array('run' => $run, 'items' => array()); }
+    $report['items'][$key] = $item;
+    $report['scanned_at'] = $now;
+    tk_update_option('seo_gsc_readiness_report', $report);
+    if (tk_get_option('seo_gsc_readiness_report') !== $report) { wp_send_json_error(array('message' => 'The check result could not be saved. Please retry.'), 500); }
+    wp_send_json_success(array('item' => $item, 'scanned_at' => $now));
 }
 
 function tk_gsc_readiness_panel(): void {
+    $report = tk_get_option('seo_gsc_readiness_report', array());
+    $report = is_array($report) ? $report : array();
     ?>
-    <div id="tk-gsc-readiness" data-nonce="<?php echo esc_attr(wp_create_nonce('tk_gsc_readiness')); ?>" data-items="<?php echo esc_attr(wp_json_encode(array_keys(tk_gsc_readiness_items()))); ?>">
+    <div id="tk-gsc-readiness" data-nonce="<?php echo esc_attr(wp_create_nonce('tk_gsc_readiness')); ?>" data-items="<?php echo esc_attr(wp_json_encode(array_keys(tk_gsc_readiness_items()))); ?>" data-actions="<?php echo esc_attr(wp_json_encode(tk_gsc_readiness_actions())); ?>">
         <h3>Search Console Readiness</h3>
-        <p>A read-only checklist of what Google Search Console expects from this website. It changes nothing; follow each recommendation at its source.</p>
+        <p>Check what Google Search Console expects from this website. Findings include links to the relevant fixing tools, which open in a new tab. After making changes, run the checklist again to verify them.</p>
         <p><button type="button" class="button button-primary" data-gsc-run>Run Readiness Check</button></p>
+        <p class="description" data-gsc-last-check></p>
         <p data-gsc-summary role="status" aria-live="polite"></p>
         <ul data-gsc-results style="margin:0;padding:0;list-style:none;"></ul>
+        <script type="application/json" class="tk-gsc-readiness-saved"><?php echo wp_json_encode($report, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?></script>
     </div>
     <?php
 }

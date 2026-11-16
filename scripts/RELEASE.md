@@ -1,3 +1,23 @@
+## Tool Kits 2.7.92
+
+Indexing Checks & Fixes and Content SEO Audit now offer 10/25/50/100 entries per
+page and fixed-width columns inside horizontally scrollable tables. Indexing
+summaries and Fix All still cover the full report; canonical drafts and open
+content-check details survive pagination.
+
+Search Console Readiness findings link to the relevant fixing tools in new tabs.
+Results and timestamps are saved in a dedicated non-autoloaded WordPress option
+and restored when the page reopens. Partial runs and failed checks remain visible;
+new runs do not mix old results, and storage failures are reported.
+
+No database schema migration. Existing report and SEO settings are preserved.
+
+Validation: 93/93 regression cases on both PHP 7.4 and PHP 8.4, 115 PHP files
+linted on both versions, JavaScript syntax checks, and isolated browser
+checks for pagination, column widths, preserved drafts/details, fixing CTAs,
+saved-report restoration and offline-save feedback. All check requests in browser
+fixtures are mocked; no live Search Console account is used.
+
 ## Tool Kits 2.7.90
 
 Role Management has a clearer layout. Capability and menu groups are collapsible

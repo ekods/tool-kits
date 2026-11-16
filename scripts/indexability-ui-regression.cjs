@@ -9,6 +9,17 @@ class Element {
     setAttribute(key, value) { this[key] = value; }
     addEventListener(key, fn) { this.listeners[key] = fn; }
     click() { if (!this.disabled && this.listeners.click) return this.listeners.click(); }
+    querySelectorAll(selector) {
+        return walk(this).filter(node => {
+            if (selector[0] === '.') return (node.className || '').split(' ').includes(selector.slice(1));
+            const attribute = selector.match(/^\[data-([\w-]+)\]$/);
+            if (!attribute) return false;
+            const key = attribute[1].replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+            return Object.hasOwn(node.dataset, key);
+        });
+    }
+    querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+    focus() { this.focused = true; }
 }
 const walk = node => [node, ...node.children.flatMap(walk)];
 const textOf = node => node.textContent + node.children.map(textOf).join(' ');
@@ -92,6 +103,21 @@ function fixture(saved, fetcher) {
         const fresh = issueItem(); fresh.url = options.body.get('url'); return reply({item: fresh});
     });
     await large.scan.click(); assert.match(large.status.textContent, /105\/105 URLs checked/, 'Automatic scan stopped at the former 100 URL cap');
+    const urlGroups = () => walk(large.results).filter(node => node.tagName === 'tbody');
+    assert.equal(urlGroups().length, 10, 'Large reports render only the current page of URL groups');
+    assert.match(large.summary.textContent, /^105 URL/, 'Report summary must include every page');
+    assert.equal(findButton(large.results, 'Previous').disabled, true);
+    const draft = walk(large.results).find(node => node.dataset.indexabilityCanonical);
+    draft.value = 'https://site.example/preferred/';
+    findButton(large.results, 'Last').click();
+    assert.equal(urlGroups().length, 5);
+    assert.equal(urlGroups()[0].dataset.indexabilityUrl, 'https://site.example/100');
+    assert.equal(findButton(large.results, 'Next').disabled, true);
+    findButton(large.results, 'First').click();
+    assert.equal(walk(large.results).find(node => node.dataset.indexabilityCanonical).value, draft.value, 'Pagination must preserve canonical drafts');
+    const pageSize = large.results.querySelector('[data-indexability-page-size]');
+    pageSize.value = '25'; pageSize.listeners.change();
+    assert.equal(urlGroups().length, 25);
     const readonly = issueItem(); readonly.editable = false;
     const restricted = fixture([readonly], () => { throw new Error('Unexpected request'); });
     assert.equal(findButton(restricted.results, 'Remove page noindex'), undefined, 'Uneditable URL offers automatic mutation');

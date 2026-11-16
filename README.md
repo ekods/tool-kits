@@ -88,7 +88,7 @@ Indexing Checks & Fixes below continues to discover the full website independent
 
 ### Search Console readiness checklist
 
-At the top of **Tool Kits > SEO > Indexing**, **Run Readiness Check** runs a read-only, site-level checklist: ownership verification tag, search engine visibility, HTTPS and single host, robots.txt (Googlebot access, rendering resources, Sitemap line), sitemap validity, homepage basics (title, description, viewport, H1, canonical), JSON-LD validity, and the last malware scan. It changes nothing and does not guarantee indexing.
+At the top of **Tool Kits > SEO > Indexing**, **Run Readiness Check** checks ownership verification, search engine visibility, HTTPS and single host, robots.txt (Googlebot access, rendering resources, Sitemap line), sitemap validity, homepage basics (title, description, viewport, H1, canonical), JSON-LD validity, and the last malware scan. The checklist saves its findings and check times without changing site configuration; it does not guarantee indexing. Findings include fixing-tool links that open in new tabs. Reopening the page restores the latest saved results, including partial runs and unverified checks. Rerun the checklist after fixing an issue.
 
 ### Check and fix indexing exclusions
 
@@ -101,7 +101,10 @@ X-Robots-Tag, HTML/HTTP canonical declarations, robots.txt rules and HTTP redire
 Each result includes evidence and a recommendation. Request failures and non-HTML responses
 are reported as unverified rather than passing.
 Results share one table, grouped by URL. Each URL appears once beside its checks, timestamp,
-and page actions; the table scrolls horizontally on smaller screens.
+and page actions; the table has 10/25/50/100 URL pagination and fixed-width columns
+that scroll horizontally on smaller screens. Canonical drafts survive page changes;
+the summary and Fix All continue to cover every URL in the report. Content SEO Audit
+uses the same page sizes for posts and retains open check details during pagination.
 
 For an editable, public permalink or the homepage, with SEO Toolkit enabled:
 

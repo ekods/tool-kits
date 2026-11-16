@@ -499,8 +499,10 @@ if (!defined('ABSPATH')) { exit; }
             <?php endif; ?>
             <?php $audit_items = isset($audit_report['items']) && is_array($audit_report['items']) ? $audit_report['items'] : array(); ?>
             <?php if (!empty($audit_items)) : ?>
-                <table class="widefat striped">
-                    <thead><tr><th>Post</th><th>Score</th><th>Priority</th><th>Words</th><th>Links (Int/Ext)</th><th>Trust Signals</th><th>Issues</th></tr></thead>
+                <div class="tk-table-scroll tk-content-audit-scroll" role="region" aria-label="Content SEO Audit — scrollable table" tabindex="0">
+                <table class="widefat striped tk-content-audit-table">
+                    <colgroup><col style="width:20%"><col style="width:6%"><col style="width:8%"><col style="width:6%"><col style="width:10%"><col style="width:16%"><col style="width:34%"></colgroup>
+                    <thead><tr><th scope="col">Post</th><th scope="col">Score</th><th scope="col">Priority</th><th scope="col">Words</th><th scope="col">Links (Int/Ext)</th><th scope="col">Trust Signals</th><th scope="col">Issues</th></tr></thead>
                     <tbody>
                     <?php foreach ($audit_items as $item) : ?>
                         <?php $pid = (int) ($item['post_id'] ?? 0); ?>
@@ -544,6 +546,7 @@ if (!defined('ABSPATH')) { exit; }
                     <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
             <?php else : ?>
                 <p class="description">No issues found in latest audit.</p>
             <?php endif; ?>

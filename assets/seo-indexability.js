@@ -18,6 +18,8 @@
     var busy = false;
     var bulkRunning = false;
     var stopRequested = false;
+    var currentPage = 1;
+    var perPage = 10;
     var items = new Map();
     var canonicalDrafts = new Map();
     var labels = { noindex: 'Remove page noindex', canonical: 'Set preferred canonical', robots: 'Allow this URL for Googlebot', redirect: 'Disable Tool Kits redirect' };
@@ -26,6 +28,47 @@
         busy = value;
         root.querySelectorAll('button, input, textarea').forEach(function (node) { node.disabled = value; });
         updateBulkControls();
+        updatePaginationControls();
+    }
+    function updatePaginationControls() {
+        var pages = Math.max(1, Math.ceil(items.size / perPage));
+        results.querySelectorAll('[data-indexability-page]').forEach(function (button) {
+            var target = Number(button.dataset.indexabilityPage);
+            button.disabled = busy || target < 1 || target > pages || target === currentPage;
+        });
+        results.querySelectorAll('[data-indexability-page-size]').forEach(function (select) { select.disabled = busy; });
+    }
+    function pagination() {
+        var pages = Math.max(1, Math.ceil(items.size / perPage));
+        var nav = el('nav'); nav.className = 'tk-indexability-pagination'; nav.setAttribute('aria-label', 'Indexing report pagination');
+        var first = (currentPage - 1) * perPage + 1;
+        var count = el('span', 'Showing ' + first + '–' + Math.min(currentPage * perPage, items.size) + ' of ' + items.size + ' URLs');
+        count.setAttribute('role', 'status'); nav.appendChild(count);
+        var label = el('label', 'URLs per page ');
+        var select = el('select'); select.dataset.indexabilityPageSize = '';
+        [10, 25, 50, 100].forEach(function (size) {
+            var option = el('option', String(size)); option.value = String(size); option.selected = size === perPage; select.appendChild(option);
+        });
+        select.addEventListener('change', function () {
+            if (busy) return;
+            captureCanonicalTargets();
+            var offset = (currentPage - 1) * perPage;
+            perPage = Number(select.value); currentPage = Math.floor(offset / perPage) + 1; render();
+            results.querySelector('[data-indexability-page-size]').focus();
+        });
+        label.appendChild(select); nav.appendChild(label);
+        var controls = el('span'); controls.className = 'tk-indexability-page-controls';
+        [['First', 1], ['Previous', currentPage - 1], ['Next', currentPage + 1], ['Last', pages]].forEach(function (entry, index) {
+            if (index === 2) controls.appendChild(el('span', 'Page ' + currentPage + ' of ' + pages));
+            var button = el('button', entry[0]); button.type = 'button'; button.className = 'button'; button.dataset.indexabilityPage = String(entry[1]);
+            button.addEventListener('click', function () {
+                if (busy || button.disabled) return;
+                captureCanonicalTargets(); currentPage = entry[1]; render();
+                results.querySelector('[data-indexability-page-size]').focus();
+            });
+            controls.appendChild(button);
+        });
+        nav.appendChild(controls); return nav;
     }
     function sourceOnly(item, kind) {
         return (kind === 'noindex' && item.header_noindex) || (kind === 'canonical' && item.header_canonical) || (kind === 'redirect' && !item.toolkits_redirect);
@@ -118,22 +161,29 @@
         summary.textContent = text;
     }
     function render() {
+        var previousWrapper = results.querySelector('.tk-indexability-scroll');
+        var scrollLeft = previousWrapper ? previousWrapper.scrollLeft : 0;
         results.replaceChildren();
         summarize();
         if (!items.size) { lock(busy); return; }
-        var wrapper = el('div'); wrapper.style.overflowX = 'auto';
+        currentPage = Math.max(1, Math.min(currentPage, Math.ceil(items.size / perPage)));
+        results.appendChild(pagination());
+        var wrapper = el('div'); wrapper.className = 'tk-table-scroll tk-indexability-scroll';
         wrapper.setAttribute('role', 'region'); wrapper.setAttribute('aria-label', 'Indexing checks grouped by URL'); wrapper.tabIndex = 0;
-        var table = el('table'); table.className = 'widefat striped'; table.style.minWidth = '900px';
+        var table = el('table'); table.className = 'widefat striped tk-indexability-table';
+        var columns = el('colgroup');
+        ['22%', '13%', '9%', '31%', '25%'].forEach(function (width) { var column = el('col'); column.style.width = width; columns.appendChild(column); });
+        table.appendChild(columns);
         var head = el('thead'); var heading = el('tr');
         ['URL', 'Check', 'Result', 'Evidence & recommendation', 'Action'].forEach(function (label) {
             var column = el('th', label); column.setAttribute('scope', 'col'); heading.appendChild(column);
         });
         head.appendChild(heading); table.appendChild(head);
-        items.forEach(function (item) {
+        Array.from(items.values()).slice((currentPage - 1) * perPage, currentPage * perPage).forEach(function (item) {
             var kinds = Object.keys(item.checks);
             var body = el('tbody'); body.dataset.indexabilityUrl = item.url;
             var group = el('th'); group.setAttribute('scope', 'rowgroup'); group.setAttribute('rowspan', String(kinds.length));
-            group.style.width = '24%'; group.style.verticalAlign = 'top'; group.style.overflowWrap = 'anywhere';
+            group.style.verticalAlign = 'top'; group.style.overflowWrap = 'anywhere';
             group.appendChild(el('p', item.url));
             var timestamp = el('p', 'Checked: ' + new Date(item.scanned_at * 1000).toLocaleString()); timestamp.className = 'description'; group.appendChild(timestamp);
             if (item.verification_pending) group.appendChild(el('p', 'Live verification pending. Use Recheck URL before applying more fixes.'));
@@ -181,6 +231,7 @@
             group.appendChild(actions);
         });
         wrapper.appendChild(table); results.appendChild(wrapper);
+        wrapper.scrollLeft = scrollLeft;
         lock(busy);
     }
     source.addEventListener('change', function () { listWrap.hidden = source.value !== 'list'; });
@@ -261,7 +312,7 @@
             while (more) {
                 status.textContent = (source.value === 'site' ? 'Finding public pages on ' + root.dataset.home : source.value === 'sitemap' ? 'Reading the sitemap' : 'Reading the pasted URL list') + '… ' + checked + ' checked.';
                 var batch = await request('', 'discover', '', '', page);
-                if (page === 1) { items.clear(); canonicalDrafts.clear(); render(); }
+                if (page === 1) { items.clear(); canonicalDrafts.clear(); currentPage = 1; render(); }
                 for (var i = 0; i < batch.urls.length; i++) {
                     var url = batch.urls[i];
                     if (seen.has(url)) continue;

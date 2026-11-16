@@ -16,7 +16,7 @@ require_once __DIR__ . '/admin-header.php';
 function tk_report_option_keys(): array {
     return array(
         'seo_geo_audit_report', 'seo_content_audit_report', 'seo_canonical_audit_report', 'seo_broken_links_report',
-        'seo_index_monitor', 'seo_indexability_report', 'authority_reports',
+        'seo_index_monitor', 'seo_indexability_report', 'seo_gsc_readiness_report', 'authority_reports',
         'geo_visibility_report', 'geo_prompt_preview_report', 'geo_schema_duplicate_report', 'geo_schema_duplicate_fix_report',
         'geo_crawler_preview', 'geo_ai_access_report', 'geo_ai_radar_report', 'geo_fix_history',
         'operations_health_report', 'smtp_dns_report', 'image_opt_compression_report', 'image_opt_cleanup_report', 'image_opt_queue',
