@@ -250,6 +250,22 @@ $exception_job = get_option($exception_key);
 check_job($exception_job['channels']['email']['attempts'] === 1 && $exception_job['channels']['email']['next'] >= time() + 59, 'throwing mail hook bypassed attempt/backoff limits');
 check_job(strpos(serialize($exception_job), 'private smtp details') === false, 'queue retained private hook exception');
 
+// Telegram is its own channel: Bot API URL with chat_id in the body, and the API's reason kept for permanent failures.
+foreach ($wpdb->get_col("SELECT option_name FROM wp_options WHERE option_name LIKE 'tk_jobs_alert_%'") as $key) { delete_option($key); }
+$settings['toolkits_alert_telegram_token'] = '123456:SYNTHETIC-BOT'; $settings['toolkits_alert_telegram_chat_id'] = '-100777';
+$http_before = count($http); $mail_results[] = true; $http_results[] = array('code' => 200, 'headers' => array());
+tk_security_alert_send('Telegram event', "User: admin\nTime: 12:00\n"); tk_security_alert_dispatch();
+$telegram_calls = array_values(array_filter(array_slice($http, $http_before), function ($call) { return strpos($call['url'], 'api.telegram.org') !== false; }));
+$telegram_body = $telegram_calls ? json_decode($telegram_calls[0]['args']['body'], true) : array();
+check_job(count($telegram_calls) === 1 && $telegram_calls[0]['url'] === 'https://api.telegram.org/bot123456:SYNTHETIC-BOT/sendMessage'
+    && ($telegram_body['chat_id'] ?? '') === '-100777' && strpos($telegram_body['text'] ?? '', 'Telegram event') === 0, 'Telegram alert was not sent to the Bot API');
+foreach ($wpdb->get_col("SELECT option_name FROM wp_options WHERE option_name LIKE 'tk_jobs_alert_%'") as $key) { delete_option($key); }
+$settings['toolkits_alert_webhook'] = ''; $mail_results[] = true;
+$http_results[] = array('code' => 400, 'headers' => array(), 'body' => '{"ok":false,"description":"Bad Request: chat not found"}');
+tk_security_alert_send('Telegram rejected', 'message'); tk_security_alert_dispatch();
+check_job(end($audit)['action'] === 'security_alert_delivery_failed' && (end($audit)['data']['telegram'] ?? '') === 'HTTP 400: Bad Request: chat not found', 'Telegram rejection reason was not audited');
+unset($settings['toolkits_alert_telegram_token'], $settings['toolkits_alert_telegram_chat_id']); $settings['toolkits_alert_webhook'] = 'https://hooks.example/secret';
+
 // Heartbeat backoff, regenerated payload, Retry-After, permanent errors, and bounded retries.
 $hb_results[] = new WP_Error(); $result = tk_heartbeat_run(); $state = get_option('tk_jobs_heartbeat');
 check_job(!$result['ok'] && $state['next'] >= time() + 59 && $state['attempts'] === 1, 'transport failure did not schedule retry');

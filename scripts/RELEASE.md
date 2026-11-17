@@ -1,3 +1,29 @@
+## Tool Kits 2.7.93
+
+Security alerts can now go to Telegram. Alert Notifications has Telegram Bot Token
+and Chat ID fields; Telegram is its own queue channel with retries, separate from
+email. The saved token is never shown again and is masked in the audit log and
+excluded from settings export.
+
+Saving Alert Notifications no longer erases a stored webhook URL. The form never had
+a webhook field, so every save used to reset it to empty.
+
+Save & Send Test Alert delivers to every configured channel immediately and reports
+each result, including Telegram's error text (for example "chat not found").
+
+When WP-Cron is disabled (DISABLE_WP_CRON or the Tool Kits hardening option), queued
+alerts are delivered at the end of the request that raised them instead of waiting
+for a cron run that never happens. That request can take a few seconds longer.
+Failed deliveries now record the failing channel and reason in the audit log.
+
+No database migration. New options default to empty, so Telegram stays off until
+configured.
+
+Validation: 93/93 regression cases on both PHP 7.4 and PHP 8.4, including 310
+maintenance-job checks (6 new for the Telegram channel and its failure audit), and
+115 PHP files linted on both versions. The settings form and test button were not
+exercised against a live WordPress install or a real Telegram bot.
+
 ## Tool Kits 2.7.92
 
 Indexing Checks & Fixes and Content SEO Audit now offer 10/25/50/100 entries per

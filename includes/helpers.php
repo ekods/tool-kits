@@ -1107,6 +1107,8 @@ function tk_option_init_defaults() {
         'toolkits_audit_log' => array(),
         'toolkits_alert_enabled' => 1,
         'toolkits_alert_email' => '',
+        'toolkits_alert_telegram_token' => '',
+        'toolkits_alert_telegram_chat_id' => '',
         'toolkits_alert_admin_created' => 1,
         'toolkits_alert_role_change' => 1,
         'toolkits_alert_admin_login_new_ip' => 1,

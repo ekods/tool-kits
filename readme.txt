@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.92
+Stable tag: 2.7.93
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -84,6 +84,13 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.93 =
+- Add Telegram Bot Token and Chat ID fields to Alert Notifications. Telegram is a separate alert channel sent to the Bot API with the chat ID, with its own retries and delivery checkpoint.
+- Stop saving Alert Notifications from erasing a stored alert webhook URL; the form has no webhook field, so the value is only changed when it is posted.
+- Add Save & Send Test Alert, which sends to every configured channel immediately and shows each channel's result, including the Telegram API error.
+- Deliver queued security alerts at the end of the triggering request when WP-Cron is disabled, so login and admin-change alerts no longer wait for a cron run that never comes.
+- Record each failed channel and its reason in the security_alert_delivery_failed audit entry. The Telegram token is masked in the audit log and excluded from settings export.
 
 = 2.7.92 =
 - Add 10/25/50/100 URL pagination to Indexing Checks & Fixes while preserving canonical drafts, whole-report summaries, and Fix All across every page.

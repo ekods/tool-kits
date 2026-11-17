@@ -1154,7 +1154,8 @@ function tk_render_toolkits_access_page() {
     $allowlist = (string) tk_get_option('toolkits_ip_allowlist', '');
     $alert_enabled = (int) tk_get_option('toolkits_alert_enabled', 1);
     $alert_email = (string) tk_get_option('toolkits_alert_email', '');
-    $alert_webhook = (string) tk_get_option('toolkits_alert_webhook', '');
+    $alert_telegram_token_saved = (string) tk_get_option('toolkits_alert_telegram_token', '') !== '';
+    $alert_telegram_chat_id = (string) tk_get_option('toolkits_alert_telegram_chat_id', '');
     $alert_admin_created = (int) tk_get_option('toolkits_alert_admin_created', 1);
     $alert_role_change = (int) tk_get_option('toolkits_alert_role_change', 1);
     $alert_admin_ip = (int) tk_get_option('toolkits_alert_admin_login_new_ip', 1);
@@ -1236,6 +1237,8 @@ function tk_render_toolkits_access_page() {
                 $test_message = $connection_test_status === 'ok'
                     ? 'Heartbeat test succeeded.'
                     : ((string) tk_get_option('heartbeat_last_error_message', '') !== '' ? (string) tk_get_option('heartbeat_last_error_message', '') : 'Heartbeat test failed.');
+            } elseif ($connection_test === 'alert') {
+                $test_message = (string) get_transient('tk_alert_test_result_' . get_current_user_id());
             } elseif ($connection_test === 'license') {
                 if ($connection_test_status === 'ok') {
                     $test_message = 'License reachability test succeeded.';
@@ -1498,8 +1501,23 @@ function tk_render_toolkits_access_page() {
                             <input class="regular-text" type="email" name="toolkits_alert_email" value="<?php echo esc_attr($alert_email); ?>" placeholder="<?php echo esc_attr(get_option('admin_email')); ?>" style="width:100%; border-radius:8px;">
                         </div>
 
+                        <div style="margin-top:24px;">
+                            <label style="display:block; font-weight:600; margin-bottom:8px;" for="tk-alert-telegram-token">Telegram Bot Token</label>
+                            <input class="regular-text" type="password" id="tk-alert-telegram-token" name="toolkits_alert_telegram_token" value="" autocomplete="new-password" placeholder="<?php echo esc_attr($alert_telegram_token_saved ? 'Saved — leave blank to keep' : '123456789:AA...'); ?>" style="width:100%; border-radius:8px;">
+                            <?php if ($alert_telegram_token_saved) : ?>
+                                <label style="display:flex; gap:6px; align-items:center; font-size:12px; margin-top:6px;"><input type="checkbox" name="toolkits_alert_telegram_token_clear" value="1"> Remove saved token</label>
+                            <?php endif; ?>
+                        </div>
+
+                        <div style="margin-top:16px;">
+                            <label style="display:block; font-weight:600; margin-bottom:8px;" for="tk-alert-telegram-chat">Telegram Chat ID</label>
+                            <input class="regular-text" type="text" id="tk-alert-telegram-chat" name="toolkits_alert_telegram_chat_id" value="<?php echo esc_attr($alert_telegram_chat_id); ?>" placeholder="-1001234567890 or @channelname" style="width:100%; border-radius:8px;">
+                            <p class="description">Create a bot with @BotFather, add it to the chat or channel, then enter the chat ID. Leave either field empty to turn Telegram alerts off.</p>
+                        </div>
+
                         <div style="margin-top:24px; padding-top:20px; border-top:1px solid var(--tk-border-soft);">
                             <button class="button button-primary button-hero">Save Alert Settings</button>
+                            <button class="button button-secondary button-hero" name="tk_alert_test" value="1">Save &amp; Send Test Alert</button>
                         </div>
                     </form>
                 </div>
@@ -1770,12 +1788,29 @@ function tk_toolkits_access_save() {
     } elseif ($tab === 'alerts') {
         tk_update_option('toolkits_alert_enabled', !empty($_POST['toolkits_alert_enabled']) ? 1 : 0);
         $alert_email = isset($_POST['toolkits_alert_email']) ? sanitize_email(wp_unslash($_POST['toolkits_alert_email'])) : '';
-        $alert_webhook = isset($_POST['toolkits_alert_webhook']) ? esc_url_raw(wp_unslash($_POST['toolkits_alert_webhook'])) : '';
         tk_update_option('toolkits_alert_email', $alert_email);
-        tk_update_option('toolkits_alert_webhook', $alert_webhook);
+        // The form has no generic webhook field; only touch the stored value when it is posted.
+        if (isset($_POST['toolkits_alert_webhook'])) {
+            tk_update_option('toolkits_alert_webhook', esc_url_raw(wp_unslash($_POST['toolkits_alert_webhook'])));
+        }
+        $telegram_token = isset($_POST['toolkits_alert_telegram_token']) ? trim((string) wp_unslash($_POST['toolkits_alert_telegram_token'])) : '';
+        if (!empty($_POST['toolkits_alert_telegram_token_clear'])) {
+            tk_update_option('toolkits_alert_telegram_token', '');
+        } elseif ($telegram_token !== '' && preg_match('/^\d+:[A-Za-z0-9_-]+$/', $telegram_token)) {
+            tk_update_option('toolkits_alert_telegram_token', $telegram_token);
+        }
+        $telegram_chat_id = isset($_POST['toolkits_alert_telegram_chat_id']) ? trim((string) wp_unslash($_POST['toolkits_alert_telegram_chat_id'])) : '';
+        tk_update_option('toolkits_alert_telegram_chat_id', sanitize_text_field($telegram_chat_id));
         tk_update_option('toolkits_alert_admin_created', !empty($_POST['toolkits_alert_admin_created']) ? 1 : 0);
         tk_update_option('toolkits_alert_role_change', !empty($_POST['toolkits_alert_role_change']) ? 1 : 0);
         tk_update_option('toolkits_alert_admin_login_new_ip', !empty($_POST['toolkits_alert_admin_login_new_ip']) ? 1 : 0);
+        if (!empty($_POST['tk_alert_test'])) {
+            $test = tk_toolkits_send_test_alert($telegram_token !== '' && !preg_match('/^\d+:[A-Za-z0-9_-]+$/', $telegram_token));
+            set_transient('tk_alert_test_result_' . get_current_user_id(), $test['message'], 5 * MINUTE_IN_SECONDS);
+            tk_toolkits_audit_log('access_update', array('user' => wp_get_current_user()->user_login));
+            wp_redirect(admin_url('admin.php?page=tool-kits-access&tk_saved=1&tk_test=alert&tk_test_status=' . $test['status'] . '#' . $tab));
+            exit;
+        }
     }
     tk_toolkits_audit_log('access_update', array('user' => wp_get_current_user()->user_login));
     wp_redirect(admin_url('admin.php?page=tool-kits-access&tk_saved=1#' . $tab));
@@ -1811,6 +1846,38 @@ function tk_toolkits_license_reset() {
     update_option('tk_license_reset_skip_validate', 1, false);
     wp_redirect(admin_url('admin.php?page=tool-kits-access&tk_license=1&tk_reset_license=1'));
     exit;
+}
+
+/** Sends a test alert to every configured channel right away, bypassing the queue, and reports each result. */
+function tk_toolkits_send_test_alert(bool $invalid_token = false): array {
+    $site = tk_security_alert_site_context();
+    $subject = '[' . $site['site_name'] . '] Tool Kits: Test alert';
+    $message = "This is a test alert from Tool Kits.\n\nSite: " . $site['home_url'] . "\nSent by: " . wp_get_current_user()->user_login . "\nTime: " . wp_date('Y-m-d H:i:s T');
+    $channels = array(
+        'email' => tk_security_alert_email(),
+        'telegram' => tk_security_alert_telegram_target(),
+        'webhook' => (string) tk_get_option('toolkits_alert_webhook', ''),
+    );
+    $lines = array(); $ok = 0; $failed = 0;
+    if ($invalid_token) {
+        $lines[] = 'Telegram: the bot token was not saved because its format is invalid (expected 123456789:AA...).';
+        $failed++;
+    }
+    foreach ($channels as $name => $target) {
+        if (!$target) { continue; }
+        $result = tk_security_alert_send_channel($name, $target, $subject, $message, 'test-' . time());
+        $label = $name === 'email' ? 'Email (' . $target . ')' : ucfirst($name);
+        $lines[] = $label . ': ' . ($result['ok'] ? 'sent' : 'failed — ' . $result['error']);
+        $result['ok'] ? $ok++ : $failed++;
+    }
+    if (!$lines) {
+        return array('status' => 'fail', 'message' => 'No alert channel is configured.');
+    }
+    if (!tk_security_alert_enabled()) {
+        $lines[] = 'Note: Master Alert Toggle is off, so real security events are not sent.';
+    }
+    $status = $failed === 0 ? 'ok' : ($ok > 0 ? 'warn' : 'fail');
+    return array('status' => $status, 'message' => implode('<br>', array_map('esc_html', $lines)));
 }
 
 function tk_toolkits_audit_clear() {

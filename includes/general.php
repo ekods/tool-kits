@@ -166,6 +166,7 @@ function tk_general_sensitive_option_keys(): array {
         'smtp_microsoft_client_secret',
         'smtp_microsoft_refresh_token',
         'smtp_password',
+        'toolkits_alert_telegram_token',
         'toolkits_ip_allowlist',
     );
 }

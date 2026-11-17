@@ -23,16 +23,27 @@ function tk_security_alert_schedule(int $timestamp): void {
     }
 }
 
+function tk_security_alert_telegram_target(): array {
+    $token = trim((string) tk_get_option('toolkits_alert_telegram_token', ''));
+    $chat_id = trim((string) tk_get_option('toolkits_alert_telegram_chat_id', ''));
+    return ($token === '' || $chat_id === '') ? array() : array('token' => $token, 'chat_id' => $chat_id);
+}
+
 function tk_security_alert_enqueue(string $subject, string $message): void {
     global $wpdb;
     $email = tk_security_alert_email();
     $webhook = (string) tk_get_option('toolkits_alert_webhook', '');
-    if ($email === '' && $webhook === '') { return; }
+    $telegram = tk_security_alert_telegram_target();
+    if ($email === '' && $webhook === '' && !$telegram) { return; }
+    // Without WP-Cron the queued event would never run, so deliver at the end of this request.
+    if (defined('DISABLE_WP_CRON') && DISABLE_WP_CRON && !has_action('shutdown', 'tk_security_alert_dispatch')) {
+        add_action('shutdown', 'tk_security_alert_dispatch', 99);
+    }
     $subject = substr(str_replace(array("\r", "\n"), ' ', $subject), 0, 240);
     $message = substr($message, 0, 16000);
     // Timestamps in human-readable event messages must not defeat duplicate detection.
     $identity = preg_replace('/^Time:.*$/m', 'Time: [event]', $message);
-    $key = 'tk_jobs_alert_' . hash('sha256', $subject . "\n" . $identity . "\n" . $email . "\n" . $webhook);
+    $key = 'tk_jobs_alert_' . hash('sha256', $subject . "\n" . $identity . "\n" . $email . "\n" . $webhook . "\n" . ($telegram ? $telegram['chat_id'] : ''));
     $old = get_option($key, array());
     if (is_array($old) && $old && time() - (int) $old['created'] < 600) {
         // Content is immutable; concurrent duplicate updates cannot overwrite delivery checkpoints.
@@ -57,6 +68,7 @@ function tk_security_alert_enqueue(string $subject, string $message): void {
         'channels' => array(
             'email' => array('target' => $email, 'status' => $email === '' ? 'skipped' : 'pending', 'attempts' => 0, 'next' => time()),
             'webhook' => array('target' => $webhook, 'status' => $webhook === '' ? 'skipped' : 'pending', 'attempts' => 0, 'next' => time()),
+            'telegram' => array('target' => $telegram, 'status' => $telegram ? 'pending' : 'skipped', 'attempts' => 0, 'next' => time()),
         ));
     $stored = !$old ? add_option($key, $job, '', false) : tk_job_replace($key, $old, $job);
     if ($stored) { tk_toolkits_audit_log('security_alert_queued', array('subject' => $subject)); }
@@ -74,32 +86,60 @@ function tk_security_alert_checkpoint(string $key, array $job): array {
     throw new RuntimeException('Queued alert changed concurrently.');
 }
 
+/** One delivery attempt. Returns ok/retryable/retry_after plus a short error safe to show to an admin. */
+function tk_security_alert_send_channel(string $name, $target, string $subject, string $message, string $event_id = ''): array {
+    $result = array('ok' => false, 'retryable' => true, 'retry_after' => 0, 'error' => '');
+    try {
+        if ($name === 'email') {
+            $result['ok'] = (bool) wp_mail($target, $subject, $message);
+            if (!$result['ok']) { $result['error'] = 'wp_mail() returned false. Check the site mail/SMTP configuration.'; }
+            return $result;
+        }
+        if ($name === 'telegram') {
+            if (!is_array($target) || empty($target['token']) || empty($target['chat_id'])) {
+                $result['retryable'] = false; $result['error'] = 'Telegram bot token or chat ID is missing.';
+                return $result;
+            }
+            $url = 'https://api.telegram.org/bot' . (string) $target['token'] . '/sendMessage';
+            // Telegram rejects messages over 4096 characters.
+            $body = array('chat_id' => (string) $target['chat_id'], 'text' => mb_substr($subject . "\n\n" . $message, 0, 4000), 'disable_web_page_preview' => true);
+            $headers = array('Content-Type' => 'application/json');
+        } else {
+            $url = (string) $target;
+            $body = array('text' => '*' . $subject . "*\n" . $message);
+            $headers = array('Content-Type' => 'application/json', 'X-Tool-Kits-Event-ID' => $event_id);
+        }
+        $response = wp_safe_remote_post($url, array('timeout' => 5, 'redirection' => 0, 'limit_response_size' => 1024,
+            'headers' => $headers, 'body' => wp_json_encode($body)));
+        $code = is_wp_error($response) ? 0 : (int) wp_remote_retrieve_response_code($response);
+        $result['ok'] = $code >= 200 && $code < 300;
+        $result['retryable'] = $code === 0 || $code === 408 || $code === 429 || $code >= 500;
+        if ($code === 429 || $code === 503) { $result['retry_after'] = tk_job_retry_after((string) wp_remote_retrieve_header($response, 'retry-after')); }
+        if (!$result['ok']) {
+            if (is_wp_error($response)) {
+                $result['error'] = $response->get_error_message();
+            } else {
+                $data = json_decode((string) wp_remote_retrieve_body($response), true);
+                $result['error'] = 'HTTP ' . $code . (is_array($data) && !empty($data['description']) ? ': ' . $data['description'] : '');
+            }
+        }
+    } catch (Throwable $error) {
+        // Third-party mail/HTTP hooks may throw. Count the attempt without storing their error text.
+        $result['ok'] = false; $result['retryable'] = true; $result['error'] = 'Delivery threw an exception.';
+    }
+    return $result;
+}
+
 function tk_security_alert_deliver(string $key, array $job): void {
     $retry_delays = array(60, 300, 900, 3600, 14400);
     foreach ($job['channels'] as $name => $channel) {
         if ($channel['status'] !== 'pending' || $channel['next'] > time()) { continue; }
-        $retry_after = 0;
-        $retryable = true;
         $message = $job['message'] . (!empty($job['duplicates']) ? "\n\nRepeated events grouped: " . ((int) $job['duplicates'] + 1) : '');
-        try {
-            if ($name === 'email') {
-                $ok = wp_mail($channel['target'], $job['subject'], $message);
-            } else {
-                $response = wp_safe_remote_post($channel['target'], array('timeout' => 5, 'redirection' => 0, 'limit_response_size' => 1024,
-                    'headers' => array('Content-Type' => 'application/json', 'X-Tool-Kits-Event-ID' => substr($key, 14) . '-' . $job['created']),
-                    'body' => wp_json_encode(array('text' => '*' . $job['subject'] . "*\n" . $message))));
-                $code = is_wp_error($response) ? 0 : (int) wp_remote_retrieve_response_code($response);
-                $ok = $code >= 200 && $code < 300;
-                $retryable = $code === 0 || $code === 408 || $code === 429 || $code >= 500;
-                if ($code === 429 || $code === 503) { $retry_after = tk_job_retry_after((string) wp_remote_retrieve_header($response, 'retry-after')); }
-            }
-        } catch (Throwable $error) {
-            // Third-party mail/HTTP hooks may throw. Count the attempt without storing their error text.
-            $ok = false; $retryable = true;
-        }
+        $result = tk_security_alert_send_channel($name, $channel['target'], $job['subject'], $message, substr($key, 14) . '-' . $job['created']);
+        $ok = $result['ok']; $retryable = $result['retryable']; $retry_after = $result['retry_after'];
         $channel['attempts']++;
         if ($ok) { $channel['status'] = 'sent'; }
-        elseif (!$retryable || $channel['attempts'] >= 6) { $channel['status'] = 'failed'; }
+        elseif (!$retryable || $channel['attempts'] >= 6) { $channel['status'] = 'failed'; $channel['error'] = substr($result['error'], 0, 200); }
         else { $channel['next'] = time() + max($retry_after, $retry_delays[$channel['attempts'] - 1] + wp_rand(0, 30)); }
         $job['channels'][$name] = $channel;
         // Save each successful channel before attempting the next one.
@@ -113,7 +153,9 @@ function tk_security_alert_deliver(string $key, array $job): void {
         unset($job['message']);
         foreach ($job['channels'] as &$channel) { unset($channel['target']); } unset($channel);
         tk_security_alert_checkpoint($key, $job);
-        tk_toolkits_audit_log($failed ? 'security_alert_delivery_failed' : 'security_alert_delivered', array('subject' => $job['subject']));
+        $detail = array('subject' => $job['subject']);
+        foreach ($failed as $name => $channel) { $detail[$name] = $channel['error'] ?? 'failed'; }
+        tk_toolkits_audit_log($failed ? 'security_alert_delivery_failed' : 'security_alert_delivered', $detail);
     }
 }
 
