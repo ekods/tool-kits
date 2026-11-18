@@ -123,7 +123,7 @@ function tk_seo_title_render_settings(): void {
     <fieldset style="margin:20px 0; padding:16px; border:1px solid var(--tk-border-soft); border-radius:8px;">
         <legend><strong>Meta Title Override</strong></legend>
         <input type="hidden" name="tk_seo_title_settings_present" value="1">
-        <p><label><input type="checkbox" role="switch" name="seo_title_override_enabled" value="1" <?php checked((int) tk_get_option('seo_title_override_enabled', 0), 1); ?>> Override theme and plugin titles</label></p>
+        <p><label><input type="checkbox" role="switch" id="tk-seo-title-override" name="seo_title_override_enabled" value="1" <?php checked((int) tk_get_option('seo_title_override_enabled', 0), 1); ?>> Override theme and plugin titles</label></p>
         <p class="description">Requires Enable SEO Toolkit. Applies to all frontend pages independently of global metadata override. Replaces theme/plugin titles and keeps a single &lt;title&gt; tag. This format takes priority over the Homepage SEO title below. Saved page SEO titles take priority over this format.</p>
         <p><label for="tk-title-separator"><strong>Title separator</strong></label><br>
             <input id="tk-title-separator" name="seo_title_separator" type="text" maxlength="10" value="<?php echo esc_attr($separator); ?>" class="small-text">

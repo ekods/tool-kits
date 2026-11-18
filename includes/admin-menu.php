@@ -34,14 +34,7 @@ function tk_monitoring_maybe_enqueue_assets($hook_suffix) {
     }
     $asset_url  = TK_URL . 'assets/health-monitor-chart.js';
     $ver = function_exists('tk_asset_version') ? tk_asset_version('assets/health-monitor-chart.js') : TK_VERSION;
-    wp_enqueue_script(
-        'tk-chart-js-451',
-        TK_URL . 'assets/vendor/chart.js/chart.umd.min.js',
-        array(),
-        '4.5.1',
-        true
-    );
-    wp_enqueue_script('tk-health-monitor-chart-v2', $asset_url, array('tk-chart-js-451'), $ver, true);
+    wp_enqueue_script('tk-health-monitor-chart-v2', $asset_url, array(), $ver, true);
     wp_localize_script('tk-health-monitor-chart-v2', 'tkMonitoringData', array(
         'nonce'   => wp_create_nonce('tk_realtime_health'),
         'ajaxurl' => admin_url('admin-ajax.php'),

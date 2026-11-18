@@ -447,3 +447,70 @@ function tk_minify_inline_js($js) {
     }
     return trim($out);
 }
+
+// Settings page, panel and save handler (restored; they were dropped in 2.7.74 while the menu and save hook stayed registered).
+function tk_render_minify_page() {
+    if (!tk_is_admin_user()) return;
+    ?>
+    <div class="wrap tk-wrap">
+        <?php tk_render_header_branding(); ?>
+        <?php tk_render_page_hero('Minify', 'Reduce frontend HTML, inline CSS, inline JavaScript, and local asset payload where safe.', 'dashicons-editor-code'); ?>
+        <?php if (isset($_GET['tk_saved']) && sanitize_key((string) $_GET['tk_saved']) === '1') : ?>
+            <?php tk_notice('Settings saved.', 'success'); ?>
+        <?php endif; ?>
+        <?php tk_render_minify_panel(); ?>
+    </div>
+    <?php
+}
+
+function tk_render_minify_panel() {
+    if (!tk_is_admin_user()) return;
+    ?>
+    <div class="tk-card">
+        <h2>Minify</h2>
+        <p>Optimize frontend output by trimming HTML and using minified assets when available.</p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+            <?php tk_nonce_field('tk_minify_save'); ?>
+            <input type="hidden" name="action" value="tk_minify_save">
+            <input type="hidden" name="tk_tab" value="minify">
+            <p>
+                <label>
+                    <input type="checkbox" name="minify_html_enabled" value="1" <?php checked(1, tk_get_option('minify_html_enabled', 0)); ?>>
+                    Minify HTML output (frontend)
+                </label>
+            </p>
+            <p>
+                <label>
+                    <input type="checkbox" name="minify_inline_css" value="1" <?php checked(1, tk_get_option('minify_inline_css', 1)); ?>>
+                    Minify inline CSS blocks
+                </label>
+            </p>
+            <p>
+                <label>
+                    <input type="checkbox" name="minify_inline_js" value="1" <?php checked(1, tk_get_option('minify_inline_js', 1)); ?>>
+                    Minify inline JS blocks (conservative)
+                </label>
+            </p>
+            <p>
+                <label>
+                    <input type="checkbox" name="minify_assets_enabled" value="1" <?php checked(1, tk_get_option('minify_assets_enabled', 0)); ?>>
+                    Use .min.css/.min.js when available for local assets
+                </label>
+            </p>
+            <p><button class="button button-primary">Save</button></p>
+        </form>
+    </div>
+    <?php
+}
+
+function tk_minify_save() {
+    tk_require_admin_post('tk_minify_save');
+
+    tk_update_option('minify_html_enabled', !empty($_POST['minify_html_enabled']) ? 1 : 0);
+    tk_update_option('minify_inline_css', !empty($_POST['minify_inline_css']) ? 1 : 0);
+    tk_update_option('minify_inline_js', !empty($_POST['minify_inline_js']) ? 1 : 0);
+    tk_update_option('minify_assets_enabled', !empty($_POST['minify_assets_enabled']) ? 1 : 0);
+
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-minify', 'tk_saved' => 1), admin_url('admin.php')));
+    exit;
+}

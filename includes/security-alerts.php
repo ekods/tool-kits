@@ -21,11 +21,24 @@ function tk_security_alert_email(): string {
     return $email;
 }
 
-function tk_security_alert_send(string $subject, string $message): void {
+/** $undelivered is handed to tk_security_alert_undelivered() if no channel ends up delivering the alert. */
+function tk_security_alert_send(string $subject, string $message, array $undelivered = array()): void {
     if (!tk_security_alert_enabled()) {
         return;
     }
-    tk_security_alert_enqueue($subject, $message);
+    tk_security_alert_enqueue($subject, $message, $undelivered);
+}
+
+/** Undo state recorded for an alert nobody received, so the next matching event alerts again. */
+function tk_security_alert_undelivered(array $undelivered): void {
+    if (empty($undelivered['forget_login_ip']) || !is_array($undelivered['forget_login_ip'])) {
+        return;
+    }
+    list($user_id, $ip) = array_values($undelivered['forget_login_ip']) + array(0, '');
+    $known = get_user_meta((int) $user_id, 'tk_admin_login_ips', true);
+    if (is_array($known) && in_array((string) $ip, $known, true)) {
+        update_user_meta((int) $user_id, 'tk_admin_login_ips', array_values(array_diff($known, array((string) $ip))));
+    }
 }
 
 function tk_security_alert_site_context(): array {
@@ -247,5 +260,6 @@ function tk_security_alert_login($user_login, $user) {
     $message .= 'Server: ' . ($site['server_name'] !== '' ? $site['server_name'] : 'Unknown') . "\n";
     $message .= 'WP Version: ' . $site['wp_version'] . "\n";
     $message .= 'PHP Version: ' . $site['php_version'] . "\n";
-    tk_security_alert_send($subject, $message);
+    // The IP is recorded up front so concurrent logins alert once; it is forgotten again if no channel delivers.
+    tk_security_alert_send($subject, $message, array('forget_login_ip' => array((int) $user->ID, $ip)));
 }

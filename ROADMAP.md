@@ -145,7 +145,6 @@ Still open:
 
 - Captcha challenge created at render for no-JavaScript visitors (one extra write per login page view).
 - Making `tk_options` autoloaded (its size is not bounded yet).
-- `tk_hidden_admin_submenus` and `tk_login_logs` are missing from the uninstall cleanup list (pre-existing).
 
 Definition of done:
 
@@ -168,7 +167,7 @@ Priority: test coverage for security modules that run on every request. Detailed
 - Add regression tests for the firewall: IP/CIDR allow and block lists, blocked user agents, allowlist precedence.
 - Add regression tests for rate limiting and brute-force lockouts, including the honey trap and admin unlock.
 - Add regression tests for serialized-safe search/replace in DB Migrate.
-- Add an option to allow an external system cron (IP allowlist or secret token) when public `wp-cron.php` is blocked.
+- Done early (2.7.94): external system cron via a secret key URL (Monitoring > Healthcheck > External Cron URL) while public `wp-cron.php` stays blocked; covered by `scripts/wp-cron-access-regression.php`.
 
 Definition of done:
 

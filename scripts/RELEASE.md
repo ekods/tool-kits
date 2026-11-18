@@ -1,3 +1,42 @@
+## Tool Kits 2.7.94
+
+Minify settings work again. 2.7.74 removed the Minify page, its panel and the save
+handler while the menu entry and admin-post hook stayed registered, so opening
+Tool Kits > Minify failed and minify settings could not be saved. Frontend minify
+kept running with the last saved settings. A new regression test checks that every
+registered menu page and hook callback resolves to a defined function; run against
+2.7.93 it reports exactly these two.
+
+External cron: Monitoring > Healthcheck shows an External Cron URL with a per-site
+secret key and a ready crontab line. Requests to wp-cron.php carrying the key are
+accepted from any IP; other public requests stay blocked as before. Regenerating
+the key invalidates the old URL. The option is stored outside the hardening_*
+namespace so a killswitch rollback cannot change it.
+
+Security alerts: when an admin-login-from-new-IP alert reaches no channel (all
+failed, expired after 24 hours, or the queue was full), the IP is forgotten again so
+the next login from it alerts. A partially delivered alert keeps the IP.
+
+Search Console Readiness accepts a valid, publicly reachable google*.html
+verification file and reports blocked or mismatched files. Results are shown in a
+table. SEO notices link to the Global Metadata Override and Meta Title Override
+settings.
+
+Monitoring no longer draws CPU/memory charts and no longer loads Chart.js (about
+200 KB less on that page). The Retry button is hidden after successful updates.
+
+Also: Incident Response login counts read the login log table; the alert webhook URL
+is masked in the audit log and settings export.
+
+No database migration. New options default to empty; the cron key is created the
+first time the Healthcheck tab is opened.
+
+Validation: 95/95 regression cases on both PHP 7.4 and PHP 8.4 (new: wp-cron access
+gate, hook callbacks, verification-file detection, undelivered login alerts),
+115 PHP files linted on both versions, and browser checks for Monitoring
+(monitoring-ui) and 11 admin views (admin-layout-ui). Not exercised against a live
+WordPress install, a real cron service or a real Search Console property.
+
 ## Tool Kits 2.7.93
 
 Security alerts can now go to Telegram. Alert Notifications has Telegram Bot Token

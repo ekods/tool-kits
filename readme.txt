@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.93
+Stable tag: 2.7.94
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -84,6 +84,18 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.94 =
+- Restore the Minify settings page and its save handler, which 2.7.74 removed while the menu entry and save hook stayed registered; opening Tool Kits > Minify failed and minify settings could not be changed.
+- Add an External Cron URL (Monitoring > Healthcheck) with a per-site secret key, so a server crontab or cron service can run wp-cron.php while public wp-cron.php requests stay blocked. The key can be regenerated, is masked in the audit log and excluded from settings export.
+- Forget an administrator's new login IP again when its security alert is not delivered on any channel (all channels failed, expired or queue full), so the next login from that IP alerts again.
+- Search Console Readiness recognizes Search Console's HTML-file verification: a valid google*.html in the site root that is publicly reachable passes; a blocked, redirected or mismatched file is reported with the reason.
+- Show Search Console Readiness results in a table with status, check, details and action columns.
+- Link the theme-managed and third-party SEO notices directly to Global Metadata Override and Meta Title Override; a link to a setting opens its tab and focuses the setting.
+- Remove the real-time CPU and memory charts and the bundled Chart.js from Monitoring; the metric cards keep updating.
+- Hide the real-time Retry button after a successful update; a generic button style kept it visible.
+- Count Incident Response snapshot login entries from the login log table instead of an option that is never written.
+- Mask the alert webhook URL in the audit log and settings export.
 
 = 2.7.93 =
 - Add Telegram Bot Token and Chat ID fields to Alert Notifications. Telegram is a separate alert channel sent to the Bot API with the chat ID, with its own retries and delivery checkpoint.

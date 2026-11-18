@@ -1,6 +1,8 @@
 <?php
 // Real report helpers and AJAX handler over a recording WordPress Option API.
-define('ABSPATH', '/tmp/');
+define('ABSPATH', sys_get_temp_dir() . '/tk-gsc-readiness-' . getmypid() . '/');
+mkdir(ABSPATH);
+register_shutdown_function(static function () { array_map('unlink', glob(ABSPATH . '*') ?: array()); @rmdir(ABSPATH); });
 define('MB_IN_BYTES', 1048576);
 $stored = array('tk_options' => array('keep_setting' => 'unchanged'));
 $writes = array(); $authorized = true; $valid_nonce = true; $fail_write = false;
@@ -19,7 +21,11 @@ function home_url($path) { return 'https://fixture.invalid' . $path; }
 function get_transient($key) { return false; }
 function set_transient($key, $value, $ttl) {}
 class WP_Error { function get_error_message() { return 'Fixture loopback unavailable'; } }
-function wp_safe_remote_get($url, $args) { return new WP_Error(); }
+$http = array();
+function wp_safe_remote_get($url, $args) { return $GLOBALS['http'][$url] ?? new WP_Error(); }
+function wp_remote_retrieve_response_code($response) { return $response['code']; }
+function wp_remote_retrieve_body($response) { return $response['body'] ?? ''; }
+function trailingslashit($path) { return rtrim($path, '/\\') . '/'; }
 function is_wp_error($value) { return $value instanceof WP_Error; }
 class GSC_Response extends RuntimeException {
     public $success, $data, $status;
@@ -63,4 +69,23 @@ $authorized = true; $valid_nonce = false;
 verify_gsc(request_result(array('item' => 'sitemap', 'run' => 'run-3'))->status === 403 && $stored === $before, 'A failed nonce must preserve saved data');
 $valid_nonce = true; $fail_write = true;
 verify_gsc(request_result(array('item' => 'sitemap', 'run' => 'run-3', 'operation' => 'record_error', 'error' => 'Timeout'))->status === 500, 'Write failure must not be reported as saved');
-echo "PASS: durable report routing, timestamps, preserved settings, request-error persistence, separate runs, rejected writes and storage-failure feedback. No live requests.\n";
+
+// HTML-file verification: valid and reachable passes; blocked or mismatched files are issues; no file stays unknown/review.
+$name = 'google1a2b3c4d5e6f7a8b.html'; $url = 'https://fixture.invalid/' . $name;
+file_put_contents(ABSPATH . $name, 'google-site-verification: ' . $name);
+file_put_contents(ABSPATH . 'google-notes.html', 'not a verification file');
+$http[$url] = array('code' => 200, 'body' => 'google-site-verification: ' . $name);
+$check = tk_gsc_readiness_check('verification');
+verify_gsc($check['state'] === 'pass' && strpos($check['detail'], $name) !== false, 'A reachable verification file must pass even when the homepage cannot be fetched');
+$http[$url] = array('code' => 403, 'body' => 'Forbidden');
+$check = tk_gsc_readiness_check('verification');
+verify_gsc($check['state'] === 'issue' && strpos($check['detail'], 'HTTP 403') !== false, 'A blocked verification file must be reported as an issue');
+$http[$url] = array('code' => 200, 'body' => 'cached page');
+verify_gsc(tk_gsc_readiness_check('verification')['state'] === 'issue', 'A file served with different content must be an issue');
+file_put_contents(ABSPATH . $name, 'wrong token');
+$http[$url] = array('code' => 200, 'body' => 'wrong token');
+verify_gsc(tk_gsc_readiness_check('verification')['state'] === 'issue', 'A file without its own token must be an issue');
+unlink(ABSPATH . $name);
+verify_gsc(tk_gsc_readiness_check('verification')['state'] === 'unknown', 'Without a verification file a failed homepage stays unverified');
+
+echo "PASS: HTML verification file detection, durable report routing, timestamps, preserved settings, request-error persistence, separate runs, rejected writes and storage-failure feedback. No live requests.\n";

@@ -145,8 +145,17 @@ function tk_incident_build_snapshot(): array {
             return (string) ($result['severity'] ?? '') === 'critical';
         })),
         'firewall_log_count' => count(function_exists('tk_firewall_event_log') ? tk_firewall_event_log() : array()),
-        'login_log_count' => count((array) get_option('tk_login_logs', array())),
+        'login_log_count' => tk_incident_login_log_count(),
     );
+}
+
+/** Rows in the login log table; the schema version is only stored once the table exists. */
+function tk_incident_login_log_count(): int {
+    global $wpdb;
+    if (!function_exists('tk_login_log_table') || (string) get_option('tk_login_log_schema_version', '') === '') {
+        return 0;
+    }
+    return (int) $wpdb->get_var('SELECT COUNT(*) FROM ' . tk_login_log_table());
 }
 
 function tk_incident_status_options(): array {

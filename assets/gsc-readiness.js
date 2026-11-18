@@ -5,6 +5,7 @@
     var run = root.querySelector('[data-gsc-run]');
     var summary = root.querySelector('[data-gsc-summary]');
     var list = root.querySelector('[data-gsc-results]');
+    var table = root.querySelector('[data-gsc-table]');
     var lastCheck = root.querySelector('[data-gsc-last-check]');
     var keys = JSON.parse(root.dataset.items);
     var items = new Map();
@@ -32,14 +33,16 @@
         lastCheck.textContent = timestamp ? 'Last saved check: ' + new Date(timestamp * 1000).toLocaleString() + ' · ' + count + '/' + keys.length + ' results saved.' : '';
     }
     function row(item) {
-        var li = el('li'); li.style.cssText = 'padding:10px 0;border-top:1px solid #dcdcde;';
-        var head = el('p'); head.style.margin = '0';
-        var badge = el('strong', labels[item.state] || item.state); badge.style.color = colors[item.state] || '#50575e';
-        head.appendChild(badge); head.appendChild(document.createTextNode(' — ' + item.label));
-        li.appendChild(head); li.appendChild(el('p', item.detail));
-        if (item.recommendation && item.state !== 'pass') { var rec = el('p', item.recommendation); rec.className = 'description'; li.appendChild(rec); }
+        var tr = el('tr');
+        var status = el('td'); var badge = el('strong', labels[item.state] || item.state); badge.style.color = colors[item.state] || '#50575e';
+        status.appendChild(badge); tr.appendChild(status);
+        tr.appendChild(el('td', item.label));
+        var details = el('td'); details.appendChild(el('p', item.detail));
+        if (item.recommendation && item.state !== 'pass') { var rec = el('p', item.recommendation); rec.className = 'description'; details.appendChild(rec); }
+        tr.appendChild(details);
+        var cell = el('td');
         if (item.state !== 'pass' && actions[item.key]) {
-            var links = el('p'); links.className = 'tk-inline';
+            var links = el('div'); links.className = 'tk-gsc-actions';
             actions[item.key].forEach(function (action) {
                 var url;
                 try { url = new URL(action.url, window.location.href); } catch (error) { return; }
@@ -48,13 +51,15 @@
                 link.target = '_blank'; link.rel = 'noopener noreferrer';
                 link.setAttribute('aria-label', action.label + ' (opens in a new tab)'); links.appendChild(link);
             });
-            if (links.children.length) li.appendChild(links);
+            if (links.children.length) cell.appendChild(links);
         }
-        return li;
+        tr.appendChild(cell);
+        table.hidden = false;
+        return tr;
     }
     run.addEventListener('click', async function () {
         if (run.disabled) return;
-        run.disabled = true; list.replaceChildren();
+        run.disabled = true; list.replaceChildren(); table.hidden = true;
         items.clear();
         var runId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
         var savedCount = 0; var timestamp = 0;

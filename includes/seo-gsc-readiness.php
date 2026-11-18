@@ -14,7 +14,7 @@ function tk_gsc_readiness_assets(): void {
 
 function tk_gsc_readiness_items(): array {
     return array(
-        'verification' => 'Ownership verification tag',
+        'verification' => 'Ownership verification (meta tag or HTML file)',
         'visibility' => 'Site is open to indexing',
         'https_host' => 'HTTPS and a single host version',
         'robots' => 'robots.txt allows crawling and lists the sitemap',
@@ -96,6 +96,39 @@ function tk_gsc_readiness_fetch(string $url, float $timeout = 10.0) {
         'headers' => array('User-Agent' => 'Tool Kits GSC Readiness', 'Cache-Control' => 'no-cache')));
 }
 
+/** Directory served at the site root. WordPress may live in a subdirectory while the site URL is the domain root. */
+function tk_gsc_readiness_site_root(): string {
+    if (!function_exists('get_home_path') && is_file(ABSPATH . 'wp-admin/includes/file.php')) { require_once ABSPATH . 'wp-admin/includes/file.php'; }
+    return trailingslashit(function_exists('get_home_path') ? get_home_path() : ABSPATH);
+}
+
+/**
+ * Search Console's HTML-file method: googleXXXX.html in the site root containing "google-site-verification: googleXXXX.html".
+ * Returns null when no such file exists, so the caller reports the usual review result.
+ */
+function tk_gsc_readiness_verification_file(): ?array {
+    $root = tk_gsc_readiness_site_root();
+    $names = array();
+    foreach ((array) glob($root . 'google*.html') as $path) {
+        $name = basename((string) $path);
+        if (preg_match('/^google[a-z0-9]{6,64}\.html$/iD', $name) && is_file($path)) { $names[] = $name; }
+    }
+    if (!$names) { return null; }
+    sort($names);
+    $problems = array();
+    foreach (array_slice($names, 0, 5) as $name) {
+        $content = (string) file_get_contents($root . $name, false, null, 0, 1024);
+        if (stripos($content, 'google-site-verification: ' . $name) === false) { $problems[] = $name . ' does not contain "google-site-verification: ' . $name . '"'; continue; }
+        $response = tk_gsc_readiness_fetch(home_url('/' . $name), 8.0);
+        if (is_wp_error($response)) { $problems[] = $name . ' could not be fetched: ' . $response->get_error_message(); continue; }
+        $code = (int) wp_remote_retrieve_response_code($response);
+        if ($code !== 200) { $problems[] = $name . ' returns HTTP ' . $code . ' at ' . home_url('/' . $name); continue; }
+        if (stripos((string) wp_remote_retrieve_body($response), 'google-site-verification: ' . $name) === false) { $problems[] = $name . ' is served with different content than the file on disk (check caching or redirects)'; continue; }
+        return tk_gsc_readiness_result('verification', 'pass', 'Verification file ' . $name . ' is in the site root and publicly reachable at ' . home_url('/' . $name) . '. Keep it there; Google rechecks it periodically.');
+    }
+    return tk_gsc_readiness_result('verification', 'issue', 'A Search Console verification file was found, but: ' . implode('; ', $problems) . '.', 'Make the file publicly reachable with its original content (HTTP 200, no redirect, no login or firewall block), or verify with the meta tag instead.');
+}
+
 function tk_gsc_readiness_check(string $key, bool $refresh = false): array {
     $home = tk_gsc_readiness_home($refresh && $key === 'verification');
     $xpath = tk_gsc_readiness_dom($home['html']);
@@ -104,10 +137,13 @@ function tk_gsc_readiness_check(string $key, bool $refresh = false): array {
 
     switch ($key) {
         case 'verification':
+            if (!$home_failed && $xpath->query('//head/meta[translate(@name,"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz")="google-site-verification"][string-length(@content)>0]')->length > 0) {
+                return tk_gsc_readiness_result($key, 'pass', 'A google-site-verification meta tag is present on the homepage.');
+            }
+            $file = tk_gsc_readiness_verification_file();
+            if ($file) { return $file; }
             if ($home_failed) { return tk_gsc_readiness_result($key, 'unknown', $home_detail, 'Recheck once the homepage responds with HTTP 200.'); }
-            $found = $xpath->query('//head/meta[translate(@name,"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz")="google-site-verification"][string-length(@content)>0]')->length > 0;
-            return $found ? tk_gsc_readiness_result($key, 'pass', 'A google-site-verification meta tag is present on the homepage.')
-                : tk_gsc_readiness_result($key, 'review', 'No google-site-verification meta tag was found. Verification through DNS, Google Analytics, Tag Manager, or an uploaded HTML file cannot be detected from here.', 'Add the meta tag from Search Console, or confirm the property is already verified another way.');
+            return tk_gsc_readiness_result($key, 'review', 'No google-site-verification meta tag on the homepage and no google*.html verification file in the site root. Verification through DNS, Google Analytics, or Tag Manager cannot be detected from here.', 'Add the meta tag or HTML file from Search Console, or confirm the property is already verified another way.');
 
         case 'visibility':
             if ((string) get_option('blog_public') !== '1') { return tk_gsc_readiness_result($key, 'issue', 'Settings > Reading has "Discourage search engines from indexing this site" enabled.', 'Disable it in Settings > Reading.'); }
@@ -262,7 +298,12 @@ function tk_gsc_readiness_panel(): void {
         <p><button type="button" class="button button-primary" data-gsc-run>Run Readiness Check</button></p>
         <p class="description" data-gsc-last-check></p>
         <p data-gsc-summary role="status" aria-live="polite"></p>
-        <ul data-gsc-results style="margin:0;padding:0;list-style:none;"></ul>
+        <div class="tk-table-scroll tk-gsc-readiness-scroll" data-gsc-table hidden>
+            <table class="widefat striped tk-gsc-readiness-table">
+                <thead><tr><th scope="col" class="tk-gsc-col-status">Status</th><th scope="col" class="tk-gsc-col-check">Check</th><th scope="col">Details</th><th scope="col" class="tk-gsc-col-actions">Actions</th></tr></thead>
+                <tbody data-gsc-results></tbody>
+            </table>
+        </div>
         <script type="application/json" class="tk-gsc-readiness-saved"><?php echo wp_json_encode($report, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?></script>
     </div>
     <?php

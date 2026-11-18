@@ -580,12 +580,32 @@ function tk_hardening_block_xmlrpc_request(): void {
     wp_die('XML-RPC disabled.', 'Forbidden', array('response' => 403));
 }
 
+/** Secret that lets an external scheduler call wp-cron.php while public access is blocked. Created on first use. */
+function tk_monitoring_external_cron_key(): string {
+    $key = (string) tk_get_option('monitoring_external_cron_key', '');
+    if ($key === '') {
+        $key = wp_generate_password(32, false, false);
+        tk_update_option('monitoring_external_cron_key', $key);
+    }
+    return $key;
+}
+
+function tk_monitoring_external_cron_url(): string {
+    return add_query_arg(array('doing_wp_cron' => '', 'tk_cron_key' => tk_monitoring_external_cron_key()), site_url('wp-cron.php'));
+}
+
 function tk_hardening_block_public_wp_cron_request(): void {
     $path = tk_hardening_request_path();
     if ($path === '' || substr($path, -12) !== '/wp-cron.php') {
         return;
     }
     if (tk_hardening_is_local_request()) {
+        return;
+    }
+    // An external scheduler (server crontab or cron service) proves itself with the site's cron key.
+    $cron_key = (string) tk_get_option('monitoring_external_cron_key', '');
+    $sent_key = isset($_GET['tk_cron_key']) && is_string($_GET['tk_cron_key']) ? (string) wp_unslash($_GET['tk_cron_key']) : '';
+    if ($cron_key !== '' && $sent_key !== '' && hash_equals($cron_key, $sent_key)) {
         return;
     }
     // spawn_cron() stores this token just before its loopback; behind a CDN/proxy the loopback arrives from a

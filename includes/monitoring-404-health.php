@@ -7,6 +7,7 @@ function tk_monitoring_404_health_init() {
     add_action('admin_post_tk_404_monitoring_save', 'tk_404_monitoring_save');
     add_action('admin_post_tk_404_monitoring_clear', 'tk_404_monitoring_clear');
     add_action('admin_post_tk_healthcheck_save', 'tk_healthcheck_save');
+    add_action('admin_post_tk_wp_cron_key_regenerate', 'tk_wp_cron_key_regenerate');
     add_action('init', 'tk_healthcheck_endpoint');
     add_action('rest_api_init', 'tk_healthcheck_register_rest');
     add_action('wp_ajax_tk_realtime_health', 'tk_realtime_health_ajax');
@@ -266,6 +267,16 @@ function tk_healthcheck_save() {
     $health_key = isset($_POST['monitoring_healthcheck_key']) ? sanitize_text_field(wp_unslash($_POST['monitoring_healthcheck_key'])) : '';
     tk_update_option('monitoring_healthcheck_key', $health_key);
     wp_redirect(admin_url('admin.php?page=tool-kits-monitoring&tk_health_updated=1#health'));
+    exit;
+}
+
+function tk_wp_cron_key_regenerate() {
+    if (!tk_is_admin_user()) {
+        wp_die('Forbidden');
+    }
+    tk_check_nonce('tk_wp_cron_key_regenerate');
+    tk_update_option('monitoring_external_cron_key', wp_generate_password(32, false, false));
+    wp_redirect(admin_url('admin.php?page=tool-kits-monitoring&tk_cron_key_regenerated=1#health'));
     exit;
 }
 

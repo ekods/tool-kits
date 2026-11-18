@@ -105,7 +105,7 @@ function tk_seo_global_render_panel(): void {
             <?php tk_nonce_field('tk_seo_global_save'); ?>
             <input type="hidden" name="action" value="tk_seo_global_save">
             <?php tk_seo_title_render_settings(); ?>
-            <p><label><input type="checkbox" name="seo_global_enabled" value="1" <?php checked((int) tk_get_option('seo_global_enabled', 0), 1); ?>> Enable global metadata override</label><br><span class="description">Requires Enable SEO Toolkit. Replace existing theme/plugin metadata with the values shown below and remove duplicate tags. Saved page SEO titles, meta descriptions and social images take priority. The SEO title applies to the homepage; keywords do not replace page focus keywords. Uncheck to restore theme/plugin metadata.</span></p>
+            <p><label><input type="checkbox" id="tk-seo-global-enabled" name="seo_global_enabled" value="1" <?php checked((int) tk_get_option('seo_global_enabled', 0), 1); ?>> Enable global metadata override</label><br><span class="description">Requires Enable SEO Toolkit. Replace existing theme/plugin metadata with the values shown below and remove duplicate tags. Saved page SEO titles, meta descriptions and social images take priority. The SEO title applies to the homepage; keywords do not replace page focus keywords. Uncheck to restore theme/plugin metadata.</span></p>
             <div class="tk-grid tk-grid-2" style="gap:20px;">
             <?php foreach (tk_seo_global_fields() as $field => $definition): $item = $resolved[$field]; ?>
                 <div>

@@ -8,7 +8,7 @@ define('TK_URL', 'file://' . dirname(__DIR__) . '/');
 function get_option($key, $default = null) {
     if ($key !== 'tk_options') return $default;
     return array('image_opt_enabled' => 1, 'image_opt_frontend_optimize' => 1, 'image_opt_quality' => 95, 'heartbeat_last_success' => 1,
-        'cf7_assets_mode' => 'preview', 'cf7_assets_always_load' => "/contact/\n/products/\n123",
+        'monitoring_external_cron_key' => 'previewcronkey0123456789abcdefgh', 'cf7_assets_mode' => 'preview', 'cf7_assets_always_load' => "/contact/\n/products/\n123",
         'otp_login_audit_log' => array(array('time' => time(), 'event' => 'verified', 'user_id' => 1, 'ip' => '192.0.2.123', 'message' => 'Email verification completed.')));
 }
 function add_filter(...$args) {}
@@ -26,6 +26,9 @@ function wp_get_current_user() { return (object) array('ID' => 1, 'roles' => arr
 function get_editable_roles() { return array('administrator' => array('name' => 'Administrator'), 'editor' => array('name' => 'Editor'), 'author' => array('name' => 'Author')); }
 function translate_user_role($name) { return $name; }
 function home_url($path = '/') { return 'https://toolkits-ui.test' . $path; }
+if (!function_exists('site_url')) { function site_url($path = '') { return 'https://toolkits-ui.test/' . ltrim($path, '/'); } }
+if (!function_exists('esc_js')) { function esc_js($text) { return addslashes(htmlspecialchars((string) $text, ENT_QUOTES)); } }
+if (!function_exists('add_query_arg')) { function add_query_arg($args, $url) { return $url . (strpos($url, '?') === false ? '?' : '&') . http_build_query($args); } }
 function wp_parse_url($url, $component = -1) { return parse_url($url, $component); }
 function wpcf7() { return true; }
 function get_current_screen() { return (object) array('id' => 'toplevel_page_tool-kits'); }
@@ -58,6 +61,7 @@ require dirname(__DIR__) . '/includes/lazy-load.php';
 require dirname(__DIR__) . '/includes/minify.php';
 require dirname(__DIR__) . '/includes/security-captcha.php';
 require dirname(__DIR__) . '/includes/smtp.php';
+require dirname(__DIR__) . '/includes/security-hardening.php';
 $empty = in_array('--empty', $argv, true);
 $overview = in_array('--overview', $argv, true);
 $monitoring = in_array('--monitoring', $argv, true);
@@ -127,7 +131,7 @@ else {
     echo '</div>';
 }
 ?>
-</main><script src="<?php echo TK_URL; ?>assets/admin-layout.js"></script><script>window.ajaxurl='https://toolkits-ui.test/wp-admin/admin-ajax.php';window.tkMonitoringData={nonce:'preview',ajaxurl:window.ajaxurl};</script><?php if ($monitoring) : ?><script src="<?php echo TK_URL; ?>assets/vendor/chart.js/chart.umd.min.js"></script><script src="<?php echo TK_URL; ?>assets/health-monitor-chart.js"></script><?php elseif ($view === 'image') : ?><script src="<?php echo TK_URL; ?>assets/image-optimizer.js"></script><?php endif; ?></body></html><?php
+</main><script src="<?php echo TK_URL; ?>assets/admin-layout.js"></script><script>window.ajaxurl='https://toolkits-ui.test/wp-admin/admin-ajax.php';window.tkMonitoringData={nonce:'preview',ajaxurl:window.ajaxurl};</script><?php if ($monitoring) : ?><script src="<?php echo TK_URL; ?>assets/health-monitor-chart.js"></script><?php elseif ($view === 'image') : ?><script src="<?php echo TK_URL; ?>assets/image-optimizer.js"></script><?php endif; ?></body></html><?php
 $output = $argv[1] ?? '/tmp/toolkits-image-preview.html';
 file_put_contents($output, ob_get_clean());
 echo $output, PHP_EOL;

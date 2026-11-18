@@ -11,7 +11,7 @@ const {pathToFileURL} = require('node:url');
     const {default: puppeteer} = await import('puppeteer');
     const root = path.resolve(__dirname, '..');
     const output = fs.mkdtempSync(path.join(os.tmpdir(), 'toolkits-layout-'));
-    const views = process.argv.slice(2).length ? process.argv.slice(2) : ['overview', 'monitoring', 'image', 'assets', 'otp', 'uploads', 'antispam', 'lazy-load', 'minify', 'captcha', 'smtp-dns', 'schema-editor'];
+    const views = process.argv.slice(2).length ? process.argv.slice(2) : ['overview', 'monitoring', 'image', 'assets', 'otp', 'uploads', 'antispam', 'lazy-load', 'minify', 'captcha', 'smtp-dns'];
     const browser = await puppeteer.launch({headless: true});
     const failures = [];
     let checks = 0;
@@ -31,7 +31,6 @@ const {pathToFileURL} = require('node:url');
             execFileSync(process.env.TK_PHP_BINARY || 'php', args, {env: process.env, stdio: 'pipe'});
             await page.goto(pathToFileURL(file).href, {waitUntil: 'load'});
             if (view === 'smtp-dns') await page.$eval('.tk-tab-panel', panel => panel.classList.add('is-active'));
-            if (view === 'schema-editor') await page.$eval('dialog', dialog => dialog.showModal());
             if (view === 'assets') {
                 assert.equal(await page.$eval('[name="assets_font_display_swap"]', input => input.checked && getComputedStyle(input).backgroundColor !== 'rgba(0, 0, 0, 0)'), true, 'Checked settings need a visible selected state');
                 checks++;
@@ -49,10 +48,6 @@ const {pathToFileURL} = require('node:url');
                 }));
                 if (layout.scroll > width + 1) failures.push(view + ' at ' + width + ': ' + JSON.stringify(layout));
                 else checks++;
-                if (view === 'schema-editor') {
-                    assert.equal(await page.$eval('dialog', dialog => dialog.scrollWidth <= dialog.clientWidth + 1), true, 'Dialog content overflows at ' + width);
-                    checks++;
-                }
                 if (width === 1440 || width === 390) await page.screenshot({path: path.join(output, view + '-' + width + '.png'), fullPage: true});
             }
             const before = await page.$$eval('form', forms => forms.map(form => [...new FormData(form)]));

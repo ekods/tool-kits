@@ -29,7 +29,7 @@ function tk_security_alert_telegram_target(): array {
     return ($token === '' || $chat_id === '') ? array() : array('token' => $token, 'chat_id' => $chat_id);
 }
 
-function tk_security_alert_enqueue(string $subject, string $message): void {
+function tk_security_alert_enqueue(string $subject, string $message, array $undelivered = array()): void {
     global $wpdb;
     $email = tk_security_alert_email();
     $webhook = (string) tk_get_option('toolkits_alert_webhook', '');
@@ -61,10 +61,11 @@ function tk_security_alert_enqueue(string $subject, string $message): void {
     $size = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like('tk_jobs_alert_') . '%'));
     if ($size >= 100) {
         tk_toolkits_audit_log('security_alert_queue_full', array('subject' => $subject));
+        if ($undelivered) { tk_security_alert_undelivered($undelivered); }
         tk_security_alert_schedule(time() + 10);
         return;
     }
-    $job = array('created' => time(), 'status' => 'pending', 'subject' => $subject, 'message' => $message, 'duplicates' => 0,
+    $job = array('created' => time(), 'status' => 'pending', 'subject' => $subject, 'message' => $message, 'duplicates' => 0, 'undelivered' => $undelivered,
         'channels' => array(
             'email' => array('target' => $email, 'status' => $email === '' ? 'skipped' : 'pending', 'attempts' => 0, 'next' => time()),
             'webhook' => array('target' => $webhook, 'status' => $webhook === '' ? 'skipped' : 'pending', 'attempts' => 0, 'next' => time()),
@@ -150,7 +151,9 @@ function tk_security_alert_deliver(string $key, array $job): void {
         $failed = array_filter($job['channels'], static function ($channel) { return $channel['status'] === 'failed'; });
         $job['status'] = $failed ? 'failed' : 'sent';
         $job['finished'] = time();
-        unset($job['message']);
+        $sent = array_filter($job['channels'], static function ($channel) { return $channel['status'] === 'sent'; });
+        if (!$sent && !empty($job['undelivered'])) { tk_security_alert_undelivered($job['undelivered']); }
+        unset($job['message'], $job['undelivered']);
         foreach ($job['channels'] as &$channel) { unset($channel['target']); } unset($channel);
         tk_security_alert_checkpoint($key, $job);
         $detail = array('subject' => $job['subject']);
@@ -173,6 +176,8 @@ function tk_security_alert_dispatch(): void {
             if (time() - (int) $job['created'] >= DAY_IN_SECONDS || !tk_security_alert_enabled()) {
                 if (($job['status'] ?? '') === 'pending') {
                     tk_toolkits_audit_log(tk_security_alert_enabled() ? 'security_alert_expired' : 'security_alert_cancelled', array('subject' => $job['subject'] ?? ''));
+                    $sent = array_filter((array) ($job['channels'] ?? array()), static function ($channel) { return ($channel['status'] ?? '') === 'sent'; });
+                    if (!$sent && !empty($job['undelivered'])) { tk_security_alert_undelivered((array) $job['undelivered']); }
                 }
                 delete_option($key); continue;
             }

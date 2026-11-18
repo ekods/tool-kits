@@ -86,6 +86,7 @@ if (!defined('ABSPATH')) { exit; }
     if (isset($_GET['tk_404_updated']) && $_GET['tk_404_updated'] === '1') tk_notice(__('404 monitor settings saved.', 'tool-kits'), 'success');
     if (isset($_GET['tk_404_cleared']) && $_GET['tk_404_cleared'] === '1') tk_notice(__('404 log cleared.', 'tool-kits'), 'success');
     if (isset($_GET['tk_health_updated']) && $_GET['tk_health_updated'] === '1') tk_notice(__('Healthcheck settings saved.', 'tool-kits'), 'success');
+    if (isset($_GET['tk_cron_key_regenerated']) && $_GET['tk_cron_key_regenerated'] === '1') tk_notice(__('External cron key regenerated. Update the URL in your server cron or cron service.', 'tool-kits'), 'success');
     if (isset($_GET['tk_operations']) && sanitize_key((string) $_GET['tk_operations']) === 'refreshed') tk_notice(__('Background operations report refreshed.', 'tool-kits'), 'success');
     if (isset($_GET['tk_operations']) && sanitize_key((string) $_GET['tk_operations']) === 'repaired') tk_notice(__('Tool Kits background schedules repaired and rechecked.', 'tool-kits'), 'success');
 
@@ -464,52 +465,6 @@ if (!defined('ABSPATH')) { exit; }
                         <div class="tk-rt-value" id="tk-rt-errors">-</div>
                     </div>
                 </div>
-                
-                <div class="tk-rt-charts">
-                    <section class="tk-rt-chart-section" aria-label="CPU">
-                        <div class="tk-rt-chart-heading">
-                            <h3><?php _e('CPU', 'tool-kits'); ?> <span class="dashicons dashicons-info-outline" title="<?php esc_attr_e('CPU percentage is shown only when CPU capacity can be detected.', 'tool-kits'); ?>"></span></h3>
-                            <div class="tk-rt-chart-stats">
-                                <div class="tk-rt-chart-stat">
-                                    <strong id="tk-rt-cpu-avg">-</strong>
-                                    <span><?php _e('Rata-rata', 'tool-kits'); ?></span>
-                                </div>
-                                <div class="tk-rt-chart-stat">
-                                    <strong id="tk-rt-cpu-limit">-</strong>
-                                    <span><?php _e('Tersedia', 'tool-kits'); ?></span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="tk-rt-plot" id="tk-rt-cpu-plot" aria-busy="true">
-                            <div class="tk-rt-chart-state" id="tk-rt-cpu-state"><?php _e('Loading CPU metrics...', 'tool-kits'); ?></div>
-                            <canvas id="tk-rt-cpu-chart" role="img" aria-label="<?php esc_attr_e('Real-time CPU usage chart', 'tool-kits'); ?>">
-                                <?php _e('Your browser does not support the real-time CPU chart.', 'tool-kits'); ?>
-                            </canvas>
-                        </div>
-                    </section>
-
-                    <section class="tk-rt-chart-section" aria-label="Memory">
-                        <div class="tk-rt-chart-heading">
-                            <h3><?php _e('Memori', 'tool-kits'); ?> <span class="dashicons dashicons-info-outline" title="<?php esc_attr_e('Memory limit follows the PHP memory_limit value available to WordPress.', 'tool-kits'); ?>"></span></h3>
-                            <div class="tk-rt-chart-stats">
-                                <div class="tk-rt-chart-stat">
-                                    <strong id="tk-rt-mem-avg">-</strong>
-                                    <span><?php _e('Rata-rata', 'tool-kits'); ?></span>
-                                </div>
-                                <div class="tk-rt-chart-stat">
-                                    <strong id="tk-rt-mem-limit">-</strong>
-                                    <span><?php _e('Tersedia', 'tool-kits'); ?></span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="tk-rt-plot" id="tk-rt-mem-plot" aria-busy="true">
-                            <div class="tk-rt-chart-state" id="tk-rt-mem-state"><?php _e('Loading memory metrics...', 'tool-kits'); ?></div>
-                            <canvas id="tk-rt-mem-chart" role="img" aria-label="<?php esc_attr_e('Real-time memory usage chart', 'tool-kits'); ?>">
-                                <?php _e('Your browser does not support the real-time memory chart.', 'tool-kits'); ?>
-                            </canvas>
-                        </div>
-                    </section>
-                </div>
             </div>
 
             <!-- Panel: 404 Monitor -->
@@ -671,6 +626,22 @@ if (!defined('ABSPATH')) { exit; }
                     <code style="display:block; padding:12px; background:#fff; border:1px solid var(--tk-border-soft); border-radius:8px; word-break:break-all;"><?php echo esc_html($health_url); ?></code>
                     <p class="description" style="margin-bottom:0;"><?php echo esc_html__('Disk:', 'tool-kits') . ' ' . esc_html($health_disk_label); ?></p>
                 </div>
+
+                <?php if (function_exists('tk_monitoring_external_cron_url')) : $tk_cron_url = tk_monitoring_external_cron_url(); ?>
+                <div class="tk-card" style="background:var(--tk-bg-soft); border-radius:12px; margin-bottom:22px;" id="external-cron">
+                    <h4 style="margin:0 0 8px;"><?php _e('External Cron URL', 'tool-kits'); ?></h4>
+                    <p class="description" style="margin-top:0;"><?php _e('Tool Kits blocks public requests to wp-cron.php. Point your server crontab or cron service at this URL so scheduled tasks (security alerts, heartbeat, scans) run on time. Keep it private: the key lets anyone trigger WP-Cron.', 'tool-kits'); ?></p>
+                    <code style="display:block; padding:12px; background:#fff; border:1px solid var(--tk-border-soft); border-radius:8px; word-break:break-all;"><?php echo esc_html($tk_cron_url); ?></code>
+                    <p style="margin:12px 0 6px; font-weight:600;"><?php _e('Example crontab line (every 5 minutes):', 'tool-kits'); ?></p>
+                    <code style="display:block; padding:12px; background:#fff; border:1px solid var(--tk-border-soft); border-radius:8px; word-break:break-all;"><?php echo esc_html('*/5 * * * * curl -fsS "' . $tk_cron_url . '" >/dev/null 2>&1'); ?></code>
+                    <p class="description"><?php _e('Once the external cron runs, you can add define( \'DISABLE_WP_CRON\', true ); to wp-config.php so visitors no longer trigger WP-Cron.', 'tool-kits'); ?></p>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:0;" onsubmit="return window.confirm('<?php echo esc_js(__('Regenerate the key? The current URL stops working immediately.', 'tool-kits')); ?>');">
+                        <?php tk_nonce_field('tk_wp_cron_key_regenerate'); ?>
+                        <input type="hidden" name="action" value="tk_wp_cron_key_regenerate">
+                        <button class="button"><?php _e('Regenerate key', 'tool-kits'); ?></button>
+                    </form>
+                </div>
+                <?php endif; ?>
 
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="tk-card" style="background:var(--tk-bg-soft); border-radius:12px;">
                     <?php tk_nonce_field('tk_healthcheck_save'); ?>

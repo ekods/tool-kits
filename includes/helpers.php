@@ -929,6 +929,7 @@ function tk_option_init_defaults() {
         'hardening_server_signature_hide' => 1,
         'hardening_cookie_httponly_force' => 0,
         'hardening_disable_wp_cron' => 0,
+        'monitoring_external_cron_key' => '',
         'hardening_url_param_guard_enabled' => 0,
         'hardening_http_methods_filter_enabled' => 0,
         'hardening_http_methods_allowed' => 'GET, POST',
@@ -2067,6 +2068,7 @@ function tk_toolkits_audit_log_option_change($key, $old, $new): void {
         'heartbeat_auth_key',
         'heartbeat_http_pass',
         'monitoring_healthcheck_key',
+        'toolkits_alert_webhook',
         'toolkits_ip_allowlist',
         'firewall_ip_allowlist',
     );

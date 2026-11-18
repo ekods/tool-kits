@@ -118,6 +118,9 @@ function tk_heartbeat_record_diagnostic_result($result, $url) { $GLOBALS['diagno
 function tk_toolkits_signed_post($url, $body, $timestamp, $args) { $GLOBALS['heartbeats'][] = json_decode($body, true); return array_shift($GLOBALS['hb_results']) ?? array('code' => 200, 'body' => '{"ok":true}'); }
 function home_url($path = '/') { return 'https://site.example' . $path; }
 function get_bloginfo($key) { return $key === 'version' ? '6.6' : 'Fixture site'; }
+$user_meta = array();
+function get_user_meta($id, $key, $single) { return $GLOBALS['user_meta'][$id][$key] ?? ''; }
+function update_user_meta($id, $key, $value) { $GLOBALS['user_meta'][$id][$key] = $value; return true; }
 function tk_toolkits_install_id() { return 'fixture'; }
 function tk_license_env() { return 'test'; }
 function tk_db_cleanup_effective_revision_limit() { return 5; }
@@ -265,6 +268,33 @@ $http_results[] = array('code' => 400, 'headers' => array(), 'body' => '{"ok":fa
 tk_security_alert_send('Telegram rejected', 'message'); tk_security_alert_dispatch();
 check_job(end($audit)['action'] === 'security_alert_delivery_failed' && (end($audit)['data']['telegram'] ?? '') === 'HTTP 400: Bad Request: chat not found', 'Telegram rejection reason was not audited');
 unset($settings['toolkits_alert_telegram_token'], $settings['toolkits_alert_telegram_chat_id']); $settings['toolkits_alert_webhook'] = 'https://hooks.example/secret';
+
+// A login alert nobody received forgets the IP so the next login from it alerts again; a partial delivery keeps it.
+$forget = array('forget_login_ip' => array(5, '203.0.113.9'));
+$reset_login_ips = function () use (&$user_meta, $wpdb) {
+    foreach ($wpdb->get_col("SELECT option_name FROM wp_options WHERE option_name LIKE 'tk_jobs_alert_%'") as $key) { delete_option($key); }
+    $user_meta[5]['tk_admin_login_ips'] = array('198.51.100.1', '203.0.113.9');
+};
+$reset_login_ips();
+tk_security_alert_send('Login undelivered', 'login fixture', $forget);
+$login_key = $wpdb->get_col("SELECT option_name FROM wp_options WHERE option_name LIKE 'tk_jobs_alert_%'")[0];
+check_job(!isset(get_option($login_key)['undelivered']) || get_option($login_key)['undelivered'] === $forget, 'undelivered context was not stored with the job');
+for ($attempt = 1; $attempt <= 6; $attempt++) {
+    $alert = get_option($login_key);
+    foreach ($alert['channels'] as &$channel) { if ($channel['status'] === 'pending') { $channel['next'] = time() - 1; } } unset($channel);
+    update_option($login_key, $alert, false); $mail_results[] = false; $http_results[] = array('code' => 403, 'headers' => array()); tk_security_alert_dispatch();
+}
+check_job(get_option($login_key)['status'] === 'failed' && $user_meta[5]['tk_admin_login_ips'] === array('198.51.100.1'), 'undelivered login alert kept its IP as known');
+check_job(!isset(get_option($login_key)['undelivered']), 'finished alert retained its undelivered context');
+$reset_login_ips();
+$mail_results[] = true; $http_results[] = array('code' => 403, 'headers' => array());
+tk_security_alert_send('Login partial', 'login fixture', $forget); tk_security_alert_dispatch();
+check_job($user_meta[5]['tk_admin_login_ips'] === array('198.51.100.1', '203.0.113.9'), 'partially delivered login alert forgot its IP');
+$reset_login_ips();
+tk_security_alert_send('Login expired', 'login fixture', $forget);
+$login_key = $wpdb->get_col("SELECT option_name FROM wp_options WHERE option_name LIKE 'tk_jobs_alert_%'")[0];
+$alert = get_option($login_key); $alert['created'] = time() - DAY_IN_SECONDS - 1; update_option($login_key, $alert, false); tk_security_alert_dispatch();
+check_job($user_meta[5]['tk_admin_login_ips'] === array('198.51.100.1') && !get_option($login_key), 'expired login alert kept its IP as known');
 
 // Heartbeat backoff, regenerated payload, Retry-After, permanent errors, and bounded retries.
 $hb_results[] = new WP_Error(); $result = tk_heartbeat_run(); $state = get_option('tk_jobs_heartbeat');

@@ -66,11 +66,13 @@ if (!defined('ABSPATH')) { exit; }
         tk_notice('Content SEO audit report cleared.', 'success');
     }
     if (!empty($_GET['tk_global_saved'])) { tk_notice('Global SEO content saved. Theme-managed values remain linked to their source.', 'success'); }
+    $tk_seo_url = tk_admin_url('tool-kits-seo');
+    $tk_override_link = '<a href="' . esc_url($tk_seo_url . '#tk-seo-global-enabled') . '">Enable Global Metadata Override &rarr;</a>';
     if ($has_third_party) {
-        tk_notice('Third-party SEO plugin detected. Enable Global Metadata Override to replace its head metadata with Tool Kits values, or Meta Title Override for titles only. JSON-LD Schema is managed from GEO.', 'warning');
+        tk_notice('Third-party SEO plugin detected. Enable Global Metadata Override to replace its head metadata with Tool Kits values, or Meta Title Override for titles only. JSON-LD Schema is managed from GEO.<br>' . $tk_override_link . ' &middot; <a href="' . esc_url($tk_seo_url . '#tk-seo-title-override') . '">Enable Meta Title Override &rarr;</a>', 'warning');
     }
     if ($has_theme_managed) {
-        tk_notice('Active theme manages SEO head output. Global Metadata Override replaces its head metadata with the values in Global SEO Content when enabled. Canonical tags remain managed by the theme.', 'warning');
+        tk_notice('Active theme manages SEO head output. Global Metadata Override replaces its head metadata with the values in Global SEO Content when enabled. Canonical tags remain managed by the theme.<br>' . $tk_override_link, 'warning');
     }
     ?>
     <div class="tk-tabs tk-seo-tabs">
@@ -580,10 +582,21 @@ if (!defined('ABSPATH')) { exit; }
                 }
             });
         });
-        var initial = window.location.hash ? window.location.hash.substring(1) : '';
-        if (initial && wrapper.querySelector('.tk-tab-panel[data-panel-id="' + initial + '"]')) {
-            activateTab(initial);
+        // A hash may name a tab or any element inside one (e.g. a setting); open its tab and bring it into view.
+        function openHash() {
+            var id = window.location.hash ? decodeURIComponent(window.location.hash.substring(1)) : '';
+            if (!id) { return; }
+            var panel = wrapper.querySelector('.tk-tab-panel[data-panel-id="' + CSS.escape(id) + '"]');
+            if (panel) { activateTab(id); return; }
+            var target = document.getElementById(id);
+            panel = target && target.closest('.tk-tab-panel');
+            if (!panel || !wrapper.contains(panel)) { return; }
+            activateTab(panel.getAttribute('data-panel-id'));
+            target.scrollIntoView({ block: 'center' });
+            target.focus({ preventScroll: true });
         }
+        openHash();
+        window.addEventListener('hashchange', openHash);
     })();
     </script>
     <?php
