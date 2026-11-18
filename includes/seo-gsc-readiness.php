@@ -4,6 +4,9 @@ if (!defined('ABSPATH')) { exit; }
 /** Read-only, site-level checklist for Google Search Console readiness. Each item runs in its own AJAX request. */
 function tk_gsc_readiness_init(): void {
     add_action('wp_ajax_tk_gsc_readiness', 'tk_gsc_readiness_ajax');
+    add_action('admin_post_tk_gsc_verification_save', 'tk_gsc_verification_save');
+    // Early, before 404 handling, redirects and page caching can answer the request.
+    add_action('init', 'tk_gsc_verification_serve', 0);
     add_action('admin_enqueue_scripts', 'tk_gsc_readiness_assets');
 }
 
@@ -102,30 +105,90 @@ function tk_gsc_readiness_site_root(): string {
     return trailingslashit(function_exists('get_home_path') ? get_home_path() : ABSPATH);
 }
 
+/** Extract a Search Console verification file name from a name, URL, or the file's own content. */
+function tk_gsc_verification_parse(string $input): string {
+    return preg_match('/(google[a-z0-9]{6,64}\.html)/i', $input, $match) ? $match[1] : '';
+}
+
+/** Verification file name entered in Search Console Readiness, served by Tool Kits at the site root. */
+function tk_gsc_verification_configured(): string {
+    return tk_gsc_verification_parse((string) tk_get_option('seo_gsc_verification_file', ''));
+}
+
+function tk_gsc_verification_content(string $name): string {
+    return 'google-site-verification: ' . $name;
+}
+
+/** The configured file name when this request asks for it at the site root, otherwise ''. */
+function tk_gsc_verification_requested(string $request_uri): string {
+    $name = tk_gsc_verification_configured();
+    if ($name === '' || $request_uri === '') { return ''; }
+    $path = (string) wp_parse_url($request_uri, PHP_URL_PATH);
+    $home = (string) wp_parse_url(home_url('/'), PHP_URL_PATH);
+    return strcasecmp($path, rtrim($home, '/') . '/' . $name) === 0 ? $name : '';
+}
+
+function tk_gsc_verification_serve(): void {
+    $name = tk_gsc_verification_requested(isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '');
+    if ($name === '') { return; }
+    status_header(200);
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: no-cache, max-age=0');
+    echo tk_gsc_verification_content($name);
+    exit;
+}
+
+function tk_gsc_verification_save(): void {
+    if (!tk_is_admin_user()) { wp_die('Forbidden'); }
+    tk_check_nonce('tk_gsc_verification_save');
+    $input = trim((string) wp_unslash($_POST['seo_gsc_verification_file'] ?? ''));
+    $name = tk_gsc_verification_parse($input);
+    tk_update_option('seo_gsc_verification_file', $name);
+    $status = $input === '' ? 'cleared' : ($name === '' ? 'invalid' : 'saved');
+    wp_safe_redirect(tk_admin_url('tool-kits-seo') . '&tk_gsc_verification=' . $status . '#indexing');
+    exit;
+}
+
+/** Problem with a verification file at its public URL, or '' when Google would accept it. */
+function tk_gsc_readiness_verification_url_problem(string $name): string {
+    $response = tk_gsc_readiness_fetch(home_url('/' . $name), 8.0);
+    if (is_wp_error($response)) { return $name . ' could not be fetched: ' . $response->get_error_message(); }
+    $code = (int) wp_remote_retrieve_response_code($response);
+    if ($code !== 200) { return $name . ' returns HTTP ' . $code . ' at ' . home_url('/' . $name); }
+    if (stripos((string) wp_remote_retrieve_body($response), tk_gsc_verification_content($name)) === false) { return $name . ' is served with different content than expected (check caching or redirects)'; }
+    return '';
+}
+
 /**
- * Search Console's HTML-file method: googleXXXX.html in the site root containing "google-site-verification: googleXXXX.html".
- * Returns null when no such file exists, so the caller reports the usual review result.
+ * Search Console's HTML-file method: googleXXXX.html at the site root containing "google-site-verification: googleXXXX.html".
+ * Checks the file entered in Tool Kits first, then physical files in the site root.
+ * Returns null when neither exists, so the caller reports the usual review result.
  */
 function tk_gsc_readiness_verification_file(): ?array {
+    $problems = array();
+    $configured = tk_gsc_verification_configured();
+    if ($configured !== '') {
+        $problem = tk_gsc_readiness_verification_url_problem($configured);
+        if ($problem === '') {
+            return tk_gsc_readiness_result('verification', 'pass', 'Verification file ' . $configured . ' (entered in Tool Kits) is publicly reachable at ' . home_url('/' . $configured) . '. Keep it saved; Google rechecks it periodically.');
+        }
+        $problems[] = $problem;
+    }
     $root = tk_gsc_readiness_site_root();
     $names = array();
     foreach ((array) glob($root . 'google*.html') as $path) {
         $name = basename((string) $path);
-        if (preg_match('/^google[a-z0-9]{6,64}\.html$/iD', $name) && is_file($path)) { $names[] = $name; }
+        if (preg_match('/^google[a-z0-9]{6,64}\.html$/iD', $name) && is_file($path) && strcasecmp($name, $configured) !== 0) { $names[] = $name; }
     }
-    if (!$names) { return null; }
     sort($names);
-    $problems = array();
     foreach (array_slice($names, 0, 5) as $name) {
         $content = (string) file_get_contents($root . $name, false, null, 0, 1024);
-        if (stripos($content, 'google-site-verification: ' . $name) === false) { $problems[] = $name . ' does not contain "google-site-verification: ' . $name . '"'; continue; }
-        $response = tk_gsc_readiness_fetch(home_url('/' . $name), 8.0);
-        if (is_wp_error($response)) { $problems[] = $name . ' could not be fetched: ' . $response->get_error_message(); continue; }
-        $code = (int) wp_remote_retrieve_response_code($response);
-        if ($code !== 200) { $problems[] = $name . ' returns HTTP ' . $code . ' at ' . home_url('/' . $name); continue; }
-        if (stripos((string) wp_remote_retrieve_body($response), 'google-site-verification: ' . $name) === false) { $problems[] = $name . ' is served with different content than the file on disk (check caching or redirects)'; continue; }
+        if (stripos($content, tk_gsc_verification_content($name)) === false) { $problems[] = $name . ' does not contain "' . tk_gsc_verification_content($name) . '"'; continue; }
+        $problem = tk_gsc_readiness_verification_url_problem($name);
+        if ($problem !== '') { $problems[] = $problem; continue; }
         return tk_gsc_readiness_result('verification', 'pass', 'Verification file ' . $name . ' is in the site root and publicly reachable at ' . home_url('/' . $name) . '. Keep it there; Google rechecks it periodically.');
     }
+    if (!$problems) { return null; }
     return tk_gsc_readiness_result('verification', 'issue', 'A Search Console verification file was found, but: ' . implode('; ', $problems) . '.', 'Make the file publicly reachable with its original content (HTTP 200, no redirect, no login or firewall block), or verify with the meta tag instead.');
 }
 
@@ -143,7 +206,7 @@ function tk_gsc_readiness_check(string $key, bool $refresh = false): array {
             $file = tk_gsc_readiness_verification_file();
             if ($file) { return $file; }
             if ($home_failed) { return tk_gsc_readiness_result($key, 'unknown', $home_detail, 'Recheck once the homepage responds with HTTP 200.'); }
-            return tk_gsc_readiness_result($key, 'review', 'No google-site-verification meta tag on the homepage and no google*.html verification file in the site root. Verification through DNS, Google Analytics, or Tag Manager cannot be detected from here.', 'Add the meta tag or HTML file from Search Console, or confirm the property is already verified another way.');
+            return tk_gsc_readiness_result($key, 'review', 'No google-site-verification meta tag on the homepage and no google*.html verification file in the site root. Verification through DNS, Google Analytics, or Tag Manager cannot be detected from here.', 'Enter the HTML verification file name from Search Console in the field above, add the meta tag, or confirm the property is already verified another way.');
 
         case 'visibility':
             if ((string) get_option('blog_public') !== '1') { return tk_gsc_readiness_result($key, 'issue', 'Settings > Reading has "Discourage search engines from indexing this site" enabled.', 'Disable it in Settings > Reading.'); }
@@ -295,6 +358,16 @@ function tk_gsc_readiness_panel(): void {
     <div id="tk-gsc-readiness" data-nonce="<?php echo esc_attr(wp_create_nonce('tk_gsc_readiness')); ?>" data-items="<?php echo esc_attr(wp_json_encode(array_keys(tk_gsc_readiness_items()))); ?>" data-actions="<?php echo esc_attr(wp_json_encode(tk_gsc_readiness_actions())); ?>">
         <h3>Search Console Readiness</h3>
         <p>Check what Google Search Console expects from this website. Findings include links to the relevant fixing tools, which open in a new tab. After making changes, run the checklist again to verify them.</p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="tk-gsc-verification-form" style="margin:12px 0 16px;">
+            <?php tk_nonce_field('tk_gsc_verification_save'); ?>
+            <input type="hidden" name="action" value="tk_gsc_verification_save">
+            <label for="tk-gsc-verification-file" style="display:block; font-weight:600; margin-bottom:6px;">Google HTML verification file</label>
+            <span style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                <input type="text" id="tk-gsc-verification-file" name="seo_gsc_verification_file" class="regular-text" value="<?php echo esc_attr(tk_gsc_verification_configured()); ?>" placeholder="google1234567890abcdef.html" autocomplete="off">
+                <button class="button">Save</button>
+            </span>
+            <span class="description" style="display:block; margin-top:6px;">From Search Console &gt; Settings &gt; Ownership verification &gt; HTML file: paste the file name, its URL or its content. Tool Kits then serves it at <?php echo esc_html(home_url('/')); ?>&lt;file name&gt;, so no upload is needed. Leave empty to stop serving it.</span>
+        </form>
         <p><button type="button" class="button button-primary" data-gsc-run>Run Readiness Check</button></p>
         <p class="description" data-gsc-last-check></p>
         <p data-gsc-summary role="status" aria-live="polite"></p>

@@ -930,6 +930,7 @@ function tk_option_init_defaults() {
         'hardening_cookie_httponly_force' => 0,
         'hardening_disable_wp_cron' => 0,
         'monitoring_external_cron_key' => '',
+        'seo_gsc_verification_file' => '',
         'hardening_url_param_guard_enabled' => 0,
         'hardening_http_methods_filter_enabled' => 0,
         'hardening_http_methods_allowed' => 'GET, POST',

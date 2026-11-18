@@ -25,6 +25,7 @@ $http = array();
 function wp_safe_remote_get($url, $args) { return $GLOBALS['http'][$url] ?? new WP_Error(); }
 function wp_remote_retrieve_response_code($response) { return $response['code']; }
 function wp_remote_retrieve_body($response) { return $response['body'] ?? ''; }
+function wp_parse_url($url, $component = -1) { return parse_url($url, $component); }
 function trailingslashit($path) { return rtrim($path, '/\\') . '/'; }
 function is_wp_error($value) { return $value instanceof WP_Error; }
 class GSC_Response extends RuntimeException {
@@ -34,8 +35,8 @@ class GSC_Response extends RuntimeException {
 function wp_send_json_success($data) { throw new GSC_Response(true, $data, 200); }
 function wp_send_json_error($data, $status = 400) { throw new GSC_Response(false, $data, $status); }
 $helpers = file_get_contents(dirname(__DIR__) . '/includes/helpers.php');
-foreach (array('tk_report_option_keys', 'tk_is_report_option', 'tk_report_option_name', 'tk_get_option', 'tk_update_option') as $name) {
-    if (!preg_match('/^function ' . $name . '\([^\n]*\).*?^\}/ms', $helpers, $match)) throw new RuntimeException('Missing real helper: ' . $name);
+foreach (array('tk_report_option_keys', 'tk_is_report_option', 'tk_report_option_name', 'tk_get_option', 'tk_get_options', 'tk_request_options_cache', 'tk_clear_request_options_cache', 'tk_update_option') as $name) {
+    if (!preg_match('/^function &?' . $name . '\([^\n]*\).*?^\}/ms', $helpers, $match)) throw new RuntimeException('Missing real helper: ' . $name);
     eval($match[0]);
 }
 require dirname(__DIR__) . '/includes/seo-gsc-readiness.php';
@@ -88,4 +89,22 @@ verify_gsc(tk_gsc_readiness_check('verification')['state'] === 'issue', 'A file 
 unlink(ABSPATH . $name);
 verify_gsc(tk_gsc_readiness_check('verification')['state'] === 'unknown', 'Without a verification file a failed homepage stays unverified');
 
-echo "PASS: HTML verification file detection, durable report routing, timestamps, preserved settings, request-error persistence, separate runs, rejected writes and storage-failure feedback. No live requests.\n";
+// A file name entered in Tool Kits is served by WordPress and verified at its public URL; no file on disk is needed.
+foreach (array('google1a2b3c4d5e6f7a8b.html', 'https://fixture.invalid/google1a2b3c4d5e6f7a8b.html', 'google-site-verification: google1a2b3c4d5e6f7a8b.html') as $input) {
+    verify_gsc(tk_gsc_verification_parse($input) === 'google1a2b3c4d5e6f7a8b.html', 'Verification input not parsed: ' . $input);
+}
+verify_gsc(tk_gsc_verification_parse('google.html') === '' && tk_gsc_verification_parse('verify-me.html') === '', 'Non-verification names must be rejected');
+$stored['tk_options']['seo_gsc_verification_file'] = 'google9f8e7d6c5b4a3f2e.html'; tk_clear_request_options_cache();
+$entered = 'https://fixture.invalid/google9f8e7d6c5b4a3f2e.html';
+verify_gsc(tk_gsc_verification_requested('/google9f8e7d6c5b4a3f2e.html?x=1') === 'google9f8e7d6c5b4a3f2e.html', 'The entered file must be served at the site root');
+verify_gsc(tk_gsc_verification_requested('/blog/google9f8e7d6c5b4a3f2e.html') === '' && tk_gsc_verification_requested('/google0000000000000000.html') === '', 'Other paths must not be answered');
+$http[$entered] = array('code' => 200, 'body' => tk_gsc_verification_content('google9f8e7d6c5b4a3f2e.html'));
+$check = tk_gsc_readiness_check('verification');
+verify_gsc($check['state'] === 'pass' && strpos($check['detail'], 'entered in Tool Kits') !== false, 'A reachable entered verification file must pass without a file on disk');
+$http[$entered] = array('code' => 404, 'body' => 'Not found');
+$check = tk_gsc_readiness_check('verification');
+verify_gsc($check['state'] === 'issue' && strpos($check['detail'], 'HTTP 404') !== false, 'An entered file that is not served must be an issue');
+unset($stored['tk_options']['seo_gsc_verification_file']); tk_clear_request_options_cache();
+verify_gsc(tk_gsc_verification_requested('/google9f8e7d6c5b4a3f2e.html') === '', 'A cleared file must no longer be served');
+
+echo "PASS: entered verification file parsing, serving and checks, HTML verification file detection, durable report routing, timestamps, preserved settings, request-error persistence, separate runs, rejected writes and storage-failure feedback. No live requests.\n";

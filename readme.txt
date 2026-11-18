@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.94
+Stable tag: 2.7.95
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -84,6 +84,10 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.95 =
+- Add a Google HTML verification file field to Search Console Readiness. Paste the file name, its URL or its content from Search Console; Tool Kits serves the file at the site root with the exact content and HTTP 200, so no FTP upload is needed. Clearing the field stops serving it.
+- The ownership check verifies the entered file at its public URL first, then physical google*.html files in the site root, and reports the HTTP status or content mismatch when Google could not read it.
 
 = 2.7.94 =
 - Restore the Minify settings page and its save handler, which 2.7.74 removed while the menu entry and save hook stayed registered; opening Tool Kits > Minify failed and minify settings could not be changed.

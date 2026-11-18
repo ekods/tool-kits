@@ -1,3 +1,26 @@
+## Tool Kits 2.7.95
+
+Search Console HTML-file verification without uploading a file. Search Console
+Readiness (SEO > Indexing) has a "Google HTML verification file" field that accepts
+the file name, its URL or the file content. Tool Kits answers
+https://<site>/<file name> with "google-site-verification: <file name>" and HTTP 200
+on init priority 0, before 404 handling, redirects and page caching (404 pages are
+never cached). A physical file with the same name is still served by the web server
+first. Clearing the field stops serving it; input without a verification file name
+is rejected with an error notice.
+
+The ownership check now tests the entered file at its public URL, then physical
+google*.html files in the site root, and reports HTTP errors or content mismatches.
+
+No database migration. The new option defaults to empty, so nothing is served until
+a file name is saved.
+
+Validation: 95/95 regression cases on both PHP 7.4 and PHP 8.4 (readiness fixture
+extended with input parsing, request matching, entered-file pass/fail and clearing),
+115 PHP files linted on both versions, browser checks for Monitoring and 11 admin
+views, and the readiness panel rendered at 1440px and 390px. Not exercised against a
+live WordPress install or a real Search Console property.
+
 ## Tool Kits 2.7.94
 
 Minify settings work again. 2.7.74 removed the Minify page, its panel and the save

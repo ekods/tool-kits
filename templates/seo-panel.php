@@ -65,6 +65,10 @@ if (!defined('ABSPATH')) { exit; }
     if (isset($_GET['tk_seo_audit_cleared']) && sanitize_key((string) $_GET['tk_seo_audit_cleared']) === '1') {
         tk_notice('Content SEO audit report cleared.', 'success');
     }
+    $tk_gsc_verification = isset($_GET['tk_gsc_verification']) ? sanitize_key((string) $_GET['tk_gsc_verification']) : '';
+    if ($tk_gsc_verification === 'saved') { tk_notice('Google verification file saved. Run the Readiness Check, then click Verify in Search Console.', 'success'); }
+    elseif ($tk_gsc_verification === 'cleared') { tk_notice('Google verification file removed. Tool Kits no longer serves it.', 'success'); }
+    elseif ($tk_gsc_verification === 'invalid') { tk_notice('No Google verification file name was found in that value. It looks like google1234567890abcdef.html.', 'error'); }
     if (!empty($_GET['tk_global_saved'])) { tk_notice('Global SEO content saved. Theme-managed values remain linked to their source.', 'success'); }
     $tk_seo_url = tk_admin_url('tool-kits-seo');
     $tk_override_link = '<a href="' . esc_url($tk_seo_url . '#tk-seo-global-enabled') . '">Enable Global Metadata Override &rarr;</a>';
