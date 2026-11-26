@@ -299,7 +299,7 @@ if (!defined('ABSPATH')) { exit; }
             <p>
                 <input type="url" name="index_url" class="large-text" placeholder="<?php echo esc_attr(home_url('/sample-page')); ?>">
             </p>
-            <p>
+            <p class="tk-form-inline">
                 <select name="index_status">
                     <option value="unknown">Unknown</option>
                     <option value="submitted">Submitted</option>

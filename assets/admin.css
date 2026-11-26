@@ -250,6 +250,21 @@
     align-items: center;
 }
 
+.tk-card .tk-form-inline > :is(input.regular-text, input.tk-input) {
+    flex: 1 1 12rem;
+    min-width: 0;
+    width: auto;
+}
+
+.tk-card .tk-form-inline > select {
+    width: auto;
+    max-width: 100%;
+}
+
+.tk-card .tk-form-inline > :is(input, select, .button) {
+    margin: 0;
+}
+
 .tk-inline {
     margin-top: 12px;
 }

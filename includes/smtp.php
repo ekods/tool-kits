@@ -939,9 +939,9 @@ function tk_render_smtp_page() {
                                     </div>
                                 </div>
                                 <div class="tk-form-group" style="margin-top:18px;">
-                                    <label class="tk-form-label">Authorized Redirect URI</label>
-                                    <div style="display:flex; gap:8px; align-items:center;">
-                                        <input type="text" id="tk-smtp-google-redirect" class="tk-input" style="width:100%;" readonly value="<?php echo esc_attr(tk_smtp_google_redirect_uri()); ?>" onfocus="this.select();">
+                                    <label for="tk-smtp-google-redirect" class="tk-form-label">Authorized Redirect URI</label>
+                                    <div class="tk-form-inline">
+                                        <input type="text" id="tk-smtp-google-redirect" class="tk-input" readonly value="<?php echo esc_attr(tk_smtp_google_redirect_uri()); ?>" onfocus="this.select();">
                                         <button type="button" class="button" onclick="navigator.clipboard.writeText(document.getElementById('tk-smtp-google-redirect').value)">Copy</button>
                                     </div>
                                     <p class="tk-input-help">Add this exact URL to Google Cloud Console → OAuth client → Authorized redirect URIs.</p>

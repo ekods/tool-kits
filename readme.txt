@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.95
+Stable tag: 2.7.96
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -84,6 +84,10 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.96 =
+- Keep a consistent gap between fields and actions in the Indexing Monitor and SMTP Gmail setup.
+- Wrap the status, note and action controls on narrow screens and keep the OAuth Copy button reachable.
 
 = 2.7.95 =
 - Add a Google HTML verification file field to Search Console Readiness. Paste the file name, its URL or its content from Search Console; Tool Kits serves the file at the site root with the exact content and HTTP 200, so no FTP upload is needed. Clearing the field stops serving it.
