@@ -10,6 +10,10 @@ $tk_config = include $tk_config_file;
 if (!is_array($tk_config) || empty($tk_config['enabled']) || ($tk_config['valid_until'] ?? 0) <= time()
     || !is_file($tk_config['runtime'] ?? '') || !is_file($tk_config['plugin_file'] ?? '')
     || (int) @filemtime($tk_config['plugin_file']) !== ($tk_config['plugin_mtime'] ?? 0)) { return; }
+$tk_license_verifier = dirname($tk_config['plugin_file']) . '/includes/license-receipt.php';
+if (!is_file($tk_license_verifier)) { return; }
+require_once $tk_license_verifier;
+if (!TK_License_Receipt::matches_request_host((string) ($tk_config['license_site'] ?? ''), $_SERVER['HTTP_HOST'] ?? null)) { return; }
 require_once $tk_config['runtime'];
 if (!class_exists('TK_Page_Cache_Runtime', false) || ($tk_config['format'] ?? null) !== TK_Page_Cache_Runtime::FORMAT
     || !TK_Page_Cache_Runtime::request_allowed($tk_config, $_SERVER, $_COOKIE)) { return; }

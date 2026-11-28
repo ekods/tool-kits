@@ -4,8 +4,8 @@ if (!defined('ABSPATH')) { exit; }
 /**
  * Uninstall cleanup. Loaded only from tk_uninstall(), and it removes data only when an administrator turned on
  * General → Maintenance → "Delete all data on uninstall" (option tk_uninstall_delete_data, outside tk_options so
- * a settings import cannot turn it on). Deactivation already removed the cache drop-in and scheduled jobs.
- * Hardening rules written to .htaccess and optimized image copies in uploads are left in place.
+ * a settings import cannot turn it on). Deactivation already removed the cache drop-ins,
+ * scheduled jobs and managed hardening rules. Optimized image copies in uploads are kept.
  */
 
 // Options Tool Kits creates outside tk_options; prefixes are specific enough not to match other plugins.
@@ -16,6 +16,7 @@ function tk_uninstall_option_names(): array {
         'tk_firewall_event_log', 'tk_rate_limit_blocked_ips', 'tk_fim_last_scan_result', 'tk_fim_last_scan_time',
         'tk_db_cleanup_acf_last_run', 'tk_db_cleanup_revision_last_run', 'tk_login_log_schema_version',
         'tk_security_events_schema_version', 'tk_fragment_cache_keys', 'tk_tamper_last_alert_signature',
+        'tk_runtime_suspended',
     );
 }
 

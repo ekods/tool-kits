@@ -7,21 +7,23 @@ if (!defined('ABSPATH')) {
  * GitHub-based updater to surface releases for Tool Kits.
  */
 
-add_filter('pre_set_site_transient_update_plugins', 'tk_github_plugin_update_check', 20);
-add_filter('site_transient_update_plugins', 'tk_github_plugin_update_check', 20);
-add_filter('plugins_api', 'tk_github_plugin_api', 20, 3);
-add_filter('upgrader_package_options', 'tk_github_upgrader_package_options', 10);
-add_filter('upgrader_source_selection', 'tk_github_upgrader_source_selection', 10, 4);
-add_filter('upgrader_pre_install', 'tk_github_upgrader_pre_install', 10, 2);
-add_filter('upgrader_post_install', 'tk_github_upgrader_post_install', 10, 3);
-add_action('upgrader_process_complete', 'tk_github_upgrader_process_complete', 10, 2);
+function tk_github_update_init(): void {
+    add_filter('pre_set_site_transient_update_plugins', 'tk_github_plugin_update_check', 20);
+    add_filter('site_transient_update_plugins', 'tk_github_plugin_update_check', 20);
+    add_filter('plugins_api', 'tk_github_plugin_api', 20, 3);
+    add_filter('upgrader_package_options', 'tk_github_upgrader_package_options', 10);
+    add_filter('upgrader_source_selection', 'tk_github_upgrader_source_selection', 10, 4);
+    add_filter('upgrader_pre_install', 'tk_github_upgrader_pre_install', 10, 2);
+    add_filter('upgrader_post_install', 'tk_github_upgrader_post_install', 10, 3);
+    add_action('upgrader_process_complete', 'tk_github_upgrader_process_complete', 10, 2);
 
-add_action('admin_post_tk_github_check_now', 'tk_github_check_now_handler');
-add_action('admin_post_tk_github_clear_status', 'tk_github_clear_status_handler');
-add_filter('plugin_action_links_' . plugin_basename(TK_PATH . 'tool-kits.php'), 'tk_github_plugin_action_links');
-add_action('admin_notices', 'tk_github_check_now_notice');
-add_filter('auto_update_plugin', 'tk_github_allow_auto_update', 9999, 2);
-add_action('load-plugins.php', 'tk_github_load_plugins_page');
+    add_action('admin_post_tk_github_check_now', 'tk_github_check_now_handler');
+    add_action('admin_post_tk_github_clear_status', 'tk_github_clear_status_handler');
+    add_filter('plugin_action_links_' . plugin_basename(TK_PATH . 'tool-kits.php'), 'tk_github_plugin_action_links');
+    add_action('admin_notices', 'tk_github_check_now_notice');
+    add_filter('auto_update_plugin', 'tk_github_allow_auto_update', 9999, 2);
+    add_action('load-plugins.php', 'tk_github_load_plugins_page');
+}
 
 $GLOBALS['tk_github_updating_this_plugin'] = false;
 

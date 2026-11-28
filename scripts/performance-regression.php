@@ -7,6 +7,9 @@ require __DIR__ . '/license-test-fixture.php';
 if (!function_exists('wp_doing_cron')) { function wp_doing_cron() { return false; } }
 if (!function_exists('did_action')) { function did_action($hook) { return 1; } }
 if (!function_exists('current_user_can')) { function current_user_can($cap) { return true; } }
+if (!function_exists('wp_schedule_event')) {
+    function wp_schedule_event($timestamp, $recurrence, $hook) { $GLOBALS['scheduled'][$hook] = $timestamp; return true; }
+}
 require dirname(__DIR__) . '/includes/helpers.php';
 require dirname(__DIR__) . '/includes/cache.php';
 require dirname(__DIR__) . '/includes/asset-optimization.php';

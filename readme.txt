@@ -4,7 +4,7 @@ Tags: security, migrate, database, cleanup, login
 Requires at least: 5.8
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.96
+Stable tag: 2.7.97
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -84,6 +84,10 @@ Filters to adjust CORS by environment (optional example):
 
 
 == Changelog ==
+
+= 2.7.97 =
+- Pause Tool Kits features, page caching, Redis and background jobs when the plugin is deactivated or the license is invalid. Keep saved settings and queue progress so features resume after activation and license verification.
+- Show a 400 px floating notice on the frontend to signed-in users when the license is inactive. The panel fits narrow screens and links to Access & License for users with permission to manage Tool Kits.
 
 = 2.7.96 =
 - Keep a consistent gap between fields and actions in the Indexing Monitor and SMTP Gmail setup.

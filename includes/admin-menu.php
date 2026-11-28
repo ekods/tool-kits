@@ -4,11 +4,13 @@ if (!defined('ABSPATH')) { exit; }
 function tk_admin_menu_init() {
     add_action('admin_menu', 'tk_register_admin_menus');
     add_filter('admin_body_class', 'tk_admin_screen_class');
-    add_action('admin_enqueue_scripts', 'tk_monitoring_maybe_enqueue_assets');
-
     add_action('admin_post_tk_toolkits_access_save', 'tk_toolkits_access_save');
     add_action('admin_post_tk_toolkits_license_activate', 'tk_toolkits_license_activate');
     add_action('admin_post_tk_toolkits_license_reset', 'tk_toolkits_license_reset');
+}
+
+function tk_admin_menu_features_init(): void {
+    add_action('admin_enqueue_scripts', 'tk_monitoring_maybe_enqueue_assets');
     add_action('admin_post_tk_toolkits_audit_clear', 'tk_toolkits_audit_clear');
     add_action('admin_post_tk_set_wpconfig_readonly', 'tk_set_wpconfig_readonly');
     add_action('admin_post_tk_set_wpconfig_writable', 'tk_set_wpconfig_writable');
@@ -20,6 +22,7 @@ function tk_admin_menu_init() {
     add_action('tk_monitoring_cron', 'tk_monitoring_cron_run');
     add_action('tk_monitoring_deferred_checks', 'tk_monitoring_cron_run');
     add_action('init', 'tk_monitoring_schedule_cron');
+    add_action('wp_ajax_tk_preflight_check', 'tk_preflight_check');
 }
 
 function tk_admin_screen_class($classes) {
@@ -43,13 +46,6 @@ function tk_monitoring_maybe_enqueue_assets($hook_suffix) {
 
 function tk_register_admin_menus() {
     if (!tk_toolkits_can_manage()) return;
-    $license_key = (string) tk_get_option('license_key', '');
-    $license_reset = isset($_GET['tk_reset_license']) ? sanitize_key($_GET['tk_reset_license']) : '';
-    if ($license_key !== '' && $license_reset !== '1' && (int) get_option('tk_license_reset_skip_validate', 0) !== 1) {
-        tk_license_validate();
-    }
-    $license_status = (string) tk_get_option('license_status', 'inactive');
-    $license_missing = $license_key === '';
     $license_valid = tk_license_features_enabled();
     $license_type = (string) tk_get_option('license_type', '');
     $license_limited = $license_type === 'local';
@@ -113,16 +109,15 @@ function tk_register_admin_menus() {
             tk_toolkits_capability(),
             'tool-kits',
             'tk_render_toolkits_access_page',
-            'dashicons-tool-kits',
+            'dashicons-admin-network',
             3
         );
         add_submenu_page('tool-kits', __('Access & License', 'tool-kits'), __('Access & License', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-access', 'tk_render_toolkits_access_page');
-        add_submenu_page('tool-kits', __('Database Tools', 'tool-kits'), __('Database Tools', 'tool-kits'), tk_toolkits_capability(), 'tool-kits-db', 'tk_render_db_tools_page');
     }
-    if (tk_get_option('hide_toolkits_menu', 0)) {
+    if ($license_valid && tk_get_option('hide_toolkits_menu', 0)) {
         remove_menu_page('tool-kits');
     }
-    if (tk_get_option('hide_cff_menu', 0)) {
+    if ($license_valid && tk_get_option('hide_cff_menu', 0)) {
         remove_menu_page('cff');
         remove_submenu_page('cff', 'cff');
     }
@@ -1433,7 +1428,9 @@ function tk_render_toolkits_access_page() {
 
                         <div style="display:flex; gap:12px; margin-top:24px; padding-top:20px; border-top:1px solid var(--tk-border-soft);">
                             <button class="button button-primary button-hero" type="submit" name="tk_activate_after_save" value="1">Save & Activate</button>
-                            <button class="button button-hero" type="submit" name="tk_connection_test" value="heartbeat">Test Heartbeat</button>
+                            <?php if (!$license_invalid) : ?>
+                                <button class="button button-hero" type="submit" name="tk_connection_test" value="heartbeat">Test Heartbeat</button>
+                            <?php endif; ?>
                             <button class="button button-hero" type="submit" name="tk_connection_test" value="license">Test License</button>
                         </div>
                     </form>
@@ -1667,7 +1664,7 @@ function tk_render_toolkits_access_page() {
                     }, 800);
                 });
             }
-            initPreflight();
+            " . ($license_invalid ? '' : 'initPreflight();') . "
         })();",
             array('id' => 'tk-access-tabs')
         );
@@ -1681,6 +1678,9 @@ function tk_toolkits_access_save() {
     tk_check_nonce('tk_toolkits_access_save');
     $tab = isset($_POST['tk_tab']) ? sanitize_key($_POST['tk_tab']) : 'access';
     $connection_test = isset($_POST['tk_connection_test']) ? sanitize_key((string) $_POST['tk_connection_test']) : '';
+    if (!tk_license_features_enabled() && (!in_array($tab, array('license', 'license-status'), true) || $connection_test === 'heartbeat')) {
+        wp_die('Tool Kits requires a valid license.', 'Tool Kits', array('response' => 403));
+    }
     if (!in_array($tab, array('access', 'owner', 'alerts', 'audit', 'license', 'license-status'), true)) {
         $tab = 'access';
     }
@@ -2045,4 +2045,3 @@ function tk_preflight_check() {
         wp_send_json_error(array('message' => 'HTTP ' . $code));
     }
 }
-add_action('wp_ajax_tk_preflight_check', 'tk_preflight_check');

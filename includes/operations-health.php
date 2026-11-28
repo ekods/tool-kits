@@ -116,6 +116,16 @@ function tk_operations_health_repair_handler(): void {
     if (function_exists('tk_heartbeat_schedule')) {
         tk_heartbeat_schedule();
     }
+    tk_operations_health_resume_queues();
+    if (function_exists('tk_security_events_schedule_maintenance')) {
+        tk_security_events_schedule_maintenance();
+    }
+    tk_operations_health_report(true);
+    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-monitoring', 'tk_operations' => 'repaired'), admin_url('admin.php')) . '#operations');
+    exit;
+}
+
+function tk_operations_health_resume_queues(): void {
     $indexnow = tk_get_option('indexnow_queue', array());
     if (is_array($indexnow) && !empty($indexnow) && !wp_next_scheduled('tk_indexnow_process_queue')) {
         wp_schedule_single_event(time() + MINUTE_IN_SECONDS, 'tk_indexnow_process_queue');
@@ -124,12 +134,6 @@ function tk_operations_health_repair_handler(): void {
     if (is_array($images) && ($images['status'] ?? '') === 'running' && !wp_next_scheduled('tk_image_opt_queue_process')) {
         wp_schedule_single_event(time() + 10, 'tk_image_opt_queue_process');
     }
-    if (function_exists('tk_security_events_schedule_maintenance')) {
-        tk_security_events_schedule_maintenance();
-    }
-    tk_operations_health_report(true);
-    wp_safe_redirect(add_query_arg(array('page' => 'tool-kits-monitoring', 'tk_operations' => 'repaired'), admin_url('admin.php')) . '#operations');
-    exit;
 }
 
 function tk_operations_health_render_panel(array $report): void {

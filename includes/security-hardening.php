@@ -43,7 +43,7 @@ function tk_hardening_init() {
         add_action('init', 'tk_hardening_http_auth', 0);
     }
     if (tk_get_option('hardening_disable_wp_cron', 0)) {
-        add_action('plugins_loaded', 'tk_hardening_disable_wp_cron_runtime', 0);
+        tk_hardening_disable_wp_cron_runtime();
     }
     if (tk_get_option('hardening_disable_comments', 0)) {
         add_action('init', 'tk_hardening_disable_comments');
@@ -963,39 +963,6 @@ function tk_hardening_wp_config_path(): string {
     return '';
 }
 
-function tk_hardening_set_wp_config_constant(string $name, bool $enabled): bool {
-    $path = tk_hardening_wp_config_path();
-    if ($path === '' || !file_exists($path) || !is_writable($path)) {
-        return false;
-    }
-    $contents = @file_get_contents($path);
-    if (!is_string($contents) || $contents === '') {
-        return false;
-    }
-
-    $pattern = '/^[ \t]*define\s*\(\s*[\'"]' . preg_quote($name, '/') . '[\'"]\s*,\s*(?:true|false|1|0)\s*\)\s*;\s*$/im';
-    $replacement = "define('" . $name . "', " . ($enabled ? 'true' : 'false') . ");";
-    if (preg_match($pattern, $contents) === 1) {
-        $updated = preg_replace($pattern, $replacement, $contents, 1);
-        if (!is_string($updated)) {
-            return false;
-        }
-        return @file_put_contents($path, $updated) !== false;
-    }
-
-    if (!$enabled) {
-        return true;
-    }
-
-    $anchor = "/* That's all, stop editing! Happy publishing. */";
-    if (strpos($contents, $anchor) !== false) {
-        $updated = str_replace($anchor, $replacement . "\n" . $anchor, $contents);
-    } else {
-        $updated = rtrim($contents) . "\n" . $replacement . "\n";
-    }
-    return @file_put_contents($path, $updated) !== false;
-}
-
 function tk_hardening_apply_recommended_defaults(): void {
     if (!tk_get_option('hardening_auto_toggle', 1)) {
         return;
@@ -1024,6 +991,49 @@ function tk_hardening_apply_recommended_defaults(): void {
     ));
 }
 
+function tk_hardening_uploads_server_rule(bool $iis): string {
+    if ($iis) {
+        return "<!-- Tool Kits: block uploads php -->\n<configuration>\n  <system.webServer>\n    <handlers>\n      <add name=\"BlockPhp\" path=\"*.php\" verb=\"*\" modules=\"StaticFileModule\" resourceType=\"File\" requireAccess=\"Read\" />\n    </handlers>\n    <security>\n      <requestFiltering>\n        <fileExtensions>\n          <add fileExtension=\".php\" allowed=\"false\" />\n        </fileExtensions>\n      </requestFiltering>\n    </security>\n  </system.webServer>\n</configuration>\n";
+    }
+    return "# Tool Kits: block uploads php\n<IfModule mod_rewrite.c>\n  RewriteEngine On\n  RewriteRule ^.*\\.php$ - [F]\n</IfModule>\n<IfModule mod_autoindex.c>\n  Options -Indexes\n</IfModule>\n";
+}
+
+function tk_hardening_suspend_server_rules(): void {
+    $root = rtrim(ABSPATH, '/\\') . '/.htaccess';
+    if (is_file($root)) {
+        $contents = @file_get_contents($root);
+        if (is_string($contents)) {
+            $updated = preg_replace('~^# BEGIN Tool Kits Root\r?\n.*?^# END Tool Kits Root(?:\r?\n|$)~ms', '', $contents);
+            if (is_string($updated) && $updated !== $contents) {
+                tk_page_cache_early_atomic_write($root, $updated);
+            }
+        }
+    }
+    delete_option('tk_hardening_root_rules_hash');
+
+    $uploads = wp_get_upload_dir();
+    if (empty($uploads['basedir'])) {
+        return;
+    }
+    foreach (array('.htaccess', 'web.config') as $file) {
+        $path = trailingslashit($uploads['basedir']) . $file;
+        $contents = is_file($path) ? @file_get_contents($path) : false;
+        if (!is_string($contents)) {
+            continue;
+        }
+        $rule = tk_hardening_uploads_server_rule($file === 'web.config');
+        $updated = str_replace(array($rule, str_replace("\n", "\r\n", $rule)), '', $contents);
+        if ($updated !== $contents) {
+            if ($file === 'web.config' && trim($updated) === '') {
+                @unlink($path);
+            } else {
+                tk_page_cache_early_atomic_write($path, $updated);
+            }
+        }
+    }
+    delete_option('tk_hardening_uploads_rule');
+}
+
 function tk_hardening_block_uploads_php(): void {
     $server = tk_hardening_detect_server();
     $uploads = wp_upload_dir();
@@ -1046,7 +1056,7 @@ function tk_hardening_block_uploads_php(): void {
                 return;
             }
         }
-        $block = "# Tool Kits: block uploads php\n<IfModule mod_rewrite.c>\n  RewriteEngine On\n  RewriteRule ^.*\\.php$ - [F]\n</IfModule>\n<IfModule mod_autoindex.c>\n  Options -Indexes\n</IfModule>\n";
+        $block = tk_hardening_uploads_server_rule(false);
         $ok = false;
         if (file_exists($htaccess)) {
             $contents = @file_get_contents($htaccess);
@@ -1063,16 +1073,16 @@ function tk_hardening_block_uploads_php(): void {
 
     if ($server === 'iis') {
         $web_config = trailingslashit($uploads_path) . 'web.config';
-        $block = "<configuration>\n  <system.webServer>\n    <handlers>\n      <add name=\"BlockPhp\" path=\"*.php\" verb=\"*\" modules=\"StaticFileModule\" resourceType=\"File\" requireAccess=\"Read\" />\n    </handlers>\n    <security>\n      <requestFiltering>\n        <fileExtensions>\n          <add fileExtension=\".php\" allowed=\"false\" />\n        </fileExtensions>\n      </requestFiltering>\n    </security>\n  </system.webServer>\n</configuration>\n";
+        $block = tk_hardening_uploads_server_rule(true);
         if (file_exists($web_config)) {
             $contents = @file_get_contents($web_config);
             if (is_string($contents) && strpos($contents, 'Tool Kits') !== false) {
                 return;
             }
-            @file_put_contents($web_config, rtrim((string) $contents, "\r\n") . "\n\n<!-- Tool Kits: block uploads php -->\n" . $block);
+            @file_put_contents($web_config, rtrim((string) $contents, "\r\n") . "\n\n" . $block);
             return;
         }
-        @file_put_contents($web_config, "<!-- Tool Kits: block uploads php -->\n" . $block);
+        @file_put_contents($web_config, $block);
     }
 }
 
@@ -3034,7 +3044,6 @@ function tk_hardening_save() {
         if (tk_form_has_field('disable_wp_cron')) {
             $disable_wp_cron = !empty($_POST['disable_wp_cron']) ? 1 : 0;
             tk_update_option('hardening_disable_wp_cron', $disable_wp_cron);
-            tk_hardening_set_wp_config_constant('DISABLE_WP_CRON', (bool) $disable_wp_cron);
         }
         if (function_exists('tk_page_cache_purge')) {
             tk_page_cache_purge();

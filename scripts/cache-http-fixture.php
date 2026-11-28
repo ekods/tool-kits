@@ -10,7 +10,7 @@ if (is_file(WP_CONTENT_DIR . '/advanced-cache.php')) { include WP_CONTENT_DIR . 
 file_put_contents(ABSPATH . 'boots.log', "boot\n", FILE_APPEND);
 usleep(180000);
 $fixture = json_decode((string) file_get_contents(ABSPATH . 'fixture.json'), true);
-$options = array_merge(array('page_cache_enabled' => 1, 'page_cache_ttl' => 3600, 'page_cache_exclude_paths' => "/excluded\n", 'hardening_csp_strict_enabled' => 1), $fixture);
+$options = array_merge(array('page_cache_enabled' => 1, 'page_cache_ttl' => 3600, 'page_cache_exclude_paths' => "/excluded\n", 'hardening_csp_strict_enabled' => 1, 'license_site_url' => 'http://' . $_SERVER['HTTP_HOST']), $fixture);
 function tk_get_option($key, $default = null) { return $GLOBALS['options'][$key] ?? $default; }
 function tk_license_features_enabled() { return empty($GLOBALS['options']['unlicensed']); }
 function tk_license_verified_claims() { return tk_license_features_enabled() ? array('expires_at' => time() + 86400) : false; }

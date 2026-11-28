@@ -16,6 +16,13 @@ $GLOBALS['tk_object_cache_boot'] = (static function () {
         $file = WP_CONTENT_DIR . '/cache/tool-kits/object-cache-config.php';
         $config = is_file($file) ? @include $file : null;
         if (!is_array($config) || empty($config['enabled'])) { $state['error'] = 'Config missing'; return $state; }
+        $plugin = (string) ($config['plugin_file'] ?? '');
+        if (($config['valid_until'] ?? 0) <= time() || !is_file($plugin)
+            || (int) @filemtime($plugin) !== ($config['plugin_mtime'] ?? 0)) { return $state; }
+        $verifier = dirname($plugin) . '/includes/license-receipt.php';
+        if (!is_file($verifier)) { return $state; }
+        require_once $verifier;
+        if (!TK_License_Receipt::matches_request_host((string) ($config['license_site'] ?? ''), $_SERVER['HTTP_HOST'] ?? null)) { return $state; }
         foreach (array('host' => 'TK_REDIS_HOST', 'port' => 'TK_REDIS_PORT', 'password' => 'TK_REDIS_PASSWORD', 'database' => 'TK_REDIS_DATABASE') as $field => $constant) {
             if (defined($constant)) { $config[$field] = constant($constant); }
         }

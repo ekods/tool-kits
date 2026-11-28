@@ -287,8 +287,13 @@ function tk_hide_login_block_admin_early() {
 
 function tk_hide_login_flush_rewrite($enable = true) {
     $slug = tk_hide_login_slug();
-    if ($enable && $slug !== '') {
-        add_rewrite_rule("^{$slug}/?$", 'wp-login.php', 'top');
+    if ($slug !== '') {
+        if ($enable) {
+            add_rewrite_rule("^{$slug}/?$", 'wp-login.php', 'top');
+        } else {
+            global $wp_rewrite;
+            unset($wp_rewrite->non_wp_rules["^{$slug}/?$"]);
+        }
     }
     flush_rewrite_rules();
 }

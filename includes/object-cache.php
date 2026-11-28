@@ -14,6 +14,16 @@ function tk_object_cache_init() {
     add_action('admin_post_tk_object_cache_flush', 'tk_object_cache_handle_flush');
 }
 
+/** Before this flag existed, an installed Tool Kits drop-in represented the saved preference. */
+function tk_object_cache_remember_enabled(): bool {
+    $enabled = tk_get_option('object_cache_enabled');
+    if ($enabled === null && tk_object_cache_dropin_state() === 'toolkits') {
+        tk_update_option('object_cache_enabled', 1);
+        return true;
+    }
+    return (bool) $enabled;
+}
+
 /** phpredis class; TK_REDIS_CLASS lets the regression tests substitute a fake. */
 function tk_object_cache_redis_class(): string {
     return defined('TK_REDIS_CLASS') ? (string) TK_REDIS_CLASS : 'Redis';
@@ -35,7 +45,7 @@ function tk_object_cache_owns_dropin(string $contents): bool {
 function tk_object_cache_dropin_state(): string {
     $path = tk_object_cache_dropin_path();
     if (!is_file($path)) { return 'none'; }
-    return tk_object_cache_owns_dropin((string) @file_get_contents($path)) ? 'toolkits' : 'foreign';
+    return tk_object_cache_owns_dropin((string) @file_get_contents($path, false, null, 0, 64)) ? 'toolkits' : 'foreign';
 }
 
 /** Saved connection settings; TK_REDIS_* constants in wp-config.php win, as in the drop-in. */
@@ -117,8 +127,12 @@ function tk_object_cache_test(array $settings, bool $flush = false): array {
 
 /** Removes our drop-in (never a foreign one) and the config file. */
 function tk_object_cache_remove(): void {
+    global $wp_object_cache;
+    if (tk_object_cache_runtime_status() !== null) {
+        $wp_object_cache->close();
+    }
     $dropin = tk_object_cache_dropin_path();
-    if (is_file($dropin) && tk_object_cache_owns_dropin((string) @file_get_contents($dropin))) {
+    if (tk_object_cache_dropin_state() === 'toolkits') {
         @unlink($dropin);
         if (function_exists('opcache_invalidate')) { @opcache_invalidate($dropin, true); }
     }
@@ -130,9 +144,33 @@ function tk_object_cache_remove(): void {
     @unlink(tk_cache_dir() . '/object-cache-down');
 }
 
+function tk_object_cache_sync(bool $licensed): void {
+    if (!tk_object_cache_remember_enabled()) { return; }
+    if (!$licensed) {
+        tk_object_cache_remove();
+        return;
+    }
+    $claims = tk_license_verified_claims();
+    if ($claims === false) { return; }
+    $state = tk_object_cache_dropin_state();
+    if ($state === 'foreign') { return; }
+    $path = tk_object_cache_config_path();
+    $existing = is_file($path) ? include $path : array();
+    $existing = is_array($existing) ? $existing : array();
+    $deadline = (int) ($existing['valid_until'] ?? 0);
+    $plugin_mtime = (int) filemtime(dirname(__DIR__) . '/tool-kits.php');
+    if ($state === 'toolkits' && $deadline === $claims['expires_at'] && ($existing['plugin_mtime'] ?? 0) === $plugin_mtime) {
+        return;
+    }
+    $restart = $state === 'none' || $deadline <= time() || ($existing['plugin_mtime'] ?? 0) !== $plugin_mtime;
+    $settings = $restart ? tk_object_cache_settings() : array_intersect_key($existing, tk_object_cache_settings());
+    tk_object_cache_install($settings, $claims, $restart);
+}
+
 /** @return array{ok:bool,message:string} */
 function tk_object_cache_enable(): array {
-    if (!tk_license_features_enabled()) { return array('ok' => false, 'message' => 'Redis object cache requires an active Tool Kits license.'); }
+    $claims = tk_license_features_enabled() ? tk_license_verified_claims() : false;
+    if ($claims === false) { return array('ok' => false, 'message' => 'Redis object cache requires an active Tool Kits license.'); }
     if (tk_object_cache_dropin_state() === 'foreign') {
         return array('ok' => false, 'message' => 'wp-content/object-cache.php belongs to another plugin. Tool Kits will not overwrite it.');
     }
@@ -146,9 +184,21 @@ function tk_object_cache_enable(): array {
         tk_update_option('object_cache_last_test', array('fp' => tk_object_cache_fingerprint($settings), 'ok' => false, 'message' => $test['message'], 'time' => time()));
         return array('ok' => false, 'message' => 'Not enabled: ' . $test['message']);
     }
+    $result = tk_object_cache_install($settings, $claims);
+    if ($result['ok']) {
+        @unlink(tk_cache_dir() . '/object-cache-down');
+        tk_update_option('object_cache_enabled', 1);
+    }
+    return $result;
+}
+
+function tk_object_cache_install(array $settings, array $claims, bool $restart = false): array {
+    $plugin = dirname(__DIR__) . '/tool-kits.php';
     $config = array(
         'enabled' => true, 'host' => $settings['host'], 'port' => $settings['port'], 'password' => $settings['password'],
         'database' => $settings['database'], 'prefix' => tk_object_cache_prefix(), 'timeout' => 1.0,
+        'plugin_file' => $plugin, 'plugin_mtime' => (int) filemtime($plugin),
+        'license_site' => $claims['site_url'], 'valid_until' => $claims['expires_at'],
     );
     $source = (string) @file_get_contents(dirname(__DIR__) . '/drop-ins/object-cache.php');
     if (!tk_object_cache_owns_dropin($source)
@@ -156,7 +206,11 @@ function tk_object_cache_enable(): array {
         tk_object_cache_remove();
         return array('ok' => false, 'message' => 'Could not write the object cache config. Check wp-content/cache/tool-kits permissions.');
     }
-    @unlink(tk_cache_dir() . '/object-cache-down'); // The test just passed: do not let an old failure delay the first request.
+    $marker = tk_cache_dir() . '/object-cache-down';
+    if ($restart) {
+        // The next connection must flush values cached before the pause.
+        @touch($marker, time() - 31);
+    }
     // Re-check right before writing: another plugin may have installed its drop-in meanwhile.
     if (tk_object_cache_dropin_state() === 'foreign' || !tk_page_cache_early_atomic_write(tk_object_cache_dropin_path(), $source)) {
         tk_object_cache_remove();
@@ -212,6 +266,7 @@ function tk_object_cache_handle_disable() {
     if (tk_object_cache_dropin_state() === 'foreign') {
         tk_object_cache_notice(false, 'wp-content/object-cache.php belongs to another plugin; Tool Kits did not change it.');
     }
+    tk_update_option('object_cache_enabled', 0);
     tk_object_cache_remove();
     tk_object_cache_notice(tk_object_cache_dropin_state() === 'none', tk_object_cache_dropin_state() === 'none'
         ? 'Redis object cache disabled.' : 'Could not remove wp-content/object-cache.php. Check file permissions.');

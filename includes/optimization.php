@@ -1,7 +1,9 @@
 <?php
 if (!defined('ABSPATH')) { exit; }
 
-add_action('admin_post_tk_ps_diag_run', 'tk_ps_diag_run_handler');
+function tk_optimization_init(): void {
+    add_action('admin_post_tk_ps_diag_run', 'tk_ps_diag_run_handler');
+}
 
 function tk_ps_diag_last_result_key(): string {
     $uid = function_exists('get_current_user_id') ? (int) get_current_user_id() : 0;

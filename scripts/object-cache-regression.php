@@ -6,6 +6,7 @@ if (getenv('TK_OC_CHILD')) {
     define('ABSPATH', __DIR__ . '/');
     define('WP_CONTENT_DIR', getenv('TK_OC_CONTENT'));
     $scenario = getenv('TK_OC_CHILD');
+    if ($scenario === 'host-mismatch') { $_SERVER['HTTP_HOST'] = 'other.example.test'; }
     define('TK_REDIS_CLASS', $scenario === 'no-ext' ? 'TkMissingRedis' : 'TkChildRedis');
     if ($scenario !== 'no-ext') {
         class TkChildRedis {
@@ -101,14 +102,25 @@ function wp_suspend_cache_addition() { return $GLOBALS['suspend']; }
 $checks = 0;
 function check_oc($ok, $message) { if (!$ok) { throw new RuntimeException($message); } $GLOBALS['checks']++; }
 function oc_new(array $config = array()) { $redis = new TkFakeRedis(); $redis->select(2); return new WP_Object_Cache($redis, $config + array('prefix' => 'siteA:', 'host' => '127.0.0.1', 'port' => 6379)); }
+function oc_boot_config(array $overrides = array()): string {
+    $plugin = dirname(__DIR__) . '/tool-kits.php';
+    $config = $overrides + array('enabled' => true, 'host' => '127.0.0.1', 'port' => 6379, 'password' => '',
+        'database' => 0, 'prefix' => 'siteA:', 'plugin_file' => $plugin, 'plugin_mtime' => (int) filemtime($plugin),
+        'license_site' => 'https://example.test', 'valid_until' => time() + 3600);
+    return '<?php return ' . var_export($config, true) . ';';
+}
 
 try {
     // Boot fallbacks run in child processes: the drop-in must define nothing (WordPress then loads its own cache).
-    $config = "<?php\nif (!defined('ABSPATH')) { return array(); }\nreturn array('enabled' => true, 'host' => '127.0.0.1', 'port' => 6379, 'password' => 'secret', 'database' => 0, 'prefix' => 'siteA:');\n";
-    foreach (array('throw', 'refused', 'auth', 'no-ext', 'no-config') as $scenario) {
+    foreach (array('throw', 'refused', 'auth', 'no-ext', 'no-config', 'expired', 'uninstalled', 'host-mismatch') as $scenario) {
         $child_content = $content . '/child-' . $scenario;
         mkdir($child_content . '/cache/tool-kits', 0777, true);
-        if ($scenario !== 'no-config') { file_put_contents($child_content . '/cache/tool-kits/object-cache-config.php', $config); }
+        if ($scenario !== 'no-config') {
+            $overrides = array('password' => $scenario === 'auth' ? 'secret' : '');
+            if ($scenario === 'expired') { $overrides['valid_until'] = time() - 1; }
+            if ($scenario === 'uninstalled') { $overrides['plugin_file'] = $child_content . '/missing.php'; }
+            file_put_contents($child_content . '/cache/tool-kits/object-cache-config.php', oc_boot_config($overrides));
+        }
         $command = 'TK_OC_CHILD=' . escapeshellarg($scenario) . ' TK_OC_CONTENT=' . escapeshellarg($child_content) . ' ' . escapeshellarg(PHP_BINARY) . ' -d display_errors=1 -d error_reporting=-1 ' . escapeshellarg(__FILE__) . ' 2>&1';
         $result = json_decode((string) shell_exec($command), true);
         check_oc(is_array($result) && $result['defined'] === false && $result['output'] === '', 'Drop-in did not fall back silently when Redis ' . $scenario . ': ' . json_encode($result));
@@ -118,7 +130,7 @@ try {
     }
 
     // After a failure the drop-in skips Redis for 30 seconds (an unreachable host would cost every request the connect timeout).
-    $healthy = "<?php\nif (!defined('ABSPATH')) { return array(); }\nreturn array('enabled' => true, 'host' => '127.0.0.1', 'port' => 6379, 'password' => '', 'database' => 0, 'prefix' => 'siteA:');\n";
+    $healthy = oc_boot_config();
     foreach (array('marker-none' => null, 'marker-fresh' => time(), 'marker-stale' => time() - 31) as $scenario => $marker_time) {
         $child_content = $content . '/child-' . $scenario;
         mkdir($child_content . '/cache/tool-kits', 0777, true);
@@ -133,7 +145,7 @@ try {
     }
 
     // Successful boot defines the full API.
-    file_put_contents($content . '/cache/tool-kits/object-cache-config.php', "<?php\nif (!defined('ABSPATH')) { return array(); }\nreturn array('enabled' => true, 'host' => '127.0.0.1', 'port' => 6379, 'password' => '', 'database' => 2, 'prefix' => 'siteA:');\n");
+    file_put_contents($content . '/cache/tool-kits/object-cache-config.php', oc_boot_config(array('database' => 2)));
     require dirname(__DIR__) . '/drop-ins/object-cache.php';
     foreach (array('wp_cache_init', 'wp_cache_add', 'wp_cache_add_multiple', 'wp_cache_replace', 'wp_cache_set', 'wp_cache_set_multiple', 'wp_cache_get', 'wp_cache_get_multiple', 'wp_cache_delete', 'wp_cache_delete_multiple', 'wp_cache_incr', 'wp_cache_decr', 'wp_cache_flush', 'wp_cache_flush_runtime', 'wp_cache_flush_group', 'wp_cache_supports', 'wp_cache_close', 'wp_cache_add_global_groups', 'wp_cache_add_non_persistent_groups', 'wp_cache_switch_to_blog', 'wp_cache_reset') as $function) {
         check_oc(function_exists($function), $function . ' is missing');
@@ -294,6 +306,7 @@ try {
     function tk_update_option($key, $value) { $GLOBALS['tk'][$key] = $value; }
     function tk_update_options(array $values) { $GLOBALS['tk'] = $values + $GLOBALS['tk']; }
     function tk_license_features_enabled() { return $GLOBALS['licensed']; }
+    function tk_license_verified_claims() { return tk_license_features_enabled() ? array('site_url' => 'https://example.test', 'expires_at' => time() + 3600) : false; }
     function tk_cache_dir() { return WP_CONTENT_DIR . '/cache/tool-kits'; }
     function wp_mkdir_p($dir) { return is_dir($dir) || mkdir($dir, 0777, true); }
     function wp_generate_password($length = 12, $special = true, $extra = false) { return 'AbCdEfGhIj'; }
@@ -339,6 +352,14 @@ try {
     check_oc($written['enabled'] === true && $written['prefix'] === 'tk_abcdefghij:' && $written['host'] === '127.0.0.1', 'Config file is wrong: ' . json_encode($written));
     check_oc(array_keys(TkFakeRedis::$data[0]) === array('siteB:default:k'), 'Enable did not clear stale keys for this prefix only');
     check_oc(tk_object_cache_prefix() === 'tk_abcdefghij:', 'Prefix changed between calls');
+    $saved = $GLOBALS['tk'];
+    unset($GLOBALS['tk']['object_cache_enabled']); // Older installations only saved the drop-in.
+    $GLOBALS['licensed'] = false;
+    tk_object_cache_sync(false);
+    check_oc(!is_file($dropin) && !is_file(tk_object_cache_config_path()) && $GLOBALS['tk'] === $saved, 'License suspension removed saved settings or kept Redis active');
+    $GLOBALS['licensed'] = true;
+    tk_object_cache_sync(true);
+    check_oc(is_file($dropin) && is_file(tk_object_cache_config_path()) && $GLOBALS['tk'] === $saved, 'A renewed license did not restore the saved Redis configuration');
     tk_object_cache_remove();
     check_oc(!is_file($dropin) && !is_file(tk_object_cache_config_path()), 'remove() kept our drop-in or config');
 

@@ -37,16 +37,7 @@ function tk_license_has_valid_signature(): bool {
 function tk_license_features_enabled(): bool {
     if ((string) tk_get_option('license_status', 'inactive') !== 'valid' || !tk_license_has_valid_signature()) { return false; }
     // A cloned database must not become licensed by keeping the original home URL.
-    if (isset($_SERVER['HTTP_HOST'])) {
-        $actual = parse_url('https://' . $_SERVER['HTTP_HOST']);
-        $home = parse_url(home_url('/'));
-        if (!is_array($actual) || !is_array($home) || isset($actual['user']) || isset($actual['pass'])
-            || isset($actual['path']) || isset($actual['query']) || isset($actual['fragment'])
-            || strtolower($actual['host'] ?? '') !== strtolower($home['host'] ?? '')
-            || (int) ($actual['port'] ?? (($home['scheme'] ?? '') === 'https' ? 443 : 80))
-                !== (int) ($home['port'] ?? (($home['scheme'] ?? '') === 'https' ? 443 : 80))) { return false; }
-    }
-    return true;
+    return TK_License_Receipt::matches_request_host(home_url('/'), $_SERVER['HTTP_HOST'] ?? null);
 }
 
 function tk_license_is_valid(): bool { return tk_license_features_enabled(); }

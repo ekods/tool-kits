@@ -1,6 +1,19 @@
 <?php
 /** Standalone verifier. No WordPress APIs, remote keys, filters or database trust anchors. */
 final class TK_License_Receipt {
+    public static function matches_request_host(string $site_url, $host): bool {
+        if ($host === null) { return true; }
+        if (!is_string($host)) { return false; }
+        $actual = parse_url('https://' . $host);
+        $site = parse_url($site_url);
+        return is_array($actual) && is_array($site) && !empty($site['host'])
+            && !isset($actual['user']) && !isset($actual['pass']) && !isset($actual['path'])
+            && !isset($actual['query']) && !isset($actual['fragment'])
+            && strtolower($actual['host'] ?? '') === strtolower($site['host'])
+            && (int) ($actual['port'] ?? (($site['scheme'] ?? '') === 'https' ? 443 : 80))
+                === (int) ($site['port'] ?? (($site['scheme'] ?? '') === 'https' ? 443 : 80));
+    }
+
     public static function normalize_site(string $url): string {
         $parts = parse_url(trim($url));
         if (!is_array($parts) || empty($parts['host']) || !isset($parts['scheme'])

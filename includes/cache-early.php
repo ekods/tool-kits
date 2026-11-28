@@ -152,6 +152,7 @@ function tk_page_cache_early_sync(): void {
         'runtime' => __DIR__ . '/cache-runtime.php',
         'plugin_file' => dirname(__DIR__) . '/tool-kits.php',
         'plugin_mtime' => (int) filemtime(dirname(__DIR__) . '/tool-kits.php'),
+        'license_site' => (string) tk_get_option('license_site_url', ''),
         'exclude_paths' => array_values(array_filter(array_map('trim', explode("\n", (string) tk_get_option('page_cache_exclude_paths', "/wp-login.php\n/wp-admin\n"))), 'strlen')),
         'dynamic_paths' => tk_cache_dynamic_path_patterns(),
         'allowed_query_keys' => TK_Page_Cache_Runtime::allowed_query_keys(),
@@ -189,13 +190,13 @@ function tk_page_cache_early_sync(): void {
     }
 }
 
-function tk_page_cache_early_option_changed($option, $old = null, $new = null): void {
-    if ($option !== 'tk_options' && $option !== 'active_plugins' && $option !== 'home' && $option !== 'siteurl') { return; }
+function tk_page_cache_early_option_changed($option, $old = null, $new = null): bool {
+    if (!in_array($option, array('tk_options', 'active_plugins', 'active_sitewide_plugins', 'home', 'siteurl'), true)) { return false; }
     if ($option === 'tk_options' && is_array($old) && is_array($new)) {
-        $keys = array('page_cache_enabled', 'page_cache_ttl', 'page_cache_exclude_paths', 'license_status', 'license_key', 'license_signature', 'license_receipt', 'license_site_url', 'license_expires_at', 'toolkits_install_id', 'hardening_waf_enabled', 'hardening_httpauth_enabled', 'hide_login_enabled', 'hide_login_slug');
+        $keys = array('page_cache_enabled', 'page_cache_ttl', 'page_cache_exclude_paths', 'license_status', 'license_key', 'license_signature', 'license_receipt', 'license_type', 'license_site_url', 'license_expires_at', 'toolkits_install_id', 'hardening_waf_enabled', 'hardening_httpauth_enabled', 'hide_login_enabled', 'hide_login_slug');
         $changed = false;
         foreach ($keys as $key) { if (($old[$key] ?? null) !== ($new[$key] ?? null)) { $changed = true; break; } }
-        if (!$changed) { return; }
+        if (!$changed) { return false; }
     }
     // Disable immediately after an option/license change, then publish one
     // consistent snapshot after all fields in the settings form have saved.
@@ -206,6 +207,7 @@ function tk_page_cache_early_option_changed($option, $old = null, $new = null): 
         $GLOBALS['tk_page_cache_early_sync_pending'] = true;
         add_action('shutdown', 'tk_page_cache_early_sync', PHP_INT_MAX);
     }
+    return true;
 }
 
 function tk_page_cache_early_admin_notice(): void {

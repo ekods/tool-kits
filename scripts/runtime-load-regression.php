@@ -75,7 +75,7 @@ check_load(TK_Page_Cache_Runtime::key($base + array('REQUEST_URI' => '/a/')) ===
 
 // Source guards for paths that need WordPress to execute.
 $source = function ($file) { return file_get_contents(dirname(__DIR__) . '/includes/' . $file); };
-check_load(strpos($source('helpers.php'), '$license = tk_license_validate();') !== false && substr_count($source('helpers.php'), 'tk_license_validate(true)') === 1, 'Tool Kits requests force a remote license check again');
+check_load(strpos($source('helpers.php'), 'function tk_toolkits_refresh_license_for_request()') !== false && substr_count($source('helpers.php'), 'tk_license_validate(true)') === 1, 'Tool Kits requests force a remote license check again');
 preg_match('/function tk_seo_redirect_maybe_handle\(\) \{.*?\n\}\n/s', $source('seo-optimization.php'), $handler);
 check_load(!empty($handler[0]) && strpos($handler[0], 'tk_update_option') === false && strpos($handler[0], 'tk_seo_redirect_record_hit') !== false, 'A redirect hit rewrites tk_options again');
 check_load(strpos($source('security-rate-limit.php'), "tk_update_option('rate_limit_blocked_ips'") === false, 'Blocked IPs are stored in tk_options again');

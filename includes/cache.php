@@ -23,9 +23,6 @@ function tk_cache_init() {
         wp_clear_scheduled_hook('tk_page_cache_gc');
     }
     add_action('admin_notices', 'tk_page_cache_early_admin_notice');
-    add_action('updated_option', 'tk_page_cache_early_option_changed', 20, 3);
-    add_action('added_option', 'tk_page_cache_early_option_changed', 20);
-    add_action('deleted_option', 'tk_page_cache_early_option_changed', 20);
 
     if ($page_cache_enabled) {
         // Serve first, then open the outermost content buffer so the stored page already includes every

@@ -302,7 +302,6 @@ function tk_killswitch_init() {
     register_shutdown_function('tk_killswitch_shutdown');
     add_action('init', 'tk_killswitch_maybe_recover', 1);
     add_action('admin_notices', 'tk_killswitch_notice');
-    add_action('admin_notices', 'tk_license_admin_notice');
 }
 
 function tk_license_admin_notice() {
@@ -313,19 +312,49 @@ function tk_license_admin_notice() {
         return;
     }
 
-    $status = tk_get_option('license_status', 'inactive');
-    $key = tk_get_option('license_key', '');
-
     if (!tk_license_features_enabled()) {
         ?>
         <div class="notice notice-warning is-dismissible">
             <p>
-                <strong>Tool Kits:</strong> Your license is not active yet. Enter your license key to enable premium features and automatic updates.
+                <strong>Tool Kits:</strong> Features are paused. Activate your license to use your saved configuration.
                 <a href="<?php echo esc_url(tk_admin_url('tool-kits-access') . '#license'); ?>" class="button button-secondary" style="margin-left:10px;">Activate Now</a>
             </p>
         </div>
         <?php
     }
+}
+
+function tk_license_frontend_notice_init(): void {
+    if (is_admin() || !is_user_logged_in() || tk_license_features_enabled() || headers_sent()) {
+        return;
+    }
+
+    if (!defined('DONOTCACHEPAGE')) {
+        define('DONOTCACHEPAGE', true);
+    }
+    nocache_headers();
+    header('Cache-Control: private, no-store, max-age=0');
+
+    add_action('wp_body_open', 'tk_license_frontend_notice', 5);
+    add_action('wp_footer', 'tk_license_frontend_notice', 5);
+}
+
+function tk_license_frontend_notice(): void {
+    static $rendered = false;
+    if ($rendered) {
+        return;
+    }
+    $rendered = true;
+    ?>
+    <aside class="tk-license-frontend-notice" aria-label="<?php esc_attr_e('Tool Kits license', 'tool-kits'); ?>"
+        style="position:absolute;inset-block-start:calc(1rem + var(--wp-admin--admin-bar--height, 0px));inset-inline-end:1rem;z-index:10000;box-sizing:border-box;width:400px;max-width:calc(100% - 2rem);padding:.75rem 1rem;border:1px solid #a87927;border-radius:8px;background:#fff6df;color:#36270b;box-shadow:0 6px 20px rgba(54,39,11,.14);overflow-wrap:anywhere">
+        <strong style="display:block">Tool Kits</strong>
+        <p style="margin:.25rem 0 0"><?php esc_html_e('Features are paused until the license is active.', 'tool-kits'); ?></p>
+        <?php if (tk_toolkits_can_manage()) : ?>
+            <a href="<?php echo esc_url(tk_admin_url('tool-kits-access') . '#license'); ?>" style="display:inline-block;margin-top:.5rem;color:inherit;text-decoration:underline"><?php esc_html_e('Open Access & License', 'tool-kits'); ?></a>
+        <?php endif; ?>
+    </aside>
+    <?php
 }
 
 function tk_killswitch_is_recoverable_key(string $key): bool {
@@ -548,7 +577,6 @@ function tk_tamper_detect_files(): array {
 
 // Updating Tool Kits replaces its files; without a fresh baseline every updated file stays
 // "changed" forever. An empty baseline is re-captured by the next scan.
-add_action('upgrader_process_complete', 'tk_tamper_reset_baseline_after_update', 10, 2);
 function tk_tamper_reset_baseline_after_update($upgrader, $hook_extra): void {
     if (!is_array($hook_extra) || ($hook_extra['type'] ?? '') !== 'plugin' || !defined('TK_PATH')) {
         return;
@@ -2102,6 +2130,41 @@ function tk_toolkits_audit_log(string $action, array $detail = array()): void {
     update_option(tk_report_option_name('toolkits_audit_log'), $log, false);
 }
 
+function tk_toolkits_license_setup_actions(): array {
+    return array('tk_toolkits_access_save', 'tk_toolkits_license_activate', 'tk_toolkits_license_reset');
+}
+
+function tk_toolkits_refresh_license_for_request(): void {
+    if (wp_doing_cron()) {
+        $next = wp_next_scheduled('tk_license_refresh');
+        if ($next && $next <= time()) {
+            tk_license_validate();
+        }
+        return;
+    }
+    if (!is_admin() || !tk_toolkits_can_manage()) {
+        return;
+    }
+    $page = isset($_GET['page']) ? sanitize_key($_GET['page']) : '';
+    $action = isset($_REQUEST['action']) ? sanitize_key($_REQUEST['action']) : '';
+    if (in_array($action, tk_toolkits_license_setup_actions(), true) || (wp_doing_ajax() && strpos($action, 'tk_') !== 0)) {
+        return;
+    }
+    if ($page === 'tool-kits-access') {
+        if (isset($_GET['tk_reset_license']) && $_GET['tk_reset_license'] === '1') {
+            delete_option('tk_license_reset_skip_validate');
+            return;
+        }
+        if ((int) get_option('tk_license_reset_skip_validate', 0) === 1) {
+            delete_option('tk_license_reset_skip_validate');
+            return;
+        }
+        tk_license_validate(true);
+    } elseif ((string) tk_get_option('license_key', '') !== '') {
+        tk_license_validate();
+    }
+}
+
 function tk_toolkits_guard(): void {
     if (!is_admin()) {
         return;
@@ -2124,30 +2187,11 @@ function tk_toolkits_guard(): void {
     }
     $action = isset($_REQUEST['action']) ? sanitize_key($_REQUEST['action']) : '';
     // Editor-facing actions check their own nonce and edit_post capability.
-    if (in_array($action, array('tk_duplicate_content'), true)) {
+    if ($action === 'tk_duplicate_content' && tk_license_features_enabled()) {
         return;
     }
     $is_toolkits_page = $page !== '' && strpos($page, 'tool-kits') === 0;
     $is_toolkits_action = $action !== '' && strpos($action, 'tk_') === 0;
-    $license_exempt_pages = array('tool-kits-db');
-    $license_exempt_actions = array(
-        'tk_db_export',
-        'tk_db_run_replace',
-        'tk_db_download_temp_export',
-        'tk_db_local_prod',
-        'tk_db_export_local_prod',
-        'tk_db_change_prefix',
-        'tk_db_import',
-        'tk_db_live_replace',
-        'tk_db_cleanup_run',
-        'tk_db_cleanup_job',
-    );
-    $license_setup_actions = array(
-        'tk_toolkits_access_save',
-        'tk_toolkits_license_activate',
-        'tk_toolkits_license_reset',
-    );
-    $is_license_exempt = in_array($page, $license_exempt_pages, true) || in_array($action, $license_exempt_actions, true);
     if (!$is_toolkits_page && !$is_toolkits_action) {
         return;
     }
@@ -2155,37 +2199,26 @@ function tk_toolkits_guard(): void {
         $message = '<h1>Access Restricted</h1><p>Tool Kits access is restricted for your account.</p><p><a href="' . esc_url(admin_url('admin.php?page=tool-kits-access')) . '">Go to Tool Kits Access</a></p>';
         wp_die($message, 'Tool Kits', array('response' => 403));
     }
-    if ($is_license_exempt) {
-        if (tk_toolkits_is_locked() && $is_toolkits_action) {
-            wp_die('Tool Kits settings are locked.', 'Tool Kits', array('response' => 403));
-        }
+    if (in_array($action, tk_toolkits_license_setup_actions(), true) || ($page === 'tool-kits-access' && !$is_toolkits_action)) {
         return;
     }
-    $collector_key = tk_heartbeat_auth_key();
-    if ($collector_key === '' && $page !== 'tool-kits-access' && !in_array($action, $license_setup_actions, true)) {
-        $message = '<h1>Collector Token Required</h1><p>Please set the collector token in Tool Kits Access.</p><p><a href="' . esc_url(admin_url('admin.php?page=tool-kits-access')) . '">Open Tool Kits Access</a></p>';
-        wp_die($message, 'Tool Kits', array('response' => 403));
-    }
-    if ($page === 'tool-kits-access' || in_array($action, $license_setup_actions, true)) {
-        $license_reset = isset($_GET['tk_reset_license']) ? sanitize_key((string) $_GET['tk_reset_license']) : '';
-        if ($license_reset === '1' || (int) get_option('tk_license_reset_skip_validate', 0) === 1) {
-            delete_option('tk_license_reset_skip_validate');
-            return;
-        }
-        tk_license_validate(true);
-        return;
-    }
-    // The cached result still requires a locally verified signed receipt; only the Access page forces a
-    // remote check. Forcing here made every Tool Kits page, ajax poll and batch step call the license server.
-    $license = tk_license_validate();
     if (!tk_license_is_valid()) {
-        $detail = isset($license['message']) && $license['message'] !== '' ? $license['message'] : 'License invalid.';
+        $detail = (string) tk_get_option('license_message', '') ?: 'License invalid.';
         $message = '<h1>License Required</h1><p>' . esc_html($detail) . '</p><p><a href="' . esc_url(admin_url('admin.php?page=tool-kits-access')) . '">Open License Settings</a></p>';
         if (!$is_toolkits_action) {
             $target = admin_url('admin.php?page=tool-kits-access');
             wp_safe_redirect($target);
             exit;
         }
+        wp_die($message, 'Tool Kits', array('response' => 403));
+    }
+    $database_actions = array(
+        'tk_db_export', 'tk_db_run_replace', 'tk_db_download_temp_export', 'tk_db_local_prod',
+        'tk_db_export_local_prod', 'tk_db_change_prefix', 'tk_db_import', 'tk_db_live_replace',
+        'tk_db_cleanup_run', 'tk_db_cleanup_job',
+    );
+    if ($page !== 'tool-kits-db' && !in_array($action, $database_actions, true) && tk_heartbeat_auth_key() === '') {
+        $message = '<h1>Collector Token Required</h1><p>Please set the collector token in Tool Kits Access.</p><p><a href="' . esc_url(admin_url('admin.php?page=tool-kits-access')) . '">Open Tool Kits Access</a></p>';
         wp_die($message, 'Tool Kits', array('response' => 403));
     }
     if (tk_toolkits_is_locked() && $is_toolkits_action && $action !== 'tk_toolkits_access_save' && $action !== 'tk_toolkits_audit_clear') {
@@ -2472,7 +2505,6 @@ function tk_terms_checklist_keep_order(array $args, $post_id) {
     $args['popular_cats'] = array();
     return $args;
 }
-add_filter('wp_terms_checklist_args', 'tk_terms_checklist_keep_order', 10, 2);
 function tk_get_debug_info(): string {
     global $wp_version;
     $info = array();
@@ -2597,7 +2629,7 @@ function tk_render_switch($name, $label, $description, $checked, $confirm = '') 
 }
 
 function tk_toolkits_nested_admin_menu_script(): void {
-    if (!is_admin() || !tk_toolkits_can_manage()) {
+    if (!is_admin() || !tk_license_features_enabled() || !tk_toolkits_can_manage()) {
         return;
     }
     ?>
